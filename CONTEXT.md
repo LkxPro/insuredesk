@@ -161,9 +161,9 @@ unassigned → assigned → processing → completed
 ### 通知触发规则
 - **assigned（操作触发）**：分配 / 改派工单时同步写入 AppNotification，targetUserId = 新责任人
 - **overdue / due_soon（时间触发）**：后台定时任务周期扫描，targetUserId = 工单当前 assigneeId
-  - 需去重：同一工单 + 同一通知类型不重复生成（规则待细化）
+  - **未分配工单（assigneeId=null）不发送提醒通知**——超时/预警靠看板呈现，主管主动处理
+  - **去重（一单一类型一次）**：同一工单 + 同一通知类型（overdue / due_soon）**全生命周期只生成一次**。定时任务需记录"已发过"标记，后续扫描到同一工单同一类型直接跳过。用户即使漏看通知，看板红色标记会持续呈现
   - 扫描 SQL 与数据看板"已超时数 / 2小时预警数"复用同一时间判断条件
-- new_ticket 在工单未分配时的接收人（发给谁）待细化
 
 ### 数据看板统计规则
 **核心指标卡**（9个，均排除软删工单 deletedAt IS NULL）：
@@ -174,7 +174,7 @@ unassigned → assigned → processing → completed
 - 已完结数：status = `completed`
 - 2小时超时预警数：dueAt 距离当前时间不足 2 小时，且**未完结**（实时运营视角）
 - 已超时数：dueAt < 当前时间，且**未完结**（实时运营视角，完结即移出；与考核"超时单数"口径不同——后者含超时完结，见 ADR 0003）
-- 特级工单数：complaintLevel = 特急投诉
+- 特急工单数：complaintLevel = 特急投诉
 - 监管单数：channel = 监管
 
 ### 工单分配规则
