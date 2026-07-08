@@ -136,20 +136,30 @@
 #### 3.1.6 处理状态
 | 字段 | 类型 | 必填 | 枚举值 | 说明 |
 |------|------|------|--------|------|
-| status | enum | ✅ | pending / processing / pending_timeout / overdue / completed | 工单状态（核心5状态） |
+| status | enum | ✅ | unassigned / assigned / processing / completed | 工单状态（4个基础状态） |
 | assigneeId | string | ❌ | - | 责任人ID（未分配为 null） |
-| dueAt | ISO 8601 | ❌ | - | 处理时限（根据优先级自动计算） |
+| assignedAt | ISO 8601 | ❌ | - | 分配时间（首次分配时记录，用于计算 dueAt） |
+| dueAt | ISO 8601 | ❌ | - | 处理时限（从 assignedAt + priority 对应时长，改派不重置） |
 | nextContactTime | ISO 8601 | ❌ | - | 下次联系时间 |
 | contactCount | number | ✅ | - | 联系次数（每次添加跟进记录 +1） |
-| follower | string | ✅ | - | 跟进人姓名（最后一个处理人） |
+| follower | string | ✅ | - | 跟进人姓名（当前责任人姓名） |
 | processingResult | string | ✅ | - | 处理结果（最后一条跟进记录） |
+
+**状态说明**：
+- `unassigned`：未分配（初始录入，assigneeId = null）
+- `assigned`：已分配（已分配责任人，但未添加首次跟进记录）
+- `processing`：处理中（已添加首次跟进记录）
+- `completed`：已完结（人工标记完结）
+- `pending_timeout`：待超时（计算状态，距离 dueAt 不足 2 小时，前端显示用）
+- `overdue`：已超时（计算状态，已超过 dueAt，前端显示用）
+
+**重要**：`pending_timeout` 和 `overdue` 是查询时根据 dueAt 实时计算的显示状态，不存储在数据库中。
 
 #### 3.1.7 完结信息
 | 字段 | 类型 | 必填 | 枚举值 | 说明 |
 |------|------|------|--------|------|
 | completionTime | ISO 8601 | ❌ | - | 完结时间 |
-| completionStatus | enum | ❌ | 正常完结 / 冷处理 / 联系不上 等 | 完结状态 |
-| resolvedAt | ISO 8601 | ❌ | - | 解决时间 |
+| completionStatus | enum | ❌ | 正常完结 / 冷处理 / 联系不上 等 | 完结状态（共12种，见附录9.1） |
 
 #### 3.1.8 创建人信息
 | 字段 | 类型 | 必填 | 说明 |
@@ -272,24 +282,25 @@
 ### 4.1 工单生命周期
 
 ```
-[创建] → [待处理 pending] → [处理中 processing] → [已完成 completed]
-                ↓                    ↓
-         [待超时 pending_timeout] [已超时 overdue]
-                                     ↓
-                              [处理中 processing] → [已完成 completed]
+[创建] → [未分配 unassigned] → [已分配 assigned] → [处理中 processing] → [已完结 completed]
+                                        ↓                    ↓
+                               (计算状态: pending_timeout / overdue)
 ```
 
 **状态说明**：
-- **pending**：待处理（新建工单，未分配或已分配但未开始处理）
+- **unassigned**：未分配（新建工单，assigneeId = null）
+- **assigned**：已分配（已分配责任人，但未开始跟进）
 - **processing**：处理中（已添加首次跟进记录）
-- **pending_timeout**：待超时（虚拟状态，距离 dueAt 不足 2 小时且未完成）
-- **overdue**：已超时（虚拟状态，已超过 dueAt 且未完成）
-- **completed**：已完成（已完结）
+- **completed**：已完结（人工标记完结）
+- **pending_timeout**：待超时（计算状态，距离 dueAt 不足 2 小时）
+- **overdue**：已超时（计算状态，已超过 dueAt）
 
 **状态流转规则**：
-- pending → processing / completed
-- processing → completed
-- pending_timeout 和 overdue 是计算状态，不存储在数据库
+- unassigned → assigned：分配责任人（手动分配或自行认领）
+- assigned → processing：添加首次跟进记录时自动触发
+- unassigned → processing：认领并直接添加跟进（跳过 assigned）
+- assigned → completed / processing → completed：完结工单
+- pending_timeout 和 overdue 是前端查询时实时计算的显示状态，覆盖基础状态显示，不改变数据库中的 status 字段
 
 ### 4.2 投诉等级跟进规则
 
@@ -312,11 +323,32 @@
    - 主管/管理员选择工单 → 选择责任人 → 确认分配
    - 系统自动：
      - 更新 assigneeId
-     - 如果状态为 pending，自动变更为 processing
+     - 记录 assignedAt（首次分配时）
+     - 计算并设置 dueAt（assignedAt + priority 对应时长）
+     - 状态从 unassigned 变更为 assigned
      - 添加处理记录（action: assign）
      - 推送通知给责任人
 
-2. **批量分配**：
+2. **自行认领**：
+   - 客服在工单列表看到未分配工单（需要 `ticket.claim` 权限）
+   - 点击"认领"按钮
+   - 系统自动：
+     - 设置 assigneeId = 当前用户
+     - 记录 assignedAt
+     - 计算并设置 dueAt
+     - 状态从 unassigned 变更为 assigned
+     - 添加处理记录（action: assign）
+
+3. **改派工单**：
+   - 主管选择已分配的工单 → 选择新责任人 → 确认改派
+   - 系统自动：
+     - 更新 assigneeId 为新责任人
+     - **dueAt 保持不变**（不重新计算）
+     - assignedAt 保持不变
+     - 添加处理记录（action: assign，记录从谁改派到谁）
+     - 推送通知给新责任人（标注剩余时间）
+
+4. **批量分配**：
    - 支持多选工单 → 统一分配给同一责任人
    - 或根据排班自动分配
 
@@ -330,7 +362,7 @@
      - 联系次数 +1
      - 添加处理记录（action: comment）
      - 更新 processingResult 为最新备注
-     - 状态自动从 pending 变为 processing
+     - 状态自动从 assigned 变为 processing（首次跟进时）
 
 2. **持续跟进**：
    - 根据投诉等级要求定期跟进
@@ -338,15 +370,20 @@
    - 系统根据规则发送提醒
 
 3. **完结工单**：
-   - 选择完结类型：
+   - 选择完结类型（completionStatus）：
      - 正常完结
      - 冷处理
      - 联系不上
+     - 其他（共 12 种，见附录 9.1）
    - 填写完结备注
    - 系统自动：
      - 状态变更为 completed
-     - 记录 completionTime、resolvedAt
+     - 记录 completionTime
      - 添加处理记录（action: resolve）
+
+**重要说明**：
+- 首次跟进（添加第一条 action=comment 的记录）会自动触发 assigned → processing 状态变更
+- 改派工单后，新责任人的首次跟进也会触发状态变更（如果工单还在 assigned 状态）
 
 ---
 
@@ -367,6 +404,7 @@
 - `ticket.edit`：编辑工单基本信息（操作权限）
 - `ticket.process`：处理工单（操作权限）
 - `ticket.assign`：分配工单（操作权限）
+- `ticket.claim`：自行认领未分配工单（操作权限）
 - `ticket.batch_assign`：批量分配（操作权限）
 - `ticket.export`：导出工单（操作权限）
 - `ticket.delete`：删除工单（操作权限，危险）
@@ -487,13 +525,21 @@
 - 冷处理
 - 联系不上
 
-### 9.2 优先级与到期时间映射
-| 优先级 | 到期时间（dueAt） |
+### 9.2 优先级与处理时限映射
+
+dueAt 从分配时间（assignedAt）开始计算：
+
+| 优先级 | 处理时限（dueAt） |
 |--------|-------------------|
-| urgent | 创建时间 + 24小时 |
-| high   | 创建时间 + 3天 |
-| medium | 创建时间 + 7天 |
-| low    | 不设置 |
+| urgent | assignedAt + 24小时 |
+| high   | assignedAt + 3天 |
+| medium | assignedAt + 7天 |
+| low    | 不设置 dueAt |
+
+**重要说明**：
+- dueAt 在首次分配时计算并设置
+- 改派工单时，dueAt 保持不变（不重新计算）
+- 这确保了对客户的时限承诺不会因内部改派而延长
 
 ### 9.3 工单号生成规则
 格式：`WO + 年（4位）+ 月（2位）+ 流水号（5位）`
@@ -507,4 +553,5 @@
 | 版本 | 日期 | 修订内容 | 修订人 |
 |------|------|----------|--------|
 | v1.0 | 2026-07-08 | 初始版本，基于 legacy demo 整理 | - |
+| v1.1 | 2026-07-08 | 领域模型优化：<br>1. 工单状态从 3 个改为 4 个基础状态（unassigned/assigned/processing/completed）<br>2. 明确 pending_timeout 和 overdue 为计算状态，不存储数据库<br>3. dueAt 从分配时间计算，改派时保持不变<br>4. 新增 assignedAt 字段记录分配时间<br>5. 新增 ticket.claim 权限支持自行认领<br>6. 明确跟进人统计归属于当前责任人<br>详见 CONTEXT.md 和 docs/adr/ | - |
 
