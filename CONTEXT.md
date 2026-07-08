@@ -58,16 +58,27 @@ unassigned → assigned → processing → completed
          (计算: pending_timeout / overdue)
 
 ### ProcessLog（处理记录）
-工单生命周期中的操作事件记录。每次对工单的操作（分配、跟进、状态变更等）都会产生一条记录。
+工单生命周期中的操作事件记录。每次对工单的操作（分配、跟进、状态变更等）都会产生一条记录，构成工单详情页的时间线。ProcessLog 本质是审计日志，记录"当时发生的事实"。
 
-**操作类型**：
+**操作类型**（6 种）：
 - `create`：创建工单
-- `assign`：分配/改派责任人
+- `assign`：分配/认领/改派责任人
 - `status_change`：状态变更
 - `comment`：添加跟进备注（触发联系次数 +1）
 - `upload`：上传材料
-- `export`：导出工单
 - `resolve`：确认完结
+
+**from / to 字段约定**：
+- `assign`：存**责任人姓名快照**（如 from="小王", to="小李"），不存 ID
+- `status_change`：存状态枚举值（如 from="assigned", to="processing"）
+- 存姓名快照而非 ID：ProcessLog 不承担考核统计职责（考核走 tickets.assigneeId，见 ADR 0003），仅服务时间线展示；姓名快照能忠实反映"当时是谁"，即使用户后续改名/离职
+
+**记录生成规则**：
+- **状态变更一律独立记录**：凡 status 发生变化，都额外单独写一条 status_change（记 from/to 状态枚举），无例外。这意味着：
+  - 首次 comment 触发 assigned → processing：写 comment + status_change 两条
+  - resolve 触发 → completed：写 resolve + status_change 两条
+  - assign 触发 unassigned → assigned：写 assign + status_change 两条
+- 导出操作**不**产生 ProcessLog（导出是列表级批量操作，不属于单工单时间线）
 
 ### Assignee（责任人）
 被分配处理特定工单的用户。一个工单同一时间只能有一个责任人，但可以改派。
@@ -76,9 +87,23 @@ unassigned → assigned → processing → completed
 当前工单的责任人（assigneeId 对应的用户）。当工单改派时，跟进人随之变更。
 
 **统计规则**：
-- 工单的所有统计数据（进单、完单、超时）归属于**当前责任人**
+- 工单的所有统计数据归属于**当前责任人**（当前 assigneeId）
 - 改派后，原责任人不再计入该工单的统计
-- 数据看板的"跟进人统计表"基于工单的当前 assigneeId 计算
+- 数据看板的"跟进人考核表"基于工单的当前 assigneeId 计算
+
+### 客服考核维度
+客服绩效考核围绕"完结结果 + 当前责任"，共 3 个维度，均按当前 assigneeId 归属，不追踪改派历史。
+
+**考核表列**（跟进人考核表）：
+- **完单数**：当前 assigneeId = 该客服 且 status = completed 的工单数（处理单量）
+- **平均完结时长**：completionTime - assignedAt 的平均值（处理时效）
+- **超时单数 / 超时率**：该客服名下已超时（含超时完结）的工单数及占比（超时情况）
+
+**设计要点**：
+- 工单完结后 assigneeId 不再变化，"完结人"即为"完结时的责任人"，归属永久冻结
+- 完单、时效、超时三个维度都围绕"完结"这一唯一动作，天然无重复、无遗漏
+- **不统计转单数**：转走且未完结的工单不算业绩产出；改派记录在工单 ProcessLog 时间线中可查
+- **已知取舍**：不追踪转单历史意味着"超时那一刻持有工单的人"承担超时；理论上存在"甩单"漏洞，争议时以 ProcessLog 为准
 
 ### User（用户）
 系统的使用者。根据角色拥有不同的权限。
@@ -100,6 +125,18 @@ unassigned → assigned → processing → completed
 工单处理过程中上传的文件材料（证明文件、沟通记录等）。
 
 ## 业务规则
+
+### 数据看板统计规则
+**核心指标卡**（9个）：
+- 工单总数：所有工单
+- 未分配数：status = `unassigned`
+- 待处理数：status = `assigned`（已分配但未开始跟进）
+- 处理中数：status = `processing`
+- 已完结数：status = `completed`
+- 2小时超时预警数：dueAt 距离当前时间不足 2 小时，且未完结
+- 已超时数：dueAt < 当前时间，且未完结
+- 特级工单数：complaintLevel = 特急工单
+- 监管单数：channel = 监管
 
 ### 工单分配规则
 - 工单可以创建时不分配责任人（assigneeId = null，status = unassigned）
