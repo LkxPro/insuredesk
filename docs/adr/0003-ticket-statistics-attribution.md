@@ -31,21 +31,34 @@
 | 维度 | 指标 | 定义 |
 |------|------|------|
 | 处理单量 | 完单数 | 当前 assigneeId = 该客服 且 status = completed 的工单数 |
-| 处理时效 | 平均完结时长 | completionTime − assignedAt 的平均值 |
-| 超时情况 | 超时单数 / 超时率 | 该客服名下已超时（含超时完结）的工单数及占比 |
+| 处理时效 | 平均完结时长 | completionTime − **createdAt** 的平均值（端到端时长，与 SLA 时钟一致） |
+| 超时情况 | 超时单数 / 超时率 | 该客服名下**曾经超时**的工单数（**含超时完结**）及占比 |
 
 ```sql
--- 跟进人考核表
+-- 跟进人考核表（软删工单一律排除）
 SELECT
   assigneeId,
   COUNT(*) FILTER (WHERE status = 'completed') AS completed_count,
-  AVG(EXTRACT(EPOCH FROM (completionTime - assignedAt)))
+  AVG(EXTRACT(EPOCH FROM (completionTime - createdAt)))
     FILTER (WHERE status = 'completed') AS avg_resolve_seconds,
-  COUNT(*) FILTER (WHERE dueAt IS NOT NULL AND now() > dueAt AND status != 'completed') AS overdue_count
+  -- 超时单 = 已超时完结（completionTime > dueAt） OR 在途已超时（未完结且 now > dueAt）
+  COUNT(*) FILTER (
+    WHERE dueAt IS NOT NULL AND (
+      (status = 'completed' AND completionTime > dueAt) OR
+      (status != 'completed' AND now() > dueAt)
+    )
+  ) AS overdue_count
 FROM tickets
-WHERE assigneeId IS NOT NULL
+WHERE assigneeId IS NOT NULL AND deletedAt IS NULL
 GROUP BY assigneeId
 ```
+
+**超时口径说明（区分两个视角）**：
+- **考核"超时单数"（本表）= 历史追责视角**：只要工单**曾经超时**就计入，包含"超时后才完结"的工单（completionTime > dueAt）。用于追究客服的超时责任。
+- **看板"已超时数" = 实时运营视角**：仅统计当前仍在途且已过 dueAt 的工单（status != completed），完结即移出（"火灭了不再计数"）。
+- 二者口径不同是有意为之，服务不同目的，不是矛盾。特急投诉无 dueAt，永不计入任何超时口径。
+
+**处理时效口径说明（已知取舍）**：采用 completionTime − createdAt（**端到端时长**），而非 completionTime − assignedAt（个人持有时长）。这意味着该指标包含了「工单未分配时的派单延迟」和「改派前前任持有的时长」——即它衡量的是"工单从进系统到解决的总时长"，而非"当前客服单独的处理速度"。选择理由：与 SLA 时钟（createdAt）口径统一、零新增字段、实现简单。代价：改派/派单延迟会让当前责任人的时效数字偏大，个人间横向对比不完全公平。若未来需要"个人真实处理时长"，可新增 lastAssignedAt 字段改用 completionTime − lastAssignedAt。
 
 ## 理由
 

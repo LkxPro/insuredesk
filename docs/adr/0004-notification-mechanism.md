@@ -6,10 +6,12 @@
 
 ## 上下文
 
-系统需要向用户推送通知（AppNotification，§3.7 定义 6 种类型：new_ticket / status_change / overdue / due_soon / reassigned / comment）。设计时发现"实时通知"其实是两个正交的问题，必须分开决策：
+系统需要向用户推送通知（AppNotification）。经逐类审视，通知类型收敛为 **3 种**：`assigned`（被分配/改派）、`overdue`（已超时）、`due_soon`（快超时）。设计时发现"实时通知"其实是两个正交的问题，必须分开决策：
 
 1. **检测**：谁来发现"一个需要通知的事件发生了"？（时机 / 计算）
 2. **送达**：发现之后，怎么让用户的浏览器看到？（传输通道）
+
+> 注：初版曾设计 6 种通知类型，后砍掉 `comment`（跟进，无合理接收人）、`status_change`（状态变更，操作人自己触发或已被 assigned 覆盖）、`new_ticket`（新单入库无接收人，主管靠看板处理）。first-assign 与 reassign 合并为 `assigned`。
 
 ### 检测：通知分两类，命运不同
 

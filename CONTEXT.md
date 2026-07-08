@@ -77,17 +77,19 @@ unassigned → assigned → processing → completed
 ### ProcessLog（处理记录）
 工单生命周期中的操作事件记录。每次对工单的操作（分配、跟进、状态变更等）都会产生一条记录，构成工单详情页的时间线。ProcessLog 本质是审计日志，记录"当时发生的事实"。
 
-**操作类型**（6 种）：
+**操作类型**（7 种）：
 - `create`：创建工单
 - `assign`：分配/改派责任人
 - `status_change`：状态变更
 - `comment`：添加跟进备注（触发联系次数 +1）
 - `upload`：上传材料
 - `resolve`：确认完结
+- `edit`：编辑工单基本信息（记录改动字段）
 
 **from / to 字段约定**：
 - `assign`：存**责任人姓名快照**（如 from="小王", to="小李"），不存 ID
 - `status_change`：存状态枚举值（如 from="assigned", to="processing"）
+- `edit`：多字段改动记在 remark（如"投诉等级: 一般投诉→加急投诉"），from/to 留空
 - 存姓名快照而非 ID：ProcessLog 不承担考核统计职责（考核走 tickets.assigneeId，见 ADR 0003），仅服务时间线展示；姓名快照能忠实反映"当时是谁"，即使用户后续改名/离职
 
 **记录生成规则**：
@@ -113,12 +115,13 @@ unassigned → assigned → processing → completed
 
 **考核表列**（跟进人考核表）：
 - **完单数**：当前 assigneeId = 该客服 且 status = completed 的工单数（处理单量）
-- **平均完结时长**：completionTime - assignedAt 的平均值（处理时效）
-- **超时单数 / 超时率**：该客服名下已超时（含超时完结）的工单数及占比（超时情况）
+- **平均完结时长**：completionTime − **createdAt** 的平均值（处理时效，端到端时长）
+- **超时单数 / 超时率**：该客服名下**曾经超时**的工单数及占比（**含超时完结**：completionTime > dueAt，或在途 now > dueAt）（超时情况）
 
 **设计要点**：
 - 工单完结后 assigneeId 不再变化，"完结人"即为"完结时的责任人"，归属永久冻结
 - 完单、时效、超时三个维度都围绕"完结"这一唯一动作，天然无重复、无遗漏
+- **处理时效是端到端口径**（从 createdAt 算，与 SLA 时钟统一）：含派单延迟和改派前前任持有时长，衡量"工单进系统到解决的总时长"，非"当前客服单独速度"。取舍详见 ADR 0003
 - **不统计转单数**：转走且未完结的工单不算业绩产出；改派记录在工单 ProcessLog 时间线中可查
 - **已知取舍**：不追踪转单历史意味着"超时那一刻持有工单的人"承担超时；理论上存在"甩单"漏洞，争议时以 ProcessLog 为准
 
@@ -142,32 +145,35 @@ unassigned → assigned → processing → completed
 工单处理过程中上传的文件材料（证明文件、沟通记录等）。
 
 ### Notification（通知 / AppNotification）
-面向单个用户的站内提醒。分两类来源（详见 ADR 0004）：
-- **用户操作触发**：new_ticket / assign / reassigned / comment / status_change —— 操作发生时同步生成，无需定时任务
-- **时间流逝触发**：overdue / due_soon —— 由后台定时任务扫描 dueAt 生成
+面向单个用户的站内提醒，共 3 种类型。分两类来源（详见 ADR 0004）：
+- **用户操作触发**：`assigned`（被分配 / 改派工单时通知新责任人，覆盖首次分配与改派）—— 操作发生时同步生成，无需定时任务
+- **时间流逝触发**：`overdue`（已超时）/ `due_soon`（快超时）—— 由后台定时任务扫描 dueAt 生成，接收人为当前 assigneeId
+
+> 注：以下均**不产生通知**——
+> - `comment`（添加跟进）：一单一责任人、无协作者，无合理接收人
+> - 工单**状态变更**：要么由操作人自己触发、要么已被 assigned 通知覆盖
+> - **新工单入库**：无接收人（未分配），主管靠看板"未分配数"主动处理，不推送
 
 **送达方式**：前端每 30 秒轮询当前用户的未读通知（read = false），驱动红点 / toast。
 
 ## 业务规则
 
 ### 通知触发规则
-- **用户操作触发类**：在处理对应操作的业务逻辑中同步写入 AppNotification，targetUserId 为通知接收人
-  - 分配 / 改派：接收人为新责任人
-  - comment / status_change：接收人待细化（发给谁尚未定义）
-- **时间流逝触发类**（overdue / due_soon）：后台定时任务周期扫描，接收人为工单当前 assigneeId
+- **assigned（操作触发）**：分配 / 改派工单时同步写入 AppNotification，targetUserId = 新责任人
+- **overdue / due_soon（时间触发）**：后台定时任务周期扫描，targetUserId = 工单当前 assigneeId
   - 需去重：同一工单 + 同一通知类型不重复生成（规则待细化）
   - 扫描 SQL 与数据看板"已超时数 / 2小时预警数"复用同一时间判断条件
 - new_ticket 在工单未分配时的接收人（发给谁）待细化
 
 ### 数据看板统计规则
-**核心指标卡**（9个）：
+**核心指标卡**（9个，均排除软删工单 deletedAt IS NULL）：
 - 工单总数：所有工单
 - 未分配数：status = `unassigned`
 - 待处理数：status = `assigned`（已分配但未开始跟进）
 - 处理中数：status = `processing`
 - 已完结数：status = `completed`
-- 2小时超时预警数：dueAt 距离当前时间不足 2 小时，且未完结
-- 已超时数：dueAt < 当前时间，且未完结
+- 2小时超时预警数：dueAt 距离当前时间不足 2 小时，且**未完结**（实时运营视角）
+- 已超时数：dueAt < 当前时间，且**未完结**（实时运营视角，完结即移出；与考核"超时单数"口径不同——后者含超时完结，见 ADR 0003）
 - 特级工单数：complaintLevel = 特急投诉
 - 监管单数：channel = 监管
 
@@ -180,6 +186,18 @@ unassigned → assigned → processing → completed
 - **工单创建时**：即计算并设置 dueAt（createdAt + 投诉等级超时时长；特急不设）。SLA 时钟此刻起跑，与是否已分配无关
 - **首次分配**：设置 assigneeId，记录 assignedAt，状态从 unassigned → assigned（**不改 dueAt**，dueAt 在创建时已定）
 - **改派工单**：更新 assigneeId，dueAt 保持不变（createdAt 不变，dueAt 天然稳定）
+
+### 自动分配规则（按排班）
+- **触发**：主管手动点"按排班自动分配"（单个/批量），**不在工单创建时自动触发**
+- **候选人**：该工单 channel 对应、当前时刻在班次内的在岗值班人（按 Schedule 匹配 channel + 班次时间覆盖当前）
+- **选人**：候选人中在手工单（assigned + processing）最少者；平手随机
+- **边界**：该 channel 当前无在岗值班人 → 不分配，提示主管手动处理
+
+### 编辑与删除规则
+- **编辑**（`ticket.edit`）：所有基本信息字段任意状态下（含已完结）均可改；**status 除外**（只能经生命周期动作流转，completed 不可重开）
+- **改 complaintLevel 会重算 dueAt**（createdAt + 新等级超时时长）并切换 SLA 规则，可能立即改变 overdue/预警状态
+- **编辑留痕**：每次编辑写一条 ProcessLog（action: edit）
+- **删除**（`ticket.delete`）：**软删除**（设 deletedAt），默认列表与统计排除，ProcessLog/附件保留
 
 ### 状态流转规则
 - `unassigned` → `assigned`：主管/管理员分配责任人
