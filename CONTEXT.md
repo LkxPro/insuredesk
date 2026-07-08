@@ -124,7 +124,23 @@ unassigned → assigned → processing → completed
 ### Attachment（附件）
 工单处理过程中上传的文件材料（证明文件、沟通记录等）。
 
+### Notification（通知 / AppNotification）
+面向单个用户的站内提醒。分两类来源（详见 ADR 0004）：
+- **用户操作触发**：new_ticket / assign / reassigned / comment / status_change —— 操作发生时同步生成，无需定时任务
+- **时间流逝触发**：overdue / due_soon —— 由后台定时任务扫描 dueAt 生成
+
+**送达方式**：前端每 30 秒轮询当前用户的未读通知（read = false），驱动红点 / toast。
+
 ## 业务规则
+
+### 通知触发规则
+- **用户操作触发类**：在处理对应操作的业务逻辑中同步写入 AppNotification，targetUserId 为通知接收人
+  - 分配 / 改派：接收人为新责任人
+  - comment / status_change：接收人待细化（发给谁尚未定义）
+- **时间流逝触发类**（overdue / due_soon）：后台定时任务周期扫描，接收人为工单当前 assigneeId
+  - 需去重：同一工单 + 同一通知类型不重复生成（规则待细化）
+  - 扫描 SQL 与数据看板"已超时数 / 2小时预警数"复用同一时间判断条件
+- new_ticket 在工单未分配时的接收人（发给谁）待细化
 
 ### 数据看板统计规则
 **核心指标卡**（9个）：
