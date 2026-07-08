@@ -158,10 +158,10 @@
 | 字段                       | 类型     | 必填  | 枚举值                          | 说明        |
 | ------------------------ | ------ | --- | ---------------------------- | --------- |
 | category                 | enum   | ✅   | 见下表                          | 客诉类别（17种） |
-| complaintLevel           | enum   | ✅   | 一般工单 / 紧急工单 / 加急工单 / 特急工单    | 投诉等级      |
-| priority                 | enum   | ✅   | low / medium / high / urgent | 优先级       |
-| followUpFrequency        | string | ✅   | 跟进频次要求（根据投诉等级自动设置）           |           |
-| firstResponseRequirement | string | ✅   | 首响要求（根据投诉等级自动设置）             |           |
+| complaintLevel           | enum   | ✅   | 一般投诉 / 高级投诉 / 加急投诉 / 特急投诉    | 投诉等级（决定首响/跟进频次/超时/提醒规则） |
+| priority                 | enum   | ❌   | low / medium / high / urgent | 优先级（独立自由标签，默认空，可手动赋值，与 complaintLevel 无关，不驱动任何 SLA） |
+| followUpFrequency        | string | ✅   | 跟进频次要求（由投诉等级的 SLA 配置带出）           |           |
+| firstResponseRequirement | string | ✅   | 首响要求（由投诉等级的 SLA 配置带出）             |           |
 
 
 **客诉类别（17种）**：
@@ -193,8 +193,8 @@
 | ---------------- | -------- | --- | ---------------------------------------------- | ---------------------------------------- |
 | status           | enum     | ✅   | unassigned / assigned / processing / completed | 工单状态（4个基础状态）                             |
 | assigneeId       | string   | ❌   | -                                              | 责任人ID（未分配为 null）                         |
-| assignedAt       | ISO 8601 | ❌   | -                                              | 分配时间（首次分配时记录，用于计算 dueAt）                 |
-| dueAt            | ISO 8601 | ❌   | -                                              | 处理时限（从 assignedAt + priority 对应时长，改派不重置） |
+| assignedAt       | ISO 8601 | ❌   | -                                              | 分配时间（首次分配时记录，供考核/审计参考；**不用于计算 dueAt**）    |
+| dueAt            | ISO 8601 | ❌   | -                                              | 处理时限（工单创建时定：createdAt + 投诉等级对应超时时长；特急不设；此后固定不变） |
 | nextContactTime  | ISO 8601 | ❌   | -                                              | 下次联系时间                                   |
 | contactCount     | number   | ✅   | -                                              | 联系次数（每次添加跟进记录 +1）                        |
 | follower         | string   | ✅   | -                                              | 跟进人姓名（当前责任人姓名）                           |
@@ -275,7 +275,7 @@
 **操作类型说明**：
 
 - `create`：创建工单
-- `assign`：分配/认领/改派责任人
+- `assign`：分配/改派责任人
 - `status_change`：状态变更
 - `comment`：添加处理备注（联系次数 +1）
 - `upload`：上传材料
@@ -388,7 +388,44 @@
 
 ---
 
+### 3.8 SLA 策略（SLAPolicy）
 
+SLA 规则的结构化配置，**按投诉等级各一条**，管理员可编辑（全量可配置提醒引擎，见 ADR 0005）。所有时间均以工单 **createdAt** 为时钟起点。
+
+**SLAPolicy 主体**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| complaintLevel | enum | ✅ | 投诉等级（主键：一般/高级/加急/特急投诉，各一条） |
+| firstResponseMinutes | number | ✅ | 首响时限（分钟，自 createdAt 起）。一般120/高级120/加急60/特急30 |
+| overdueHours | number | ❌ | 超时时长（小时，自 createdAt 起）。一般48/高级48/加急72/特急=空(不设超时) |
+| reminderRules | ReminderRule[] | ✅ | 提醒规则列表（可增删的类型化规则，见下） |
+
+**ReminderRule（提醒规则）**：三种类型，`type` 决定生效的参数字段。
+
+| type | 含义 | 参数 |
+|------|------|------|
+| `first_response` | 首响提醒：createdAt 起 afterMinutes 仍无首响（无第一条 comment）则提醒 | afterMinutes |
+| `follow_up_checkpoint` | 跟进检查点：到（checkpointHours − advanceMinutes）时刻，若累计 comment 数 < requiredCount 则提醒 | checkpointHours, requiredCount, advanceMinutes |
+| `rolling_follow_up` | 滚动提醒：未完结前，每距上一条 comment 满 intervalHours 提醒一次 | intervalHours |
+
+**各等级规则映射**（默认值，管理员可改）：
+
+| 等级 | first_response | follow_up_checkpoint | rolling_follow_up |
+|------|----------------|----------------------|-------------------|
+| 一般投诉 | afterMinutes=90 | {24h,1次,提前60min}、{48h,2次,提前180min} | — |
+| 高级投诉 | afterMinutes=90 | {24h,1次,提前60min}、{48h,3次,提前180min} | — |
+| 加急投诉 | afterMinutes=30 | {24h,2次,提前60min}、{48h,4次,提前180min}、{72h,6次,提前180min} | — |
+| 特急投诉 | afterMinutes=15 | {24h,2次,提前60min}、{48h,4次,提前180min} | intervalHours=12 |
+
+**引擎运行规则**：
+- **时钟基准**：所有 `first_response` / `follow_up_checkpoint` 的时间自 createdAt 起算；`rolling_follow_up` 自上一条 comment 起算
+- **跟进次数**：工单自 createdAt 起的累计 comment 数（跨责任人累加，与 contactCount 一致）
+- **接收人**：当前 assigneeId；工单未分配时接收人待细化（见通知规则）
+- **幂等**：每条提醒只发一次；工单 completed 后所有提醒停止
+- **执行**：由后台定时任务周期扫描生成通知（见 ADR 0004）
+
+---
 
 ## 4. 业务流程
 
@@ -413,9 +450,8 @@
 
 **状态流转规则**：
 
-- unassigned → assigned：分配责任人（手动分配或自行认领）
+- unassigned → assigned：主管/管理员分配责任人
 - assigned → processing：添加首次跟进记录时自动触发
-- unassigned → processing：认领并直接添加跟进（跳过 assigned）
 - assigned → completed / processing → completed：完结工单
 - pending_timeout 和 overdue 是前端查询时实时计算的显示状态，覆盖基础状态显示，不改变数据库中的 status 字段
 
@@ -423,21 +459,18 @@
 
 ### 4.2 投诉等级跟进规则
 
+**首响 = 首次跟进**：首响和跟进都必须实际打电话联系客户才算数。因此"首响时刻"等于工单第一条 comment 记录的时间，系统据此判断是否按时首响，无需额外字段。
 
-| 等级   | 跟进频次   | 首响要求       | 完结条件                 |
-| ---- | ------ | ---------- | -------------------- |
-| 一般工单 | 至少3天1次 | 分派后4小时内触达  | 冷处理超过15天后未出现新反馈内容后办结 |
-| 紧急工单 | 至少1天1次 | 分派后2小时内触达  | 冷处理超过10天后未出现新反馈内容后办结 |
-| 加急工单 | 至少1天2次 | 分派后1小时内触达  | 诉求过高无法满足，经反馈上级后评估冷处理 |
-| 特急工单 | 至少一天2次 | 分派后30分钟内触达 | 冷处理超过7天后未出现新反馈内容后办结  |
+**统一时钟**：下表所有时间（首响、跟进检查点、超时）均从**工单录入时刻 createdAt** 起算，**不是**从分配时刻起算。因此未分配的工单也在计时，可在无人负责时就首响超时或 overdue。dueAt = createdAt + 该等级超时时长；特急投诉不设超时。
 
+| 等级   | 跟进频次   | 首响要求       | 超时（dueAt） | 提醒规则（时间均自 createdAt 起算） |
+| ---- | ------ | ---------- | ---------- | ---- |
+| 一般投诉 | 2天2次 | 录入后2小时内响应 | 超过48小时算超时 | ① 90分钟未首响提醒 ② 24小时内没有出现1次跟进记录提醒（提前1小时）③ 48小时内未2次跟进提醒（提前3小时） |
+| 高级投诉 | 2天3次 | 录入后2小时内响应 | 超过48小时算超时 | ① 90分钟未首响提醒 ② 24小时内没有出现1次跟进记录提醒（提前1小时）③ 48小时内未3次跟进提醒（提前3小时） |
+| 加急投诉 | 3天6次 | 录入后1小时内响应 | 超过72小时算超时 | ① 30分钟内未首响提醒 ② 24小时内没有出现2次跟进记录提醒（提前1小时）③ 48小时内未4次跟进提醒（提前3小时）④ 72小时内未6次跟进提醒（提前3小时） |
+| 特急投诉 | 完结前至少一天2次 | 录入后30分钟内触达 | 不设超时 | ① 15分钟内未首响提醒 ② 24小时内没有出现2次跟进记录提醒（提前1小时）③ 48小时内未4次跟进提醒（提前3小时）④ 未完结前每距离上一次跟进12小时提醒 |
 
-**提醒规则示例**（特急工单）：
-
-1. 15分钟内未首响提醒
-2. 24小时内没有出现2次跟进记录提醒（提前1小时）
-3. 48小时内未4次跟进提醒（提前3小时）
-4. 未完结前每距离上一次跟进12小时提醒
+**重要**：以上 SLA 规则（首响时限、跟进频次、超时时长、提醒规则）均支持管理员配置修改，不硬编码。规则的结构化建模见 §3.8 SLA 策略（SLAPolicy）。
 
 
 
@@ -448,28 +481,19 @@
   - 系统自动：
     - 更新 assigneeId
     - 记录 assignedAt（首次分配时）
-    - 计算并设置 dueAt（assignedAt + priority 对应时长）
     - 状态从 unassigned 变更为 assigned
     - 添加处理记录（action: assign）
     - 推送通知给责任人
-2. **自行认领**：
-  - 客服在工单列表看到未分配工单（需要 `ticket.claim` 权限）
-  - 点击"认领"按钮
-  - 系统自动：
-    - 设置 assigneeId = 当前用户
-    - 记录 assignedAt
-    - 计算并设置 dueAt
-    - 状态从 unassigned 变更为 assigned
-    - 添加处理记录（action: assign）
-3. **改派工单**：
+    - 注：dueAt 在工单创建时已设定（createdAt + 超时时长），分配不改变它
+2. **改派工单**：
   - 主管选择已分配的工单 → 选择新责任人 → 确认改派
   - 系统自动：
     - 更新 assigneeId 为新责任人
-    - **dueAt 保持不变**（不重新计算）
+    - **dueAt 保持不变**（createdAt 不变，dueAt 天然稳定）
     - assignedAt 保持不变
     - 添加处理记录（action: assign，记录从谁改派到谁）
     - 推送通知给新责任人（标注剩余时间）
-4. **批量分配**：
+3. **批量分配**：
   - 支持多选工单 → 统一分配给同一责任人
   - 或根据排班自动分配
 
@@ -536,7 +560,6 @@
 - `ticket.edit`：编辑工单基本信息（操作权限）
 - `ticket.process`：处理工单（操作权限）
 - `ticket.assign`：分配工单（操作权限）
-- `ticket.claim`：自行认领未分配工单（操作权限）
 - `ticket.batch_assign`：批量分配（操作权限）
 - `ticket.export`：导出工单（操作权限）
 - `ticket.delete`：删除工单（操作权限，危险）
@@ -579,6 +602,8 @@
 | 客服主管 | 团队工单 | 只能查看本团队成员的工单 |
 | 一线客服 | 个人工单 | 只能查看分配给自己的工单 |
 | 只读观察 | 根据配置 | 可配置查看范围      |
+
+**关于未分配工单**：未分配池（assigneeId = null）仅对有"全部/团队"数据权限的角色（管理员、客服主管）可见。一线客服看不到未分配工单，**不设自行认领功能**——分配是主管/管理员的职责。
 
 
 ---
@@ -716,24 +741,25 @@
 
 
 
-### 9.2 优先级与处理时限映射
+### 9.2 投诉等级与超时时限映射
 
-dueAt 从分配时间（assignedAt）开始计算：
+dueAt 由**投诉等级**决定，从**录入时间（createdAt）**开始计算：
 
-
-| 优先级    | 处理时限（dueAt）       |
+| 投诉等级 | 超时时限（dueAt）       |
 | ------ | ----------------- |
-| urgent | assignedAt + 24小时 |
-| high   | assignedAt + 3天   |
-| medium | assignedAt + 7天   |
-| low    | 不设置 dueAt         |
-
+| 一般投诉 | createdAt + 48小时 |
+| 高级投诉 | createdAt + 48小时 |
+| 加急投诉 | createdAt + 72小时 |
+| 特急投诉 | 不设 dueAt（永不 overdue，靠每12小时跟进提醒持续驱动至完结） |
 
 **重要说明**：
 
-- dueAt 在首次分配时计算并设置
-- 改派工单时，dueAt 保持不变（不重新计算）
-- 这确保了对客户的时限承诺不会因内部改派而延长
+- dueAt 在**工单创建时**计算并设置（createdAt + 超时时长），此后固定不变
+- 时钟从 createdAt 起算：**未分配的工单也在计时，可在无人负责时就 overdue**
+- 分配 / 改派都不改变 dueAt（createdAt 不变）
+- 这确保了对客户的时限承诺不因内部分配/改派而延长
+- **priority 与 dueAt 无关**：priority 是独立的自由标签（默认空、手动赋值），不参与超时计算
+- 上述超时时长支持管理员配置修改
 
 
 
@@ -755,5 +781,7 @@ dueAt 从分配时间（assignedAt）开始计算：
 | v1.0 | 2026-07-08 | 初始版本，基于 legacy demo 整理                                                                                                                                                                                                                            | -   |
 | v1.1 | 2026-07-08 | 领域模型优化： 1. 工单状态从 3 个改为 4 个基础状态（unassigned/assigned/processing/completed） 2. 明确 pending_timeout 和 overdue 为计算状态，不存储数据库 3. dueAt 从分配时间计算，改派时保持不变 4. 新增 assignedAt 字段记录分配时间 5. 新增 ticket.claim 权限支持自行认领 6. 明确跟进人统计归属于当前责任人 详见 CONTEXT.md 和 docs/adr/ | -   |
 | v1.2 | 2026-07-08 | 数据看板与 ProcessLog 澄清： 1. 指标卡由 8 个增至 9 个，拆分"未分配数(unassigned)"与"待处理数(assigned)" 2. 跟进人考核表明确 3 个考核维度（处理单量/时效/超时），去掉转单数、不追踪转单历史 3. ProcessLog 的 action 枚举去掉 export，收敛为 6 种 4. from/to 约定：assign 存姓名快照、status_change 存状态枚举 5. 状态变更一律独立补一条 status_change 记录（无例外） | -   |
+| v1.3 | 2026-07-08 | SLA 模型重构 + 通知机制： 1. 超时改由投诉等级决定（一般/高级48h、加急72h、特急不设），priority 彻底解耦为独立自由标签（默认空、手动、不驱动SLA） 2. 等级改名：一般/高级/加急/特急投诉，SLA 表更新为最新规则 3. 首响=首次跟进=第一条comment，无需新字段 4. **统一时钟：所有SLA计时从 createdAt 起算（非分配时刻），未分配工单也计时、也会超时** 5. 新增 §3.8 SLAPolicy 可配置提醒引擎（3类提醒规则） 6. 通知机制：操作触发同步写+时间触发定时扫描，送达用30秒轮询 7. 新增 ADR 0004(通知机制)/0005(SLA规则引擎)，修正 ADR 0001/0002 | -   |
+| v1.4 | 2026-07-08 | 认领功能移除 + 数据权限收口： 1. 移除"自行认领"功能及 ticket.claim 权限——分配仅由主管/管理员执行 2. 明确未分配池仅对全部/团队数据权限角色可见，一线客服只看分配给自己的工单 3. 状态流转删除 unassigned→processing 跳变（无认领后不再存在） | -   |
 
 

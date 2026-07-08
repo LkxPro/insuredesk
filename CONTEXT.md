@@ -13,13 +13,15 @@
 - 分类：渠道、类别、投诉等级
 - 状态：status（unassigned/assigned/processing/completed）
 - 责任人：assigneeId（可为空）
-- 处理时限：dueAt（从分配时间 + 根据 priority 计算的时长）
+- 处理时限：dueAt（从**录入时间 createdAt** + 投诉等级对应超时时长；特急不设）
 
-**dueAt 计算规则**（基于 priority）：
-- urgent：分配时间 + 24小时
-- high：分配时间 + 3天
-- medium：分配时间 + 7天
-- low：不设置 dueAt
+**dueAt 计算规则**（基于**投诉等级**，非 priority；时钟从 **createdAt 录入时刻**起算，非分配时刻）：
+- 一般投诉：createdAt + 48 小时
+- 高级投诉：createdAt + 48 小时
+- 加急投诉：createdAt + 72 小时
+- 特急投诉：不设 dueAt（永不 overdue，靠每 12 小时跟进提醒持续驱动至完结）
+
+**统一时钟**：所有 SLA 计时（首响、跟进检查点、滚动提醒、超时）都从 createdAt 起算。因此**未分配的工单也在消耗 SLA 时间**——工单可在 unassigned/assigned 状态下就首响超时或 overdue（此时 assigneeId 可能仍为 null）。这是有意为之，用于倒逼尽快分配。
 
 ### Channel（反馈渠道）
 工单来源的业务渠道。系统预设 4 种固定渠道：
@@ -30,14 +32,29 @@
 
 不同渠道可能有不同的处理要求和排班配置。
 
-### ComplaintLevel（投诉等级）
-根据客户诉求的紧急程度和重要性分级。决定跟进频次和首响时限。
+### Priority（优先级）
+独立的自由标签，默认空，可由处理人/主管手动赋值。**与 ComplaintLevel 无关，不驱动任何 SLA（不参与 dueAt/超时/首响计算）**，仅用于人工标注与排序参考。
 
-**等级**（从低到高）：
-- 一般工单：至少 3 天 1 次跟进，4 小时内首响
-- 紧急工单：至少 1 天 1 次跟进，2 小时内首响
-- 加急工单：至少 1 天 2 次跟进，1 小时内首响
-- 特急工单：至少 1 天 2 次跟进，30 分钟内首响
+### ComplaintLevel（投诉等级）
+根据客户诉求的紧急程度和重要性分级。**决定首响时限、跟进频次、超时时长和提醒规则**（完整规则见 PRD §4.2，支持管理员配置）。
+
+**首响 = 首次跟进**：首响和跟进都必须实际打电话联系客户才算。首响时刻 = 工单第一条 comment 的时间，无需额外字段。
+
+**等级**（4 级）：
+- 一般投诉：2 天 2 次跟进，2 小时内首响，超 48 小时算超时
+- 高级投诉：2 天 3 次跟进，2 小时内首响，超 48 小时算超时
+- 加急投诉：3 天 6 次跟进，1 小时内首响，超 72 小时算超时
+- 特急投诉：至少 1 天 2 次跟进，30 分钟内触达，不设超时
+
+### SLAPolicy（SLA 策略）
+SLA 规则的结构化配置，按投诉等级各一条，管理员可编辑（全量可配置提醒引擎，见 ADR 0005）。含首响时限、超时时长、以及一个可增删的类型化提醒规则列表。
+
+**三种提醒规则类型**：
+- `first_response`：首响提醒（createdAt 起 N 分钟无首响则提醒）
+- `follow_up_checkpoint`：跟进检查点（到某时间点前累计跟进不足则提醒，含提前量）
+- `rolling_follow_up`：滚动提醒（特急专用，距上次跟进每 N 小时提醒）
+
+完整字段与各级默认值见 PRD §3.8。运行时由后台定时任务扫描生成通知（见 ADR 0004）。
 
 ### Status（工单状态）
 工单当前所处的处理阶段。
@@ -62,7 +79,7 @@ unassigned → assigned → processing → completed
 
 **操作类型**（6 种）：
 - `create`：创建工单
-- `assign`：分配/认领/改派责任人
+- `assign`：分配/改派责任人
 - `status_change`：状态变更
 - `comment`：添加跟进备注（触发联系次数 +1）
 - `upload`：上传材料
@@ -151,7 +168,7 @@ unassigned → assigned → processing → completed
 - 已完结数：status = `completed`
 - 2小时超时预警数：dueAt 距离当前时间不足 2 小时，且未完结
 - 已超时数：dueAt < 当前时间，且未完结
-- 特级工单数：complaintLevel = 特急工单
+- 特级工单数：complaintLevel = 特急投诉
 - 监管单数：channel = 监管
 
 ### 工单分配规则
@@ -159,30 +176,31 @@ unassigned → assigned → processing → completed
 - 工单可以手动分配给特定用户（需要 `ticket.assign` 权限）
 - 工单可以根据排班自动分配
 - 工单可以改派给其他用户（更新 assigneeId）
-- **工单可以自行认领**：用户可以认领未分配的工单（需要 `ticket.claim` 权限），认领时自动设置 assigneeId 为当前用户
-- **首次分配**：设置 assigneeId，状态从 unassigned → assigned，计算并设置 dueAt
-- **改派工单**：更新 assigneeId，dueAt 保持不变（不重新计算）
+- **分配是主管/管理员的操作**：一线客服只能看到分配给自己的工单，看不到未分配池，不能自行认领（不设自领功能）
+- **工单创建时**：即计算并设置 dueAt（createdAt + 投诉等级超时时长；特急不设）。SLA 时钟此刻起跑，与是否已分配无关
+- **首次分配**：设置 assigneeId，记录 assignedAt，状态从 unassigned → assigned（**不改 dueAt**，dueAt 在创建时已定）
+- **改派工单**：更新 assigneeId，dueAt 保持不变（createdAt 不变，dueAt 天然稳定）
 
 ### 状态流转规则
-- `unassigned` → `assigned`：分配责任人（手动分配或自行认领）
+- `unassigned` → `assigned`：主管/管理员分配责任人
 - `assigned` → `processing`：添加首次跟进记录时自动触发
-- `unassigned` → `processing`：认领工单并直接添加跟进记录（跳过 assigned 状态）
 - `assigned` → `completed`：可直接完结（无需处理的工单）
 - `processing` → `completed`：正常完结流程
 - 计算状态 `pending_timeout` 和 `overdue` 在前端查询时覆盖显示，不改变数据库中的基础状态
 
 ### 跟进频次规则
-根据 ComplaintLevel 自动设置跟进频次要求：
-- 一般工单：3 天 1 次
-- 紧急工单：1 天 1 次
-- 加急工单：1 天 2 次
-- 特急工单：1 天 2 次
+根据 ComplaintLevel 自动设置跟进频次要求（详见 PRD §4.2，支持管理员配置）：
+- 一般投诉：2 天 2 次
+- 高级投诉：2 天 3 次
+- 加急投诉：3 天 6 次
+- 特急投诉：至少 1 天 2 次
 
 ### 超时预警规则
-- **dueAt 计算基准**：从工单分配时间开始计算（状态从 unassigned → assigned 的时刻）
+- **dueAt 计算基准**：从工单**录入时间 createdAt** 开始计算，时长由投诉等级决定（未分配时也在计时）
 - **2 小时预警**：距离 dueAt 不足 2 小时时，显示状态为 pending_timeout
-- **已超时**：超过 dueAt 时，显示状态为 overdue
-- **首响超时判断**：根据投诉等级的首响要求，从分配时间开始计算
+- **已超时**：超过 dueAt 时，显示状态为 overdue（可能在 unassigned/assigned 状态下发生）
+- **特急投诉不设 dueAt**：永不进入 pending_timeout / overdue
+- **首响超时判断**：首响 = 第一条 comment。根据投诉等级的首响要求，从 **createdAt** 到第一条 comment 的时长判断是否超时首响
 
 ### 完结规则
 完结时需要选择 completionStatus（完结原因），所有 completionStatus 都表示工单进入最终的 completed 状态，不可重新打开。
@@ -213,9 +231,10 @@ unassigned → assigned → processing → completed
 | 工单 | Ticket | 核心实体 |
 | 工单号 | workOrderNumber | 业务标识 |
 | 反馈渠道 | Channel | 保司/经纪/支付/监管 |
-| 投诉等级 | ComplaintLevel | 一般/紧急/加急/特急 |
+| 投诉等级 | ComplaintLevel | 一般/高级/加急/特急投诉 |
+| 优先级 | Priority | 独立自由标签，默认空，与投诉等级无关 |
 | 责任人 | Assignee | 被分配的处理人 |
-| 跟进人 | Follower | 最后一次处理的人 |
+| 跟进人 | Follower | 当前责任人（改派后随之变更）|
 | 处理记录 | ProcessLog | 操作事件日志 |
 | 完结状态 | CompletionStatus | 正常完结/冷处理等 |
 | 排班 | Schedule | 值班安排 |
