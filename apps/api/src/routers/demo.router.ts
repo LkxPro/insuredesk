@@ -1,3 +1,4 @@
+import type { Permission } from "@insuredesk/shared";
 import { z } from "zod";
 import { protectedProcedure, requirePermission, router } from "../trpc";
 
@@ -10,52 +11,41 @@ import { protectedProcedure, requirePermission, router } from "../trpc";
  * "Demo: admin vs 一线客服 me differ; guarded probe rejects the frontline user"
  */
 
+const permissionProbeOutput = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  user: z.string(),
+  permission: z.string(),
+});
+
+/**
+ * Build a probe procedure guarded by the given permission. Reaching the
+ * handler means the guard passed, so it just echoes who got in and which
+ * permission was checked.
+ */
+function permissionProbe(permission: Permission) {
+  return requirePermission(permission)
+    .output(permissionProbeOutput)
+    .query(({ ctx }) => ({
+      success: true,
+      message: `You have ${permission} permission`,
+      user: ctx.user.name,
+      permission,
+    }));
+}
+
 export const demoRouter = router({
   /**
-   * Probe endpoint that requires ticket.assign permission.
-   * Frontline CS users (一线客服) lack this permission and should be rejected.
-   * Managers and admins have this permission and should succeed.
+   * Requires ticket.assign: frontline CS users (一线客服) lack it and are
+   * rejected; managers and admins succeed.
    */
-  assignProbe: requirePermission("ticket.assign")
-    .output(
-      z.object({
-        success: z.boolean(),
-        message: z.string(),
-        user: z.string(),
-        permission: z.string(),
-      }),
-    )
-    .query(({ ctx }) => {
-      return {
-        success: true,
-        message: "You have ticket.assign permission",
-        user: ctx.user.name,
-        permission: "ticket.assign",
-      };
-    }),
+  assignProbe: permissionProbe("ticket.assign"),
 
   /**
-   * Probe endpoint that requires dashboard.view_all permission.
-   * Frontline CS users lack this permission (they can only see their own data).
-   * Managers, admins, and observers have this permission.
+   * Requires dashboard.view_all: frontline CS users lack it (they only see
+   * their own data); managers, admins, and observers succeed.
    */
-  viewAllDataProbe: requirePermission("dashboard.view_all")
-    .output(
-      z.object({
-        success: z.boolean(),
-        message: z.string(),
-        user: z.string(),
-        permission: z.string(),
-      }),
-    )
-    .query(({ ctx }) => {
-      return {
-        success: true,
-        message: "You have dashboard.view_all permission",
-        user: ctx.user.name,
-        permission: "dashboard.view_all",
-      };
-    }),
+  viewAllDataProbe: permissionProbe("dashboard.view_all"),
 
   /**
    * Probe endpoint that any authenticated user can access.

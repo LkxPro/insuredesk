@@ -1,8 +1,18 @@
-import { initTRPC, TRPCError } from "@trpc/server";
+import type { Permission } from "@insuredesk/shared";
+import { TRPCError, initTRPC } from "@trpc/server";
 import type { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
 import { ZodError } from "zod";
-import type { AuthenticatedUser } from "./services/auth.service";
-import type { Permission } from "@insuredesk/shared";
+import type { AuthenticatedUser, SessionToken } from "./services/auth.service";
+
+// Request decorations set by the session-extraction hook in server.ts when the
+// session cookie is valid. Declared here, next to createContext (their
+// consumer), so every program that type-checks this file sees them.
+declare module "fastify" {
+  interface FastifyRequest {
+    authenticatedUser?: AuthenticatedUser;
+    sessionToken?: SessionToken;
+  }
+}
 
 /**
  * Per-request context. Carries the request-level traceId so procedures and the
@@ -12,15 +22,16 @@ import type { Permission } from "@insuredesk/shared";
 export type Context = {
   traceId: string;
   user: AuthenticatedUser | null;
-  sessionToken: string | null;
+  sessionToken: SessionToken | null;
 };
 
 export function createContext({ req }: CreateFastifyContextOptions): Context {
-  // User will be set by authentication middleware in server.ts
+  // The session-extraction hook in server.ts decorates the request with the
+  // authenticated user when the session cookie is valid.
   return {
     traceId: String(req.id),
-    user: null,
-    sessionToken: null,
+    user: req.authenticatedUser ?? null,
+    sessionToken: req.sessionToken ?? null,
   };
 }
 

@@ -10,46 +10,46 @@ import { z } from "zod";
 
 // Dashboard permissions
 export const DASHBOARD_PERMISSIONS = [
-  "dashboard.view",       // Access data dashboard (page permission)
-  "dashboard.view_all",   // View all data (data permission)
-  "dashboard.export",     // Export data reports (operation permission)
+  "dashboard.view", // Access data dashboard (page permission)
+  "dashboard.view_all", // View all data (data permission)
+  "dashboard.export", // Export data reports (operation permission)
 ] as const;
 
 // Ticket management permissions
 export const TICKET_PERMISSIONS = [
-  "ticket.view",          // Access ticket list (page permission)
-  "ticket.view_all",      // View all tickets (data permission) - without this, only see assigned tickets
-  "ticket.create",        // Create new ticket (operation permission)
-  "ticket.edit",          // Edit ticket basic info (operation permission)
-  "ticket.process",       // Process ticket - add comments/follow-ups (operation permission)
-  "ticket.assign",        // Assign ticket to user (operation permission)
-  "ticket.batch_assign",  // Batch assign tickets (operation permission)
-  "ticket.export",        // Export tickets (operation permission)
-  "ticket.delete",        // Delete ticket - dangerous (operation permission)
+  "ticket.view", // Access ticket list (page permission)
+  "ticket.view_all", // View all tickets (data permission) - without this, only see assigned tickets
+  "ticket.create", // Create new ticket (operation permission)
+  "ticket.edit", // Edit ticket basic info (operation permission)
+  "ticket.process", // Process ticket - add comments/follow-ups (operation permission)
+  "ticket.assign", // Assign ticket to user (operation permission)
+  "ticket.batch_assign", // Batch assign tickets (operation permission)
+  "ticket.export", // Export tickets (operation permission)
+  "ticket.delete", // Delete ticket - dangerous (operation permission)
 ] as const;
 
 // User management permissions
 export const USER_PERMISSIONS = [
-  "user.view",            // Access user management (page permission)
-  "user.create",          // Create new user (operation permission)
-  "user.edit",            // Edit user (operation permission)
-  "user.delete",          // Delete user (operation permission)
-  "user.assign_role",     // Assign role to user (operation permission)
+  "user.view", // Access user management (page permission)
+  "user.create", // Create new user (operation permission)
+  "user.edit", // Edit user (operation permission)
+  "user.delete", // Delete user (operation permission)
+  "user.assign_role", // Assign role to user (operation permission)
 ] as const;
 
 // Role permissions
 export const ROLE_PERMISSIONS = [
-  "role.view",            // Access role management (page permission)
-  "role.create",          // Create new role (operation permission)
-  "role.edit",            // Edit role (operation permission)
-  "role.delete",          // Delete role (operation permission)
+  "role.view", // Access role management (page permission)
+  "role.create", // Create new role (operation permission)
+  "role.edit", // Edit role (operation permission)
+  "role.delete", // Delete role (operation permission)
   "role.edit_permission", // Edit permission configuration (operation permission)
 ] as const;
 
 // System configuration permissions
 export const SYSTEM_PERMISSIONS = [
-  "schedule.view",        // Access schedule configuration (page permission)
-  "schedule.edit",        // Edit schedule (operation permission)
+  "schedule.view", // Access schedule configuration (page permission)
+  "schedule.edit", // Edit schedule (operation permission)
 ] as const;
 
 // All permissions combined

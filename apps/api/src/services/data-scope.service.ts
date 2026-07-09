@@ -1,14 +1,15 @@
+import type { Permission } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service";
 
 /**
- * Query-layer data-scope helper for enforcing RBAC data permissions.
+ * Query-layer data-scope helpers for enforcing RBAC data permissions.
  *
  * From the acceptance criteria:
  * "Query-layer data-scope helper: absence of `ticket.view_all` forces
  * `WHERE assigneeId = 当前用户` (unit of reuse for all ticket reads)"
  *
- * This helper automatically restricts queries to only data the user is
- * allowed to see based on their permissions. It's the enforcement point
+ * These helpers automatically restrict queries to only data the user is
+ * allowed to see based on their permissions. They are the enforcement point
  * for data-level RBAC (see PRD §5.2).
  *
  * Usage pattern:
@@ -22,76 +23,46 @@ import type { AuthenticatedUser } from "./auth.service";
  * ```
  */
 
+/** Where-clause that can never match: the scope for unauthenticated callers. */
+const DENY_ALL_WHERE = { id: { equals: "__impossible__" } } as const;
+
 /**
- * Apply ticket data scope based on user permissions.
+ * Build a Prisma where-clause fragment scoping a query to the rows the user
+ * may see:
  *
- * - If user has `ticket.view_all`, returns empty filter (see all tickets)
- * - Otherwise, returns filter restricting to tickets assigned to the user
- *
- * @param user - Authenticated user (pass null to deny all access)
- * @returns Prisma where clause to add to ticket queries
+ * - No user (unauthenticated) → filter that never matches
+ * - User holds `viewAllPermission` → no restriction
+ * - Otherwise → only rows assigned to the user (`assigneeId = user.id`)
  */
-export function applyTicketDataScope(user: AuthenticatedUser | null): Record<string, any> {
-  // No user = no access
+function applyDataScope(
+  user: AuthenticatedUser | null,
+  viewAllPermission: Permission,
+): Record<string, unknown> {
   if (!user) {
-    return { id: { equals: "__impossible__" } }; // Never matches
+    return DENY_ALL_WHERE;
   }
 
-  // Users with ticket.view_all can see everything
-  if (user.permissions.includes("ticket.view_all")) {
+  if (user.permissions.includes(viewAllPermission)) {
     return {}; // No restriction
   }
 
-  // Frontline users can only see their own assigned tickets
-  return {
-    assigneeId: user.id,
-  };
+  return { assigneeId: user.id };
 }
 
 /**
- * Check if user can view a specific ticket.
- * Used for single-ticket operations (view detail, edit, etc).
- *
- * @param user - Authenticated user
- * @param ticket - Ticket to check (must include assigneeId)
- * @returns true if user can view this ticket
+ * Ticket data scope: without `ticket.view_all`, users only see tickets
+ * assigned to them.
  */
-export function canViewTicket(
-  user: AuthenticatedUser,
-  ticket: { assigneeId: string | null },
-): boolean {
-  // Users with ticket.view_all can see any ticket
-  if (user.permissions.includes("ticket.view_all")) {
-    return true;
-  }
-
-  // Otherwise, can only view tickets assigned to them
-  return ticket.assigneeId === user.id;
+export function applyTicketDataScope(user: AuthenticatedUser | null): Record<string, unknown> {
+  return applyDataScope(user, "ticket.view_all");
 }
 
 /**
- * Apply dashboard data scope based on user permissions.
- *
- * Similar to ticket scope but for dashboard statistics:
- * - If user has `dashboard.view_all`, see all data
- * - Otherwise, only see data for tickets assigned to them
- *
- * @param user - Authenticated user
- * @returns Prisma where clause for dashboard queries
+ * Dashboard data scope: without `dashboard.view_all`, statistics only cover
+ * tickets assigned to the user.
  */
-export function applyDashboardDataScope(user: AuthenticatedUser | null): Record<string, any> {
-  if (!user) {
-    return { id: { equals: "__impossible__" } };
-  }
-
-  if (user.permissions.includes("dashboard.view_all")) {
-    return {};
-  }
-
-  // Frontline users only see stats for their own tickets
-  return {
-    assigneeId: user.id,
-  };
+export function applyDashboardDataScope(user: AuthenticatedUser | null): Record<string, unknown> {
+  return applyDataScope(user, "dashboard.view_all");
 }
 
 // Note: The Ticket model doesn't exist yet (will come in a future issue).

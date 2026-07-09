@@ -1,10 +1,15 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PostgreSqlContainer, StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { PrismaClient } from "@prisma/client";
 import { PRESET_ROLES } from "@insuredesk/shared";
-import * as bcrypt from "bcryptjs";
-import { PasswordAuthProvider, SessionService, hasPermission } from "../src/services/auth.service";
-import { applyTicketDataScope, applyDashboardDataScope } from "../src/services/data-scope.service";
+import { PrismaClient } from "@prisma/client";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { seedPresetRolesAndUsers } from "../prisma/seed-data";
+import {
+  PasswordAuthProvider,
+  SessionService,
+  hasPermission,
+  hashPassword,
+} from "../src/services/auth.service";
+import { applyDashboardDataScope, applyTicketDataScope } from "../src/services/data-scope.service";
 
 /**
  * Integration tests for authentication and RBAC using Testcontainers.
@@ -42,8 +47,8 @@ describe("Authentication and RBAC (Testcontainers)", () => {
       env: { ...process.env, DATABASE_URL: connectionString },
     });
 
-    // Seed test data
-    await seedTestData(prisma);
+    // Seed test data (same fixture as `prisma db seed`)
+    await seedPresetRolesAndUsers(prisma);
 
     // Initialize services
     authProvider = new PasswordAuthProvider(prisma);
@@ -87,7 +92,7 @@ describe("Authentication and RBAC (Testcontainers)", () => {
     it("rejects inactive users", async () => {
       // Create inactive user
       const role = await prisma.role.findFirst({ where: { name: "一线客服" } });
-      const passwordHash = await bcrypt.hash("password123", 10);
+      const passwordHash = await hashPassword("password123");
 
       await prisma.user.create({
         data: {
@@ -265,88 +270,3 @@ describe("Authentication and RBAC (Testcontainers)", () => {
     });
   });
 });
-
-/**
- * Seed test data - creates preset roles and sample users
- */
-async function seedTestData(prisma: PrismaClient) {
-  const passwordHash = await bcrypt.hash("password123", 10);
-
-  // Create preset roles
-  const adminRole = await prisma.role.create({
-    data: {
-      name: PRESET_ROLES.ADMIN.name,
-      permissions: PRESET_ROLES.ADMIN.permissions,
-      preset: true,
-    },
-  });
-
-  const csManagerRole = await prisma.role.create({
-    data: {
-      name: PRESET_ROLES.CS_MANAGER.name,
-      permissions: PRESET_ROLES.CS_MANAGER.permissions,
-      preset: true,
-    },
-  });
-
-  const frontlineRole = await prisma.role.create({
-    data: {
-      name: PRESET_ROLES.FRONTLINE_CS.name,
-      permissions: PRESET_ROLES.FRONTLINE_CS.permissions,
-      preset: true,
-    },
-  });
-
-  const readOnlyRole = await prisma.role.create({
-    data: {
-      name: PRESET_ROLES.READ_ONLY.name,
-      permissions: PRESET_ROLES.READ_ONLY.permissions,
-      preset: true,
-    },
-  });
-
-  // Create sample users
-  await prisma.user.create({
-    data: {
-      username: "admin",
-      passwordHash,
-      name: "系统管理员",
-      email: "admin@test.com",
-      roleId: adminRole.id,
-      active: true,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      username: "manager",
-      passwordHash,
-      name: "李主管",
-      email: "manager@test.com",
-      roleId: csManagerRole.id,
-      active: true,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      username: "cs1",
-      passwordHash,
-      name: "张客服",
-      email: "cs1@test.com",
-      roleId: frontlineRole.id,
-      active: true,
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      username: "observer",
-      passwordHash,
-      name: "王观察员",
-      email: "observer@test.com",
-      roleId: readOnlyRole.id,
-      active: true,
-    },
-  });
-}

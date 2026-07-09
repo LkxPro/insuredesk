@@ -3,12 +3,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import fastifyCookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
+import { loginBodySchema } from "@insuredesk/shared";
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance } from "fastify";
 import { prisma } from "./db";
 import type { Env } from "./env";
 import { type AppRouter, appRouter } from "./routers";
-import { PasswordAuthProvider, SessionService } from "./services/auth.service";
+import { PasswordAuthProvider, SessionService, toSessionToken } from "./services/auth.service";
+import { createContext } from "./trpc";
 
 /**
  * Build the Fastify app with tRPC mounted at /trpc. Logging is structured pino
@@ -56,28 +58,29 @@ export function buildServer(env: Env) {
 
   // Session extraction middleware: read session cookie and populate request context
   app.addHook("onRequest", async (req, reply) => {
-    const sessionToken = req.cookies.session;
-    if (sessionToken) {
-      const user = await sessionService.validateSession(sessionToken);
-      if (user) {
-        // Store user in request for tRPC context
-        (req as any).authenticatedUser = user;
-        (req as any).sessionToken = sessionToken;
-      } else {
-        // Invalid/expired session - clear the cookie
-        reply.clearCookie("session");
-      }
+    const rawCookie = req.cookies.session;
+    if (!rawCookie) {
+      return;
+    }
+    const sessionToken = toSessionToken(rawCookie);
+    const user = await sessionService.validateSession(sessionToken);
+    if (user) {
+      // Store user on the request for the tRPC context (see createContext)
+      req.authenticatedUser = user;
+      req.sessionToken = sessionToken;
+    } else {
+      // Invalid/expired session - clear the cookie
+      reply.clearCookie("session");
     }
   });
 
   // REST endpoint for login (easier cookie handling than tRPC)
   app.post("/api/auth/login", async (req, reply) => {
-    const body = req.body as any;
-    const { username, password } = body;
-
-    if (!username || !password) {
+    const parsed = loginBodySchema.safeParse(req.body);
+    if (!parsed.success) {
       return reply.code(400).send({ error: "Username and password required" });
     }
+    const { username, password } = parsed.data;
 
     // Authenticate user
     const userId = await authProvider.authenticate({ username, password });
@@ -119,9 +122,10 @@ export function buildServer(env: Env) {
 
   // REST endpoint for logout
   app.post("/api/auth/logout", async (req, reply) => {
-    const sessionToken = req.cookies.session;
-    if (sessionToken) {
-      await sessionService.deleteSession(sessionToken);
+    // Only set by the session hook when the cookie held a *valid* session;
+    // deleting a stale token is a no-op anyway.
+    if (req.sessionToken) {
+      await sessionService.deleteSession(req.sessionToken);
     }
     reply.clearCookie("session");
     return { success: true };
@@ -135,14 +139,7 @@ export function buildServer(env: Env) {
     prefix: "/trpc",
     trpcOptions: {
       router: appRouter,
-      createContext: ({ req }) => {
-        // Inject authenticated user from session middleware into tRPC context
-        return {
-          traceId: String(req.id),
-          user: (req as any).authenticatedUser || null,
-          sessionToken: (req as any).sessionToken || null,
-        };
-      },
+      createContext,
       onError({ path, error, ctx }) {
         // ctx.traceId ties the failure line back to the request's log stream.
         app.log.error({ path, traceId: ctx?.traceId, err: error.message }, "tRPC request failed");

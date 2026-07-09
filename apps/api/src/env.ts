@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 /**
+ * Minimum length for SESSION_SECRET: 32 chars of random material (128 bits
+ * if hex) is enough for cookie signing.
+ */
+export const SESSION_SECRET_MIN_LENGTH = 32;
+
+/**
  * Environment contract. Validated once at startup; a missing or malformed var
  * crashes the process rather than letting a misconfigured server boot.
  */
@@ -11,7 +17,7 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   // Session configuration for httpOnly cookie-based auth
-  SESSION_SECRET: z.string().min(32),
+  SESSION_SECRET: z.string().min(SESSION_SECRET_MIN_LENGTH),
   SESSION_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(86400), // 24 hours
   // Absolute (or cwd-relative) path to the built web assets (apps/web/dist).
   // Only consulted in production, where the API serves the SPA via @fastify/static.

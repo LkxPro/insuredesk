@@ -1,7 +1,20 @@
-import type { PrismaClient } from "@prisma/client";
-import * as bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import type { Permission } from "@insuredesk/shared";
+import type { PrismaClient } from "@prisma/client";
+import * as bcrypt from "bcryptjs";
+
+/**
+ * bcrypt cost factor for all password hashing (seeding and future user
+ * management). Single knob so a cost bump is one edit, not a hunt.
+ */
+export const BCRYPT_ROUNDS = 10;
+
+/**
+ * Hash a plaintext password with the service-wide bcrypt cost factor.
+ */
+export function hashPassword(plain: string): Promise<string> {
+  return bcrypt.hash(plain, BCRYPT_ROUNDS);
+}
 
 /**
  * Pluggable authentication abstraction. Current implementation supports password
@@ -64,6 +77,25 @@ function isPasswordCredentials(obj: unknown): obj is PasswordCredentials {
   );
 }
 
+declare const sessionTokenBrand: unique symbol;
+
+/**
+ * Branded string for session tokens, so a token can't be silently confused
+ * with other strings (user ids, cookie names, …). Mint one via
+ * `SessionService.createSession`; brand inbound cookie values at the HTTP
+ * boundary with `toSessionToken`.
+ */
+export type SessionToken = string & { readonly [sessionTokenBrand]: true };
+
+/**
+ * Brand a raw string (e.g. a cookie value) as a SessionToken at the system
+ * boundary. Compile-time marker only — validity is still decided by
+ * `SessionService.validateSession`.
+ */
+export function toSessionToken(raw: string): SessionToken {
+  return raw as SessionToken;
+}
+
 /**
  * Session management service. Handles session creation, validation, and cleanup.
  * Sessions are stored in Postgres (not Redis) this phase.
@@ -78,8 +110,8 @@ export class SessionService {
    * Create a new session for the given userId.
    * @returns session token (to be stored in httpOnly cookie)
    */
-  async createSession(userId: string): Promise<string> {
-    const token = randomBytes(32).toString("hex");
+  async createSession(userId: string): Promise<SessionToken> {
+    const token = toSessionToken(randomBytes(32).toString("hex"));
     const expiresAt = new Date(Date.now() + this.sessionMaxAgeSeconds * 1000);
 
     await this.prisma.session.create({
@@ -97,7 +129,7 @@ export class SessionService {
    * Validate a session token and return the authenticated user with their role
    * and resolved permission set, or null if invalid/expired.
    */
-  async validateSession(token: string): Promise<AuthenticatedUser | null> {
+  async validateSession(token: SessionToken): Promise<AuthenticatedUser | null> {
     const session = await this.prisma.session.findUnique({
       where: { token },
       include: {
@@ -125,7 +157,7 @@ export class SessionService {
   /**
    * Delete a session (logout).
    */
-  async deleteSession(token: string): Promise<void> {
+  async deleteSession(token: SessionToken): Promise<void> {
     await this.prisma.session.delete({ where: { token } }).catch(() => {
       // Ignore if session doesn't exist
     });
