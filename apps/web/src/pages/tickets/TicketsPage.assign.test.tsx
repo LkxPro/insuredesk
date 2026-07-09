@@ -105,7 +105,7 @@ function respond(path: string, input: unknown): unknown {
   // The AppLayout bell (issue #25) polls notification.list in the same batch;
   // an empty inbox keeps these tests focused on the assignment surfaces.
   if (path === "notification.list") {
-    return { items: [], unreadCount: 0 };
+    return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
   if (path === "ticket.list") {
     const page = ((input as Record<string, unknown> | undefined)?.page as number | undefined) ?? 1;

@@ -38,6 +38,12 @@ vi.mock("@/components/NotificationBell", () => ({
   NotificationBell: () => null,
 }));
 
+// Same for the 我的待办 indicator (issue #30), which shares that poll.
+// Its real behavior is covered in TodoBell.test.tsx.
+vi.mock("@/components/TodoBell", () => ({
+  TodoBell: () => null,
+}));
+
 // Same treatment for the real 数据看板 page (issue #29): it queries
 // dashboard.stats on mount. Its real behavior is covered in
 // DashboardPage.test.tsx; here only the route/menu wiring matters.

@@ -35,7 +35,7 @@ export const appRouter = router({
   ticket: ticketRouter,
 
   /**
-   * 轨 1 收件箱 - assigned notifications: poll payload + read state (issue #25)
+   * The 30s poll — 轨 1 收件箱 + 轨 2 我的待办 in one request (issues #25/#30)
    */
   notification: notificationRouter,
 

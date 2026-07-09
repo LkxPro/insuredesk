@@ -120,7 +120,7 @@ let calls: Array<{ path: string; input: unknown }>;
 function respond(path: string, input: unknown): unknown {
   // The AppLayout bell (issue #25) polls notification.list in the same batch
   if (path === "notification.list") {
-    return { items: [], unreadCount: 0 };
+    return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
   if (path === "ticket.detail") {
     return detail;
