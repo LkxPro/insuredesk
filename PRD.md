@@ -704,28 +704,48 @@ SLA 规则的结构化配置，**按投诉等级各一条**，管理员可编辑
 
 ## 7. 技术约束
 
+技术栈与开发规范已定案，完整决策与理由见 **ADR 0006（技术栈与开发规范）**。核心取向：**TypeScript 同构**——前后端同语言、共享一份类型与 Zod 校验，把"前后端字段/枚举/接口对不齐"消灭在编译期。
 
+### 7.0 总体架构
+
+- **形态**：独立全栈应用（单独后端 API + 单独前端 SPA + PostgreSQL），常驻后端进程部署（非 Serverless，以容纳二期 cron 与实时通知）
+- **仓库**：pnpm workspaces monorepo —— `apps/api`（后端）、`apps/web`（前端）、`packages/shared`（领域类型 + Zod schema + 枚举常量）
+- **API 契约**：tRPC（内部前后端端到端类型安全）；业务逻辑沉 service 层 + Zod，预留未来对外 REST（`/api/v1/*` + OpenAPI）
 
 ### 7.1 前端技术栈
 
-- 框架：React 18+ / Vue 3+
-- UI库：Ant Design / Element Plus
-- 状态管理：根据需要选择（Redux / Pinia / Zustand）
-- 路由：React Router / Vue Router
-- 构建工具：Vite / Webpack
+- 框架：React + TypeScript
+- 构建：Vite
+- UI 组件：kibo-ui（主）→ shadcn/ui（兜底）；同一基座链（Radix + Tailwind），原生 Light/Dark
+- 图表：shadcn chart（Recharts 内核）
+- 排班：kibo-ui Gantt
+- 数据请求/缓存：TanStack Query（内建 `refetchInterval` 承载 30 秒两轨通知轮询）
+- 路由：React Router
+- 表单/校验：react-hook-form + Zod（schema 前后端共享）
 
+### 7.2 后端技术栈
 
+- 语言/运行时：Node.js + TypeScript
+- Web 框架：Fastify
+- ORM：Prisma（复杂读时查询走 Postgres 视图 + `$queryRaw`）
+- 数据库：PostgreSQL（`timestamptz` 存 UTC，边界转东八区）
+- 认证：Session + httpOnly Cookie（会话存 Postgres；SSO-ready，预留 `users.feishuUserId`）
+- 授权：权限点字符串枚举 + Fastify preHandler 守卫 + 查询层数据过滤（见 §5）
+- 日志：pino（结构化 JSON，请求级 traceId）
+- 缓存：本期不引 Redis（会话落 Postgres）；二期实时通知/多实例部署再评估
+- 对象存储：附件存储方案随部署环境确定（如 S3 兼容对象存储）
 
-### 7.2 后端技术栈（待定）
+### 7.3 开发规范
 
-- 语言：Node.js / Java / Go / Python
-- 数据库：PostgreSQL / MySQL
-- 缓存：Redis
-- 对象存储：阿里云 OSS / 腾讯云 COS（附件存储）
+- lint + format：Biome（单一配置，lint+format 一体）
+- TS 严格度：`strict: true` + `noUncheckedIndexedAccess`，统一 base tsconfig
+- 环境变量：`.env`（不入库）+ `.env.example`（入库），启动时 Zod 校验，缺失即崩
+- 时间：禁止裸 `new Date()` 做业务判断，收敛到统一时间工具函数（`date-fns-tz`）；判定谓词单一真源
+- 测试：后端 Vitest + Testcontainers（真 Postgres 测高危查询：时间谓词/考核聚合/工单号序列/RBAC）；前端 RTL 单测（仅有逻辑组件）+ Playwright 关键路径 E2E
+- Git：Conventional Commits，PR 走 feature 分支，不直接推 `main`
+- Prisma 迁移：`migrate dev` / `migrate deploy`，schema 改动必附迁移，禁止手改已提交迁移
 
-
-
-### 7.3 部署要求
+### 7.4 部署要求
 
 - 支持 Docker 容器化部署
 - 支持 Nginx 反向代理
@@ -858,5 +878,6 @@ dueAt 由**投诉等级**决定，从**录入时间（createdAt）**开始计算
 | v1.8 | 2026-07-08 | 范围收尾：新增 §8.0"本期明确不做"边界清单（飞书导入/智能建议/智能分类/冷处理自动办结/观察员可配置范围/SLA停表/个人处理时长均归二期或不做）；只读观察员范围固定为"全部工单只读" | -   |
 | v1.9 | 2026-07-08 | 终审残留清理：1. 排班统一为2班次（早9-18/晚12-21），删除中班与旧night时间 2. 通知去重规则定为"一单一类型只发一次" 3. 未分配工单不发提醒通知（靠看板） 4. 改等级后提醒只对未来生效、错过检查点不补发 5. 全局时区基准=东八区 6. 明确 firstResponseMinutes(违约线)与 afterMinutes(提醒线)是两个不同值 7. checkpoint 判定语义精确化（累计口径、单点判定） 8. completionStatus 枚举封闭无"其他" 9. 首响不计入考核 10. 定时导出归二期 11. 软删本期只删不恢复 12. 统一"特急工单数"命名，清理 new_ticket 残留 | -   |
 | v2.0 | 2026-07-09 | 设计精简（grilling 复盘，7 项）：1. **通知两轨制**——`assigned` 存库（收件箱+toast+已读），overdue/due_soon/待首响/检查点/滚动全部**读时计算成"我的待办"**，本期删后台定时任务、时间类通知行、去重表；带外推送归二期再引 cron 2. **删 `follower`**——当前跟进人走 assigneeId JOIN，历史跟进人走 ProcessLog 3. **首响并成一个数**——删 `first_response` 提醒类型及 afterMinutes，firstResponseMinutes 降为待首响染红阈值，提醒类型 3→2 4. **创建人靠 source 判别**——source 当来源判别器 + 可空 creatorId(仅 manual)，删 creator/creatorName/submitterName，"由谁创建"读时派生 5. lastAssignedAt 确认不做（可从 ProcessLog 派生） 6. **数据范围砍成 全部/个人**——删 view_team 与 Ticket.team 派生，User.team 降为纯描述标签，未分配池洞随之消失 7. **工单号改 WO+全局DB序列**——砍年月与月度重置，消除撞号坑；id 为不透明主键。同步改写 ADR 0004/0005，衔接 0001/0003 | -   |
+| v2.1 | 2026-07-09 | 技术栈定案：§7 从"待定/多选"改写为确定选型（见 ADR 0006）。核心=TypeScript 同构。后端 Node+TS · Fastify · Prisma · PostgreSQL · Session+Cookie(SSO-ready) · pino；前端 React+TS · Vite · kibo-ui→shadcn · Recharts · TanStack Query · RHF+Zod；工程 pnpm monorepo(apps/api+apps/web+packages/shared) · tRPC(service 层+Zod 预留对外 REST) · Biome · Vitest+Testcontainers · Playwright E2E · strict TS · timestamptz+东八区。本期不引 Redis（会话落 Postgres）。新增 ADR 0006 | -   |
 
 
