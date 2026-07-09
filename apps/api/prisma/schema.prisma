@@ -82,7 +82,9 @@ model Ticket {
   /// Plain concatenation, no lpad: the sequence starts at 100001 so values are
   /// always ≥6 digits, and lpad(…, 6) would TRUNCATE 7-digit values into
   /// colliding duplicates once the sequence passes 999999.
-  workOrderNumber String @unique @default(dbgenerated("('WO' || (nextval('work_order_number_seq'))::text)"))
+  /// The exact SQL default lives in migrations; keep this opaque to avoid
+  /// Prisma treating equivalent Postgres-rendered expressions as schema drift.
+  workOrderNumber String @unique @default(dbgenerated())
 
   createdAt    DateTime @default(now()) @db.Timestamptz
   updatedAt    DateTime @updatedAt @db.Timestamptz

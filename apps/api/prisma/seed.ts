@@ -1,5 +1,10 @@
+import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { DEMO_PASSWORD, seedPresetRolesAndUsers, seedSlaPolicies } from "./seed-data";
+
+if (existsSync(".env")) {
+  process.loadEnvFile(".env");
+}
 
 const prisma = new PrismaClient();
 
