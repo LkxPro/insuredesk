@@ -50,7 +50,7 @@ PRD/CONTEXT 与 ADR 0001–0005 已把领域模型与业务规则理顺，但尚
 - **lint + format**：Biome（单一 `biome.json`，lint+format 一体）。
 - **TS 严格度**：`strict: true` + `noUncheckedIndexedAccess`，统一 base tsconfig。
 - **命名**：TS 社区标准——类型/组件 `PascalCase`、变量/函数 `camelCase`、枚举值沿用 PRD（`unassigned`/`follow_up_checkpoint` 等）；前端组件文件 `PascalCase.tsx`，其余 `kebab-case.ts`。
-- **时间处理**：DB 一律 `timestamptz` 存 UTC，展示/计算在边界转东八区（`date-fns-tz`）；**禁止裸 `new Date()` 做业务时间判断**，收敛到统一时间工具函数（呼应"判定谓词单一真源"）。
+- **时间处理**：DB 一律 `timestamptz` 存 UTC，展示/计算在边界转东八区（`date-fns-tz`）；**业务时间判断（SLA/截止/超时染色等读时谓词）统一走时钟工具 `clock.now()`**，以保证可测（可注入假时钟）与"判定谓词单一真源"。此约束针对**读时时间谓词**，不含会话过期这类纯绝对时刻比较（`expiresAt < new Date()`）——后者与时区无关，惯用 `new Date()` 即正确。
 - **环境变量**：`.env`（不入库）+ `.env.example`（入库），启动时用 Zod 校验 `process.env`，缺失即崩。
 - **错误处理**：后端 `TRPCError` + 统一 error formatter，Zod 校验错误标准化返回；前端 TanStack Query 统一 error 边界 + toast。
 - **日志**：`pino`（Fastify 原生集成），结构化 JSON，请求级 traceId。
