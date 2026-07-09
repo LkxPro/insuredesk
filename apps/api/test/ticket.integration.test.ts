@@ -206,6 +206,17 @@ describe("ticket creation + detail (Testcontainers)", () => {
     }
   });
 
+  it("keeps full digits past sequence value 999999 (no lpad truncation)", async () => {
+    // Jump the global sequence to the 6→7 digit boundary; gaps are allowed
+    // (PRD §9.3) so later tests are unaffected.
+    await prisma.$executeRaw`SELECT setval('work_order_number_seq', 999999)`;
+
+    const first = await manager().ticket.create(baseInput);
+    const second = await manager().ticket.create(baseInput);
+    expect(first.workOrderNumber).toBe("WO1000000");
+    expect(second.workOrderNumber).toBe("WO1000001");
+  });
+
   describe("RBAC", () => {
     it("rejects create without ticket.create (一线客服, 只读观察)", async () => {
       for (const caller of [frontline(), observer()]) {
