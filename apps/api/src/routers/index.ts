@@ -4,8 +4,10 @@ import { authRouter } from "./auth.router";
 import { dashboardRouter } from "./dashboard.router";
 import { demoRouter } from "./demo.router";
 import { notificationRouter } from "./notification.router";
+import { roleRouter } from "./role.router";
 import { scheduleRouter } from "./schedule.router";
 import { ticketRouter } from "./ticket.router";
+import { userRouter } from "./user.router";
 
 export const appRouter = router({
   /**
@@ -49,6 +51,16 @@ export const appRouter = router({
    * 排班配置 - 排班日历 CRUD，喂给按排班自动分配 (issue #31)
    */
   schedule: scheduleRouter,
+
+  /**
+   * 用户管理 - 新增/编辑/禁用启用/分配角色 (issue #32)
+   */
+  user: userRouter,
+
+  /**
+   * 角色管理 - 自定义角色 + 权限点清单配置，预设角色受保护 (issue #32)
+   */
+  role: roleRouter,
 });
 
 export type AppRouter = typeof appRouter;

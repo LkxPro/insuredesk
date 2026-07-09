@@ -5,10 +5,11 @@ import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
-import { RolesPage, UsersPage } from "@/pages/placeholders";
+import { RolesPage } from "@/pages/roles/RolesPage";
 import { SchedulePage } from "@/pages/schedule/SchedulePage";
 import { TicketDetail } from "@/pages/tickets/TicketDetail";
 import { TicketsPage } from "@/pages/tickets/TicketsPage";
+import { UsersPage } from "@/pages/users/UsersPage";
 import type { ReactElement } from "react";
 import { Navigate, Route, Routes } from "react-router";
 

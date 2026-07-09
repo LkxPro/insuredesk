@@ -1,0 +1,540 @@
+import { execFileSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { ALL_PERMISSIONS, type Permission } from "@insuredesk/shared";
+import type { PrismaClient, Role, User } from "@prisma/client";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import type { FastifyInstance } from "fastify";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { AuthenticatedUser } from "../src/services/auth.service";
+
+const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Issue #32 acceptance tests against a real Postgres: 用户管理 (create / edit /
+ * 禁用-启用 / 分配角色), 角色管理 (custom roles against the 权限点清单, preset
+ * protection), and the session-layer guarantees — a disabled user can neither
+ * log in again nor ride an existing session, and role/permission changes bind
+ * from the very next request.
+ *
+ * Two surfaces on purpose: RBAC 逐项校验 runs through createCaller with
+ * surgically-chosen permission sets (impossible to arrange via real roles
+ * without drowning in setup), while login/session-lifecycle cases drive the
+ * real Fastify app over app.inject — the exact doors the browser uses.
+ */
+describe("user + role management (Testcontainers)", () => {
+  let container: StartedPostgreSqlContainer;
+  let prisma: PrismaClient;
+  let app: FastifyInstance;
+  let appRouter: typeof import("../src/routers/index").appRouter;
+  let seeded: {
+    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
+    users: { admin: User; manager: User; cs1: User; observer: User };
+  };
+
+  beforeAll(async () => {
+    container = await new PostgreSqlContainer("postgres:17-alpine").start();
+    const databaseUrl = container.getConnectionUri();
+
+    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
+      cwd: apiDir,
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+      stdio: "pipe",
+    });
+    process.env.DATABASE_URL = databaseUrl;
+
+    const [{ prisma: appPrisma }, seedData, routers, { parseEnv }, { buildServer }] =
+      await Promise.all([
+        import("../src/db"),
+        import("../prisma/seed-data"),
+        import("../src/routers/index"),
+        import("../src/env"),
+        import("../src/server"),
+      ]);
+    prisma = appPrisma;
+    appRouter = routers.appRouter;
+    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+
+    app = buildServer(
+      parseEnv({
+        DATABASE_URL: databaseUrl,
+        SESSION_SECRET: "insuredesk-user-role-test-secret-0123456789",
+        NODE_ENV: "test",
+        LOG_LEVEL: "silent",
+      }),
+    );
+    await app.ready();
+  }, 180_000);
+
+  afterAll(async () => {
+    await app?.close();
+    await prisma?.$disconnect();
+    await container?.stop();
+  });
+
+  function identityOf(user: User, roleName: string, permissions: Permission[]): AuthenticatedUser {
+    return {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      email: user.email,
+      roleId: "role-under-test",
+      roleName,
+      permissions,
+    };
+  }
+
+  /** Caller with the given user identity and an explicit permission set. */
+  function callerWith(user: User, roleName: string, permissions: Permission[]) {
+    return appRouter.createCaller({
+      traceId: "user-role-test",
+      user: identityOf(user, roleName, permissions),
+      sessionToken: null,
+    });
+  }
+
+  const admin = () =>
+    callerWith(seeded.users.admin, "管理员", seeded.roles.admin.permissions as Permission[]);
+
+  /** POST /api/auth/login — the real credential door. */
+  function login(username: string, password: string) {
+    return app.inject({ method: "POST", url: "/api/auth/login", payload: { username, password } });
+  }
+
+  function sessionCookie(res: { cookies: Array<Record<string, unknown>> }) {
+    return res.cookies.find((cookie) => cookie.name === "session");
+  }
+
+  /** Log in and return the session token, asserting the login succeeded. */
+  async function loginToken(username: string, password: string): Promise<string> {
+    const res = await login(username, password);
+    expect(res.statusCode).toBe(200);
+    return String(sessionCookie(res)?.value);
+  }
+
+  /** GET /trpc/auth.me riding the given session token. */
+  function me(token: string) {
+    return app.inject({ method: "GET", url: "/trpc/auth.me", cookies: { session: token } });
+  }
+
+  /** GET a tRPC query with an input payload riding the given session token. */
+  function queryWithInput(path: string, input: unknown, token: string) {
+    return app.inject({
+      method: "GET",
+      url: `/trpc/${path}?input=${encodeURIComponent(JSON.stringify(input))}`,
+      cookies: { session: token },
+    });
+  }
+
+  let userSeq = 0;
+  /** A fresh account created through the real user.create procedure. */
+  async function makeUser(overrides: { roleId?: string; password?: string } = {}) {
+    userSeq += 1;
+    const username = `member${userSeq}`;
+    const created = await admin().user.create({
+      username,
+      password: overrides.password ?? "initial-pass-1",
+      name: `成员${userSeq}`,
+      email: null,
+      team: null,
+      roleId: overrides.roleId ?? seeded.roles.frontline.id,
+    });
+    return { ...created, username, password: overrides.password ?? "initial-pass-1" };
+  }
+
+  describe("用户管理 CRUD", () => {
+    it("creates an account that shows in the list and can log in", async () => {
+      const created = await admin().user.create({
+        username: "newbie",
+        password: "secret-123",
+        name: "王新人",
+        email: "newbie@insuredesk.local",
+        team: "客服一组",
+        roleId: seeded.roles.frontline.id,
+      });
+
+      const listed = (await admin().user.list()).find((user) => user.id === created.id);
+      expect(listed).toMatchObject({
+        username: "newbie",
+        name: "王新人",
+        email: "newbie@insuredesk.local",
+        team: "客服一组",
+        active: true,
+        roleId: seeded.roles.frontline.id,
+        roleName: "一线客服",
+        rolePreset: true,
+      });
+
+      expect((await login("newbie", "secret-123")).statusCode).toBe(200);
+      // The stored credential is a hash, never the plaintext
+      const row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
+      expect(row.passwordHash).not.toContain("secret-123");
+    });
+
+    it("rejects duplicate username/email and unknown roles", async () => {
+      await expect(
+        admin().user.create({
+          username: "admin", // seeded
+          password: "secret-123",
+          name: "重名",
+          email: null,
+          team: null,
+          roleId: seeded.roles.frontline.id,
+        }),
+      ).rejects.toMatchObject({ code: "CONFLICT", message: "用户名已存在" });
+
+      await expect(
+        admin().user.create({
+          username: "email-clash",
+          password: "secret-123",
+          name: "撞邮箱",
+          email: "admin@insuredesk.local", // seeded admin's email
+          team: null,
+          roleId: seeded.roles.frontline.id,
+        }),
+      ).rejects.toMatchObject({ code: "CONFLICT", message: "邮箱已被其他用户使用" });
+
+      await expect(
+        admin().user.create({
+          username: "role-less",
+          password: "secret-123",
+          name: "无角色",
+          email: null,
+          team: null,
+          roleId: "no-such-role",
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "所选角色不存在" });
+    });
+
+    it("edits basic info; an empty password keeps the old credential, a new one replaces it", async () => {
+      const member = await makeUser();
+
+      await admin().user.update({
+        id: member.id,
+        name: "改名后",
+        email: "renamed@insuredesk.local",
+        team: "客服二组",
+        password: null,
+      });
+
+      const listed = (await admin().user.list()).find((user) => user.id === member.id);
+      expect(listed).toMatchObject({
+        name: "改名后",
+        email: "renamed@insuredesk.local",
+        team: "客服二组",
+      });
+      // No password in the payload → the original still logs in
+      expect((await login(member.username, member.password)).statusCode).toBe(200);
+
+      await admin().user.update({
+        id: member.id,
+        name: "改名后",
+        email: "renamed@insuredesk.local",
+        team: "客服二组",
+        password: "rotated-456",
+      });
+      expect((await login(member.username, member.password)).statusCode).toBe(401);
+      expect((await login(member.username, "rotated-456")).statusCode).toBe(200);
+    });
+
+    it("update/setActive/assignRole on unknown users → NOT_FOUND", async () => {
+      await expect(
+        admin().user.update({
+          id: "no-such-user",
+          name: "无人",
+          email: null,
+          team: null,
+          password: null,
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(
+        admin().user.setActive({ id: "no-such-user", active: false }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(
+        admin().user.assignRole({ id: "no-such-user", roleId: seeded.roles.frontline.id }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+  });
+
+  describe("禁用/启用 (acceptance: 禁用用户不可再登录，已有会话的下一次请求被拒)", () => {
+    it("disabling blocks new logins AND kills the live session; re-enabling restores login", async () => {
+      const member = await makeUser();
+      const token = await loginToken(member.username, member.password);
+      expect((await me(token)).statusCode).toBe(200);
+
+      await admin().user.setActive({ id: member.id, active: false });
+
+      // New login refused outright
+      expect((await login(member.username, member.password)).statusCode).toBe(401);
+      // The pre-existing session is rejected on its very next request
+      expect((await me(token)).statusCode).toBe(401);
+      // ...and its rows are gone, not merely ignored
+      expect(await prisma.session.count({ where: { userId: member.id } })).toBe(0);
+
+      await admin().user.setActive({ id: member.id, active: true });
+      expect((await login(member.username, member.password)).statusCode).toBe(200);
+    });
+
+    it("refuses to disable your own account", async () => {
+      await expect(
+        admin().user.setActive({ id: seeded.users.admin.id, active: false }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "不能禁用自己的账号" });
+    });
+  });
+
+  describe("分配角色 + 角色权限变更即时生效 (acceptance: 下次请求按新权限判定)", () => {
+    it("a role reassignment binds on the target's next request, same session", async () => {
+      const member = await makeUser(); // 一线客服: no schedule.view
+      const token = await loginToken(member.username, member.password);
+
+      const before = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      expect(before.statusCode).toBe(403);
+
+      await admin().user.assignRole({ id: member.id, roleId: seeded.roles.csManager.id });
+
+      const identity = await me(token);
+      expect(identity.json().result.data.roleName).toBe("客服主管");
+      const after = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      expect(after.statusCode).toBe(200);
+    });
+
+    it("granting and revoking a permission point flips the guard for live sessions", async () => {
+      const role = await admin().role.create({ name: "权限流转组", permissions: ["ticket.view"] });
+      const member = await makeUser({ roleId: role.id });
+      const token = await loginToken(member.username, member.password);
+
+      const denied = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      expect(denied.statusCode).toBe(403);
+
+      await admin().role.updatePermissions({
+        id: role.id,
+        permissions: ["ticket.view", "schedule.view"],
+      });
+      const granted = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      expect(granted.statusCode).toBe(200);
+
+      await admin().role.updatePermissions({ id: role.id, permissions: ["ticket.view"] });
+      const revoked = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      expect(revoked.statusCode).toBe(403);
+    });
+  });
+
+  describe("角色管理 CRUD", () => {
+    it("creates a custom role from the 权限点清单, lists it with holder counts", async () => {
+      const created = await admin().role.create({
+        name: "质检专员",
+        permissions: ["ticket.view", "ticket.view_all", "dashboard.view"],
+      });
+
+      const listed = (await admin().role.list()).find((role) => role.id === created.id);
+      expect(listed).toMatchObject({
+        name: "质检专员",
+        preset: false,
+        userCount: 0,
+        permissions: ["ticket.view", "ticket.view_all", "dashboard.view"],
+      });
+
+      // The 4 preset roles are present and flagged
+      const presets = (await admin().role.list()).filter((role) => role.preset);
+      expect(presets.map((role) => role.name).sort()).toEqual(
+        ["一线客服", "只读观察", "客服主管", "管理员"].sort(),
+      );
+    });
+
+    it("rejects duplicate names and unknown permission points", async () => {
+      await expect(admin().role.create({ name: "管理员", permissions: [] })).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "角色名称已存在",
+      });
+
+      await expect(
+        admin().role.create({
+          name: "越权组",
+          // biome-ignore lint/suspicious/noExplicitAny: deliberately malformed input
+          permissions: ["ticket.self_destruct" as any],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("renames a custom role and collapses duplicate permission ticks", async () => {
+      const role = await admin().role.create({ name: "临时组", permissions: [] });
+
+      await admin().role.rename({ id: role.id, name: "长期组" });
+      await expect(admin().role.rename({ id: role.id, name: "管理员" })).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+
+      await admin().role.updatePermissions({
+        id: role.id,
+        permissions: ["ticket.view", "ticket.view", "ticket.view"],
+      });
+      const listed = (await admin().role.list()).find((entry) => entry.id === role.id);
+      expect(listed).toMatchObject({ name: "长期组", permissions: ["ticket.view"] });
+    });
+
+    it("a role with holders refuses deletion until they are reassigned", async () => {
+      const role = await admin().role.create({ name: "待裁撤组", permissions: ["ticket.view"] });
+      const member = await makeUser({ roleId: role.id });
+
+      await expect(admin().role.delete({ id: role.id })).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: expect.stringContaining("仍有 1 个用户"),
+      });
+
+      await admin().user.assignRole({ id: member.id, roleId: seeded.roles.frontline.id });
+      await admin().role.delete({ id: role.id });
+      expect((await admin().role.list()).find((entry) => entry.id === role.id)).toBeUndefined();
+
+      await expect(admin().role.delete({ id: role.id })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    });
+  });
+
+  describe("预设角色保护 (acceptance: 不可删除)", () => {
+    it("none of the four preset roles can be deleted, renamed, or re-permissioned", async () => {
+      for (const role of Object.values(seeded.roles)) {
+        await expect(admin().role.delete({ id: role.id })).rejects.toMatchObject({
+          code: "PRECONDITION_FAILED",
+          message: expect.stringContaining("预设角色"),
+        });
+        await expect(
+          admin().role.rename({ id: role.id, name: `${role.name}2` }),
+        ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+        await expect(
+          admin().role.updatePermissions({ id: role.id, permissions: [] }),
+        ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      }
+      // Untouched by the attempts above
+      const admins = await prisma.role.findUniqueOrThrow({ where: { name: "管理员" } });
+      expect(admins.permissions).toEqual(seeded.roles.admin.permissions);
+    });
+  });
+
+  describe("RBAC 逐项校验 (acceptance: 每个操作只认自己的权限点)", () => {
+    /**
+     * Each case runs twice: holding every permission EXCEPT the required one
+     * (a full keyring minus the right key must still be FORBIDDEN), and
+     * holding ONLY the required one (the guard opens; the call then hits a
+     * deliberate non-FORBIDDEN domain error so no state is written).
+     */
+    const cases: Array<{
+      route: string;
+      permission: Permission;
+      run: (caller: ReturnType<typeof callerWith>) => Promise<unknown>;
+      passedGuardCode: string | null; // null = succeeds outright
+    }> = [
+      {
+        route: "user.list",
+        permission: "user.view",
+        run: (caller) => caller.user.list(),
+        passedGuardCode: null,
+      },
+      {
+        route: "user.create",
+        permission: "user.create",
+        run: (caller) =>
+          caller.user.create({
+            username: "rbac-probe",
+            password: "secret-123",
+            name: "探针",
+            email: null,
+            team: null,
+            roleId: "no-such-role",
+          }),
+        passedGuardCode: "BAD_REQUEST",
+      },
+      {
+        route: "user.update",
+        permission: "user.edit",
+        run: (caller) =>
+          caller.user.update({
+            id: "no-such-user",
+            name: "探针",
+            email: null,
+            team: null,
+            password: null,
+          }),
+        passedGuardCode: "NOT_FOUND",
+      },
+      {
+        route: "user.setActive",
+        permission: "user.delete",
+        run: (caller) => caller.user.setActive({ id: "no-such-user", active: false }),
+        passedGuardCode: "NOT_FOUND",
+      },
+      {
+        route: "user.assignRole",
+        permission: "user.assign_role",
+        run: (caller) => caller.user.assignRole({ id: "no-such-user", roleId: "no-such-role" }),
+        passedGuardCode: "BAD_REQUEST",
+      },
+      {
+        route: "role.list",
+        permission: "role.view",
+        run: (caller) => caller.role.list(),
+        passedGuardCode: null,
+      },
+      {
+        route: "role.create",
+        permission: "role.create",
+        run: (caller) => caller.role.create({ name: "管理员", permissions: [] }),
+        passedGuardCode: "CONFLICT",
+      },
+      {
+        route: "role.rename",
+        permission: "role.edit",
+        run: (caller) => caller.role.rename({ id: "no-such-role", name: "探针" }),
+        passedGuardCode: "NOT_FOUND",
+      },
+      {
+        route: "role.updatePermissions",
+        permission: "role.edit_permission",
+        run: (caller) => caller.role.updatePermissions({ id: "no-such-role", permissions: [] }),
+        passedGuardCode: "NOT_FOUND",
+      },
+      {
+        route: "role.delete",
+        permission: "role.delete",
+        run: (caller) => caller.role.delete({ id: "no-such-role" }),
+        passedGuardCode: "NOT_FOUND",
+      },
+    ];
+
+    it.each(cases)("$route requires exactly $permission", async (testCase) => {
+      const allButRequired = ALL_PERMISSIONS.filter(
+        (permission) => permission !== testCase.permission,
+      );
+      await expect(
+        testCase.run(callerWith(seeded.users.manager, "缺一把钥匙", allButRequired)),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      const onlyRequired = callerWith(seeded.users.manager, "只有一把钥匙", [testCase.permission]);
+      if (testCase.passedGuardCode === null) {
+        await expect(testCase.run(onlyRequired)).resolves.toBeDefined();
+      } else {
+        await expect(testCase.run(onlyRequired)).rejects.toMatchObject({
+          code: testCase.passedGuardCode,
+        });
+      }
+    });
+
+    it("user.roleOptions opens to user.create OR user.assign_role, nothing else", async () => {
+      const minusBoth = ALL_PERMISSIONS.filter(
+        (permission) => permission !== "user.create" && permission !== "user.assign_role",
+      );
+      await expect(
+        callerWith(seeded.users.manager, "两把都缺", minusBoth).user.roleOptions(),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      for (const permission of ["user.create", "user.assign_role"] as const) {
+        const options = await callerWith(seeded.users.manager, "单钥匙", [
+          permission,
+        ]).user.roleOptions();
+        expect(options.length).toBeGreaterThanOrEqual(4);
+        // Picker payload stays lean — the permission matrix needs role.view
+        expect(options[0]).not.toHaveProperty("permissions");
+      }
+    });
+  });
+});

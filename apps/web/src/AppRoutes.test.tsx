@@ -57,6 +57,16 @@ vi.mock("@/pages/schedule/SchedulePage", () => ({
   SchedulePage: () => <h1>排班配置</h1>,
 }));
 
+// And for the real 用户管理 / 角色权限 pages (issue #32): they query
+// user.list / role.list on mount. Covered in UsersPage.test.tsx and
+// RolesPage.test.tsx.
+vi.mock("@/pages/users/UsersPage", () => ({
+  UsersPage: () => <h1>用户管理</h1>,
+}));
+vi.mock("@/pages/roles/RolesPage", () => ({
+  RolesPage: () => <h1>角色权限</h1>,
+}));
+
 /** Demo user holding a preset role, mirroring what `auth.me` returns. */
 function userWith(role: { name: string; permissions: readonly Permission[] }): AuthUser {
   return {
