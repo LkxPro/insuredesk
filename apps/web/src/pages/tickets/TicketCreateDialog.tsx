@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogClose,
@@ -20,6 +20,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -30,7 +31,6 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -73,9 +73,7 @@ type FormValues = z.input<typeof formSchema>;
 /** Radix Select forbids `value=""` items; stand-in for "未设置" on 优先级. */
 const PRIORITY_UNSET = "__unset__";
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
-const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, minute) =>
-  String(minute).padStart(2, "0"),
-);
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, "0"));
 
 function splitFeedbackTime(value?: string) {
   if (!value) return { date: "", time: "" };
@@ -145,7 +143,9 @@ export function TicketCreateDialog({
                     render={({ field }) => {
                       const parts = splitFeedbackTime(field.value);
                       const [selectedHour = "", selectedMinute = ""] = parts.time.split(":");
-                      const selectedDate = parts.date ? new Date(`${parts.date}T00:00:00`) : undefined;
+                      const selectedDate = parts.date
+                        ? new Date(`${parts.date}T00:00:00`)
+                        : undefined;
 
                       return (
                         <div className="flex gap-2">
@@ -162,8 +162,8 @@ export function TicketCreateDialog({
                                 )}
                               >
                                 <CalendarIcon data-icon="inline-start" />
-                                {parts.date
-                                  ? format(selectedDate!, "PPP", { locale: zhCN })
+                                {selectedDate
+                                  ? format(selectedDate, "PPP", { locale: zhCN })
                                   : "请选择日期"}
                               </Button>
                             </PopoverTrigger>
