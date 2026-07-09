@@ -6,7 +6,9 @@
 
 ## 上下文
 
-投诉等级驱动一套 SLA（首响时限、跟进频次、超时时长、多条提醒规则），且业务要求**管理员可修改这些规则**（不硬编码）。每个等级的提醒规则数量和形态不一（一般/高级各 2 个检查点，加急 3 个，特急还多一条 12 小时滚动提醒）。设计时需要决定 SLA 规则如何建模。
+投诉等级驱动一套 SLA（首响违约线、跟进频次、超时时长、多条提醒规则），且业务要求**管理员可修改这些规则**（不硬编码）。每个等级的提醒规则数量和形态不一（一般/高级各 2 个检查点，加急 3 个，特急还多一条 12 小时滚动提醒）。设计时需要决定 SLA 规则如何建模。
+
+> **v2.0 修订**：提醒类型由 3 种收敛为 **2 种**（删除 `first_response`）；规则的运行方式由"cron 扫描发送通知"改为"**读时计算'我的待办'的判定谓词**"（见 ADR 0004）。数据结构（SLAPolicy + 类型化 ReminderRule[]）不变，本 ADR 结论仍成立。
 
 **方案 A：硬编码 + 少量可配数值**
 - 把规则写死在代码里，只把首响时限/超时小时数等少数数值抽成配置。
@@ -20,36 +22,37 @@
 
 **方案 C：类型化规则列表（规则引擎）**
 - SLAPolicy（按等级一条）+ 一个可增删的 `reminderRules[]`，每条规则带 `type` 和该类型的参数。
-- 提醒类型抽象为三种：`first_response` / `follow_up_checkpoint` / `rolling_follow_up`。
-- 优点：管理员可自由增删规则、调参；三种类型覆盖当前全部形态，未来加类型也不破坏结构。
+- 提醒类型抽象为类型化列表（v2.0 收敛为 2 种：`follow_up_checkpoint` / `rolling_follow_up`；首响改由 `firstResponseMinutes` 单值承载，不再是规则）。
+- 优点：管理员可自由增删规则、调参；类型化列表覆盖当前全部形态，未来加类型也不破坏结构。
 - 缺点：调度器需按 type 分派评估逻辑，比硬编码复杂。
 
 ## 决策
 
-采用**方案 C**：类型化规则引擎。数据结构见 PRD §3.8（SLAPolicy + ReminderRule 三类型）。
+采用**方案 C**：类型化规则引擎。数据结构见 PRD §3.8（SLAPolicy + ReminderRule 两类型）。
 
-三种提醒类型的判定：
-- `first_response`：createdAt 起 `afterMinutes` 仍无首响（无第一条 comment）→ 提醒
-- `follow_up_checkpoint`：到 `checkpointHours − advanceMinutes` 时刻，累计 comment 数 < `requiredCount` → 提醒
-- `rolling_follow_up`：未完结前，每距上一条 comment 满 `intervalHours` → 提醒
+**首响独立于 reminderRules**：首响不再是一条规则。`firstResponseMinutes`（SLAPolicy 主体字段）是唯一的首响数值，仅作"待首响告警"的染红阈值——"待首响" = 我名下 assigned/processing 且尚无第一条 comment 的工单，从被分配起即常驻待办，无需阈值触发。原 `first_response` 类型及其 `afterMinutes` 已删除。
+
+**两种提醒类型的判定**（本期作为读时计算的待办谓词）：
+- `follow_up_checkpoint`：`now ≥ createdAt + checkpointHours − advanceMinutes` 且 `now < createdAt + checkpointHours` 且累计 comment 数 < `requiredCount` → 进入待办
+- `rolling_follow_up`：未完结前，`now − lastCommentAt ≥ intervalHours` → 进入待办
 
 统一约束：
-- 所有时间以工单 **createdAt** 为时钟起点（滚动提醒以上一条 comment 为基准）
+- 所有时间以工单 **createdAt** 为时钟起点（滚动告警以上一条 comment 为基准）
 - 跟进次数 = 工单自 createdAt 起累计 comment 数（跨责任人累加）
-- 提醒接收人 = 当前 assigneeId；completed 后停止；每条提醒幂等只发一次
-- 由后台定时任务周期扫描执行（见 ADR 0004）
+- 告警归属 = 当前 assigneeId；completed 后停止（掉出待办）
+- **读时计算**：无"发送/幂等/去重"概念——条件为真即显示，跟进补齐或完结即掉出（见 ADR 0004）
 
 ## 理由
 
 1. **满足硬性需求**：业务明确要求管理员可改 SLA/提醒规则，方案 A/B 都做不到自由增删。
 2. **形态异构**：检查点数量随等级变化、特急独有滚动提醒——固定列建模会退化成一堆空列和特例，类型化列表天然吻合。
 3. **可扩展**：未来若出现新的提醒形态（如"距 dueAt 提前 X 提醒"），只需新增一个 type，不动既有数据。
-4. **收敛的复杂度**：虽然是"引擎"，但类型只有 3 种、参数各 1~3 个，调度器的分派逻辑仍然可控，不构成过度设计。
+4. **收敛的复杂度**：类型只有 2 种、参数各 1~3 个，读时计算的分派逻辑仍然可控，不构成过度设计。
 
 ## 影响
 
-- 需要一个 SLAPolicy 配置存储 + 管理员配置界面（编辑各等级的首响/超时/提醒规则列表）。这是本期较重的一块。
-- 后台定时任务（ADR 0004）需实现三种 type 的评估逻辑，并保证每条提醒幂等（同一工单 + 同一规则只发一次）。
-- SLAPolicy 是"配置数据"而非"工单数据"：管理员修改规则后，影响的是**之后的判定**；已生成的提醒不追溯。修改是否影响存量在途工单的未来检查点，需在配置界面明确（默认：按最新 SLAPolicy 评估未来提醒）。
-- **改工单 complaintLevel（切换到另一条 SLAPolicy）时**：dueAt 立即按新等级重算（以 createdAt 为基准）；提醒引擎**只对未来生效**——新等级中触发时刻已过去的检查点/提醒**直接跳过不补发**，只有时刻尚未到达的提醒才会触发。此规则与"改 SLAPolicy 不追溯"同源，避免切换等级时补发一堆过期提醒。
-- 首响 = 第一条 comment，因此 `first_response` 与 `follow_up_checkpoint` 的"次数"口径统一到 comment 累计数，实现时共用同一计数。
+- 需要一个 SLAPolicy 配置存储 + 管理员配置界面（编辑各等级的首响违约线/超时/提醒规则列表）。这是本期较重的一块。
+- **本期无后台定时任务**：两种 type 的评估逻辑作为"我的待办"读时计算谓词实现（见 ADR 0004），与看板超时/预警共用同一判定函数/视图。无"发送/幂等/去重"需求。
+- SLAPolicy 是"配置数据"而非"工单数据"：管理员修改规则后，影响的是**之后的读时判定**。因为读时只算"现在"，修改天然只对未来的待办计算生效，无历史追溯问题。
+- **改工单 complaintLevel（切换到另一条 SLAPolicy）时**：dueAt 立即按新等级重算（以 createdAt 为基准）；待办计算**只算当下**——新等级中触发时刻已过去的检查点直接不满足"进入待办"条件（`now ≥ checkpoint` 已过窗口），天然不出现，无需"跳过不补发"的特判。
+- 首响 = 第一条 comment，"待首响"判定（无第一条 comment）与 `follow_up_checkpoint` 的次数口径统一到 comment 累计数，实现时共用同一计数。
