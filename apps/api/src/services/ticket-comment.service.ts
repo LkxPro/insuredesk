@@ -1,0 +1,125 @@
+import { type TicketAddCommentData, TicketStatus, ticketStatusSchema } from "@insuredesk/shared";
+import type { AuthenticatedUser } from "./auth.service";
+import { applyTicketDataScope } from "./data-scope.service";
+import { TicketNotFoundError } from "./ticket-assign.service";
+import type { TicketServiceDeps } from "./ticket.service";
+
+/**
+ * Follow-up domain logic (issue #26, PRD §4.4): 添加跟进备注 = one actual
+ * customer contact. Pure service layer per ADR 0006 — the router maps the
+ * domain errors to transport codes.
+ *
+ * Invariants enforced here:
+ * - contactCount / processingResult / nextContactTime change ONLY through this
+ *   action (PRD §3.1.6 单点维护): count +1, result = the latest remark, and
+ *   nextContactTime is rewritten wholesale — an omitted value clears the
+ *   previous follow-up's plan rather than leaving a stale past time behind
+ * - the FIRST follow-up moves assigned → processing, with the mandatory
+ *   separate status_change log entry (PRD §3.2); because that transition fires
+ *   on every comment while still assigned, a 改派 before any follow-up changes
+ *   nothing — the new assignee's first comment still triggers it (PRD §4.4)
+ * - dueAt / assignedAt are never touched (ADR 0002)
+ */
+
+/** Ticket visible but its state does not accept follow-ups. */
+export class TicketNotProcessableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TicketNotProcessableError";
+  }
+
+  static unassigned(workOrderNumber: string) {
+    return new TicketNotProcessableError(`工单 ${workOrderNumber} 尚未分配责任人，不能添加跟进`);
+  }
+
+  static completed(workOrderNumber: string) {
+    return new TicketNotProcessableError(`工单 ${workOrderNumber} 已完结，不能再添加跟进`);
+  }
+}
+
+/**
+ * Add one follow-up record. Guarded upstream by ticket.process; the lookup
+ * carries the viewer data scope, so a frontline CS (no ticket.view_all) can
+ * only follow up on their own tickets — anything else surfaces as not-found
+ * (no existence leak). WHO may act is decided entirely by permission + scope:
+ * a supervisor with ticket.view_all may follow up on others' tickets (顶班).
+ */
+export async function addTicketComment(
+  { prisma, clock }: TicketServiceDeps,
+  actor: AuthenticatedUser,
+  input: TicketAddCommentData,
+) {
+  const now = clock.now();
+  return prisma.$transaction(async (tx) => {
+    const ticket = await tx.ticket.findFirst({
+      where: { id: input.ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
+      select: { id: true, workOrderNumber: true, status: true },
+    });
+    if (!ticket) {
+      throw new TicketNotFoundError();
+    }
+    if (ticket.status === TicketStatus.Unassigned) {
+      throw TicketNotProcessableError.unassigned(ticket.workOrderNumber);
+    }
+    if (ticket.status === TicketStatus.Completed) {
+      throw TicketNotProcessableError.completed(ticket.workOrderNumber);
+    }
+
+    // 首次跟进 ⟺ still assigned: comments are the only way out of assigned,
+    // so an assigned ticket by definition has no prior follow-up
+    const isFirstFollowUp = ticket.status === TicketStatus.Assigned;
+    const status = isFirstFollowUp
+      ? TicketStatus.Processing
+      : ticketStatusSchema.parse(ticket.status);
+
+    // Claim the transition with a conditional write, not the read above: two
+    // concurrent first follow-ups would both have read `assigned`, but only
+    // the claimer may write the status_change entry — the loser's comment is
+    // a "subsequent" one (仅写一条 comment, PRD §4.4)
+    const claimedTransition =
+      isFirstFollowUp &&
+      (
+        await tx.ticket.updateMany({
+          where: { id: ticket.id, status: TicketStatus.Assigned },
+          data: { status: TicketStatus.Processing },
+        })
+      ).count === 1;
+
+    const { contactCount } = await tx.ticket.update({
+      where: { id: ticket.id },
+      data: {
+        contactCount: { increment: 1 },
+        processingResult: input.remark,
+        nextContactTime: input.nextContactTime ? new Date(input.nextContactTime) : null,
+      },
+      select: { contactCount: true },
+    });
+
+    const operator = {
+      ticketId: ticket.id,
+      operatorId: actor.id,
+      operatorName: actor.name,
+      at: now,
+    };
+
+    await tx.processLog.create({
+      data: { ...operator, action: "comment", remark: input.remark },
+    });
+
+    if (claimedTransition) {
+      // 状态变更一律独立记录 (PRD §3.2): the transition gets its own entry,
+      // created after the comment log so the timeline reads cause → effect
+      await tx.processLog.create({
+        data: {
+          ...operator,
+          action: "status_change",
+          from: TicketStatus.Assigned,
+          to: TicketStatus.Processing,
+          remark: "首次跟进",
+        },
+      });
+    }
+
+    return { id: ticket.id, workOrderNumber: ticket.workOrderNumber, status, contactCount };
+  });
+}

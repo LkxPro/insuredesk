@@ -81,6 +81,31 @@ export const ticketBatchAssignInputSchema = z.object({
 });
 export type TicketBatchAssignInput = z.infer<typeof ticketBatchAssignInputSchema>;
 
+/**
+ * 添加跟进 contract (issue #26, PRD §4.4): one remark per actual customer
+ * contact, with an optional next-contact plan. contactCount / processingResult
+ * / nextContactTime and the assigned → processing transition are all derived
+ * server-side from this single action (PRD §3.1.6 单点维护).
+ */
+export const ticketAddCommentInputSchema = z.object({
+  ticketId: z.string().min(1),
+  remark: z.string().trim().min(1, "请填写跟进备注").max(2000),
+  /**
+   * 下次联系时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。每次跟进整体
+   * 重写该字段：省略 = 清空上一条跟进留下的计划，而不是保留过期时间。
+   */
+  nextContactTime: z
+    .string()
+    .datetime({ offset: true, message: "下次联系时间格式不正确" })
+    .nullish()
+    .transform((value) => (value ? value : null)),
+});
+
+/** Form-side shape (before transforms) — what the follow-up form holds. */
+export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
+/** Server-side shape (after transforms) — what the service receives. */
+export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
+
 /** List sort keys (PRD §2.1): 创建时间 / 处理时限. */
 export const TICKET_SORT_FIELDS = ["createdAt", "dueAt"] as const;
 export const ticketSortFieldSchema = z.enum(TICKET_SORT_FIELDS);

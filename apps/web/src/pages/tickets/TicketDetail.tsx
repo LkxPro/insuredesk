@@ -14,14 +14,17 @@ import {
 import { AlertCircle, ArrowLeft, UserPlus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link, useParams } from "react-router";
+import { AddCommentCard } from "./AddCommentCard";
 import { AssignTicketDialog } from "./AssignTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 
 /**
  * 工单详情 (issue #22): every PRD §3.1 field grouped by its PRD section, plus
- * the ProcessLog timeline (§3.2). Lifecycle actions live in the header —
- * 分配/改派 (issue #24, gated by ticket.assign; hidden on the completed 终态);
- * comment/resolve arrive with their own tickets.
+ * the ProcessLog timeline (§3.2). Lifecycle actions live with the detail —
+ * 分配/改派 in the header (issue #24, gated by ticket.assign; hidden on the
+ * completed 终态), 添加跟进 above the timeline (issue #26, gated by
+ * ticket.process on an assigned/processing ticket); resolve arrives with its
+ * own ticket.
  */
 
 /** One label/value cell of a detail section. */
@@ -194,6 +197,11 @@ export function TicketDetail() {
           <Item label="完结状态">{ticket.completionStatus}</Item>
         </Section>
       )}
+
+      {hasPermission("ticket.process") &&
+        (ticket.status === "assigned" || ticket.status === "processing") && (
+          <AddCommentCard ticketId={ticket.id} />
+        )}
 
       <Card>
         <CardHeader>

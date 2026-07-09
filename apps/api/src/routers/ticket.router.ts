@@ -1,4 +1,5 @@
 import {
+  ticketAddCommentInputSchema,
   ticketAssignInputSchema,
   ticketBatchAssignInputSchema,
   ticketCreateInputSchema,
@@ -16,6 +17,7 @@ import {
   batchAssignTickets,
   listAssigneeOptions,
 } from "../services/ticket-assign.service";
+import { TicketNotProcessableError, addTicketComment } from "../services/ticket-comment.service";
 import {
   SlaPolicyNotConfiguredError,
   createTicket,
@@ -25,10 +27,10 @@ import {
 import { requireAnyPermission, requirePermission, router } from "../trpc";
 
 /**
- * Ticket routes (issues #22/#23/#24): manual creation, the detail page read,
- * the filterable list, and assignment. Thin wrappers per ADR 0006 — validation
- * via the shared Zod schemas, RBAC via requirePermission, business logic in
- * the ticket services.
+ * Ticket routes (issues #22/#23/#24/#26): manual creation, the detail page
+ * read, the filterable list, assignment, and follow-ups. Thin wrappers per
+ * ADR 0006 — validation via the shared Zod schemas, RBAC via
+ * requirePermission, business logic in the ticket services.
  */
 
 const deps = { prisma, clock: systemClock };
@@ -103,6 +105,30 @@ export const ticketRouter = router({
         return await assignTicket(deps, ctx.user, input);
       } catch (error) {
         mapAssignmentError(error);
+      }
+    }),
+
+  /**
+   * 添加跟进备注 (issue #26). Guarded by ticket.process; the data scope inside
+   * keeps a frontline CS on their own tickets.
+   */
+  addComment: requirePermission("ticket.process")
+    .input(ticketAddCommentInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await addTicketComment(deps, ctx.user, input);
+      } catch (error) {
+        if (error instanceof TicketNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        if (error instanceof TicketNotProcessableError) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
       }
     }),
 
