@@ -1,5 +1,7 @@
 import { healthStatusSchema } from "@insuredesk/shared";
 import { publicProcedure, router } from "../trpc";
+import { authRouter } from "./auth.router";
+import { demoRouter } from "./demo.router";
 
 export const appRouter = router({
   /**
@@ -13,6 +15,16 @@ export const appRouter = router({
     timestamp: new Date().toISOString(),
     uptimeSeconds: process.uptime(),
   })),
+
+  /**
+   * Authentication routes - me query
+   */
+  auth: authRouter,
+
+  /**
+   * Demo routes - RBAC guard testing
+   */
+  demo: demoRouter,
 });
 
 export type AppRouter = typeof appRouter;

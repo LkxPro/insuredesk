@@ -4,7 +4,7 @@ import { appRouter } from "../src/routers";
 
 describe("health procedure", () => {
   it("returns an ok status conforming to the shared contract", async () => {
-    const caller = appRouter.createCaller({ traceId: "test" });
+    const caller = appRouter.createCaller({ traceId: "test", user: null, sessionToken: null });
 
     const result = await caller.health();
 

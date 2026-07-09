@@ -1,0 +1,28 @@
+# InsureDesk development environment
+# Only containerizes PostgreSQL; apps/api and apps/web run on host via pnpm dev.
+# See ADR 0007 for rationale.
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: insuredesk-db
+    environment:
+      POSTGRES_USER: insuredesk
+      POSTGRES_PASSWORD: insuredesk_dev
+      POSTGRES_DB: insuredesk
+      # Force Asia/Shanghai timezone for consistency with production
+      TZ: Asia/Shanghai
+      PGTZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insuredesk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    name: insuredesk_postgres_data
