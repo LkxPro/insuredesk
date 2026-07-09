@@ -13,10 +13,15 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // Proxy tRPC calls to the API in dev so the browser talks same-origin
-    // (no CORS dance). Point at the api's default PORT.
+    // Proxy API calls to the api in dev so the browser talks same-origin
+    // (no CORS dance). /trpc carries queries; /api carries the login/logout
+    // REST endpoints (cookie handling). Point at the api's default PORT.
     proxy: {
       "/trpc": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/api": {
         target: "http://localhost:3000",
         changeOrigin: true,
       },
