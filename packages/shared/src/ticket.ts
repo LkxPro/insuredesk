@@ -5,7 +5,9 @@ import {
   nuclearBodyStatusSchema,
   prioritySchema,
   ticketCategorySchema,
+  ticketSourceSchema,
 } from "./enums";
+import { ticketDisplayStatusSchema } from "./ticket-status";
 
 /**
  * Manual ticket-creation contract (PRD §3.1), shared by the web form
@@ -53,3 +55,37 @@ export const ticketCreateInputSchema = z.object({
 export type TicketCreateInput = z.input<typeof ticketCreateInputSchema>;
 /** Server-side shape (after transforms) — what the service receives. */
 export type TicketCreateData = z.output<typeof ticketCreateInputSchema>;
+
+/** List sort keys (PRD §2.1): 创建时间 / 处理时限. */
+export const TICKET_SORT_FIELDS = ["createdAt", "dueAt"] as const;
+export const ticketSortFieldSchema = z.enum(TICKET_SORT_FIELDS);
+export type TicketSortField = (typeof TICKET_SORT_FIELDS)[number];
+
+/**
+ * Ticket-list query contract (issue #23), shared by the list page's filter
+ * state and the API input — one schema, both ends (ADR 0006). The 状态 filter
+ * accepts all 6 display statuses: computed ones are resolved to SQL predicates
+ * server-side (ADR 0001), never stored.
+ */
+export const ticketListInputSchema = z.object({
+  status: ticketDisplayStatusSchema.optional(),
+  channel: channelSchema.optional(),
+  complaintLevel: complaintLevelSchema.optional(),
+  source: ticketSourceSchema.optional(),
+  /** 工单号 / 客户姓名 / 保单号；空白输入等同未搜索。 */
+  search: z
+    .string()
+    .trim()
+    .max(100)
+    .optional()
+    .transform((value) => (value ? value : undefined)),
+  sortBy: ticketSortFieldSchema.default("createdAt"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(20),
+});
+
+/** Client-side shape (before defaults/transforms). */
+export type TicketListInput = z.input<typeof ticketListInputSchema>;
+/** Server-side shape (after defaults/transforms) — what the service receives. */
+export type TicketListQuery = z.output<typeof ticketListInputSchema>;

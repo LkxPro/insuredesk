@@ -1,6 +1,7 @@
 import {
   TICKET_SOURCE_LABELS,
   type TicketCreateData,
+  type TicketListQuery,
   TicketStatus,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
@@ -15,6 +16,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Clock } from "../clock";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
+import { displayStatusTicketWhere } from "./ticket-display-status";
 
 /**
  * Ticket domain logic (issue #22): manual creation and detail reads. Pure
@@ -97,6 +99,112 @@ export async function createTicket(
 
     return ticket;
   });
+}
+
+const listInclude = {
+  // Current follow-up owner is derived via JOIN, never stored (CONTEXT.md "Follower")
+  assignee: { select: { name: true } },
+} satisfies Prisma.TicketInclude;
+
+type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
+
+/**
+ * Paged ticket list for 工单管理 (issue #23). Applies, in one WHERE:
+ *
+ * - soft-delete exclusion (deletedAt null, PRD §4.5)
+ * - the RBAC data scope — no `ticket.view_all` → only own tickets, so the
+ *   unassigned pool never reaches 一线客服 (PRD §5.2)
+ * - the filters, with computed statuses resolved through the single-truth
+ *   predicate module (ADR 0001) rather than restated here
+ *
+ * One `clock.now()` serves the whole request, so the rows a computed-status
+ * filter selects and the displayStatus they serialize with can never disagree.
+ */
+export async function listTickets(
+  { prisma, clock }: TicketServiceDeps,
+  viewer: AuthenticatedUser,
+  query: TicketListQuery,
+) {
+  const now = clock.now();
+
+  // Each filter is its own AND element so their inner ORs (base-status
+  // predicate, search) can never collide.
+  const filters: Prisma.TicketWhereInput[] = [];
+  if (query.status) {
+    filters.push(displayStatusTicketWhere(query.status, now));
+  }
+  if (query.channel) {
+    filters.push({ channel: query.channel });
+  }
+  if (query.complaintLevel) {
+    filters.push({ complaintLevel: query.complaintLevel });
+  }
+  if (query.source) {
+    filters.push({ source: query.source });
+  }
+  if (query.search) {
+    filters.push({
+      OR: [
+        { workOrderNumber: { contains: query.search, mode: "insensitive" } },
+        { customerName: { contains: query.search, mode: "insensitive" } },
+        { policyNumber: { contains: query.search, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  const where: Prisma.TicketWhereInput = {
+    deletedAt: null,
+    ...applyTicketDataScope(viewer),
+    AND: filters,
+  };
+
+  // dueAt is nullable (特急 has none): those rows sort last either direction —
+  // "no deadline" is never "most urgent"
+  const orderBy: Prisma.TicketOrderByWithRelationInput =
+    query.sortBy === "dueAt"
+      ? { dueAt: { sort: query.sortOrder, nulls: "last" } }
+      : { createdAt: query.sortOrder };
+
+  const [rows, total] = await prisma.$transaction([
+    prisma.ticket.findMany({
+      where,
+      include: listInclude,
+      // id breaks ordering ties so pagination never skips or repeats a row
+      orderBy: [orderBy, { id: "desc" }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.ticket.count({ where }),
+  ]);
+
+  return {
+    items: rows.map((row) => serializeTicketListItem(row, now)),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+  };
+}
+
+/** Wire shape of one list row — the list's columns, nothing more. */
+function serializeTicketListItem(ticket: TicketListRow, now: Date) {
+  const source = ticketSourceSchema.parse(ticket.source);
+  const status = ticketStatusSchema.parse(ticket.status);
+
+  return {
+    id: ticket.id,
+    workOrderNumber: ticket.workOrderNumber,
+    createdAt: ticket.createdAt.toISOString(),
+    source,
+    channel: ticket.channel,
+    category: ticket.category,
+    complaintLevel: ticket.complaintLevel,
+    customerName: ticket.customerName,
+    policyNumber: ticket.policyNumber,
+    status,
+    displayStatus: deriveDisplayStatus(status, ticket.dueAt, now),
+    assigneeName: ticket.assignee?.name ?? null,
+    dueAt: ticket.dueAt?.toISOString() ?? null,
+  };
 }
 
 const detailInclude = {

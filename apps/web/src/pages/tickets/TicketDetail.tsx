@@ -9,36 +9,17 @@ import {
   PRIORITY_LABELS,
   PROCESS_LOG_ACTION_LABELS,
   TICKET_SOURCE_LABELS,
-  TICKET_STATUS_LABELS,
-  type TicketDisplayStatus,
 } from "@insuredesk/shared";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useParams } from "react-router";
+import { StatusBadge } from "./StatusBadge";
 
 /**
  * 工单详情 (issue #22): every PRD §3.1 field grouped by its PRD section, plus
  * the ProcessLog timeline (§3.2). Pure read — lifecycle actions (assign,
  * comment, resolve…) arrive with their own tickets.
  */
-
-/** Status color coding on the shared Badge; tints, not solid fills. */
-const statusBadgeClasses: Record<TicketDisplayStatus, string> = {
-  unassigned: "bg-muted text-muted-foreground",
-  assigned: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  processing: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  pending_timeout: "border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400",
-  overdue: "border-destructive/30 bg-destructive/10 text-destructive",
-};
-
-function StatusBadge({ status }: { status: TicketDisplayStatus }) {
-  return (
-    <Badge variant="outline" className={statusBadgeClasses[status]}>
-      {TICKET_STATUS_LABELS[status]}
-    </Badge>
-  );
-}
 
 /** One label/value cell of a detail section. */
 function Item({ label, children }: { label: string; children: ReactNode }) {

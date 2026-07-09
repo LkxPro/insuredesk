@@ -1,4 +1,5 @@
-import type { TicketStatus } from "./enums";
+import { z } from "zod";
+import { TICKET_STATUSES, type TicketStatus } from "./enums";
 
 /**
  * Read-time ticket display status (PRD §3.1.6, ADR 0001). Lives apart from
@@ -9,6 +10,13 @@ import type { TicketStatus } from "./enums";
 export const COMPUTED_TICKET_STATUSES = ["pending_timeout", "overdue"] as const;
 export type ComputedTicketStatus = (typeof COMPUTED_TICKET_STATUSES)[number];
 export type TicketDisplayStatus = TicketStatus | ComputedTicketStatus;
+
+/** All 6 display statuses — what the list's 状态 filter offers (issue #23). */
+export const TICKET_DISPLAY_STATUSES = [
+  ...TICKET_STATUSES,
+  ...COMPUTED_TICKET_STATUSES,
+] as const satisfies readonly TicketDisplayStatus[];
+export const ticketDisplayStatusSchema = z.enum(TICKET_DISPLAY_STATUSES);
 
 export const TICKET_STATUS_LABELS: Record<TicketDisplayStatus, string> = {
   unassigned: "未分配",

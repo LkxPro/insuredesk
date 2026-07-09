@@ -156,6 +156,9 @@ model Ticket {
   @@index([assigneeId])
   @@index([status])
   @@index([createdAt])
+  /// Computed-status predicates (pending_timeout/overdue) and 处理时限 sorting
+  /// both range over dueAt (ADR 0001)
+  @@index([dueAt])
   @@index([deletedAt])
   @@map("tickets")
 }

@@ -1,4 +1,4 @@
-import { ticketCreateInputSchema } from "@insuredesk/shared";
+import { ticketCreateInputSchema, ticketListInputSchema } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { systemClock } from "../clock";
@@ -7,13 +7,14 @@ import {
   SlaPolicyNotConfiguredError,
   createTicket,
   getTicketDetail,
+  listTickets,
 } from "../services/ticket.service";
 import { requirePermission, router } from "../trpc";
 
 /**
- * Ticket routes (issue #22): manual creation and the detail page read.
- * Thin wrappers per ADR 0006 — validation via the shared Zod schema, RBAC via
- * requirePermission, business logic in ticket.service.
+ * Ticket routes (issues #22/#23): manual creation, the detail page read, and
+ * the filterable list. Thin wrappers per ADR 0006 — validation via the shared
+ * Zod schemas, RBAC via requirePermission, business logic in ticket.service.
  */
 
 const deps = { prisma, clock: systemClock };
@@ -40,6 +41,14 @@ export const ticketRouter = router({
         throw error;
       }
     }),
+
+  /**
+   * Paged, filterable list for 工单管理. Data scope applies: without
+   * ticket.view_all the query is pinned to assigneeId = 本人 (PRD §5.2).
+   */
+  list: requirePermission("ticket.view")
+    .input(ticketListInputSchema)
+    .query(({ ctx, input }) => listTickets(deps, ctx.user, input)),
 
   /**
    * Full detail + timeline for the detail page. Data scope applies: without
