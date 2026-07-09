@@ -1,0 +1,51 @@
+import { z } from "zod";
+import { permissionSchema } from "./permissions";
+
+/**
+ * 角色管理 contracts (issue #32, PRD §2.3/§5.1.4), shared by the 角色权限 page
+ * and the API — one schema, both ends (ADR 0006). A role is a named set of
+ * permission points; the four preset roles are the fixed PRD §5.2 baseline and
+ * are fully protected (no rename / permission edit / delete) — admins create
+ * custom roles instead of mutating the baseline.
+ */
+
+export const roleNameSchema = z
+  .string()
+  .trim()
+  .min(1, "请输入角色名称")
+  .max(50, "角色名称最长 50 字符");
+
+/**
+ * The 权限点清单 checkbox payload: every entry must be a known permission
+ * point (PRD §5.1) — unknown strings are rejected, duplicates collapsed.
+ */
+export const rolePermissionsSchema = z
+  .array(permissionSchema)
+  .transform((values) => [...new Set(values)]);
+
+export const roleCreateInputSchema = z.object({
+  name: roleNameSchema,
+  permissions: rolePermissionsSchema,
+});
+export type RoleCreateInput = z.input<typeof roleCreateInputSchema>;
+export type RoleCreateData = z.output<typeof roleCreateInputSchema>;
+
+/** Rename only (role.edit) — permissions ride role.updatePermissions. */
+export const roleRenameInputSchema = z.object({
+  id: z.string().min(1),
+  name: roleNameSchema,
+});
+export type RoleRenameInput = z.infer<typeof roleRenameInputSchema>;
+
+/** Replace the full permission set (role.edit_permission). */
+export const roleUpdatePermissionsInputSchema = z.object({
+  id: z.string().min(1),
+  permissions: rolePermissionsSchema,
+});
+export type RoleUpdatePermissionsInput = z.input<typeof roleUpdatePermissionsInputSchema>;
+export type RoleUpdatePermissionsData = z.output<typeof roleUpdatePermissionsInputSchema>;
+
+export const roleDeleteInputSchema = z.object({
+  id: z.string().min(1),
+});
+export type RoleDeleteInput = z.infer<typeof roleDeleteInputSchema>;

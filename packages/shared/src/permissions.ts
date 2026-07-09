@@ -64,6 +64,49 @@ export const ALL_PERMISSIONS = [
 export const permissionSchema = z.enum(ALL_PERMISSIONS);
 export type Permission = (typeof ALL_PERMISSIONS)[number];
 
+/**
+ * Human-readable labels for the 权限点清单 (PRD §5.1), used by the 角色权限
+ * checklist UI. Wording follows the PRD except user.delete: the PRD names the
+ * point "删除用户" but its operation is 禁用/启用 — accounts are never hard
+ * deleted (they anchor tickets, logs, and rosters), so the label says what the
+ * permission actually grants.
+ */
+export const PERMISSION_LABELS: Record<Permission, string> = {
+  "dashboard.view": "访问数据看板",
+  "dashboard.view_all": "查看全部数据",
+  "dashboard.export": "导出数据报表",
+  "ticket.view": "访问工单列表",
+  "ticket.view_all": "查看全部工单",
+  "ticket.create": "新增工单",
+  "ticket.edit": "编辑工单基本信息",
+  "ticket.process": "处理工单",
+  "ticket.assign": "分配工单",
+  "ticket.batch_assign": "批量分配",
+  "ticket.export": "导出工单",
+  "ticket.delete": "删除工单",
+  "user.view": "访问用户管理",
+  "user.create": "新增用户",
+  "user.edit": "编辑用户",
+  "user.delete": "禁用/启用用户",
+  "user.assign_role": "分配角色",
+  "role.view": "访问角色管理",
+  "role.create": "新增角色",
+  "role.edit": "编辑角色",
+  "role.delete": "删除角色",
+  "role.edit_permission": "编辑权限配置",
+  "schedule.view": "访问排班配置",
+  "schedule.edit": "编辑排班",
+};
+
+/** PRD §5.1 sections, in document order — the 权限点清单 checklist grouping. */
+export const PERMISSION_GROUPS = [
+  { label: "数据看板", permissions: DASHBOARD_PERMISSIONS },
+  { label: "工单管理", permissions: TICKET_PERMISSIONS },
+  { label: "用户管理", permissions: USER_PERMISSIONS },
+  { label: "角色权限", permissions: ROLE_PERMISSIONS },
+  { label: "系统配置", permissions: SYSTEM_PERMISSIONS },
+] as const;
+
 // Preset role permission mappings (used in seed data)
 // See PRD §5.2 for role descriptions
 
