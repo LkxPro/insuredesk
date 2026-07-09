@@ -43,6 +43,8 @@ model User {
   createdTickets  Ticket[] @relation("TicketCreator")
   /// 轨 1 inbox notifications addressed to this user (issue #25)
   notifications   AppNotification[]
+  /// 排班 duty entries for this user (issue #31)
+  schedules       Schedule[]
 
   @@index([roleId])
   @@map("users")
@@ -209,6 +211,43 @@ model SlaPolicy {
   updatedAt            DateTime @updatedAt @db.Timestamptz
 
   @@map("sla_policies")
+}
+
+// ============================================================================
+// Schedule (Issue #31)
+// ============================================================================
+
+/// 排班 (PRD §3.6): one row = one user on duty for a date × shift × channel.
+/// date / startTime / endTime are wall-clock strings (YYYY-MM-DD / HH:mm) in
+/// the server's local timezone (ADR 0006 时间处理): a shift is a human roster
+/// concept, not an absolute instant. Zero-padded, so the on-duty predicate
+/// ("按排班自动分配", PRD §4.3) compares them lexicographically against
+/// clock.now() rendered the same way.
+model Schedule {
+  id     String @id @default(cuid())
+  userId String
+  /// Duty day, YYYY-MM-DD
+  date   String
+  /// day (早班) / night (晚班) — canonical values in shared/enums.ts
+  shift  String
+  /// Shift window, stamped server-side from the shift type (day 09:00–18:00 /
+  /// night 12:00–21:00) — stored per PRD §3.6 so the on-duty predicate reads
+  /// the row alone, without re-deriving shift hours
+  startTime String
+  endTime   String
+  /// Business channel this duty covers (保司/经纪/支付/监管)
+  channel String
+  remark  String?
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  /// A person appears at most once per date × shift × channel cell
+  @@unique([date, shift, channel, userId])
+  /// On-duty lookup: today's rows for one channel
+  @@index([date, channel])
+  @@map("schedules")
 }
 
 // ============================================================================
