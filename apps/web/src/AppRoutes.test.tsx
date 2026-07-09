@@ -104,10 +104,17 @@ beforeEach(() => {
 });
 
 describe("menu visibility per preset role", () => {
-  it("管理员 sees all five entries", () => {
+  it("管理员 sees all six entries", () => {
     auth.user = userWith(PRESET_ROLES.ADMIN);
     renderAt("/dashboard");
-    expect(menuLabels()).toEqual(["数据看板", "工单管理", "用户管理", "角色权限", "排班配置"]);
+    expect(menuLabels()).toEqual([
+      "数据看板",
+      "工单管理",
+      "用户管理",
+      "角色权限",
+      "排班配置",
+      "SLA 策略",
+    ]);
   });
 
   it("客服主管 sees dashboard, tickets, schedule", () => {

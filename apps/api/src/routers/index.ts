@@ -6,6 +6,7 @@ import { demoRouter } from "./demo.router";
 import { notificationRouter } from "./notification.router";
 import { roleRouter } from "./role.router";
 import { scheduleRouter } from "./schedule.router";
+import { slaRouter } from "./sla.router";
 import { ticketRouter } from "./ticket.router";
 import { userRouter } from "./user.router";
 
@@ -61,6 +62,11 @@ export const appRouter = router({
    * 角色管理 - 自定义角色 + 权限点清单配置，预设角色受保护 (issue #32)
    */
   role: roleRouter,
+
+  /**
+   * SLA 策略配置 - 按投诉等级编辑首响/超时/提醒规则，限管理员 (issue #33)
+   */
+  sla: slaRouter,
 });
 
 export type AppRouter = typeof appRouter;

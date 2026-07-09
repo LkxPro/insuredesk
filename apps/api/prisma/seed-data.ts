@@ -103,10 +103,10 @@ export async function seedPresetRolesAndUsers(prisma: PrismaClient): Promise<{
 }
 
 /**
- * Create (or refresh to defaults) the four SLAPolicy rows, one per complaint
- * level, with the PRD §3.8 values from DEFAULT_SLA_POLICIES. Read-only this
- * phase — the admin editor is a separate ticket — so re-seeding resets any
- * manual tweaks back to the documented defaults.
+ * Create the four SLAPolicy rows, one per complaint level, with the PRD §3.8
+ * defaults from DEFAULT_SLA_POLICIES. Create-if-missing only: policies are
+ * admin-editable (issue #33), so re-seeding must never silently revert an
+ * admin's configuration back to the documented defaults.
  */
 export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]> {
   const policies: SlaPolicy[] = [];
@@ -115,11 +115,7 @@ export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]
     policies.push(
       await prisma.slaPolicy.upsert({
         where: { complaintLevel },
-        update: {
-          firstResponseMinutes: defaults.firstResponseMinutes,
-          overdueHours: defaults.overdueHours,
-          reminderRules: defaults.reminderRules,
-        },
+        update: {},
         create: {
           complaintLevel,
           firstResponseMinutes: defaults.firstResponseMinutes,

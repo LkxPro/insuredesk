@@ -13,25 +13,27 @@ function visiblePaths(permissions: readonly Permission[]): string[] {
 }
 
 describe("NAV_ITEMS", () => {
-  it("covers the five page permissions, one menu entry each", () => {
+  it("covers the six page permissions, one menu entry each", () => {
     expect(NAV_ITEMS.map((item) => item.permission)).toEqual([
       "dashboard.view",
       "ticket.view",
       "user.view",
       "role.view",
       "schedule.view",
+      "sla.view",
     ]);
   });
 });
 
 describe("visibleNavItems", () => {
-  it("管理员 sees all five menu entries", () => {
+  it("管理员 sees all six menu entries", () => {
     expect(visiblePaths(PRESET_ROLES.ADMIN.permissions)).toEqual([
       "/dashboard",
       "/tickets",
       "/users",
       "/roles",
       "/schedule",
+      "/sla",
     ]);
   });
 
