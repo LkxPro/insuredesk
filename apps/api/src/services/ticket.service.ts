@@ -120,25 +120,28 @@ const listInclude = {
 
 type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
 
+/** The list's filter/sort subset — shared verbatim by the export (issue #34). */
+type TicketListFilters = Pick<
+  TicketListQuery,
+  "status" | "channel" | "complaintLevel" | "source" | "search" | "sortBy" | "sortOrder"
+>;
+
 /**
- * Paged ticket list for 工单管理 (issue #23). Applies, in one WHERE:
+ * The ONE WHERE for "what this viewer's filtered list contains" — shared by
+ * the paged list and the export so the two can never disagree (issue #34
+ * 筛选条件与导出内容一致 by construction). Applies:
  *
  * - soft-delete exclusion (deletedAt null, PRD §4.5)
  * - the RBAC data scope — no `ticket.view_all` → only own tickets, so the
  *   unassigned pool never reaches 一线客服 (PRD §5.2)
  * - the filters, with computed statuses resolved through the single-truth
  *   predicate module (ADR 0001) rather than restated here
- *
- * One `clock.now()` serves the whole request, so the rows a computed-status
- * filter selects and the displayStatus they serialize with can never disagree.
  */
-export async function listTickets(
-  { prisma, clock }: TicketServiceDeps,
+export function buildTicketListWhere(
   viewer: AuthenticatedUser,
-  query: TicketListQuery,
-) {
-  const now = clock.now();
-
+  query: TicketListFilters,
+  now: Date,
+): Prisma.TicketWhereInput {
   // Each filter is its own AND element so their inner ORs (base-status
   // predicate, search) can never collide.
   const filters: Prisma.TicketWhereInput[] = [];
@@ -164,25 +167,46 @@ export async function listTickets(
     });
   }
 
-  const where: Prisma.TicketWhereInput = {
+  return {
     deletedAt: null,
     ...applyTicketDataScope(viewer),
     AND: filters,
   };
+}
 
+/** The list's ordering, shared with the export for row-for-row consistency. */
+export function buildTicketListOrderBy(
+  query: TicketListFilters,
+): Prisma.TicketOrderByWithRelationInput[] {
   // dueAt is nullable (特急 has none): those rows sort last either direction —
   // "no deadline" is never "most urgent"
   const orderBy: Prisma.TicketOrderByWithRelationInput =
     query.sortBy === "dueAt"
       ? { dueAt: { sort: query.sortOrder, nulls: "last" } }
       : { createdAt: query.sortOrder };
+  // id breaks ordering ties so pagination never skips or repeats a row
+  return [orderBy, { id: "desc" }];
+}
+
+/**
+ * Paged ticket list for 工单管理 (issue #23): the shared WHERE/ORDER above,
+ * plus pagination. One `clock.now()` serves the whole request, so the rows a
+ * computed-status filter selects and the displayStatus they serialize with can
+ * never disagree.
+ */
+export async function listTickets(
+  { prisma, clock }: TicketServiceDeps,
+  viewer: AuthenticatedUser,
+  query: TicketListQuery,
+) {
+  const now = clock.now();
+  const where = buildTicketListWhere(viewer, query, now);
 
   const [rows, total] = await prisma.$transaction([
     prisma.ticket.findMany({
       where,
       include: listInclude,
-      // id breaks ordering ties so pagination never skips or repeats a row
-      orderBy: [orderBy, { id: "desc" }],
+      orderBy: buildTicketListOrderBy(query),
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
     }),

@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { prisma } from "./db";
 import type { Env } from "./env";
 import { type AppRouter, appRouter } from "./routers";
+import { registerTicketExportRoute } from "./routes/ticket-export.route";
 import { PasswordAuthProvider, SessionService, toSessionToken } from "./services/auth.service";
 import { createContext } from "./trpc";
 
@@ -130,6 +131,9 @@ export function buildServer(env: Env) {
     reply.clearCookie("session");
     return { success: true };
   });
+
+  // File download for 导出工单 (issue #34) — REST like the auth endpoints.
+  registerTicketExportRoute(app);
 
   // No CORS plugin: the web app talks to the API same-origin — via the Vite
   // proxy in dev (see apps/web/vite.config.ts) and behind a shared reverse
