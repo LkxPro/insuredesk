@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ComplaintLevel, reminderRuleTypeSchema } from "./enums";
+import { type ComplaintLevel, complaintLevelSchema, reminderRuleTypeSchema } from "./enums";
 
 /**
  * SLAPolicy contracts (PRD §3.8): one policy row per complaint level, holding
@@ -34,6 +34,42 @@ export const reminderRulesSchema = z.array(reminderRuleSchema);
 export type FollowUpCheckpointRule = z.infer<typeof followUpCheckpointRuleSchema>;
 export type RollingFollowUpRule = z.infer<typeof rollingFollowUpRuleSchema>;
 export type ReminderRule = z.infer<typeof reminderRuleSchema>;
+
+/**
+ * 管理员编辑器 payload (issue #33), one save per complaint level. Stricter than
+ * the storage schema on purpose: the read boundary tolerates
+ * advanceMinutes = 0, but saving one would create a dead rule (the alert
+ * window [checkpoint − advance, checkpoint) is empty), and an advance ≥ the
+ * checkpoint itself would open the window before the ticket even exists —
+ * both are admin mistakes the form must reject, not shapes to store.
+ */
+export const slaPolicyEditableRuleSchema = reminderRuleSchema.superRefine((rule, ctx) => {
+  if (rule.type !== "follow_up_checkpoint") {
+    return;
+  }
+  if (rule.advanceMinutes < 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["advanceMinutes"],
+      message: "提前提醒需为正整数（分钟）",
+    });
+  } else if (rule.advanceMinutes >= rule.checkpointHours * 60) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["advanceMinutes"],
+      message: "提前提醒必须小于检查点时长",
+    });
+  }
+});
+
+export const slaPolicyUpdateInputSchema = z.object({
+  complaintLevel: complaintLevelSchema,
+  firstResponseMinutes: z.number().int().positive("首响违约线需为正整数（分钟）"),
+  /** null = 不设超时 (never overdue); the editor offers it for any level. */
+  overdueHours: z.number().int().positive("超时时长需为正整数（小时）").nullable(),
+  reminderRules: z.array(slaPolicyEditableRuleSchema),
+});
+export type SlaPolicyUpdateInput = z.infer<typeof slaPolicyUpdateInputSchema>;
 
 export interface SlaPolicyDefaults {
   firstResponseMinutes: number;

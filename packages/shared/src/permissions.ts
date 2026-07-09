@@ -47,9 +47,14 @@ export const ROLE_PERMISSIONS = [
 ] as const;
 
 // System configuration permissions
+// sla.view / sla.edit are absent from the PRD §5.1 matrix; they exist because
+// §3.8 says SLA policies are 管理员可编辑, which needs its own page + operation
+// point (issue #33). Only the 管理员 preset holds them.
 export const SYSTEM_PERMISSIONS = [
   "schedule.view", // Access schedule configuration (page permission)
   "schedule.edit", // Edit schedule (operation permission)
+  "sla.view", // Access SLA policy configuration (page permission)
+  "sla.edit", // Edit SLA policies (operation permission)
 ] as const;
 
 // All permissions combined
@@ -96,6 +101,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "role.edit_permission": "编辑权限配置",
   "schedule.view": "访问排班配置",
   "schedule.edit": "编辑排班",
+  "sla.view": "访问 SLA 策略",
+  "sla.edit": "编辑 SLA 策略",
 };
 
 /** PRD §5.1 sections, in document order — the 权限点清单 checklist grouping. */

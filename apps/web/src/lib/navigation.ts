@@ -1,5 +1,5 @@
 import type { Permission } from "@insuredesk/shared";
-import { CalendarClock, LayoutDashboard, ShieldCheck, Ticket, Users } from "lucide-react";
+import { CalendarClock, LayoutDashboard, ShieldCheck, Ticket, Timer, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -22,6 +22,7 @@ export const NAV_ITEMS = [
   { path: "/users", label: "用户管理", permission: "user.view", icon: Users },
   { path: "/roles", label: "角色权限", permission: "role.view", icon: ShieldCheck },
   { path: "/schedule", label: "排班配置", permission: "schedule.view", icon: CalendarClock },
+  { path: "/sla", label: "SLA 策略", permission: "sla.view", icon: Timer },
 ] as const satisfies readonly NavItem[];
 
 /** Literal union of shell page paths — keeps the path→page map compile-time complete. */

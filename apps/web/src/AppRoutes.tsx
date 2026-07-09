@@ -7,6 +7,7 @@ import { Login } from "@/pages/Login";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { RolesPage } from "@/pages/roles/RolesPage";
 import { SchedulePage } from "@/pages/schedule/SchedulePage";
+import { SlaPage } from "@/pages/sla/SlaPage";
 import { TicketDetail } from "@/pages/tickets/TicketDetail";
 import { TicketsPage } from "@/pages/tickets/TicketsPage";
 import { UsersPage } from "@/pages/users/UsersPage";
@@ -27,6 +28,7 @@ const PAGES: Record<NavPath, ReactElement> = {
   "/users": <UsersPage />,
   "/roles": <RolesPage />,
   "/schedule": <SchedulePage />,
+  "/sla": <SlaPage />,
 };
 
 /** `/` lands on the first menu page the user may see; no page permissions → 403. */
