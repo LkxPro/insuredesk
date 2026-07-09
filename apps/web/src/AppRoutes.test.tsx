@@ -38,6 +38,13 @@ vi.mock("@/components/NotificationBell", () => ({
   NotificationBell: () => null,
 }));
 
+// Same treatment for the real 数据看板 page (issue #29): it queries
+// dashboard.stats on mount. Its real behavior is covered in
+// DashboardPage.test.tsx; here only the route/menu wiring matters.
+vi.mock("@/pages/dashboard/DashboardPage", () => ({
+  DashboardPage: () => <h1>数据看板</h1>,
+}));
+
 /** Demo user holding a preset role, mirroring what `auth.me` returns. */
 function userWith(role: { name: string; permissions: readonly Permission[] }): AuthUser {
   return {
