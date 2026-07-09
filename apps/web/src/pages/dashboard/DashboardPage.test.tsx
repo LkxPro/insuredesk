@@ -114,7 +114,7 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   const body = paths.map((path) => {
     // The AppLayout bell (issue #25) polls notification.list in the same batch.
     if (path === "notification.list") {
-      return { result: { data: { items: [], unreadCount: 0 } } };
+      return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
     }
     if (canned.stats === null) {
       return { error: { message: "boom", code: -32603, data: { httpStatus: 500 } } };

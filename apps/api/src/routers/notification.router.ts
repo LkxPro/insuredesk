@@ -6,22 +6,34 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from "../services/notification.service";
+import { listMyTodos } from "../services/todo.service";
 import { protectedProcedure, router } from "../trpc";
 
 /**
- * 轨 1 收件箱 routes (issue #25, PRD §3.7): the bell's 30s poll payload and
- * the read-state mutations. Notifications are strictly personal — every query
- * is pinned to the authenticated viewer, so plain protectedProcedure is the
- * whole guard: no permission point, no data-scope variance.
+ * The 30s poll payload + 轨 1 read-state mutations (issues #25/#30, PRD §3.7).
+ * ADR 0004 送达: one request merges both tracks — `list` carries the 轨 1
+ * inbox slice AND the 轨 2 我的待办 computed at read time. Everything is
+ * strictly personal — every query is pinned to the authenticated viewer, so
+ * plain protectedProcedure is the whole guard: no permission point, no
+ * data-scope variance.
  */
 
 const deps = { prisma, clock: systemClock };
 
 export const notificationRouter = router({
-  /** Latest notifications + total unread count, one request per poll. */
+  /**
+   * The poll: latest 轨 1 notifications + unread count, and the 轨 2 todo
+   * list computed for this instant — one request per 30s tick (ADR 0004).
+   */
   list: protectedProcedure
     .input(notificationListInputSchema.default({}))
-    .query(({ ctx, input }) => listNotifications(deps, ctx.user, input)),
+    .query(async ({ ctx, input }) => {
+      const [inbox, todo] = await Promise.all([
+        listNotifications(deps, ctx.user, input),
+        listMyTodos(deps, ctx.user),
+      ]);
+      return { ...inbox, todo };
+    }),
 
   /** Mark one of MY notifications read; others' ids are a silent no-op. */
   markRead: protectedProcedure
