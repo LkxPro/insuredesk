@@ -3,8 +3,8 @@
 # source + production deps rather than a JS bundle. It also serves the built web
 # SPA (apps/web/dist) via @fastify/static.
 
-# ---- Build stage: full install, Prisma client, and the web bundle ----------
-FROM node:22-alpine AS build
+# ---- Base: shared toolchain + network setup (inherited by both stages) -----
+FROM node:22-alpine AS base
 
 # Optional registry/engine mirrors. Default to official sources (so GitHub CI
 # stays global); override for mainland-China / restricted networks, e.g.:
@@ -12,7 +12,9 @@ FROM node:22-alpine AS build
 #     --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
 #     --build-arg PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma \
 #     -f apps/api/Dockerfile -t insuredesk-api .
-# See docs/deployment.md → "Building behind a restricted network".
+# See docs/deployment.md → "Building behind a restricted network". Declared once
+# here; both derived stages inherit the resulting ENV/files, so build-args reach
+# whichever stage the build targets.
 ARG NPM_REGISTRY=https://registry.npmjs.org
 ARG PRISMA_ENGINES_MIRROR=https://binaries.prisma.sh
 
@@ -21,10 +23,11 @@ RUN apk add --no-cache openssl
 # pnpm via corepack, pinned to the repo's packageManager field.
 RUN corepack enable
 
-# Skip Prisma's telemetry/version-check network call during install/generate.
+# Skip Prisma's telemetry/version-check network call; point its engine
+# downloader at the chosen mirror (this env is honored by Prisma directly).
 ENV CHECKPOINT_DISABLE=1
-# Point Prisma's engine downloader at the chosen mirror (env is honored here).
 ENV PRISMA_ENGINES_MIRROR=$PRISMA_ENGINES_MIRROR
+
 # Retry wrapper: the Prisma engine CDN and npm registry drop connections under
 # load; retry network-heavy steps rather than fail the build on one dropped
 # packet. Usage: `retry <cmd> <args...>`.
@@ -38,6 +41,9 @@ WORKDIR /app
 # pnpm-under-corepack doesn't read). Lockfile v9 pins integrity only, so tarball
 # URLs are rebuilt from this registry.
 RUN echo "registry=$NPM_REGISTRY" > /app/.npmrc
+
+# ---- Build stage: full install, Prisma client, and the web bundle ----------
+FROM base AS build
 
 # Manifests + lockfile first so the install layer caches across source edits.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
@@ -57,26 +63,9 @@ RUN retry pnpm --filter @insuredesk/api run db:generate
 RUN pnpm --filter @insuredesk/web run build
 
 # ---- Runtime stage: production deps + source + built SPA -------------------
-FROM node:22-alpine AS runtime
-
-# Same mirror knobs as the build stage (this stage runs its own prod install
-# and prisma generate). Default to official sources.
-ARG NPM_REGISTRY=https://registry.npmjs.org
-ARG PRISMA_ENGINES_MIRROR=https://binaries.prisma.sh
-
-RUN apk add --no-cache openssl
-RUN corepack enable
+FROM base AS runtime
 
 ENV NODE_ENV=production
-ENV CHECKPOINT_DISABLE=1
-ENV PRISMA_ENGINES_MIRROR=$PRISMA_ENGINES_MIRROR
-RUN printf '#!/bin/sh\nn=0\nuntil "$@"; do\n  n=$((n+1))\n  [ "$n" -ge 8 ] && echo "failed after $n attempts: $*" && exit 1\n  echo "retry $n: $*"\n  sleep 5\ndone\n' > /usr/local/bin/retry \
-    && chmod +x /usr/local/bin/retry
-
-WORKDIR /app
-
-# Point pnpm at the chosen npm registry via a project .npmrc (see build stage).
-RUN echo "registry=$NPM_REGISTRY" > /app/.npmrc
 
 # Production-only install for the API workspace and its deps (pulls in shared,
 # tsx, prisma, @prisma/client). Web is excluded — its bundle arrives prebuilt.
