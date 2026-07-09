@@ -7,6 +7,14 @@ afterEach(() => {
   cleanup();
 });
 
+// jsdom has no ResizeObserver; Radix (Select trigger sizing) observes with it.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+
 // jsdom has no matchMedia; ThemeProvider queries it for the initial theme.
 Object.defineProperty(window, "matchMedia", {
   writable: true,

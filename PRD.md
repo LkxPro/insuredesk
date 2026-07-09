@@ -706,7 +706,7 @@ SLA 规则的结构化配置，**按投诉等级各一条**，管理员可编辑
 
 技术栈与开发规范已定案。完整选型、理由与长期约束（时间处理 `clock.now()`、测试对准高危处）见 **ADR 0006（技术栈与开发规范）**；开发/部署形态（dev 只容器化 PostgreSQL、单机 Docker 部署、host nginx + HTTPS）见 **ADR 0007** 与 `docs/deployment.md`。
 
-核心取向一句话：**TypeScript 同构**——pnpm monorepo（`apps/api` Fastify + tRPC + Prisma + PostgreSQL；`apps/web` React + Vite + kibo-ui/shadcn + TanStack Query；`packages/shared` 共享领域类型 + Zod schema + 枚举），常驻后端进程（非 Serverless），Session + httpOnly Cookie 认证（SSO-ready）。
+核心取向一句话：**TypeScript 同构**——pnpm monorepo（`apps/api` Fastify + tRPC + Prisma + PostgreSQL；`apps/web` React + Vite + shadcn + TanStack Query；`packages/shared` 共享领域类型 + Zod schema + 枚举），常驻后端进程（非 Serverless），Session + httpOnly Cookie 认证（SSO-ready）。
 
 ADR 未覆盖的补充细节：
 
@@ -808,7 +808,7 @@ dueAt 由**投诉等级**决定，从**录入时间（createdAt）**开始计算
 | v1.8 | 2026-07-08 | 范围收尾：新增 §8.0"本期明确不做"边界清单（飞书导入/智能建议/智能分类/冷处理自动办结/观察员可配置范围/SLA停表/个人处理时长均归二期或不做）；只读观察员范围固定为"全部工单只读" | -   |
 | v1.9 | 2026-07-08 | 终审残留清理：1. 排班统一为2班次（早9-18/晚12-21），删除中班与旧night时间 2. 通知去重规则定为"一单一类型只发一次" 3. 未分配工单不发提醒通知（靠看板） 4. 改等级后提醒只对未来生效、错过检查点不补发 5. 全局时区基准=东八区 6. 明确 firstResponseMinutes(违约线)与 afterMinutes(提醒线)是两个不同值 7. checkpoint 判定语义精确化（累计口径、单点判定） 8. completionStatus 枚举封闭无"其他" 9. 首响不计入考核 10. 定时导出归二期 11. 软删本期只删不恢复 12. 统一"特急工单数"命名，清理 new_ticket 残留 | -   |
 | v2.0 | 2026-07-09 | 设计精简（grilling 复盘，7 项）：1. **通知两轨制**——`assigned` 存库（收件箱+toast+已读），overdue/due_soon/待首响/检查点/滚动全部**读时计算成"我的待办"**，本期删后台定时任务、时间类通知行、去重表；带外推送归二期再引 cron 2. **删 `follower`**——当前跟进人走 assigneeId JOIN，历史跟进人走 ProcessLog 3. **首响并成一个数**——删 `first_response` 提醒类型及 afterMinutes，firstResponseMinutes 降为待首响染红阈值，提醒类型 3→2 4. **创建人靠 source 判别**——source 当来源判别器 + 可空 creatorId(仅 manual)，删 creator/creatorName/submitterName，"由谁创建"读时派生 5. lastAssignedAt 确认不做（可从 ProcessLog 派生） 6. **数据范围砍成 全部/个人**——删 view_team 与 Ticket.team 派生，User.team 降为纯描述标签，未分配池洞随之消失 7. **工单号改 WO+全局DB序列**——砍年月与月度重置，消除撞号坑；id 为不透明主键。同步改写 ADR 0004/0005，衔接 0001/0003 | -   |
-| v2.1 | 2026-07-09 | 技术栈定案：§7 从"待定/多选"改写为确定选型（见 ADR 0006）。核心=TypeScript 同构。后端 Node+TS · Fastify · Prisma · PostgreSQL · Session+Cookie(SSO-ready) · pino；前端 React+TS · Vite · kibo-ui→shadcn · Recharts · TanStack Query · RHF+Zod；工程 pnpm monorepo(apps/api+apps/web+packages/shared) · tRPC(service 层+Zod 预留对外 REST) · Biome · Vitest+Testcontainers · Playwright E2E · strict TS · timestamptz+东八区。本期不引 Redis（会话落 Postgres）。新增 ADR 0006 | -   |
+| v2.1 | 2026-07-09 | 技术栈定案：§7 从"待定/多选"改写为确定选型（见 ADR 0006）。核心=TypeScript 同构。后端 Node+TS · Fastify · Prisma · PostgreSQL · Session+Cookie(SSO-ready) · pino；前端 React+TS · Vite · shadcn · Recharts · TanStack Query · RHF+Zod；工程 pnpm monorepo(apps/api+apps/web+packages/shared) · tRPC(service 层+Zod 预留对外 REST) · Biome · Vitest+Testcontainers · Playwright E2E · strict TS · timestamptz+东八区。本期不引 Redis（会话落 Postgres）。新增 ADR 0006 | -   |
 | v2.2 | 2026-07-09 | 文档分层去重（不改需求）：1. §7 压缩为 ADR 0006/0007 引用 + 少量 ADR 未覆盖细节（选型内容与 ADR 0006 重复） 2. 补充"监管单数 = channel 监管"的口径定义（原仅存在于 CONTEXT.md） 3. CONTEXT.md 重写为纯领域词汇表——规则细节以 PRD/ADR 为单一真源，并修正工单号示例的旧年月格式残留 | -   |
 
 

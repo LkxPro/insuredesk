@@ -1,6 +1,8 @@
-import { FullScreenLoading } from "@/components/FullScreenLoading";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import {
@@ -10,7 +12,7 @@ import {
   TICKET_STATUS_LABELS,
   type TicketDisplayStatus,
 } from "@insuredesk/shared";
-import { ArrowLeft } from "lucide-react";
+import { AlertCircle, ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
@@ -20,31 +22,30 @@ import { Link, useParams } from "react-router";
  * comment, resolve…) arrive with their own tickets.
  */
 
+/** Status color coding on the shared Badge; tints, not solid fills. */
 const statusBadgeClasses: Record<TicketDisplayStatus, string> = {
   unassigned: "bg-muted text-muted-foreground",
-  assigned: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  processing: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  completed: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-  pending_timeout: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
-  overdue: "bg-destructive/15 text-destructive",
+  assigned: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  processing: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  completed: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  pending_timeout: "border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  overdue: "border-destructive/30 bg-destructive/10 text-destructive",
 };
 
 function StatusBadge({ status }: { status: TicketDisplayStatus }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadgeClasses[status]}`}
-    >
+    <Badge variant="outline" className={statusBadgeClasses[status]}>
       {TICKET_STATUS_LABELS[status]}
-    </span>
+    </Badge>
   );
 }
 
 /** One label/value cell of a detail section. */
 function Item({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="space-y-0.5">
+    <div className="flex flex-col gap-0.5">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-sm">{children ?? "—"}</dd>
+      <dd className="m-0 text-sm">{children ?? "—"}</dd>
     </div>
   );
 }
@@ -62,23 +63,55 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Layout-shaped placeholder while the detail query is in flight. */
+function DetailSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-busy>
+      <div className="flex items-center gap-3">
+        <Skeleton className="size-9 rounded-md" />
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-5 w-16 rounded-full" />
+      </div>
+      {[0, 1, 2].map((index) => (
+        <Card key={index}>
+          <CardHeader>
+            <Skeleton className="h-5 w-24" />
+          </CardHeader>
+          <CardContent className="grid gap-x-6 gap-y-4 sm:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((cell) => (
+              <div key={cell} className="flex flex-col gap-1.5">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const detailQuery = trpc.ticket.detail.useQuery({ id: id ?? "" }, { enabled: Boolean(id) });
 
   if (detailQuery.isLoading) {
-    return <FullScreenLoading />;
+    return <DetailSkeleton />;
   }
 
   if (detailQuery.error || !detailQuery.data) {
     return (
-      <div className="space-y-4">
-        <p className="text-sm text-destructive" role="alert">
-          {detailQuery.error?.message ?? "工单不存在或无权查看"}
-        </p>
-        <Button asChild variant="outline">
+      <div className="mx-auto flex w-full max-w-lg flex-col gap-4 pt-10">
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>无法打开工单</AlertTitle>
+          <AlertDescription>
+            {detailQuery.error?.message ?? "工单不存在或无权查看"}
+          </AlertDescription>
+        </Alert>
+        <Button asChild variant="outline" className="self-start">
           <Link to="/tickets">
-            <ArrowLeft />
+            <ArrowLeft data-icon="inline-start" />
             返回工单管理
           </Link>
         </Button>
@@ -89,7 +122,7 @@ export function TicketDetail() {
   const ticket = detailQuery.data;
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <Button asChild variant="ghost" size="icon" aria-label="返回工单管理">
           <Link to="/tickets">
@@ -98,7 +131,7 @@ export function TicketDetail() {
         </Button>
         <h1 className="text-2xl font-semibold tracking-tight">{ticket.workOrderNumber}</h1>
         <StatusBadge status={ticket.displayStatus} />
-        <span className="text-sm text-muted-foreground">{ticket.complaintLevel}</span>
+        <Badge variant="secondary">{ticket.complaintLevel}</Badge>
       </div>
 
       <Section title="基本信息">
@@ -170,14 +203,14 @@ export function TicketDetail() {
           <CardTitle className="text-base">处理记录</CardTitle>
         </CardHeader>
         <CardContent>
-          <ol className="space-y-0">
+          <ol className="m-0 flex list-none flex-col p-0">
             {ticket.processLogs.map((log, index) => (
               <li key={log.id} className="relative flex gap-3 pb-6 last:pb-0">
                 {index < ticket.processLogs.length - 1 && (
                   <span aria-hidden className="absolute left-[5px] top-4 h-full w-px bg-border" />
                 )}
                 <span className="mt-1.5 size-[11px] shrink-0 rounded-full border-2 border-primary bg-background" />
-                <div className="space-y-1">
+                <div className="flex flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-x-2 text-sm">
                     <span className="font-medium">{PROCESS_LOG_ACTION_LABELS[log.action]}</span>
                     {log.operatorName && (
@@ -186,11 +219,11 @@ export function TicketDetail() {
                     <span className="text-xs text-muted-foreground">{formatDateTime(log.at)}</span>
                   </div>
                   {log.from !== null && log.to !== null && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="m-0 text-xs text-muted-foreground">
                       {log.from} → {log.to}
                     </p>
                   )}
-                  <p className="text-sm text-muted-foreground">{log.remark}</p>
+                  <p className="m-0 text-sm text-muted-foreground">{log.remark}</p>
                 </div>
               </li>
             ))}

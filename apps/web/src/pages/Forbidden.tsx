@@ -1,21 +1,32 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { ShieldX } from "lucide-react";
 import { Link } from "react-router";
 
 export function Forbidden() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-6">
-      <Card className="w-full max-w-sm text-center">
-        <CardHeader>
-          <CardTitle className="text-xl">403</CardTitle>
-          <CardDescription>你没有访问该页面的权限</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <main className="flex min-h-svh items-center justify-center px-6">
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ShieldX />
+          </EmptyMedia>
+          <EmptyTitle>403</EmptyTitle>
+          <EmptyDescription>你没有访问该页面的权限</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
           <Button asChild variant="outline">
             <Link to="/">返回首页</Link>
           </Button>
-        </CardContent>
-      </Card>
+        </EmptyContent>
+      </Empty>
     </main>
   );
 }

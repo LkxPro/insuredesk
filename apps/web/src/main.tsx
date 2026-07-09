@@ -1,5 +1,6 @@
 import { App } from "@/App";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { Toaster } from "@/components/ui/sonner";
 import { trpc } from "@/lib/trpc";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
@@ -22,6 +23,7 @@ function Root() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <App />
+          <Toaster />
         </ThemeProvider>
       </QueryClientProvider>
     </trpc.Provider>

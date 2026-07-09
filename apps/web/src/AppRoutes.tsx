@@ -5,7 +5,6 @@ import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
 import { DashboardPage, RolesPage, SchedulePage, UsersPage } from "@/pages/placeholders";
-import { TicketCreate } from "@/pages/tickets/TicketCreate";
 import { TicketDetail } from "@/pages/tickets/TicketDetail";
 import { TicketsPage } from "@/pages/tickets/TicketsPage";
 import type { ReactElement } from "react";
@@ -60,12 +59,14 @@ export function AppRoutes() {
           />
         ))}
         {/* Sub-pages of 工单管理 (issue #22): create needs ticket.create; the
-            detail read only ticket.view — data scope is enforced server-side. */}
+            detail read only ticket.view — data scope is enforced server-side.
+            /tickets/new renders 工单管理 with the creation dialog open, so the
+            modal stays deep-linkable and guarded like a page. */}
         <Route
           path="/tickets/new"
           element={
             <ProtectedRoute requiredPermission="ticket.create">
-              <TicketCreate />
+              <TicketsPage createOpen />
             </ProtectedRoute>
           }
         />
