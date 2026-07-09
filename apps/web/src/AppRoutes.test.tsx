@@ -51,6 +51,12 @@ vi.mock("@/pages/dashboard/DashboardPage", () => ({
   DashboardPage: () => <h1>数据看板</h1>,
 }));
 
+// And for the real 排班配置 page (issue #31): it queries schedule.list on
+// mount. Its real behavior is covered in SchedulePage.test.tsx.
+vi.mock("@/pages/schedule/SchedulePage", () => ({
+  SchedulePage: () => <h1>排班配置</h1>,
+}));
+
 /** Demo user holding a preset role, mirroring what `auth.me` returns. */
 function userWith(role: { name: string; permissions: readonly Permission[] }): AuthUser {
   return {

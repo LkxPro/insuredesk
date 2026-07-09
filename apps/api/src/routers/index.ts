@@ -4,6 +4,7 @@ import { authRouter } from "./auth.router";
 import { dashboardRouter } from "./dashboard.router";
 import { demoRouter } from "./demo.router";
 import { notificationRouter } from "./notification.router";
+import { scheduleRouter } from "./schedule.router";
 import { ticketRouter } from "./ticket.router";
 
 export const appRouter = router({
@@ -43,6 +44,11 @@ export const appRouter = router({
    * 数据看板 - 9 指标卡 + 渠道统计 + 跟进人考核 (issue #29)
    */
   dashboard: dashboardRouter,
+
+  /**
+   * 排班配置 - 排班日历 CRUD，喂给按排班自动分配 (issue #31)
+   */
+  schedule: scheduleRouter,
 });
 
 export type AppRouter = typeof appRouter;

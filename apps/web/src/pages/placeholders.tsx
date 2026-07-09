@@ -5,7 +5,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { CalendarClock, ShieldCheck, Users } from "lucide-react";
+import { ShieldCheck, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -37,8 +37,4 @@ export function UsersPage() {
 
 export function RolesPage() {
   return <PlaceholderPage title="角色权限" icon={ShieldCheck} />;
-}
-
-export function SchedulePage() {
-  return <PlaceholderPage title="排班配置" icon={CalendarClock} />;
 }
