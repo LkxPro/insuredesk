@@ -447,8 +447,7 @@ SLA 规则的结构化配置，**按投诉等级各一条**，管理员可编辑
 > **首响的单一数值**：首响不再有"提醒线/违约线"两个值。`firstResponseMinutes`（一般120/高级120/加急60/特急30 分钟）是唯一的首响数，仅作待首响告警的染红阈值。原 `first_response` 提醒的 `afterMinutes` 已删除。
 
 **引擎运行规则**：
-- **时区基准**：全系统所有时间计算（dueAt、SLA 检查点、班次匹配、"距今<2h"预警）统一按 **东八区（Asia/Shanghai, UTC+8）**；时间戳以 ISO 8601 存储
-- **时钟基准**：`follow_up_checkpoint` 与首响判定的时间自 createdAt 起算；`rolling_follow_up` 自上一条 comment 起算
+- **时钟基准**：`follow_up_checkpoint` 与首响判定的时间自 createdAt 起算；`rolling_follow_up` 自上一条 comment 起算；时间戳以 ISO 8601 存储
 - **跟进次数**：工单自 createdAt 起的累计 comment 数（跨责任人累加，与 contactCount 一致）
 - **告警归属**：当前 assigneeId；**工单未分配时（assigneeId=null）不进任何人的待办**——超时/预警靠数据看板呈现，由主管主动处理（待办查询带 assigneeId=me，未分配单天然不属于任何人）
 - **停止**：工单 completed 后所有待办告警停止（掉出清单）
@@ -810,5 +809,6 @@ dueAt 由**投诉等级**决定，从**录入时间（createdAt）**开始计算
 | v2.0 | 2026-07-09 | 设计精简（grilling 复盘，7 项）：1. **通知两轨制**——`assigned` 存库（收件箱+toast+已读），overdue/due_soon/待首响/检查点/滚动全部**读时计算成"我的待办"**，本期删后台定时任务、时间类通知行、去重表；带外推送归二期再引 cron 2. **删 `follower`**——当前跟进人走 assigneeId JOIN，历史跟进人走 ProcessLog 3. **首响并成一个数**——删 `first_response` 提醒类型及 afterMinutes，firstResponseMinutes 降为待首响染红阈值，提醒类型 3→2 4. **创建人靠 source 判别**——source 当来源判别器 + 可空 creatorId(仅 manual)，删 creator/creatorName/submitterName，"由谁创建"读时派生 5. lastAssignedAt 确认不做（可从 ProcessLog 派生） 6. **数据范围砍成 全部/个人**——删 view_team 与 Ticket.team 派生，User.team 降为纯描述标签，未分配池洞随之消失 7. **工单号改 WO+全局DB序列**——砍年月与月度重置，消除撞号坑；id 为不透明主键。同步改写 ADR 0004/0005，衔接 0001/0003 | -   |
 | v2.1 | 2026-07-09 | 技术栈定案：§7 从"待定/多选"改写为确定选型（见 ADR 0006）。核心=TypeScript 同构。后端 Node+TS · Fastify · Prisma · PostgreSQL · Session+Cookie(SSO-ready) · pino；前端 React+TS · Vite · shadcn · Recharts · TanStack Query · RHF+Zod；工程 pnpm monorepo(apps/api+apps/web+packages/shared) · tRPC(service 层+Zod 预留对外 REST) · Biome · Vitest+Testcontainers · Playwright E2E · strict TS · timestamptz+东八区。本期不引 Redis（会话落 Postgres）。新增 ADR 0006 | -   |
 | v2.2 | 2026-07-09 | 文档分层去重（不改需求）：1. §7 压缩为 ADR 0006/0007 引用 + 少量 ADR 未覆盖细节（选型内容与 ADR 0006 重复） 2. 补充"监管单数 = channel 监管"的口径定义（原仅存在于 CONTEXT.md） 3. CONTEXT.md 重写为纯领域词汇表——规则细节以 PRD/ADR 为单一真源，并修正工单号示例的旧年月格式残留 | -   |
+| v2.3 | 2026-07-09 | 移除全局时区基准条款（原"时区基准=东八区"）：存储仍为 UTC timestamptz + ISO 8601，展示/输入解析改按运行环境本地时区，不再固定东八区；代码移除 date-fns-tz，同步修订 ADR 0006 时间处理约束 | -   |
 
 

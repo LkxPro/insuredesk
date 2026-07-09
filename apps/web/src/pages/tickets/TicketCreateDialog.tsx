@@ -31,7 +31,6 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { DISPLAY_TIME_ZONE } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -45,7 +44,6 @@ import {
   ticketCreateInputSchema,
 } from "@insuredesk/shared";
 import { format } from "date-fns";
-import { fromZonedTime } from "date-fns-tz";
 import { zhCN } from "date-fns/locale";
 import { AlertCircle, Calendar as CalendarIcon } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
@@ -58,8 +56,7 @@ import { z } from "zod";
  * rather than a separate page. Validation is the shared ticketCreateInputSchema
  * — the same contract the API parses — with form-side deviations: feedbackTime
  * is held as a datetime-local string until submit (converted to an absolute
- * instant on the 东八区 wall clock), and the enum selects get Chinese "please
- * choose" messages.
+ * instant), and the enum selects get Chinese "please choose" messages.
  */
 const formSchema = ticketCreateInputSchema.extend({
   feedbackTime: z.string().min(1, "请填写反馈时间"),
@@ -115,9 +112,7 @@ export function TicketCreateDialog({
   const onSubmit = handleSubmit((values) =>
     create.mutate({
       ...values,
-      // datetime-local is a wall-clock string; pin it to 东八区 (ADR 0006)
-      // rather than the browser's zone before shipping an absolute instant.
-      feedbackTime: fromZonedTime(values.feedbackTime, DISPLAY_TIME_ZONE).toISOString(),
+      feedbackTime: new Date(values.feedbackTime).toISOString(),
     }),
   );
 

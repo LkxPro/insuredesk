@@ -18,7 +18,7 @@
 
 **需要长期遵守的约束**(不写下来就会丢的两条):
 
-- **时间处理**:DB 一律 `timestamptz` 存 UTC,展示/计算在边界转东八区(date-fns-tz);**读时时间谓词统一走可注入的 `clock.now()`**,保证可测与口径单一真源。纯绝对时刻比较(如会话过期)用 `new Date()` 即可,不在此列。
+- **时间处理**:DB 一律 `timestamptz` 存 UTC,展示按运行环境本地时区;**读时时间谓词统一走可注入的 `clock.now()`**,保证可测与口径单一真源。纯绝对时刻比较(如会话过期)用 `new Date()` 即可,不在此列。
 - **测试对准高危处**:依赖 Postgres 方言的读时谓词、考核聚合、工单号并发序列、RBAC 守卫,用 Testcontainers 起**真 Postgres** 测(mock/SQLite 测不准);纯 CRUD 透传与纯展示组件少测/不测;Playwright 覆盖 3~5 条关键路径作回归防线。
 
 其余工程细节(Biome、strict tsconfig、pino、Conventional Commits、.env 约定、命名规范)以仓库配置文件与现有代码为准,不在本 ADR 赘述。
