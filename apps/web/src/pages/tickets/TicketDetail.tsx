@@ -11,20 +11,21 @@ import {
   PROCESS_LOG_ACTION_LABELS,
   TICKET_SOURCE_LABELS,
 } from "@insuredesk/shared";
-import { AlertCircle, ArrowLeft, UserPlus } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, UserPlus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link, useParams } from "react-router";
 import { AddCommentCard } from "./AddCommentCard";
 import { AssignTicketDialog } from "./AssignTicketDialog";
+import { ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 
 /**
  * 工单详情 (issue #22): every PRD §3.1 field grouped by its PRD section, plus
  * the ProcessLog timeline (§3.2). Lifecycle actions live with the detail —
- * 分配/改派 in the header (issue #24, gated by ticket.assign; hidden on the
- * completed 终态), 添加跟进 above the timeline (issue #26, gated by
- * ticket.process on an assigned/processing ticket); resolve arrives with its
- * own ticket.
+ * 分配/改派 and 完结工单 in the header (issues #24/#27, gated by ticket.assign
+ * / ticket.process; both hidden on the completed 终态), 添加跟进 above the
+ * timeline (issue #26, gated by ticket.process on an assigned/processing
+ * ticket).
  */
 
 /** One label/value cell of a detail section. */
@@ -82,6 +83,7 @@ export function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const { hasPermission } = useAuth();
   const [assignOpen, setAssignOpen] = useState(false);
+  const [resolveOpen, setResolveOpen] = useState(false);
   const detailQuery = trpc.ticket.detail.useQuery({ id: id ?? "" }, { enabled: Boolean(id) });
 
   if (detailQuery.isLoading) {
@@ -109,6 +111,10 @@ export function TicketDetail() {
   }
 
   const ticket = detailQuery.data;
+  // Mirrors the API guard: 完结 is part of 处理工单, only from an in-flight state
+  const canResolve =
+    hasPermission("ticket.process") &&
+    (ticket.status === "assigned" || ticket.status === "processing");
 
   return (
     <div className="flex flex-col gap-4">
@@ -121,17 +127,20 @@ export function TicketDetail() {
         <h1 className="text-2xl font-semibold tracking-tight">{ticket.workOrderNumber}</h1>
         <StatusBadge status={ticket.displayStatus} />
         <Badge variant="secondary">{ticket.complaintLevel}</Badge>
-        {hasPermission("ticket.assign") && ticket.status !== "completed" && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={() => setAssignOpen(true)}
-          >
-            <UserPlus data-icon="inline-start" />
-            {ticket.assigneeId ? "改派" : "分配"}
-          </Button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {hasPermission("ticket.assign") && ticket.status !== "completed" && (
+            <Button variant="outline" size="sm" onClick={() => setAssignOpen(true)}>
+              <UserPlus data-icon="inline-start" />
+              {ticket.assigneeId ? "改派" : "分配"}
+            </Button>
+          )}
+          {canResolve && (
+            <Button size="sm" onClick={() => setResolveOpen(true)}>
+              <CheckCircle2 data-icon="inline-start" />
+              完结工单
+            </Button>
+          )}
+        </div>
       </div>
 
       <Section title="基本信息">
@@ -235,6 +244,14 @@ export function TicketDetail() {
           </ol>
         </CardContent>
       </Card>
+
+      {canResolve && (
+        <ResolveTicketDialog
+          open={resolveOpen}
+          onOpenChange={setResolveOpen}
+          ticket={{ id: ticket.id, workOrderNumber: ticket.workOrderNumber }}
+        />
+      )}
 
       {hasPermission("ticket.assign") && (
         <AssignTicketDialog

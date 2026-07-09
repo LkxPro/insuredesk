@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   channelSchema,
   complaintLevelSchema,
+  completionStatusSchema,
   nuclearBodyStatusSchema,
   prioritySchema,
   ticketCategorySchema,
@@ -105,6 +106,19 @@ export const ticketAddCommentInputSchema = z.object({
 export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
 /** Server-side shape (after transforms) — what the service receives. */
 export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
+
+/**
+ * 完结工单 contract (issue #27, PRD §4.4): the mandatory completion reason —
+ * one of the 12 封闭枚举, no "其他" (PRD §9.1) — plus the 完结备注 that becomes
+ * the resolve log's remark. completionTime / the → completed transition and
+ * its ProcessLog pair are derived server-side; completed is a 终态.
+ */
+export const ticketResolveInputSchema = z.object({
+  ticketId: z.string().min(1),
+  completionStatus: completionStatusSchema,
+  remark: z.string().trim().min(1, "请填写完结备注").max(2000),
+});
+export type TicketResolveInput = z.infer<typeof ticketResolveInputSchema>;
 
 /** List sort keys (PRD §2.1): 创建时间 / 处理时限. */
 export const TICKET_SORT_FIELDS = ["createdAt", "dueAt"] as const;

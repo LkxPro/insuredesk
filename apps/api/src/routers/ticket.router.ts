@@ -4,6 +4,7 @@ import {
   ticketBatchAssignInputSchema,
   ticketCreateInputSchema,
   ticketListInputSchema,
+  ticketResolveInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -18,6 +19,7 @@ import {
   listAssigneeOptions,
 } from "../services/ticket-assign.service";
 import { TicketNotProcessableError, addTicketComment } from "../services/ticket-comment.service";
+import { TicketNotResolvableError, resolveTicket } from "../services/ticket-resolve.service";
 import {
   SlaPolicyNotConfiguredError,
   createTicket,
@@ -122,6 +124,31 @@ export const ticketRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
         }
         if (error instanceof TicketNotProcessableError) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+
+  /**
+   * 完结工单 (issue #27). Guarded by ticket.process like follow-ups — 完结 is
+   * part of 处理工单; the data scope inside keeps a frontline CS on their own
+   * tickets.
+   */
+  resolve: requirePermission("ticket.process")
+    .input(ticketResolveInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await resolveTicket(deps, ctx.user, input);
+      } catch (error) {
+        if (error instanceof TicketNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        if (error instanceof TicketNotResolvableError) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: error.message,
