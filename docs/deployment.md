@@ -19,6 +19,7 @@ Only Postgres runs in a container. The app runs on the host.
 ```bash
 docker compose up -d    # start PostgreSQL (named volume, port 5432 exposed)
 pnpm db:migrate         # apply migrations (first run, and after schema changes)
+pnpm db:seed            # create demo users, SLA policies, and demo tickets
 pnpm dev                # start api + web with hot reload
 ```
 
@@ -32,6 +33,7 @@ pnpm dev                # start api + web with hot reload
   docker compose down -v   # -v drops the data volume
   docker compose up -d
   pnpm db:migrate
+  pnpm db:seed
   ```
 
 The API does **not** serve the frontend in development — Vite owns the dev
@@ -160,5 +162,6 @@ server {
 | Command | When | What it does |
 | --- | --- | --- |
 | `pnpm db:migrate` | Development | `prisma migrate dev` — creates + applies migrations from schema changes |
+| `pnpm db:seed` | Development | Creates/refreshes demo users, SLA policies, and demo tickets |
 | `pnpm db:deploy` | Production | `prisma migrate deploy` — applies committed migrations only |
 | `docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy` | Production (containerized) | Runs `db:deploy` inside a one-off API container against `db` |
