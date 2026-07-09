@@ -97,7 +97,7 @@ let calls: Array<{ path: string; input: unknown }>;
 
 function respond(path: string, input: unknown): unknown {
   if (path === "notification.list") {
-    return { items: [], unreadCount: 0 };
+    return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
   if (path === "schedule.list") {
     return canned.entries;
