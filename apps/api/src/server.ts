@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
-import Fastify from "fastify";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import fastifyCookie from "@fastify/cookie";
+import fastifyStatic from "@fastify/static";
+import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
+import Fastify, { type FastifyInstance } from "fastify";
+import { prisma } from "./db";
 import type { Env } from "./env";
 import { type AppRouter, appRouter } from "./routers";
-import { SessionService, PasswordAuthProvider } from "./services/auth.service";
-import { prisma } from "./db";
+import { PasswordAuthProvider, SessionService } from "./services/auth.service";
 
 /**
  * Build the Fastify app with tRPC mounted at /trpc. Logging is structured pino
@@ -150,5 +153,52 @@ export function buildServer(env: Env) {
   // Plain HTTP liveness endpoint for infra/load-balancer probes.
   app.get("/healthz", () => ({ status: "ok" }));
 
+  // In production the API also serves the built SPA (ADR 0007): a single
+  // container fronts both the tRPC API and the static frontend, behind the
+  // host's nginx. In dev this is skipped — Vite owns the dev server.
+  if (env.NODE_ENV === "production") {
+    registerStaticFrontend(app, env);
+  }
+
   return app;
+}
+
+/**
+ * Resolve the built web assets directory. Prefer the explicit WEB_DIST_PATH
+ * (set in the container / prod env); otherwise fall back to the monorepo
+ * layout relative to this source file (apps/api/src → apps/web/dist).
+ */
+function resolveWebDistPath(env: Env): string {
+  if (env.WEB_DIST_PATH) {
+    return resolve(env.WEB_DIST_PATH);
+  }
+  const here = dirname(fileURLToPath(import.meta.url));
+  return resolve(here, "..", "..", "web", "dist");
+}
+
+/**
+ * Serve apps/web/dist and fall back to index.html for client-side routes.
+ *
+ * `wildcard: false` makes @fastify/static register a route per real file
+ * instead of a catch-all `/*`, so it never shadows `/trpc/*` or `/healthz`.
+ * Anything left unmatched (a deep SPA link like /tickets/123) reaches the
+ * notFound handler, which returns the SPA shell — but only for GET navigations
+ * that aren't API calls, so unknown `/trpc` paths still get tRPC's JSON 404.
+ */
+function registerStaticFrontend(app: FastifyInstance, env: Env) {
+  const root = resolveWebDistPath(env);
+
+  app.register(fastifyStatic, {
+    root,
+    wildcard: false,
+    index: ["index.html"],
+  });
+
+  app.setNotFoundHandler((req, reply) => {
+    const isApiPath = req.url.startsWith("/trpc") || req.url.startsWith("/api");
+    if (req.method === "GET" && !isApiPath) {
+      return reply.code(200).type("text/html").sendFile("index.html");
+    }
+    return reply.code(404).send({ error: "Not Found" });
+  });
 }
