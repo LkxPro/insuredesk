@@ -1,23 +1,51 @@
-import { ticketCreateInputSchema, ticketListInputSchema } from "@insuredesk/shared";
+import {
+  ticketAssignInputSchema,
+  ticketBatchAssignInputSchema,
+  ticketCreateInputSchema,
+  ticketListInputSchema,
+} from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
+import {
+  AssigneeNotAssignableError,
+  TicketNotAssignableError,
+  TicketNotFoundError,
+  assignTicket,
+  batchAssignTickets,
+  listAssigneeOptions,
+} from "../services/ticket-assign.service";
 import {
   SlaPolicyNotConfiguredError,
   createTicket,
   getTicketDetail,
   listTickets,
 } from "../services/ticket.service";
-import { requirePermission, router } from "../trpc";
+import { requireAnyPermission, requirePermission, router } from "../trpc";
 
 /**
- * Ticket routes (issues #22/#23): manual creation, the detail page read, and
- * the filterable list. Thin wrappers per ADR 0006 — validation via the shared
- * Zod schemas, RBAC via requirePermission, business logic in ticket.service.
+ * Ticket routes (issues #22/#23/#24): manual creation, the detail page read,
+ * the filterable list, and assignment. Thin wrappers per ADR 0006 — validation
+ * via the shared Zod schemas, RBAC via requirePermission, business logic in
+ * the ticket services.
  */
 
 const deps = { prisma, clock: systemClock };
+
+/** Assignment domain errors → transport codes; anything else rethrows as-is. */
+function mapAssignmentError(error: unknown): never {
+  if (error instanceof TicketNotFoundError) {
+    throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+  }
+  if (error instanceof TicketNotAssignableError) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message, cause: error });
+  }
+  if (error instanceof AssigneeNotAssignableError) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  throw error;
+}
 
 export const ticketRouter = router({
   /**
@@ -63,4 +91,39 @@ export const ticketRouter = router({
       }
       return detail;
     }),
+
+  /**
+   * Assign or reassign one ticket (issue #24). Guarded by ticket.assign —
+   * the UI hides its entry points without it, and the API rejects regardless.
+   */
+  assign: requirePermission("ticket.assign")
+    .input(ticketAssignInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await assignTicket(deps, ctx.user, input);
+      } catch (error) {
+        mapAssignmentError(error);
+      }
+    }),
+
+  /**
+   * 批量分配: the whole selection to one assignee, all-or-nothing (issue #24).
+   */
+  batchAssign: requirePermission("ticket.batch_assign")
+    .input(ticketBatchAssignInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await batchAssignTickets(deps, ctx.user, input);
+      } catch (error) {
+        mapAssignmentError(error);
+      }
+    }),
+
+  /**
+   * Active users for the 责任人 picker. Either assign permission unlocks it —
+   * the dropdown serves both the single and the batch dialog.
+   */
+  assigneeOptions: requireAnyPermission(["ticket.assign", "ticket.batch_assign"]).query(() =>
+    listAssigneeOptions(deps),
+  ),
 });

@@ -56,6 +56,31 @@ export type TicketCreateInput = z.input<typeof ticketCreateInputSchema>;
 /** Server-side shape (after transforms) — what the service receives. */
 export type TicketCreateData = z.output<typeof ticketCreateInputSchema>;
 
+/**
+ * Assignment contracts (issue #24, PRD §4.3). Only the target is caller-chosen:
+ * assignedAt / status / the ProcessLog entries are derived server-side, and
+ * dueAt is never touched (ADR 0002). status is deliberately absent everywhere —
+ * it moves only through lifecycle actions.
+ */
+export const ticketAssignInputSchema = z.object({
+  ticketId: z.string().min(1),
+  assigneeId: z.string().min(1, "请选择责任人"),
+});
+export type TicketAssignInput = z.infer<typeof ticketAssignInputSchema>;
+
+/** 批量分配单次上限（即列表单页上限）；列表多选与 API 校验共用这一个数。 */
+export const BATCH_ASSIGN_LIMIT = 100;
+
+/** 批量分配：多选工单统一分配给同一责任人。 */
+export const ticketBatchAssignInputSchema = z.object({
+  ticketIds: z
+    .array(z.string().min(1))
+    .min(1, "请选择工单")
+    .max(BATCH_ASSIGN_LIMIT, `一次最多分配 ${BATCH_ASSIGN_LIMIT} 个工单`),
+  assigneeId: z.string().min(1, "请选择责任人"),
+});
+export type TicketBatchAssignInput = z.infer<typeof ticketBatchAssignInputSchema>;
+
 /** List sort keys (PRD §2.1): 创建时间 / 处理时限. */
 export const TICKET_SORT_FIELDS = ["createdAt", "dueAt"] as const;
 export const ticketSortFieldSchema = z.enum(TICKET_SORT_FIELDS);

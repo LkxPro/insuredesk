@@ -90,3 +90,20 @@ export function requirePermission(permission: Permission) {
     return next({ ctx });
   });
 }
+
+/**
+ * Permission-guarded procedure factory accepting alternatives: any one of the
+ * listed permissions grants access. For shared auxiliary reads (e.g. the
+ * assignee picker serving both ticket.assign and ticket.batch_assign).
+ */
+export function requireAnyPermission(permissions: readonly Permission[]) {
+  return protectedProcedure.use(({ ctx, next }) => {
+    if (!permissions.some((permission) => ctx.user.permissions.includes(permission))) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `Missing required permission: ${permissions.join(" | ")}`,
+      });
+    }
+    return next({ ctx });
+  });
+}

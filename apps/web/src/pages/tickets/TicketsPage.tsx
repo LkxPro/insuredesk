@@ -1,5 +1,6 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Empty,
   EmptyDescription,
@@ -28,6 +29,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import {
+  BATCH_ASSIGN_LIMIT,
   CHANNELS,
   COMPLAINT_LEVELS,
   TICKET_DISPLAY_STATUSES,
@@ -39,9 +41,19 @@ import {
   ticketListInputSchema,
 } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Plus, Search, Ticket } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Plus,
+  Search,
+  Ticket,
+  UserPlus,
+} from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 
@@ -55,9 +67,14 @@ import { TicketCreateDialog } from "./TicketCreateDialog";
  *
  * Creation stays a modal dialog over this page, driven by the /tickets/new
  * route (`createOpen`), shown only to holders of ticket.create.
+ *
+ * Assignment (issue #24) adds two permission-gated entry points: a per-row
+ * 分配/改派 action (ticket.assign) and multi-select checkboxes feeding 批量分配
+ * (ticket.batch_assign). Selection is kept as id → AssignTarget so it survives
+ * paging; completed tickets are terminal and not selectable.
  */
 
-const LIST_COLUMN_COUNT = 10;
+const BASE_COLUMN_COUNT = 10;
 
 /**
  * URL query string → validated list query. Each param is salvaged on its own,
@@ -138,15 +155,14 @@ function SortHead({
   );
 }
 
-const SKELETON_CELLS = Array.from({ length: LIST_COLUMN_COUNT }, (_, index) => index);
-
 /** Layout-shaped placeholder rows while the list query is in flight. */
-function ListSkeletonRows() {
+function ListSkeletonRows({ columnCount }: { columnCount: number }) {
+  const cells = Array.from({ length: columnCount }, (_, index) => index);
   return (
     <>
       {[0, 1, 2, 3, 4].map((row) => (
         <TableRow key={row}>
-          {SKELETON_CELLS.map((cell) => (
+          {cells.map((cell) => (
             <TableCell key={cell}>
               <Skeleton className="h-4 w-full max-w-24" />
             </TableCell>
@@ -161,10 +177,18 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
   const canCreate = hasPermission("ticket.create");
+  const canAssign = hasPermission("ticket.assign");
+  const canBatchAssign = hasPermission("ticket.batch_assign");
 
   const [searchParams, setSearchParams] = useSearchParams();
   const query = parseListQuery(searchParams);
   const [searchDraft, setSearchDraft] = useState(query.search ?? "");
+
+  // 批量分配 selection: id → target so it survives paging (the dialog needs
+  // more than the id, and page 2 replaces `items`)
+  const [selected, setSelected] = useState<ReadonlyMap<string, AssignTarget>>(new Map());
+  const [singleTarget, setSingleTarget] = useState<AssignTarget | null>(null);
+  const [batchOpen, setBatchOpen] = useState(false);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
 
@@ -202,6 +226,50 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+  const columnCount = BASE_COLUMN_COUNT + (canBatchAssign ? 1 : 0) + (canAssign ? 1 : 0);
+
+  type ListItem = (typeof items)[number];
+
+  function toTarget(ticket: ListItem): AssignTarget {
+    return {
+      id: ticket.id,
+      workOrderNumber: ticket.workOrderNumber,
+      assigneeId: ticket.assigneeId,
+      assigneeName: ticket.assigneeName,
+      dueAt: ticket.dueAt,
+    };
+  }
+
+  function toggleSelected(ticket: ListItem) {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(ticket.id)) {
+        next.delete(ticket.id);
+      } else {
+        next.set(ticket.id, toTarget(ticket));
+      }
+      return next;
+    });
+  }
+
+  // completed is terminal — never selectable for assignment
+  const selectableItems = items.filter((ticket) => ticket.status !== "completed");
+  const allPageSelected =
+    selectableItems.length > 0 && selectableItems.every((ticket) => selected.has(ticket.id));
+
+  function togglePageSelection() {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const ticket of selectableItems) {
+        if (allPageSelected) {
+          next.delete(ticket.id);
+        } else {
+          next.set(ticket.id, toTarget(ticket));
+        }
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -269,6 +337,28 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         </form>
       </div>
 
+      {canBatchAssign && selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+          <span>已选 {selected.size} 个工单</span>
+          <Button
+            size="sm"
+            disabled={selected.size > BATCH_ASSIGN_LIMIT}
+            onClick={() => setBatchOpen(true)}
+          >
+            <UserPlus data-icon="inline-start" />
+            批量分配
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Map())}>
+            清除选择
+          </Button>
+          {selected.size > BATCH_ASSIGN_LIMIT && (
+            <span className="text-destructive">
+              一次最多分配 {BATCH_ASSIGN_LIMIT} 个，请减少选择
+            </span>
+          )}
+        </div>
+      )}
+
       {listQuery.error ? (
         <Alert variant="destructive">
           <AlertCircle />
@@ -280,6 +370,16 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           <Table>
             <TableHeader>
               <TableRow>
+                {canBatchAssign && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      aria-label="选择本页全部工单"
+                      checked={allPageSelected}
+                      disabled={selectableItems.length === 0}
+                      onCheckedChange={togglePageSelection}
+                    />
+                  </TableHead>
+                )}
                 <TableHead>工单号</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>客户姓名</TableHead>
@@ -299,14 +399,15 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 <TableHead>
                   <SortHead field="dueAt" label="处理时限" query={query} onToggle={toggleSort} />
                 </TableHead>
+                {canAssign && <TableHead className="w-16">操作</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {listQuery.isLoading ? (
-                <ListSkeletonRows />
+                <ListSkeletonRows columnCount={columnCount} />
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={LIST_COLUMN_COUNT} className="p-0">
+                  <TableCell colSpan={columnCount} className="p-0">
                     <Empty className="border-0">
                       <EmptyHeader>
                         <EmptyMedia variant="icon">
@@ -325,6 +426,17 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                     className="cursor-pointer"
                     onClick={() => navigate(`/tickets/${ticket.id}`)}
                   >
+                    {canBatchAssign && (
+                      // onClick swallows the row's navigation click; the checkbox inside is keyboard-operable
+                      <TableCell onClick={(event) => event.stopPropagation()}>
+                        <Checkbox
+                          aria-label={`选择工单 ${ticket.workOrderNumber}`}
+                          checked={selected.has(ticket.id)}
+                          disabled={ticket.status === "completed"}
+                          onCheckedChange={() => toggleSelected(ticket)}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <Link
                         to={`/tickets/${ticket.id}`}
@@ -353,6 +465,22 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                         <span className="text-muted-foreground">不设时限</span>
                       )}
                     </TableCell>
+                    {canAssign && (
+                      <TableCell>
+                        {ticket.status !== "completed" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSingleTarget(toTarget(ticket));
+                            }}
+                          >
+                            {ticket.assigneeId ? "改派" : "分配"}
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}
@@ -393,6 +521,27 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onOpenChange={(open) => {
             if (!open) navigate("/tickets");
           }}
+        />
+      )}
+
+      {canAssign && singleTarget && (
+        <AssignTicketDialog
+          mode="single"
+          open
+          onOpenChange={(open) => {
+            if (!open) setSingleTarget(null);
+          }}
+          targets={[singleTarget]}
+        />
+      )}
+
+      {canBatchAssign && (
+        <AssignTicketDialog
+          mode="batch"
+          open={batchOpen}
+          onOpenChange={setBatchOpen}
+          targets={[...selected.values()]}
+          onAssigned={() => setSelected(new Map())}
         />
       )}
     </div>

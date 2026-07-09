@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import {
@@ -10,15 +11,17 @@ import {
   PROCESS_LOG_ACTION_LABELS,
   TICKET_SOURCE_LABELS,
 } from "@insuredesk/shared";
-import { AlertCircle, ArrowLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import { AlertCircle, ArrowLeft, UserPlus } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { Link, useParams } from "react-router";
+import { AssignTicketDialog } from "./AssignTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 
 /**
  * 工单详情 (issue #22): every PRD §3.1 field grouped by its PRD section, plus
- * the ProcessLog timeline (§3.2). Pure read — lifecycle actions (assign,
- * comment, resolve…) arrive with their own tickets.
+ * the ProcessLog timeline (§3.2). Lifecycle actions live in the header —
+ * 分配/改派 (issue #24, gated by ticket.assign; hidden on the completed 终态);
+ * comment/resolve arrive with their own tickets.
  */
 
 /** One label/value cell of a detail section. */
@@ -74,6 +77,8 @@ function DetailSkeleton() {
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>();
+  const { hasPermission } = useAuth();
+  const [assignOpen, setAssignOpen] = useState(false);
   const detailQuery = trpc.ticket.detail.useQuery({ id: id ?? "" }, { enabled: Boolean(id) });
 
   if (detailQuery.isLoading) {
@@ -113,6 +118,17 @@ export function TicketDetail() {
         <h1 className="text-2xl font-semibold tracking-tight">{ticket.workOrderNumber}</h1>
         <StatusBadge status={ticket.displayStatus} />
         <Badge variant="secondary">{ticket.complaintLevel}</Badge>
+        {hasPermission("ticket.assign") && ticket.status !== "completed" && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => setAssignOpen(true)}
+          >
+            <UserPlus data-icon="inline-start" />
+            {ticket.assigneeId ? "改派" : "分配"}
+          </Button>
+        )}
       </div>
 
       <Section title="基本信息">
@@ -211,6 +227,23 @@ export function TicketDetail() {
           </ol>
         </CardContent>
       </Card>
+
+      {hasPermission("ticket.assign") && (
+        <AssignTicketDialog
+          mode="single"
+          open={assignOpen}
+          onOpenChange={setAssignOpen}
+          targets={[
+            {
+              id: ticket.id,
+              workOrderNumber: ticket.workOrderNumber,
+              assigneeId: ticket.assigneeId,
+              assigneeName: ticket.assigneeName,
+              dueAt: ticket.dueAt,
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

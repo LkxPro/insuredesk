@@ -202,6 +202,7 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
     policyNumber: ticket.policyNumber,
     status,
     displayStatus: deriveDisplayStatus(status, ticket.dueAt, now),
+    assigneeId: ticket.assigneeId,
     assigneeName: ticket.assignee?.name ?? null,
     dueAt: ticket.dueAt?.toISOString() ?? null,
   };
