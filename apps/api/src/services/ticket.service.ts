@@ -3,12 +3,16 @@ import {
   type TicketCreateData,
   type TicketListQuery,
   TicketStatus,
+  channelSchema,
+  complaintLevelSchema,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
   formatFollowUpFrequency,
+  nuclearBodyStatusSchema,
   prioritySchema,
   processLogActionSchema,
   reminderRulesSchema,
+  ticketCategorySchema,
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
@@ -40,6 +44,15 @@ export class SlaPolicyNotConfiguredError extends Error {
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
+ * THE dueAt formula (PRD §9.2): createdAt + the level's overdueHours, null for
+ * 特急 (no deadline). Creation stamps it; a complaintLevel edit re-runs it with
+ * the new level's hours against the same unchanging createdAt (PRD §4.5).
+ */
+export function computeDueAt(createdAt: Date, overdueHours: number | null): Date | null {
+  return overdueHours === null ? null : new Date(createdAt.getTime() + overdueHours * HOUR_MS);
+}
+
+/**
  * Create a manually-entered ticket (PRD §3.1, §9.2, §9.3):
  *
  * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
@@ -66,8 +79,7 @@ export async function createTicket(
   // One instant for createdAt, dueAt, and the log entry, taken from the
   // injectable clock (ADR 0006) — dueAt is exactly createdAt + overdueHours.
   const now = clock.now();
-  const dueAt =
-    policy.overdueHours === null ? null : new Date(now.getTime() + policy.overdueHours * HOUR_MS);
+  const dueAt = computeDueAt(now, policy.overdueHours);
 
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.create({
@@ -257,7 +269,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     // internal tickets show the creator's *current* name, external ones the
     // source label (PRD §3.1.8).
     createdBy: source === "manual" ? (ticket.creator?.name ?? null) : TICKET_SOURCE_LABELS[source],
-    channel: ticket.channel,
+    channel: channelSchema.parse(ticket.channel),
     project: ticket.project,
     brokerageEntity: ticket.brokerageEntity,
     paymentChannel: ticket.paymentChannel,
@@ -268,11 +280,11 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,
     customerRequest: ticket.customerRequest,
-    nuclearBodyStatus: ticket.nuclearBodyStatus,
+    nuclearBodyStatus: nuclearBodyStatusSchema.parse(ticket.nuclearBodyStatus),
     hasContacted: ticket.hasContacted,
     contactId: ticket.contactId,
-    category: ticket.category,
-    complaintLevel: ticket.complaintLevel,
+    category: ticketCategorySchema.parse(ticket.category),
+    complaintLevel: complaintLevelSchema.parse(ticket.complaintLevel),
     priority,
     followUpFrequency: ticket.followUpFrequency,
     firstResponseRequirement: ticket.firstResponseRequirement,

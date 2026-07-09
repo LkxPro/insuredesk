@@ -3,6 +3,8 @@ import {
   ticketAssignInputSchema,
   ticketBatchAssignInputSchema,
   ticketCreateInputSchema,
+  ticketDeleteInputSchema,
+  ticketEditInputSchema,
   ticketListInputSchema,
   ticketResolveInputSchema,
 } from "@insuredesk/shared";
@@ -19,6 +21,8 @@ import {
   listAssigneeOptions,
 } from "../services/ticket-assign.service";
 import { TicketNotProcessableError, addTicketComment } from "../services/ticket-comment.service";
+import { deleteTicket } from "../services/ticket-delete.service";
+import { editTicket } from "../services/ticket-edit.service";
 import { TicketNotResolvableError, resolveTicket } from "../services/ticket-resolve.service";
 import {
   SlaPolicyNotConfiguredError,
@@ -29,10 +33,11 @@ import {
 import { requireAnyPermission, requirePermission, router } from "../trpc";
 
 /**
- * Ticket routes (issues #22/#23/#24/#26): manual creation, the detail page
- * read, the filterable list, assignment, and follow-ups. Thin wrappers per
- * ADR 0006 — validation via the shared Zod schemas, RBAC via
- * requirePermission, business logic in the ticket services.
+ * Ticket routes (issues #22/#23/#24/#26/#27/#28): manual creation, the detail
+ * page read, the filterable list, assignment, follow-ups, resolution, editing,
+ * and soft deletion. Thin wrappers per ADR 0006 — validation via the shared
+ * Zod schemas, RBAC via requirePermission, business logic in the ticket
+ * services.
  */
 
 const deps = { prisma, clock: systemClock };
@@ -154,6 +159,48 @@ export const ticketRouter = router({
             message: error.message,
             cause: error,
           });
+        }
+        throw error;
+      }
+    }),
+
+  /**
+   * 编辑工单基本信息 (issue #28) — any status, 已完结 included; status itself
+   * is not an editable field. Guarded by ticket.edit; the data scope inside
+   * keeps an editor without ticket.view_all on their own tickets.
+   */
+  edit: requirePermission("ticket.edit")
+    .input(ticketEditInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await editTicket(deps, ctx.user, input);
+      } catch (error) {
+        if (error instanceof TicketNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        if (error instanceof SlaPolicyNotConfiguredError) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+
+  /**
+   * 删除工单 (issue #28): soft delete — dangerous, double-confirmed in the UI,
+   * guarded by ticket.delete. No restore this phase.
+   */
+  delete: requirePermission("ticket.delete")
+    .input(ticketDeleteInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await deleteTicket(deps, ctx.user, input);
+      } catch (error) {
+        if (error instanceof TicketNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
         }
         throw error;
       }

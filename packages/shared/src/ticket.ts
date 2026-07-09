@@ -58,6 +58,33 @@ export type TicketCreateInput = z.input<typeof ticketCreateInputSchema>;
 export type TicketCreateData = z.output<typeof ticketCreateInputSchema>;
 
 /**
+ * 编辑工单 contract (issue #28, PRD §4.5): every basic-info field — the same
+ * set the creation form collects — editable in any status, 已完结 included.
+ * status is deliberately absent: it moves only through lifecycle actions, and
+ * editing can never reopen a completed ticket. System-derived fields (dueAt,
+ * followUpFrequency, firstResponseRequirement…) stay server-stamped — a
+ * complaintLevel change recomputes them from the new level's SLA policy.
+ */
+export const ticketEditInputSchema = ticketCreateInputSchema.extend({
+  ticketId: z.string().min(1),
+});
+
+/** Form-side shape (before transforms) — what the edit form holds. */
+export type TicketEditInput = z.input<typeof ticketEditInputSchema>;
+/** Server-side shape (after transforms) — what the service receives. */
+export type TicketEditData = z.output<typeof ticketEditInputSchema>;
+
+/**
+ * 删除工单 contract (issue #28, PRD §4.5): a dangerous, UI-double-confirmed
+ * soft delete — the server stamps deletedAt, nothing is physically removed,
+ * and this phase offers no restore.
+ */
+export const ticketDeleteInputSchema = z.object({
+  ticketId: z.string().min(1),
+});
+export type TicketDeleteInput = z.infer<typeof ticketDeleteInputSchema>;
+
+/**
  * Assignment contracts (issue #24, PRD §4.3). Only the target is caller-chosen:
  * assignedAt / status / the ProcessLog entries are derived server-side, and
  * dueAt is never touched (ADR 0002). status is deliberately absent everywhere —

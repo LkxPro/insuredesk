@@ -11,13 +11,15 @@ import {
   PROCESS_LOG_ACTION_LABELS,
   TICKET_SOURCE_LABELS,
 } from "@insuredesk/shared";
-import { AlertCircle, ArrowLeft, CheckCircle2, UserPlus } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, Pencil, Trash2, UserPlus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link, useParams } from "react-router";
 import { AddCommentCard } from "./AddCommentCard";
 import { AssignTicketDialog } from "./AssignTicketDialog";
+import { DeleteTicketDialog } from "./DeleteTicketDialog";
 import { ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
+import { TicketEditDialog } from "./TicketEditDialog";
 
 /**
  * 工单详情 (issue #22): every PRD §3.1 field grouped by its PRD section, plus
@@ -25,7 +27,9 @@ import { StatusBadge } from "./StatusBadge";
  * 分配/改派 and 完结工单 in the header (issues #24/#27, gated by ticket.assign
  * / ticket.process; both hidden on the completed 终态), 添加跟进 above the
  * timeline (issue #26, gated by ticket.process on an assigned/processing
- * ticket).
+ * ticket). 编辑 is available in ANY status including 已完结, and 删除 is the
+ * double-confirmed danger action (issue #28, gated by ticket.edit /
+ * ticket.delete).
  */
 
 /** One label/value cell of a detail section. */
@@ -84,6 +88,8 @@ export function TicketDetail() {
   const { hasPermission } = useAuth();
   const [assignOpen, setAssignOpen] = useState(false);
   const [resolveOpen, setResolveOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const detailQuery = trpc.ticket.detail.useQuery({ id: id ?? "" }, { enabled: Boolean(id) });
 
   if (detailQuery.isLoading) {
@@ -128,6 +134,13 @@ export function TicketDetail() {
         <StatusBadge status={ticket.displayStatus} />
         <Badge variant="secondary">{ticket.complaintLevel}</Badge>
         <div className="ml-auto flex items-center gap-2">
+          {/* 编辑: any status, 已完结 included (PRD §4.5) */}
+          {hasPermission("ticket.edit") && (
+            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+              <Pencil data-icon="inline-start" />
+              编辑
+            </Button>
+          )}
           {hasPermission("ticket.assign") && ticket.status !== "completed" && (
             <Button variant="outline" size="sm" onClick={() => setAssignOpen(true)}>
               <UserPlus data-icon="inline-start" />
@@ -138,6 +151,13 @@ export function TicketDetail() {
             <Button size="sm" onClick={() => setResolveOpen(true)}>
               <CheckCircle2 data-icon="inline-start" />
               完结工单
+            </Button>
+          )}
+          {/* 删除: dangerous — the button only opens the 二次确认 dialog */}
+          {hasPermission("ticket.delete") && (
+            <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+              <Trash2 data-icon="inline-start" />
+              删除
             </Button>
           )}
         </div>
@@ -249,6 +269,18 @@ export function TicketDetail() {
         <ResolveTicketDialog
           open={resolveOpen}
           onOpenChange={setResolveOpen}
+          ticket={{ id: ticket.id, workOrderNumber: ticket.workOrderNumber }}
+        />
+      )}
+
+      {hasPermission("ticket.edit") && (
+        <TicketEditDialog open={editOpen} onOpenChange={setEditOpen} ticket={ticket} />
+      )}
+
+      {hasPermission("ticket.delete") && (
+        <DeleteTicketDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
           ticket={{ id: ticket.id, workOrderNumber: ticket.workOrderNumber }}
         />
       )}
