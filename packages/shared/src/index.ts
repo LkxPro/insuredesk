@@ -1,6 +1,7 @@
 export * from "./auth";
 export * from "./enums";
 export * from "./health";
+export * from "./notification";
 export * from "./permissions";
 export * from "./sla";
 export * from "./ticket";

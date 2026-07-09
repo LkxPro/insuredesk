@@ -31,6 +31,13 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
+// The header bell (issue #25) polls over tRPC, and these routing tests mount
+// no tRPC provider — stub it at its seam, same spirit as the useAuth mock.
+// Its real behavior is covered in NotificationBell.test.tsx.
+vi.mock("@/components/NotificationBell", () => ({
+  NotificationBell: () => null,
+}));
+
 /** Demo user holding a preset role, mirroring what `auth.me` returns. */
 function userWith(role: { name: string; permissions: readonly Permission[] }): AuthUser {
   return {

@@ -2,6 +2,7 @@ import { healthStatusSchema } from "@insuredesk/shared";
 import { publicProcedure, router } from "../trpc";
 import { authRouter } from "./auth.router";
 import { demoRouter } from "./demo.router";
+import { notificationRouter } from "./notification.router";
 import { ticketRouter } from "./ticket.router";
 
 export const appRouter = router({
@@ -31,6 +32,11 @@ export const appRouter = router({
    * Ticket routes - manual creation + detail timeline (issue #22)
    */
   ticket: ticketRouter,
+
+  /**
+   * 轨 1 收件箱 - assigned notifications: poll payload + read state (issue #25)
+   */
+  notification: notificationRouter,
 });
 
 export type AppRouter = typeof appRouter;

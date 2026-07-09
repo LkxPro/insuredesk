@@ -7,6 +7,7 @@ import {
 import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
+import { writeAssignedNotification } from "./notification.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
@@ -15,8 +16,9 @@ import type { TicketServiceDeps } from "./ticket.service";
  * errors below to transport codes.
  *
  * Invariants enforced here:
- * - dueAt is never read or written — it is fixed at creation and assignment
- *   cannot move it (ADR 0002)
+ * - dueAt is never written — it is fixed at creation and assignment cannot
+ *   move it (ADR 0002); it is only read to annotate the 改派 notification's
+ *   remaining time (issue #25)
  * - assignedAt is stamped on FIRST assignment only; 改派 keeps it
  * - status moves only through this lifecycle action (unassigned → assigned),
  *   with the mandatory separate status_change log entry (PRD §3.2)
@@ -122,6 +124,18 @@ async function applyAssignment(
       to: assignee.name,
       remark: isFirstAssignment ? "分配工单" : "改派工单",
     },
+  });
+
+  // 轨 1 收件箱 (issue #25, ADR 0004): notify the NEW owner synchronously,
+  // inside this same transaction. Single, batch, and the future 按排班自动分配
+  // all funnel through applyAssignment, so this is THE one write path — and an
+  // aborted assignment leaves no orphaned notification.
+  await writeAssignedNotification(tx, {
+    ticket,
+    targetUserId: assignee.id,
+    operatorName: actor.name,
+    isFirstAssignment,
+    now,
   });
 
   if (isFirstAssignment) {

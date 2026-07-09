@@ -41,6 +41,8 @@ model User {
   assignedTickets Ticket[] @relation("TicketAssignee")
   /// Tickets this user created manually (tickets.creatorId, source=manual only)
   createdTickets  Ticket[] @relation("TicketCreator")
+  /// 轨 1 inbox notifications addressed to this user (issue #25)
+  notifications   AppNotification[]
 
   @@index([roleId])
   @@map("users")
@@ -207,6 +209,42 @@ model SlaPolicy {
   updatedAt            DateTime @updatedAt @db.Timestamptz
 
   @@map("sla_policies")
+}
+
+// ============================================================================
+// Notifications (Issue #25)
+// ============================================================================
+
+/// 轨 1 收件箱 (PRD §3.7, ADR 0004): user-action-triggered TRUE events only —
+/// this phase solely `assigned` (分配/改派). Written SYNCHRONOUSLY inside the
+/// assignment transaction, no cron. Time-derived alerts (overdue/due_soon/待首响
+/// …) are 轨 2 "我的待办": computed at read time, NEVER stored here.
+model AppNotification {
+  id    String @id @default(cuid())
+  /// This phase only "assigned"; enum-like String per the schema-wide convention
+  type  String
+  title String
+  /// Human-readable body; a 改派 notification annotates the remaining time
+  content String
+
+  /// Snapshot pointers to the ticket at event time — plain strings, no FK, so
+  /// history survives whatever later happens to the ticket (same rationale as
+  /// ProcessLog.operatorId)
+  ticketId        String?
+  workOrderNumber String?
+
+  /// Recipient = the NEW assignee at event time
+  targetUserId String
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+
+  targetUser User @relation(fields: [targetUserId], references: [id])
+
+  /// Unread-count badge query
+  @@index([targetUserId, read])
+  /// Inbox listing, newest first
+  @@index([targetUserId, createdAt])
+  @@map("app_notifications")
 }
 
 /// Session storage for httpOnly cookie-based authentication.

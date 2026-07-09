@@ -88,17 +88,22 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = new URL(String(input));
   const raw = url.searchParams.get("input");
   const batch = raw ? (JSON.parse(raw) as Record<string, Record<string, unknown>>) : {};
-  if (url.pathname.includes("ticket.list")) {
-    listInputs.push(batch["0"] ?? {});
-  }
-  const page = (batch["0"]?.page as number | undefined) ?? 1;
-  const body = [
-    {
+  const paths = (url.pathname.split("/api/trpc/")[1] ?? "").split(",");
+  const body = paths.map((path, index) => {
+    // The AppLayout bell (issue #25) polls notification.list in the same
+    // batch; an empty inbox keeps these tests focused on ticket.list.
+    if (path === "notification.list") {
+      return { result: { data: { items: [], unreadCount: 0 } } };
+    }
+    const procedureInput = batch[String(index)] ?? {};
+    listInputs.push(procedureInput);
+    const page = (procedureInput.page as number | undefined) ?? 1;
+    return {
       result: {
         data: { items: canned.items, total: canned.total, page, pageSize: 20 },
       },
-    },
-  ];
+    };
+  });
   return Promise.resolve(
     new Response(JSON.stringify(body), {
       status: 200,

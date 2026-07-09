@@ -1,3 +1,4 @@
+import { NotificationBell } from "@/components/NotificationBell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -129,6 +130,7 @@ export function AppLayout() {
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
           <div className="flex-1" />
+          <NotificationBell />
           <ThemeToggle />
         </header>
         <main className="flex flex-1 flex-col p-4 md:p-6">
