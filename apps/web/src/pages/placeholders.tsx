@@ -5,7 +5,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { CalendarClock, LayoutDashboard, ShieldCheck, Users } from "lucide-react";
+import { CalendarClock, ShieldCheck, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -29,10 +29,6 @@ function PlaceholderPage({ title, icon: Icon }: { title: string; icon: LucideIco
       </Empty>
     </div>
   );
-}
-
-export function DashboardPage() {
-  return <PlaceholderPage title="数据看板" icon={LayoutDashboard} />;
 }
 
 export function UsersPage() {
