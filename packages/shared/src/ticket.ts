@@ -194,3 +194,33 @@ export const ticketListInputSchema = z.object({
 export type TicketListInput = z.input<typeof ticketListInputSchema>;
 /** Server-side shape (after defaults/transforms) — what the service receives. */
 export type TicketListQuery = z.output<typeof ticketListInputSchema>;
+
+/** 导出文件格式 (issue #34, PRD §2.1): Excel 或 CSV. */
+export const TICKET_EXPORT_FORMATS = ["xlsx", "csv"] as const;
+export const ticketExportFormatSchema = z.enum(TICKET_EXPORT_FORMATS);
+export type TicketExportFormat = (typeof TICKET_EXPORT_FORMATS)[number];
+
+/**
+ * 导出工单 contract (issue #34): the list's filter/sort set — pagination
+ * deliberately absent, an export always covers *every* matching row — plus the
+ * file format and the viewer's IANA time zone. Date columns are formatted
+ * server-side, so the client sends its zone to keep the file consistent with
+ * what the list page shows (local-time display convention); absent or invalid
+ * zones fall back to UTC rather than failing the download.
+ */
+export const ticketExportInputSchema = ticketListInputSchema
+  .omit({ page: true, pageSize: true })
+  .extend({
+    format: ticketExportFormatSchema,
+    timeZone: z
+      .string()
+      .trim()
+      .max(64)
+      .optional()
+      .transform((value) => (value ? value : undefined)),
+  });
+
+/** Client-side shape (before defaults/transforms). */
+export type TicketExportInput = z.input<typeof ticketExportInputSchema>;
+/** Server-side shape (after defaults/transforms) — what the service receives. */
+export type TicketExportQuery = z.output<typeof ticketExportInputSchema>;

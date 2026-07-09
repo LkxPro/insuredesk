@@ -2,6 +2,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -36,6 +42,7 @@ import {
   TICKET_SOURCES,
   TICKET_SOURCE_LABELS,
   TICKET_STATUS_LABELS,
+  type TicketExportFormat,
   type TicketListQuery,
   type TicketSortField,
   ticketListInputSchema,
@@ -46,6 +53,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Download,
   Plus,
   Search,
   Ticket,
@@ -54,10 +62,12 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { toast } from "sonner";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
+import { downloadTicketExport } from "./ticket-export";
 
 /**
  * 工单管理 list (issue #23): filters (状态 incl. the computed statuses, 渠道,
@@ -186,6 +196,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const canCreate = hasPermission("ticket.create");
   const canAssign = hasPermission("ticket.assign");
   const canBatchAssign = hasPermission("ticket.batch_assign");
+  const canExport = hasPermission("ticket.export");
 
   const [searchParams, setSearchParams] = useSearchParams();
   const query = parseListQuery(searchParams);
@@ -197,6 +208,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [singleTarget, setSingleTarget] = useState<AssignTarget | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
 
@@ -268,6 +280,18 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   // 按排班自动分配 only ever targets 未分配 tickets (PRD §4.3.4)
   const selectedHasAssigned = [...selected.values()].some((target) => target.assigneeId !== null);
 
+  /** 导出当前筛选结果 (issue #34) — the server re-applies scope and filters. */
+  async function handleExport(format: TicketExportFormat) {
+    setExporting(true);
+    try {
+      await downloadTicketExport(query, format);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导出失败");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function togglePageSelection() {
     setSelected((prev) => {
       const next = new Map(prev);
@@ -289,14 +313,34 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           <h1 className="text-2xl font-semibold tracking-tight">工单管理</h1>
           <p className="text-sm text-muted-foreground">客诉工单的创建、分配与跟进。</p>
         </div>
-        {canCreate && (
-          <Button asChild>
-            <Link to="/tickets/new">
-              <Plus data-icon="inline-start" />
-              新建工单
-            </Link>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canExport && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={exporting}>
+                  <Download data-icon="inline-start" />
+                  {exporting ? "导出中…" : "导出"}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => handleExport("xlsx")}>
+                  导出 Excel (.xlsx)
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => handleExport("csv")}>
+                  导出 CSV (.csv)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {canCreate && (
+            <Button asChild>
+              <Link to="/tickets/new">
+                <Plus data-icon="inline-start" />
+                新建工单
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
