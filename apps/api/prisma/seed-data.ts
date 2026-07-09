@@ -1,6 +1,6 @@
 import type { Permission } from "@insuredesk/shared";
-import { PRESET_ROLES } from "@insuredesk/shared";
-import type { PrismaClient, Role, User } from "@prisma/client";
+import { COMPLAINT_LEVELS, DEFAULT_SLA_POLICIES, PRESET_ROLES } from "@insuredesk/shared";
+import type { PrismaClient, Role, SlaPolicy, User } from "@prisma/client";
 import { hashPassword } from "../src/services/auth.service";
 
 /**
@@ -89,4 +89,34 @@ export async function seedPresetRolesAndUsers(prisma: PrismaClient): Promise<{
   };
 
   return { roles, users };
+}
+
+/**
+ * Create (or refresh to defaults) the four SLAPolicy rows, one per complaint
+ * level, with the PRD §3.8 values from DEFAULT_SLA_POLICIES. Read-only this
+ * phase — the admin editor is a separate ticket — so re-seeding resets any
+ * manual tweaks back to the documented defaults.
+ */
+export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]> {
+  const policies: SlaPolicy[] = [];
+  for (const complaintLevel of COMPLAINT_LEVELS) {
+    const defaults = DEFAULT_SLA_POLICIES[complaintLevel];
+    policies.push(
+      await prisma.slaPolicy.upsert({
+        where: { complaintLevel },
+        update: {
+          firstResponseMinutes: defaults.firstResponseMinutes,
+          overdueHours: defaults.overdueHours,
+          reminderRules: defaults.reminderRules,
+        },
+        create: {
+          complaintLevel,
+          firstResponseMinutes: defaults.firstResponseMinutes,
+          overdueHours: defaults.overdueHours,
+          reminderRules: defaults.reminderRules,
+        },
+      }),
+    );
+  }
+  return policies;
 }

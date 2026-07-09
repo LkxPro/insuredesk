@@ -4,13 +4,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
-import {
-  DashboardPage,
-  RolesPage,
-  SchedulePage,
-  TicketsPage,
-  UsersPage,
-} from "@/pages/placeholders";
+import { DashboardPage, RolesPage, SchedulePage, UsersPage } from "@/pages/placeholders";
+import { TicketCreate } from "@/pages/tickets/TicketCreate";
+import { TicketDetail } from "@/pages/tickets/TicketDetail";
+import { TicketsPage } from "@/pages/tickets/TicketsPage";
 import type { ReactElement } from "react";
 import { Navigate, Route, Routes } from "react-router";
 
@@ -62,6 +59,24 @@ export function AppRoutes() {
             }
           />
         ))}
+        {/* Sub-pages of 工单管理 (issue #22): create needs ticket.create; the
+            detail read only ticket.view — data scope is enforced server-side. */}
+        <Route
+          path="/tickets/new"
+          element={
+            <ProtectedRoute requiredPermission="ticket.create">
+              <TicketCreate />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tickets/:id"
+          element={
+            <ProtectedRoute requiredPermission="ticket.view">
+              <TicketDetail />
+            </ProtectedRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -17,10 +17,6 @@ export function DashboardPage() {
   return <PlaceholderPage title="数据看板" />;
 }
 
-export function TicketsPage() {
-  return <PlaceholderPage title="工单管理" />;
-}
-
 export function UsersPage() {
   return <PlaceholderPage title="用户管理" />;
 }

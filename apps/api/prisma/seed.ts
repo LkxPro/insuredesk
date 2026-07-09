@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { DEMO_PASSWORD, seedPresetRolesAndUsers } from "./seed-data";
+import { DEMO_PASSWORD, seedPresetRolesAndUsers, seedSlaPolicies } from "./seed-data";
 
 const prisma = new PrismaClient();
 
@@ -21,6 +21,14 @@ async function main() {
   }
   for (const user of Object.values(users)) {
     console.log(`✓ User: ${user.username} (${user.name})`);
+  }
+
+  const policies = await seedSlaPolicies(prisma);
+  for (const policy of policies) {
+    const overdue = policy.overdueHours === null ? "不设超时" : `超时${policy.overdueHours}h`;
+    console.log(
+      `✓ SLAPolicy: ${policy.complaintLevel}（首响${policy.firstResponseMinutes}min / ${overdue}）`,
+    );
   }
 
   console.log("\n✅ Seeding complete!");

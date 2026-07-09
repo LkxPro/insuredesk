@@ -1,0 +1,232 @@
+import { execFileSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  COMPLAINT_LEVELS,
+  DEFAULT_SLA_POLICIES,
+  type Permission,
+  type TicketCreateInput,
+} from "@insuredesk/shared";
+import type { PrismaClient, Role, User } from "@prisma/client";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { TRPCError } from "@trpc/server";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Issue #22 acceptance tests against a real Postgres: work-order sequence
+ * (incl. concurrency), dueAt fixed from the SLA config at creation, the
+ * `create` ProcessLog, the SLAPolicy seed, RBAC rejection, and the
+ * data-scoped detail read. Runs through appRouter.createCaller — the same
+ * procedure pipeline (permission middleware included) the HTTP adapter uses.
+ */
+describe("ticket creation + detail (Testcontainers)", () => {
+  let container: StartedPostgreSqlContainer;
+  let prisma: PrismaClient;
+  let appRouter: typeof import("../src/routers/index").appRouter;
+  let seeded: {
+    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
+    users: { admin: User; manager: User; cs1: User; observer: User };
+  };
+
+  beforeAll(async () => {
+    container = await new PostgreSqlContainer("postgres:17-alpine").start();
+    const databaseUrl = container.getConnectionUri();
+
+    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
+      cwd: apiDir,
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+      stdio: "pipe",
+    });
+    process.env.DATABASE_URL = databaseUrl;
+
+    const [{ prisma: appPrisma }, seedData, routers] = await Promise.all([
+      import("../src/db"),
+      import("../prisma/seed-data"),
+      import("../src/routers/index"),
+    ]);
+    prisma = appPrisma;
+    appRouter = routers.appRouter;
+
+    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    await seedData.seedSlaPolicies(prisma);
+  }, 180_000);
+
+  afterAll(async () => {
+    await prisma?.$disconnect();
+    await container?.stop();
+  });
+
+  /** Caller with the given seeded user's identity, permissions from their role. */
+  function callerFor(user: User, role: Role) {
+    return appRouter.createCaller({
+      traceId: "ticket-test",
+      user: {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
+        roleId: role.id,
+        roleName: role.name,
+        permissions: role.permissions as Permission[],
+      },
+      sessionToken: null,
+    });
+  }
+
+  const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
+  const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
+  const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
+
+  const baseInput = {
+    feedbackTime: "2026-07-09T02:00:00.000Z",
+    channel: "保司",
+    project: "融盛",
+    brokerageEntity: "东方大地",
+    paymentChannel: "连连支付",
+    policyNumber: "P2026070900123",
+    userComplaintChannel: "400热线",
+    customerName: "王小明",
+    phone: "13800000000",
+    customerRequest: "对保费收取金额有异议，要求核实并回复",
+    nuclearBodyStatus: "待核实",
+    hasContacted: false,
+    category: "投诉-保费收取问题",
+    complaintLevel: "一般投诉",
+  } satisfies TicketCreateInput;
+
+  it("seeds exactly one SLAPolicy per complaint level with the PRD §3.8 defaults", async () => {
+    const policies = await prisma.slaPolicy.findMany();
+    expect(policies).toHaveLength(COMPLAINT_LEVELS.length);
+
+    for (const level of COMPLAINT_LEVELS) {
+      const expected = DEFAULT_SLA_POLICIES[level];
+      const policy = policies.find((p) => p.complaintLevel === level);
+      expect(policy, level).toBeDefined();
+      expect(policy?.firstResponseMinutes).toBe(expected.firstResponseMinutes);
+      expect(policy?.overdueHours).toBe(expected.overdueHours);
+      expect(policy?.reminderRules).toEqual(expected.reminderRules);
+    }
+  });
+
+  describe("create (一般投诉)", () => {
+    it("generates WO+sequence number, fixes dueAt = createdAt + 48h, stamps SLA texts, writes the create log", async () => {
+      const created = await manager().ticket.create(baseInput);
+      expect(created.workOrderNumber).toMatch(/^WO\d{6,}$/);
+
+      const detail = await manager().ticket.detail({ id: created.id });
+
+      // Base state of a fresh manual ticket
+      expect(detail.status).toBe("unassigned");
+      expect(detail.displayStatus).toBe("unassigned");
+      expect(detail.source).toBe("manual");
+      expect(detail.assigneeId).toBeNull();
+      expect(detail.contactCount).toBe(0);
+      expect(detail.processingResult).toBe("");
+      expect(detail.priority).toBeNull(); // free label defaults to empty
+      expect(detail.feedbackTime).toBe(baseInput.feedbackTime);
+      expect("deletedAt" in detail).toBe(false); // soft-delete marker never leaves the API
+
+      // dueAt fixed at creation from the SLA config: exactly createdAt + 48h (PRD §9.2)
+      expect(detail.dueAt).not.toBeNull();
+      const dueMs = new Date(detail.dueAt as string).getTime();
+      const createdMs = new Date(detail.createdAt).getTime();
+      expect(dueMs - createdMs).toBe(48 * HOUR_MS);
+
+      // 跟进频次/首响要求 stamped from the level's SLA config, not hardcoded (PRD §3.1.5)
+      expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
+      expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
+
+      // creatorId recorded for source=manual (PRD §3.1.8)
+      const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
+      expect(row.creatorId).toBe(seeded.users.manager.id);
+
+      // The timeline root: one `create` ProcessLog with an operator-name
+      // snapshot, at the same instant as createdAt
+      expect(detail.processLogs).toHaveLength(1);
+      const log = detail.processLogs[0];
+      expect(log?.action).toBe("create");
+      expect(log?.operatorId).toBe(seeded.users.manager.id);
+      expect(log?.operatorName).toBe(seeded.users.manager.name);
+      expect(log?.remark).toBeTruthy();
+      expect(log?.at).toBe(detail.createdAt);
+    });
+
+    it("derives 由谁创建 from the creator's CURRENT name, while the log keeps the snapshot (PRD §3.1.8)", async () => {
+      const created = await manager().ticket.create(baseInput);
+
+      const originalName = seeded.users.manager.name;
+      await prisma.user.update({
+        where: { id: seeded.users.manager.id },
+        data: { name: "李主管（改名后）" },
+      });
+      try {
+        const detail = await manager().ticket.detail({ id: created.id });
+        expect(detail.createdBy).toBe("李主管（改名后）"); // derived at read time
+        expect(detail.processLogs[0]?.operatorName).toBe(originalName); // snapshot untouched
+      } finally {
+        await prisma.user.update({
+          where: { id: seeded.users.manager.id },
+          data: { name: originalName },
+        });
+      }
+    });
+  });
+
+  describe("dueAt per complaint level (PRD §9.2)", () => {
+    it("加急投诉 → createdAt + 72h", async () => {
+      const created = await manager().ticket.create({ ...baseInput, complaintLevel: "加急投诉" });
+      const detail = await manager().ticket.detail({ id: created.id });
+      const delta =
+        new Date(detail.dueAt as string).getTime() - new Date(detail.createdAt).getTime();
+      expect(delta).toBe(72 * HOUR_MS);
+      expect(detail.firstResponseRequirement).toBe("60分钟内完成首次响应");
+    });
+
+    it("特急投诉 → no dueAt at all (never overdue, rolling follow-up drives it)", async () => {
+      const created = await manager().ticket.create({ ...baseInput, complaintLevel: "特急投诉" });
+      const detail = await manager().ticket.detail({ id: created.id });
+      expect(detail.dueAt).toBeNull();
+      expect(detail.displayStatus).toBe("unassigned"); // no dueAt → nothing to compute
+      expect(detail.followUpFrequency).toContain("每12小时至少跟进1次");
+    });
+  });
+
+  it("concurrent creations never collide on workOrderNumber (PRD §9.3)", async () => {
+    const created = await Promise.all(
+      Array.from({ length: 10 }, () => manager().ticket.create(baseInput)),
+    );
+    const numbers = created.map((t) => t.workOrderNumber);
+    expect(new Set(numbers).size).toBe(numbers.length);
+    for (const n of numbers) {
+      expect(n).toMatch(/^WO\d{6,}$/);
+    }
+  });
+
+  describe("RBAC", () => {
+    it("rejects create without ticket.create (一线客服, 只读观察)", async () => {
+      for (const caller of [frontline(), observer()]) {
+        const attempt = caller.ticket.create(baseInput);
+        await expect(attempt).rejects.toThrowError(TRPCError);
+        await expect(attempt).rejects.toMatchObject({ code: "FORBIDDEN" });
+      }
+    });
+
+    it("data scope hides other people's tickets from users without ticket.view_all", async () => {
+      const created = await manager().ticket.create(baseInput);
+
+      // cs1 holds ticket.view but not ticket.view_all, and the ticket is not
+      // assigned to them → invisible, surfaced as NOT_FOUND (no existence leak)
+      await expect(frontline().ticket.detail({ id: created.id })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+
+      // the read-only observer holds ticket.view_all → full detail visible
+      const detail = await observer().ticket.detail({ id: created.id });
+      expect(detail.workOrderNumber).toBe(created.workOrderNumber);
+    });
+  });
+});
