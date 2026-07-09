@@ -1,0 +1,15 @@
+// InsureDesk Prisma schema.
+//
+// Intentionally empty of domain models at the walking-skeleton stage: the point
+// of ticket #1 is to prove the migrate pipeline and Postgres connectivity, not
+// to model the domain. Ticket entities (Ticket, User, ProcessLog, SLAPolicy, …)
+// arrive with the tickets that introduce them, each with its own migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

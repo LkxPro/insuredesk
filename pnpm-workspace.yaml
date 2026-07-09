@@ -1,0 +1,24 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+allowBuilds:
+  '@biomejs/biome': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  cpu-features: true
+  esbuild: true
+  prisma: true
+  protobufjs: true
+  ssh2: true
+
+# Allow post-install build scripts only for the tools that genuinely need their
+# native binaries / engines. Optional native extras (ssh2, cpu-features,
+# protobufjs) are left disabled — Testcontainers talks to the local Docker
+# socket and does not need them.
+onlyBuiltDependencies:
+  - "@biomejs/biome"
+  - "@prisma/client"
+  - "@prisma/engines"
+  - prisma
+  - esbuild

@@ -1,1 +1,25 @@
+# OS
 .DS_Store
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Env (only .env.example is committed)
+.env
+.env.*
+!.env.example
+
+# Test / coverage
+coverage/
+
+# Logs
+*.log
+
+# Editor
+.idea/
+.vscode/

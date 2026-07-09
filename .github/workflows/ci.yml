@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    env:
+      # Disable Prisma's update/telemetry network call in CI.
+      CHECKPOINT_DISABLE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm before setup-node so setup-node's pnpm cache works. Version is
+      # taken from the root package.json "packageManager" field.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @insuredesk/api run db:generate
+
+      - name: Lint + format check
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      # ubuntu-latest ships a running Docker daemon, so Testcontainers spins up
+      # a real Postgres directly — no service container needed. If you move this
+      # to a runner without Docker, drop the Testcontainers harness and instead
+      # provide a CI-hosted Postgres via a `services:` block, e.g.:
+      #
+      #   services:
+      #     postgres:
+      #       image: postgres:16-alpine
+      #       env:
+      #         POSTGRES_PASSWORD: postgres
+      #       ports: ["5432:5432"]
+      #       options: >-
+      #         --health-cmd pg_isready --health-interval 10s
+      #         --health-timeout 5s --health-retries 5
+      #
+      # then point the integration test at DATABASE_URL instead of a container.
+      - name: Test (incl. Testcontainers Postgres)
+        run: pnpm test
