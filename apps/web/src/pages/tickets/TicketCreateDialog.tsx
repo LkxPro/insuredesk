@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Dialog,
   DialogClose,
@@ -29,8 +30,10 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DISPLAY_TIME_ZONE } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   CHANNELS,
@@ -41,8 +44,10 @@ import {
   TICKET_CATEGORIES,
   ticketCreateInputSchema,
 } from "@insuredesk/shared";
+import { format } from "date-fns";
 import { fromZonedTime } from "date-fns-tz";
-import { AlertCircle } from "lucide-react";
+import { zhCN } from "date-fns/locale";
+import { AlertCircle, Calendar as CalendarIcon } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -70,6 +75,16 @@ type FormValues = z.input<typeof formSchema>;
 
 /** Radix Select forbids `value=""` items; stand-in for "未设置" on 优先级. */
 const PRIORITY_UNSET = "__unset__";
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, minute) =>
+  String(minute).padStart(2, "0"),
+);
+
+function splitFeedbackTime(value?: string) {
+  if (!value) return { date: "", time: "" };
+  const [date = "", time = ""] = value.split("T");
+  return { date, time };
+}
 
 export function TicketCreateDialog({
   open,
@@ -128,12 +143,102 @@ export function TicketCreateDialog({
               <FieldLegend variant="label">来源与渠道</FieldLegend>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field data-invalid={!!errors.feedbackTime}>
-                  <FieldLabel htmlFor="feedbackTime">反馈时间（东八区）</FieldLabel>
-                  <Input
-                    id="feedbackTime"
-                    type="datetime-local"
-                    aria-invalid={!!errors.feedbackTime}
-                    {...register("feedbackTime")}
+                  <FieldLabel htmlFor="feedbackTime-date">反馈时间</FieldLabel>
+                  <Controller
+                    control={control}
+                    name="feedbackTime"
+                    render={({ field }) => {
+                      const parts = splitFeedbackTime(field.value);
+                      const [selectedHour = "", selectedMinute = ""] = parts.time.split(":");
+                      const selectedDate = parts.date ? new Date(`${parts.date}T00:00:00`) : undefined;
+
+                      return (
+                        <div className="flex gap-2">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                id="feedbackTime-date"
+                                type="button"
+                                variant="outline"
+                                aria-invalid={!!errors.feedbackTime}
+                                className={cn(
+                                  "flex-1 justify-start text-left font-normal",
+                                  !parts.date && "text-muted-foreground",
+                                )}
+                              >
+                                <CalendarIcon data-icon="inline-start" />
+                                {parts.date
+                                  ? format(selectedDate!, "PPP", { locale: zhCN })
+                                  : "请选择日期"}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={selectedDate}
+                                onSelect={(date) => {
+                                  if (!date) return;
+                                  const nextDate = format(date, "yyyy-MM-dd");
+                                  field.onChange(
+                                    `${nextDate}T${selectedHour || "00"}:${selectedMinute || "00"}`,
+                                  );
+                                }}
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <Select
+                            value={selectedHour}
+                            onValueChange={(hour) => {
+                              if (!parts.date) return;
+                              field.onChange(`${parts.date}T${hour}:${selectedMinute || "00"}`);
+                            }}
+                            disabled={!parts.date}
+                          >
+                            <SelectTrigger
+                              id="feedbackTime-hour"
+                              aria-invalid={!!errors.feedbackTime}
+                              className="w-20 shrink-0"
+                            >
+                              <SelectValue placeholder="时" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {HOUR_OPTIONS.map((hour) => (
+                                  <SelectItem key={hour} value={hour}>
+                                    {hour} 时
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={selectedMinute}
+                            onValueChange={(minute) => {
+                              if (!parts.date) return;
+                              field.onChange(`${parts.date}T${selectedHour || "00"}:${minute}`);
+                            }}
+                            disabled={!parts.date}
+                          >
+                            <SelectTrigger
+                              id="feedbackTime-time"
+                              aria-invalid={!!errors.feedbackTime}
+                              className="w-20 shrink-0"
+                            >
+                              <SelectValue placeholder="分" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {MINUTE_OPTIONS.map((minute) => (
+                                  <SelectItem key={minute} value={minute}>
+                                    {minute} 分
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    }}
                   />
                   <FieldError errors={[errors.feedbackTime]} />
                 </Field>
