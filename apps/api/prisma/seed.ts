@@ -1,6 +1,11 @@
 import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
-import { DEMO_PASSWORD, seedPresetRolesAndUsers, seedSlaPolicies } from "./seed-data";
+import {
+  DEMO_PASSWORD,
+  seedDemoTickets,
+  seedPresetRolesAndUsers,
+  seedSlaPolicies,
+} from "./seed-data";
 
 if (existsSync(".env")) {
   process.loadEnvFile(".env");
@@ -35,6 +40,12 @@ async function main() {
       `✓ SLAPolicy: ${policy.complaintLevel}（首响${policy.firstResponseMinutes}min / ${overdue}）`,
     );
   }
+
+  const tickets = await seedDemoTickets(prisma, { roles, users });
+  if (tickets.replacedCount > 0) {
+    console.log(`✓ Replaced demo tickets: ${tickets.replacedCount}`);
+  }
+  console.log(`✓ Demo tickets: ${tickets.created.length}`);
 
   console.log("\n✅ Seeding complete!");
   console.log("\n📝 Demo credentials (all users):");

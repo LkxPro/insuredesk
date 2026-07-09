@@ -16,6 +16,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "db:migrate": "pnpm --filter @insuredesk/api run db:migrate",
+    "db:seed": "pnpm --filter @insuredesk/api run db:seed",
     "db:deploy": "pnpm --filter @insuredesk/api run db:deploy"
   },
   "devDependencies": {
