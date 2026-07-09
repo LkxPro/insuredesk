@@ -13,6 +13,10 @@ export const envSchema = z.object({
   // Session configuration for httpOnly cookie-based auth
   SESSION_SECRET: z.string().min(32),
   SESSION_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(86400), // 24 hours
+  // Absolute (or cwd-relative) path to the built web assets (apps/web/dist).
+  // Only consulted in production, where the API serves the SPA via @fastify/static.
+  // Left empty in dev — Vite owns the dev server, so no static serving is wired up.
+  WEB_DIST_PATH: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

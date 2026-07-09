@@ -1,0 +1,38 @@
+# Docker build context excludes (ADR 0007). Keeps the image lean and the build
+# reproducible: host node_modules, build artifacts, secrets, VCS, and tests
+# never enter the image. The Dockerfile rebuilds the web bundle and installs
+# fresh deps from the lockfile.
+
+# Dependencies — reinstalled inside the image from the lockfile.
+**/node_modules
+
+# Build artifacts — the web bundle is rebuilt in the build stage.
+**/dist
+**/build
+**/*.tsbuildinfo
+
+# Secrets — never bake env into the image; prod uses env_file at runtime.
+**/.env
+**/.env.*
+!**/.env.example
+
+# VCS + tooling
+.git
+.github
+.gitignore
+
+# Tests — not needed at runtime.
+**/*.test.ts
+**/test
+**/coverage
+
+# Editor / OS cruft
+.idea
+.vscode
+**/.DS_Store
+**/*.log
+
+# Docker + compose files themselves
+**/Dockerfile
+**/.dockerignore
+docker-compose*.yml

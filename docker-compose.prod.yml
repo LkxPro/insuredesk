@@ -1,0 +1,63 @@
+# InsureDesk single-machine production deployment (ADR 0007).
+#
+# Two services: postgres + api. The API serves both the tRPC API and the built
+# web SPA (@fastify/static), and binds only to 127.0.0.1:3000 — the host's
+# existing nginx reverse-proxies public traffic to it (HTTPS/domain live there,
+# not here). No nginx container, no auto-migration.
+#
+# Config comes from a hand-created server-side .env (see .env.example), never
+# committed. Migrations are run manually pre-deploy:
+#   docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy
+#
+# See docs/deployment.md for the full deploy runbook.
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: insuredesk-db-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Store timestamps in UTC; the app converts to Asia/Shanghai at the edge
+      # (ADR 0006). TZ here keeps container-local logs readable.
+      TZ: Asia/Shanghai
+      PGTZ: Asia/Shanghai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No host port published: only the api service (same compose network)
+    # reaches Postgres. Nothing on the host or public network needs it.
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      # Registry/engine mirrors default to official sources. On a restricted
+      # network (mainland China), set NPM_REGISTRY / PRISMA_ENGINES_MIRROR in
+      # .env — Compose interpolates them here at build time. See docs/deployment.md.
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        PRISMA_ENGINES_MIRROR: ${PRISMA_ENGINES_MIRROR:-https://binaries.prisma.sh}
+    image: insuredesk-api:latest
+    container_name: insuredesk-api-prod
+    restart: unless-stopped
+    # Runtime env (DATABASE_URL, SESSION_SECRET, etc.) from the server-side .env.
+    # DATABASE_URL must point at the compose service name `db`, not localhost.
+    env_file:
+      - .env
+    ports:
+      # Bind to loopback only — host nginx reverse-proxies to this. Never 0.0.0.0.
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    name: insuredesk_postgres_data_prod
