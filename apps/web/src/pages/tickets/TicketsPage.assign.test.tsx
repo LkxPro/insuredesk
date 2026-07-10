@@ -273,6 +273,42 @@ describe("single assignment from the list", () => {
     expect(screen.getByText(/处理时限不因改派顺延/)).toBeInTheDocument();
     expect(screen.getByText("当前责任人：").parentElement).toHaveTextContent("张客服");
   });
+
+  it("候选人来自 ticket.assigneeOptions（全部启用用户，与排班无关），仅当前责任人置灰 (#42)", async () => {
+    // PRD §4.3 手动分配与排班相互独立: the dialog's people picker is the
+    // schedule-free active-user list — no schedule.* procedure is consulted,
+    // and every option except the current assignee is selectable.
+    canned.items = [
+      listItem({
+        status: "assigned",
+        displayStatus: "assigned",
+        assigneeId: "u-zhang",
+        assigneeName: "张客服",
+      }),
+    ];
+    canned.total = 1;
+    renderAt("/tickets");
+    await screen.findByText("WO100001");
+
+    fireEvent.click(screen.getByRole("button", { name: "改派" }));
+    expect(await screen.findByRole("heading", { name: "改派工单" })).toBeInTheDocument();
+    const trigger = await screen.findByRole("combobox", { name: "责任人" });
+    await waitFor(() => expect(trigger).not.toBeDisabled());
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
+    fireEvent.click(trigger);
+
+    // The off-roster user is offered and selectable; only the current
+    // assignee is disabled (self-reassign is a no-op)
+    const offRoster = await screen.findByRole("option", { name: "王二客服" });
+    expect(offRoster).not.toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("option", { name: "张客服（当前责任人）" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+
+    expect(calls.some((call) => call.path === "ticket.assigneeOptions")).toBe(true);
+    expect(calls.every((call) => !call.path.startsWith("schedule."))).toBe(true);
+  });
 });
 
 describe("批量分配 from the list", () => {
