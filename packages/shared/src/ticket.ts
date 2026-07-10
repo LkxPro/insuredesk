@@ -16,40 +16,53 @@ import { ticketDisplayStatusSchema } from "./ticket-status";
  * ends (ADR 0006). System-derived fields (workOrderNumber, source, creatorId,
  * dueAt, followUpFrequency, firstResponseRequirement, status…) are stamped
  * server-side and deliberately absent here.
+ *
+ * Every user-entered field is optional (issue #43): a fully blank form is a
+ * valid submission, and anything unfilled persists as NULL — "unknown", never
+ * "" or an assumed value. hasContacted unfilled means 未知, not false.
  */
 
 /** Optional free-text field: empty/whitespace form input becomes NULL, not "". */
-const optionalText = z
-  .string()
-  .trim()
-  .max(200)
-  .nullish()
-  .transform((value) => (value ? value : null));
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullish()
+    .transform((value) => (value ? value : null));
+
+/** Optional enum select: "" (nothing chosen) and absence both become NULL. */
+const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
+  schema
+    .or(z.literal(""))
+    .nullish()
+    .transform((value): z.output<T> | null => (value ? value : null));
 
 export const ticketCreateInputSchema = z.object({
   /** 客户实际反馈时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。 */
-  feedbackTime: z.string().datetime({ offset: true, message: "请填写反馈时间" }),
-  channel: channelSchema,
-  project: z.string().trim().min(1, "请填写项目").max(100),
-  brokerageEntity: z.string().trim().min(1, "请填写经纪主体").max(100),
-  paymentChannel: z.string().trim().min(1, "请填写支付渠道").max(100),
-  internalOrderNumber: optionalText,
-  policyNumber: z.string().trim().min(1, "请填写保单号").max(100),
-  userComplaintChannel: z.string().trim().min(1, "请填写用户投诉渠道").max(100),
-  customerName: z.string().trim().min(1, "请填写客户姓名").max(100),
-  phone: z.string().trim().min(1, "请填写客户电话").max(50),
-  contactPhone: optionalText,
-  customerRequest: z.string().trim().min(1, "请填写客户诉求").max(2000),
-  nuclearBodyStatus: nuclearBodyStatusSchema,
-  hasContacted: z.boolean(),
-  contactId: optionalText,
-  category: ticketCategorySchema,
-  complaintLevel: complaintLevelSchema,
-  /** 独立自由标签，默认空（PRD §3.1.5）；"" 来自未选择的下拉框。 */
-  priority: prioritySchema
-    .or(z.literal(""))
+  feedbackTime: optionalEnum(z.string().datetime({ offset: true, message: "反馈时间格式不正确" })),
+  channel: optionalEnum(channelSchema),
+  project: optionalText(100),
+  brokerageEntity: optionalText(100),
+  paymentChannel: optionalText(100),
+  internalOrderNumber: optionalText(200),
+  policyNumber: optionalText(100),
+  userComplaintChannel: optionalText(100),
+  customerName: optionalText(100),
+  phone: optionalText(50),
+  contactPhone: optionalText(200),
+  customerRequest: optionalText(2000),
+  nuclearBodyStatus: optionalEnum(nuclearBodyStatusSchema),
+  /** 三态：true/false/未知（null）。 */
+  hasContacted: z
+    .boolean()
     .nullish()
-    .transform((value) => (value ? value : null)),
+    .transform((value) => value ?? null),
+  contactId: optionalText(200),
+  category: optionalEnum(ticketCategorySchema),
+  complaintLevel: optionalEnum(complaintLevelSchema),
+  /** 独立自由标签，默认空（PRD §3.1.5）；"" 来自未选择的下拉框。 */
+  priority: optionalEnum(prioritySchema),
 });
 
 /** Form-side shape (before transforms) — what react-hook-form holds. */

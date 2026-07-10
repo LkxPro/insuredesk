@@ -38,46 +38,48 @@ import { TicketFormFields, type TicketFormValues, ticketFormSchema } from "./Tic
 export interface EditableTicket {
   id: string;
   workOrderNumber: string;
-  feedbackTime: string;
-  channel: Channel;
-  project: string;
-  brokerageEntity: string;
-  paymentChannel: string;
+  feedbackTime: string | null;
+  channel: Channel | null;
+  project: string | null;
+  brokerageEntity: string | null;
+  paymentChannel: string | null;
   internalOrderNumber: string | null;
-  policyNumber: string;
-  userComplaintChannel: string;
-  customerName: string;
-  phone: string;
+  policyNumber: string | null;
+  userComplaintChannel: string | null;
+  customerName: string | null;
+  phone: string | null;
   contactPhone: string | null;
-  customerRequest: string;
-  nuclearBodyStatus: NuclearBodyStatus;
-  hasContacted: boolean;
+  customerRequest: string | null;
+  nuclearBodyStatus: NuclearBodyStatus | null;
+  hasContacted: boolean | null;
   contactId: string | null;
-  category: TicketCategory;
-  complaintLevel: ComplaintLevel;
+  category: TicketCategory | null;
+  complaintLevel: ComplaintLevel | null;
   priority: Priority | null;
 }
 
 /** Detail wire values → form values: ISO instant to local partial, null to "". */
 function formDefaults(ticket: EditableTicket): TicketFormValues {
   return {
-    feedbackTime: format(new Date(ticket.feedbackTime), "yyyy-MM-dd'T'HH:mm"),
-    channel: ticket.channel,
-    project: ticket.project,
-    brokerageEntity: ticket.brokerageEntity,
-    paymentChannel: ticket.paymentChannel,
+    feedbackTime: ticket.feedbackTime
+      ? format(new Date(ticket.feedbackTime), "yyyy-MM-dd'T'HH:mm")
+      : "",
+    channel: ticket.channel ?? "",
+    project: ticket.project ?? "",
+    brokerageEntity: ticket.brokerageEntity ?? "",
+    paymentChannel: ticket.paymentChannel ?? "",
     internalOrderNumber: ticket.internalOrderNumber ?? "",
-    policyNumber: ticket.policyNumber,
-    userComplaintChannel: ticket.userComplaintChannel,
-    customerName: ticket.customerName,
-    phone: ticket.phone,
+    policyNumber: ticket.policyNumber ?? "",
+    userComplaintChannel: ticket.userComplaintChannel ?? "",
+    customerName: ticket.customerName ?? "",
+    phone: ticket.phone ?? "",
     contactPhone: ticket.contactPhone ?? "",
-    customerRequest: ticket.customerRequest,
-    nuclearBodyStatus: ticket.nuclearBodyStatus,
+    customerRequest: ticket.customerRequest ?? "",
+    nuclearBodyStatus: ticket.nuclearBodyStatus ?? "",
     hasContacted: ticket.hasContacted,
     contactId: ticket.contactId ?? "",
-    category: ticket.category,
-    complaintLevel: ticket.complaintLevel,
+    category: ticket.category ?? "",
+    complaintLevel: ticket.complaintLevel ?? "",
     priority: ticket.priority ?? "",
   };
 }
@@ -124,7 +126,8 @@ export function TicketEditDialog({
     edit.mutate({
       ticketId: ticket.id,
       ...values,
-      feedbackTime: new Date(values.feedbackTime).toISOString(),
+      // Local datetime string → absolute instant; unfilled stays null (未知)
+      feedbackTime: values.feedbackTime ? new Date(values.feedbackTime).toISOString() : null,
     }),
   );
 

@@ -53,11 +53,41 @@ export function computeDueAt(createdAt: Date, overdueHours: number | null): Date
 }
 
 /**
+ * The SLA fields a complaintLevel stamps onto a ticket. A null level (未定级,
+ * issue #43) stamps all-null: no dueAt, no 首响/跟进 requirements — and hence
+ * no SLA time alerts until an edit sets a level (off the original createdAt).
+ */
+export async function computeSlaStamp(
+  db: Pick<PrismaClient, "slaPolicy">,
+  complaintLevel: string | null,
+  createdAt: Date,
+): Promise<{
+  dueAt: Date | null;
+  followUpFrequency: string | null;
+  firstResponseRequirement: string | null;
+}> {
+  if (complaintLevel === null) {
+    return { dueAt: null, followUpFrequency: null, firstResponseRequirement: null };
+  }
+  const policy = await db.slaPolicy.findUnique({ where: { complaintLevel } });
+  if (!policy) {
+    throw new SlaPolicyNotConfiguredError(complaintLevel);
+  }
+  return {
+    dueAt: computeDueAt(createdAt, policy.overdueHours),
+    followUpFrequency: formatFollowUpFrequency(reminderRulesSchema.parse(policy.reminderRules)),
+    firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
+  };
+}
+
+/**
  * Create a manually-entered ticket (PRD §3.1, §9.2, §9.3):
  *
+ * - every user field is optional (issue #43): a fully blank submission is
+ *   valid, unfilled fields persist as NULL ("unknown", never "")
  * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
  * - dueAt is fixed once, here: createdAt + the level's SLA overdueHours
- *   (null for 特急 — never overdue)
+ *   (null for 特急 — never overdue; null while 未定级 — no SLA clock fields)
  * - 跟进频次/首响要求 are stamped from the level's SLA config, not hardcoded
  * - source=manual records creatorId; "由谁创建" derives at read time (§3.1.8)
  * - the first `create` ProcessLog (operator name snapshot) lands in the same
@@ -68,31 +98,21 @@ export async function createTicket(
   creator: AuthenticatedUser,
   input: TicketCreateData,
 ) {
-  const policy = await prisma.slaPolicy.findUnique({
-    where: { complaintLevel: input.complaintLevel },
-  });
-  if (!policy) {
-    throw new SlaPolicyNotConfiguredError(input.complaintLevel);
-  }
-  const reminderRules = reminderRulesSchema.parse(policy.reminderRules);
-
   // One instant for createdAt, dueAt, and the log entry, taken from the
   // injectable clock (ADR 0006) — dueAt is exactly createdAt + overdueHours.
   const now = clock.now();
-  const dueAt = computeDueAt(now, policy.overdueHours);
+  const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, now);
 
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.create({
       data: {
         ...input,
-        feedbackTime: new Date(input.feedbackTime),
+        feedbackTime: input.feedbackTime === null ? null : new Date(input.feedbackTime),
         createdAt: now,
         source: "manual",
         creatorId: creator.id,
         status: TicketStatus.Unassigned,
-        dueAt,
-        followUpFrequency: formatFollowUpFrequency(reminderRules),
-        firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
+        ...slaStamp,
       },
     });
 
@@ -221,6 +241,14 @@ export async function listTickets(
   };
 }
 
+/** Re-narrow a nullable enum-like String column; null (未填写) passes through. */
+function parseNullable<T>(
+  schema: { parse: (value: unknown) => T },
+  value: string | null,
+): T | null {
+  return value === null ? null : schema.parse(value);
+}
+
 /** Wire shape of one list row — the list's columns, nothing more. */
 function serializeTicketListItem(ticket: TicketListRow, now: Date) {
   const source = ticketSourceSchema.parse(ticket.source);
@@ -231,9 +259,9 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
     workOrderNumber: ticket.workOrderNumber,
     createdAt: ticket.createdAt.toISOString(),
     source,
-    channel: ticket.channel,
-    category: ticket.category,
-    complaintLevel: ticket.complaintLevel,
+    channel: parseNullable(channelSchema, ticket.channel),
+    category: parseNullable(ticketCategorySchema, ticket.category),
+    complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     customerName: ticket.customerName,
     policyNumber: ticket.policyNumber,
     status,
@@ -277,23 +305,24 @@ export async function getTicketDetail(
  */
 function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
   // Re-narrow the String columns through the shared schemas so the wire type
-  // carries the enum unions — the web renders without a single cast.
+  // carries the enum unions — the web renders without a single cast. Nullable
+  // columns (未填写, issue #43) pass null through untouched.
   const source = ticketSourceSchema.parse(ticket.source);
   const status = ticketStatusSchema.parse(ticket.status);
-  const priority = ticket.priority === null ? null : prioritySchema.parse(ticket.priority);
+  const priority = parseNullable(prioritySchema, ticket.priority);
 
   return {
     id: ticket.id,
     workOrderNumber: ticket.workOrderNumber,
     createdAt: ticket.createdAt.toISOString(),
     updatedAt: ticket.updatedAt.toISOString(),
-    feedbackTime: ticket.feedbackTime.toISOString(),
+    feedbackTime: ticket.feedbackTime?.toISOString() ?? null,
     source,
     // 由谁创建 is derived at read time, never snapshotted onto the ticket:
     // internal tickets show the creator's *current* name, external ones the
     // source label (PRD §3.1.8).
     createdBy: source === "manual" ? (ticket.creator?.name ?? null) : TICKET_SOURCE_LABELS[source],
-    channel: channelSchema.parse(ticket.channel),
+    channel: parseNullable(channelSchema, ticket.channel),
     project: ticket.project,
     brokerageEntity: ticket.brokerageEntity,
     paymentChannel: ticket.paymentChannel,
@@ -304,11 +333,11 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,
     customerRequest: ticket.customerRequest,
-    nuclearBodyStatus: nuclearBodyStatusSchema.parse(ticket.nuclearBodyStatus),
+    nuclearBodyStatus: parseNullable(nuclearBodyStatusSchema, ticket.nuclearBodyStatus),
     hasContacted: ticket.hasContacted,
     contactId: ticket.contactId,
-    category: ticketCategorySchema.parse(ticket.category),
-    complaintLevel: complaintLevelSchema.parse(ticket.complaintLevel),
+    category: parseNullable(ticketCategorySchema, ticket.category),
+    complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     priority,
     followUpFrequency: ticket.followUpFrequency,
     firstResponseRequirement: ticket.firstResponseRequirement,

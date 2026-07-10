@@ -4,15 +4,12 @@ import {
   DEFAULT_SLA_POLICIES,
   PRESET_ROLES,
   TicketStatus,
-  formatFirstResponseRequirement,
-  formatFollowUpFrequency,
-  reminderRulesSchema,
 } from "@insuredesk/shared";
 import type { PrismaClient, Role, SlaPolicy, Ticket, User } from "@prisma/client";
 import type { Clock } from "../src/clock";
 import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service";
 import { assignTicket } from "../src/services/ticket-assign.service";
-import { createTicket } from "../src/services/ticket.service";
+import { computeSlaStamp, createTicket } from "../src/services/ticket.service";
 
 /**
  * Single source of truth for the preset roles and demo users. Consumed by both
@@ -532,25 +529,16 @@ async function createExternalTicket(
   input: TicketCreateData,
   createdAt: Date,
 ): Promise<Ticket> {
-  const policy = await prisma.slaPolicy.findUniqueOrThrow({
-    where: { complaintLevel: input.complaintLevel },
-  });
-  const reminderRules = reminderRulesSchema.parse(policy.reminderRules);
-  const dueAt =
-    policy.overdueHours === null
-      ? null
-      : new Date(createdAt.getTime() + policy.overdueHours * HOUR_MS);
+  const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, createdAt);
 
   const ticket = await prisma.ticket.create({
     data: {
       ...input,
-      feedbackTime: new Date(input.feedbackTime),
+      feedbackTime: input.feedbackTime === null ? null : new Date(input.feedbackTime),
       createdAt,
       source: spec.source ?? "manual",
       creatorId: null,
-      dueAt,
-      followUpFrequency: formatFollowUpFrequency(reminderRules),
-      firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
+      ...slaStamp,
     },
   });
 

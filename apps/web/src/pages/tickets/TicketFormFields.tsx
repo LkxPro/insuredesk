@@ -1,5 +1,4 @@
 import { DateTimePicker } from "@/components/DateTimePicker";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
   FieldError,
@@ -36,25 +35,27 @@ import { z } from "zod";
  * list by design (§4.5 所有基本信息字段均可编辑), so the dialogs share this
  * component instead of two drifting copies.
  *
- * Validation is the shared ticketCreateInputSchema — the contract the API
- * parses — with form-side deviations: feedbackTime is held as a local
- * datetime string until submit (converted to an absolute instant by the
- * caller), and the enum selects get Chinese "please choose" messages.
+ * Every field is optional (issue #43): a fully blank form submits cleanly and
+ * unfilled fields reach the server as null. No label says 选填 — optional is
+ * the rule, not the exception. Validation is the shared
+ * ticketCreateInputSchema — the contract the API parses — with one form-side
+ * deviation: feedbackTime is held as a local datetime string ("" = unfilled)
+ * until submit, when the caller converts it to an absolute instant or null.
  */
 export const ticketFormSchema = ticketCreateInputSchema.extend({
-  feedbackTime: z.string().min(1, "请填写反馈时间"),
-  channel: z.enum(CHANNELS, { errorMap: () => ({ message: "请选择反馈渠道" }) }),
-  category: z.enum(TICKET_CATEGORIES, { errorMap: () => ({ message: "请选择客诉类别" }) }),
-  complaintLevel: z.enum(COMPLAINT_LEVELS, { errorMap: () => ({ message: "请选择投诉等级" }) }),
-  nuclearBodyStatus: z.enum(NUCLEAR_BODY_STATUSES, {
-    errorMap: () => ({ message: "请选择是否核身" }),
-  }),
+  feedbackTime: z.string(),
 });
 
 export type TicketFormValues = z.input<typeof ticketFormSchema>;
 
-/** Radix Select forbids `value=""` items; stand-in for "未设置" on 优先级. */
-const PRIORITY_UNSET = "__unset__";
+/** Radix Select forbids `value=""` items; stand-in for the "未设置" choice. */
+const UNSET = "__unset__";
+
+/** hasContacted is tri-state (是/否/未知) — a checkbox can't say "unknown". */
+const HAS_CONTACTED_OPTIONS = [
+  { value: "yes", label: "是" },
+  { value: "no", label: "否" },
+] as const;
 
 export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValues> }) {
   const {
@@ -90,12 +91,16 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
               control={control}
               name="channel"
               render={({ field }) => (
-                <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                <Select
+                  value={field.value ? field.value : UNSET}
+                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
+                >
                   <SelectTrigger id="channel" className="w-full" aria-invalid={!!errors.channel}>
                     <SelectValue placeholder="请选择" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
+                      <SelectItem value={UNSET}>未设置</SelectItem>
                       {CHANNELS.map((channel) => (
                         <SelectItem key={channel} value={channel}>
                           {channel}
@@ -147,7 +152,7 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.paymentChannel]} />
           </Field>
           <Field data-invalid={!!errors.internalOrderNumber}>
-            <FieldLabel htmlFor="internalOrderNumber">内部订单号（选填）</FieldLabel>
+            <FieldLabel htmlFor="internalOrderNumber">内部订单号</FieldLabel>
             <Input
               id="internalOrderNumber"
               aria-invalid={!!errors.internalOrderNumber}
@@ -197,7 +202,7 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.phone]} />
           </Field>
           <Field data-invalid={!!errors.contactPhone}>
-            <FieldLabel htmlFor="contactPhone">联系人电话（选填）</FieldLabel>
+            <FieldLabel htmlFor="contactPhone">联系人电话</FieldLabel>
             <Input
               id="contactPhone"
               type="tel"
@@ -212,7 +217,10 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
               control={control}
               name="nuclearBodyStatus"
               render={({ field }) => (
-                <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                <Select
+                  value={field.value ? field.value : UNSET}
+                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
+                >
                   <SelectTrigger
                     id="nuclearBodyStatus"
                     className="w-full"
@@ -222,6 +230,7 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
+                      <SelectItem value={UNSET}>未设置</SelectItem>
                       {NUCLEAR_BODY_STATUSES.map((status) => (
                         <SelectItem key={status} value={status}>
                           {status}
@@ -244,24 +253,42 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             />
             <FieldError errors={[errors.customerRequest]} />
           </Field>
-          <Field orientation="horizontal">
+          <Field data-invalid={!!errors.hasContacted}>
+            <FieldLabel htmlFor="hasContacted">客户曾进线</FieldLabel>
             <Controller
               control={control}
               name="hasContacted"
               render={({ field }) => (
-                <Checkbox
-                  id="hasContacted"
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
+                <Select
+                  value={field.value === true ? "yes" : field.value === false ? "no" : UNSET}
+                  onValueChange={(value) =>
+                    field.onChange(value === UNSET ? null : value === "yes")
+                  }
+                >
+                  <SelectTrigger
+                    id="hasContacted"
+                    className="w-full"
+                    aria-invalid={!!errors.hasContacted}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={UNSET}>未设置</SelectItem>
+                      {HAS_CONTACTED_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               )}
             />
-            <FieldLabel htmlFor="hasContacted" className="font-normal">
-              客户曾进线
-            </FieldLabel>
+            <FieldError errors={[errors.hasContacted]} />
           </Field>
           <Field data-invalid={!!errors.contactId}>
-            <FieldLabel htmlFor="contactId">进线ID（选填）</FieldLabel>
+            <FieldLabel htmlFor="contactId">进线ID</FieldLabel>
             <Input id="contactId" aria-invalid={!!errors.contactId} {...register("contactId")} />
             <FieldError errors={[errors.contactId]} />
           </Field>
@@ -279,12 +306,16 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
               control={control}
               name="category"
               render={({ field }) => (
-                <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                <Select
+                  value={field.value ? field.value : UNSET}
+                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
+                >
                   <SelectTrigger id="category" className="w-full" aria-invalid={!!errors.category}>
                     <SelectValue placeholder="请选择" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
+                      <SelectItem value={UNSET}>未设置</SelectItem>
                       {TICKET_CATEGORIES.map((category) => (
                         <SelectItem key={category} value={category}>
                           {category}
@@ -303,7 +334,10 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
               control={control}
               name="complaintLevel"
               render={({ field }) => (
-                <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                <Select
+                  value={field.value ? field.value : UNSET}
+                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
+                >
                   <SelectTrigger
                     id="complaintLevel"
                     className="w-full"
@@ -313,6 +347,7 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
+                      <SelectItem value={UNSET}>未设置</SelectItem>
                       {COMPLAINT_LEVELS.map((level) => (
                         <SelectItem key={level} value={level}>
                           {level}
@@ -326,21 +361,21 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.complaintLevel]} />
           </Field>
           <Field data-invalid={!!errors.priority}>
-            <FieldLabel htmlFor="priority">优先级（选填）</FieldLabel>
+            <FieldLabel htmlFor="priority">优先级</FieldLabel>
             <Controller
               control={control}
               name="priority"
               render={({ field }) => (
                 <Select
-                  value={field.value ? field.value : PRIORITY_UNSET}
-                  onValueChange={(value) => field.onChange(value === PRIORITY_UNSET ? "" : value)}
+                  value={field.value ? field.value : UNSET}
+                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
                 >
                   <SelectTrigger id="priority" className="w-full" aria-invalid={!!errors.priority}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value={PRIORITY_UNSET}>未设置</SelectItem>
+                      <SelectItem value={UNSET}>未设置</SelectItem>
                       {PRIORITIES.map((priority) => (
                         <SelectItem key={priority} value={priority}>
                           {PRIORITY_LABELS[priority]}

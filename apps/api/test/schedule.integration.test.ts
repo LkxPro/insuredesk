@@ -497,7 +497,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
 
       expect(result.assigned).toEqual([]);
       expect(result.skipped).toEqual([
-        { ticketId, workOrderNumber: expect.any(String), channel: "支付" },
+        { ticketId, workOrderNumber: expect.any(String), channel: "支付", reason: "no_on_duty" },
       ]);
 
       const detail = await manager().ticket.detail({ id: ticketId });

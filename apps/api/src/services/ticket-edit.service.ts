@@ -1,20 +1,9 @@
-import {
-  PRIORITY_LABELS,
-  type Priority,
-  type TicketEditData,
-  formatFirstResponseRequirement,
-  formatFollowUpFrequency,
-  reminderRulesSchema,
-} from "@insuredesk/shared";
+import { PRIORITY_LABELS, type Priority, type TicketEditData } from "@insuredesk/shared";
 import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
-import {
-  SlaPolicyNotConfiguredError,
-  type TicketServiceDeps,
-  computeDueAt,
-} from "./ticket.service";
+import { type TicketServiceDeps, computeSlaStamp } from "./ticket.service";
 
 /**
  * Edit domain logic (issue #28, PRD §4.5): every basic-info field editable in
@@ -106,11 +95,11 @@ export async function editTicket(
 ) {
   const now = clock.now();
   const { ticketId, ...fields } = input;
-  // The wire carries feedbackTime as an ISO string; everything downstream
-  // (diff, remark, update) works on the parsed instant.
-  const next: Omit<EditableFields, "feedbackTime"> & { feedbackTime: Date } = {
+  // The wire carries feedbackTime as an ISO string (or null = 未填写);
+  // everything downstream (diff, remark, update) works on the parsed instant.
+  const next: Omit<EditableFields, "feedbackTime"> & { feedbackTime: Date | null } = {
     ...fields,
-    feedbackTime: new Date(fields.feedbackTime),
+    feedbackTime: fields.feedbackTime === null ? null : new Date(fields.feedbackTime),
   };
 
   return prisma.$transaction(async (tx) => {
@@ -129,20 +118,13 @@ export async function editTicket(
     }
 
     // 改 complaintLevel = 改 SLA: everything the level stamped at creation
-    // re-derives from the new level's policy, off the unchanged createdAt
+    // re-derives from the new level's policy, off the unchanged createdAt —
+    // the SLA clock stays anchored to the ORIGINAL 录入时刻 even when the
+    // level is only supplied by a later edit (issue #43). Clearing the level
+    // clears all three stamps (未定级 = no SLA clock).
     let slaFields: Prisma.TicketUpdateInput = {};
     if (changedFields.includes("complaintLevel")) {
-      const policy = await tx.slaPolicy.findUnique({
-        where: { complaintLevel: next.complaintLevel },
-      });
-      if (!policy) {
-        throw new SlaPolicyNotConfiguredError(next.complaintLevel);
-      }
-      slaFields = {
-        dueAt: computeDueAt(ticket.createdAt, policy.overdueHours),
-        followUpFrequency: formatFollowUpFrequency(reminderRulesSchema.parse(policy.reminderRules)),
-        firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
-      };
+      slaFields = await computeSlaStamp(tx, next.complaintLevel, ticket.createdAt);
     }
 
     await tx.ticket.update({

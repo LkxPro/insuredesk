@@ -299,7 +299,9 @@ export async function autoAssignTicketsBySchedule(
       return ticket;
     });
 
-    const channels = [...new Set(ordered.map((ticket) => ticket.channel))];
+    const channels = [
+      ...new Set(ordered.flatMap((ticket) => (ticket.channel === null ? [] : [ticket.channel]))),
+    ];
     const onDutyByChannel = await findOnDutyUserIdsByChannel(tx, channels, now);
 
     const candidateIds = [...new Set([...onDutyByChannel.values()].flatMap((ids) => [...ids]))];
@@ -322,9 +324,27 @@ export async function autoAssignTicketsBySchedule(
     const loadById = new Map(loadRows.map((row) => [row.assigneeId, row._count._all]));
 
     const assigned: { ticketId: string; workOrderNumber: string; assigneeName: string }[] = [];
-    const skipped: { ticketId: string; workOrderNumber: string; channel: string }[] = [];
+    const skipped: {
+      ticketId: string;
+      workOrderNumber: string;
+      channel: string | null;
+      /** Why the system could not pick — the supervisor acts on this. */
+      reason: "missing_channel" | "no_on_duty";
+    }[] = [];
 
     for (const ticket of ordered) {
+      if (ticket.channel === null) {
+        // 未填写渠道 (issue #43): 排班按渠道匹配, so there is no candidate set
+        // to draw from — stay unassigned, report why. Manual assignment is
+        // channel-independent and remains available (PRD §4.3, #42).
+        skipped.push({
+          ticketId: ticket.id,
+          workOrderNumber: ticket.workOrderNumber,
+          channel: null,
+          reason: "missing_channel",
+        });
+        continue;
+      }
       const onDuty = onDutyByChannel.get(ticket.channel);
       if (!onDuty || onDuty.size === 0) {
         // PRD §4.3 边界: nobody on duty for this channel → leave it and tell
@@ -333,6 +353,7 @@ export async function autoAssignTicketsBySchedule(
           ticketId: ticket.id,
           workOrderNumber: ticket.workOrderNumber,
           channel: ticket.channel,
+          reason: "no_on_duty",
         });
         continue;
       }

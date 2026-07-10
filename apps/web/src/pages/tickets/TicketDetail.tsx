@@ -132,7 +132,7 @@ export function TicketDetail() {
         </Button>
         <h1 className="text-2xl font-semibold tracking-tight">{ticket.workOrderNumber}</h1>
         <StatusBadge status={ticket.displayStatus} />
-        <Badge variant="secondary">{ticket.complaintLevel}</Badge>
+        {ticket.complaintLevel && <Badge variant="secondary">{ticket.complaintLevel}</Badge>}
         <div className="ml-auto flex items-center gap-2">
           {/* 编辑: any status, 已完结 included (PRD §4.5) */}
           {hasPermission("ticket.edit") && (
@@ -187,7 +187,9 @@ export function TicketDetail() {
         <Item label="客户电话（投保人）">{ticket.phone}</Item>
         <Item label="联系人电话（备用）">{ticket.contactPhone}</Item>
         <Item label="保司侧是否核身">{ticket.nuclearBodyStatus}</Item>
-        <Item label="客户曾进线">{ticket.hasContacted ? "是" : "否"}</Item>
+        <Item label="客户曾进线">
+          {ticket.hasContacted === null ? null : ticket.hasContacted ? "是" : "否"}
+        </Item>
         <Item label="进线ID">{ticket.contactId}</Item>
         <div className="sm:col-span-3">
           <Item label="客户诉求">
@@ -211,7 +213,12 @@ export function TicketDetail() {
         <Item label="责任人">{ticket.assigneeName}</Item>
         <Item label="分配时间">{formatDateTime(ticket.assignedAt)}</Item>
         <Item label="处理时限">
-          {ticket.dueAt ? formatDateTime(ticket.dueAt) : "不设时限（特急）"}
+          {/* dueAt null means 特急 (不设时限) when a level exists, 未定级 otherwise */}
+          {ticket.dueAt
+            ? formatDateTime(ticket.dueAt)
+            : ticket.complaintLevel
+              ? "不设时限（特急）"
+              : null}
         </Item>
         <Item label="下次联系时间">{formatDateTime(ticket.nextContactTime)}</Item>
         <Item label="联系次数">{ticket.contactCount}</Item>

@@ -83,6 +83,8 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
   // A deleted policy row must not break the poll: SLA-driven alerts degrade
   // (待首响 stays warning, no checkpoints/rolling) while the policy-free
   // alerts (待首响 presence, due_soon/overdue from dueAt) keep working.
+  // 未定级 tickets (complaintLevel null, issue #43) take the same degraded
+  // path by construction: no policy → no SLA time alerts.
   const policies = new Map(
     policyRows.map((row) => [
       row.complaintLevel,
@@ -93,11 +95,14 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
     ]),
   );
 
+  const lookupPolicy = (complaintLevel: string | null) =>
+    complaintLevel === null ? undefined : policies.get(complaintLevel);
+
   // 滚动提醒时钟以上一条 comment 为基准 (ADR 0005) — fetch the latest comment
   // instant, only for tickets whose policy actually has a rolling rule.
   const rollingTicketIds = tickets
     .filter((ticket) =>
-      policies.get(ticket.complaintLevel)?.rules.some((rule) => rule.type === "rolling_follow_up"),
+      lookupPolicy(ticket.complaintLevel)?.rules.some((rule) => rule.type === "rolling_follow_up"),
     )
     .map((ticket) => ticket.id);
   const lastComments = rollingTicketIds.length
@@ -112,7 +117,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
 
   const items = tickets
     .map((ticket) => {
-      const policy = policies.get(ticket.complaintLevel);
+      const policy = lookupPolicy(ticket.complaintLevel);
       const alerts: TodoAlert[] = [];
 
       // 待首响: no first comment yet → in the todo from the moment it is

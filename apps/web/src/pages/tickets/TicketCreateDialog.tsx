@@ -35,7 +35,8 @@ export function TicketCreateDialog({
 
   const form = useForm<TicketFormValues>({
     resolver: zodResolver(ticketFormSchema),
-    defaultValues: { hasContacted: false, priority: "" },
+    // Everything optional (issue #43): a fully blank dialog is submittable.
+    defaultValues: { feedbackTime: "", hasContacted: null, priority: "" },
   });
 
   const create = trpc.ticket.create.useMutation({
@@ -48,7 +49,8 @@ export function TicketCreateDialog({
   const onSubmit = form.handleSubmit((values) =>
     create.mutate({
       ...values,
-      feedbackTime: new Date(values.feedbackTime).toISOString(),
+      // Local datetime string → absolute instant; unfilled stays null (未知)
+      feedbackTime: values.feedbackTime ? new Date(values.feedbackTime).toISOString() : null,
     }),
   );
 

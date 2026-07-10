@@ -48,13 +48,25 @@ export function AutoAssignDialog({
         toast.success(`已按排班自动分配 ${result.assigned.length} 个工单`);
       }
 
-      // PRD §4.3 边界: channels with nobody on duty are called out one by one
+      // PRD §4.3 边界: channels with nobody on duty are called out one by one;
+      // tickets with no channel at all (未填写, issue #43) get their own line —
+      // the fix is to fill in the channel or assign by hand.
       const skippedByChannel = new Map<string, number>();
+      let missingChannelCount = 0;
       for (const entry of result.skipped) {
-        skippedByChannel.set(entry.channel, (skippedByChannel.get(entry.channel) ?? 0) + 1);
+        if (entry.reason === "missing_channel" || entry.channel === null) {
+          missingChannelCount += 1;
+        } else {
+          skippedByChannel.set(entry.channel, (skippedByChannel.get(entry.channel) ?? 0) + 1);
+        }
       }
       for (const [channel, count] of skippedByChannel) {
         toast.warning(`渠道「${channel}」当前无在岗值班人，${count} 个工单未分配，请手动分配`);
+      }
+      if (missingChannelCount > 0) {
+        toast.warning(
+          `${missingChannelCount} 个工单未填写反馈渠道，无法按排班匹配值班人，请补充渠道或手动分配`,
+        );
       }
 
       utils.ticket.list.invalidate();
