@@ -430,6 +430,87 @@ describe("ticket assignment (Testcontainers)", () => {
     });
   });
 
+  describe("手动分配与排班相互独立 (#42)", () => {
+    // Regression guard for PRD §4.3 手动分配与排班相互独立: schedules must
+    // never gate manual/batch assignment or reassignment. cs2 has no roster
+    // rows at all; cs1's roster (set up below) covers a different channel —
+    // neither fact may block a manual pick.
+    const dutyDate = "2026-09-01";
+
+    beforeAll(async () => {
+      await manager().schedule.create({
+        date: dutyDate,
+        shift: "day",
+        channel: "支付",
+        userId: seeded.users.cs1.id,
+      });
+    });
+
+    it("single assign succeeds for an active user with zero schedule rows", async () => {
+      expect(await prisma.schedule.count({ where: { userId: cs2.id } })).toBe(0);
+
+      const ticketId = await createTicket(); // channel 保司 — nobody rostered for it
+      const result = await manager().ticket.assign({ ticketId, assigneeId: cs2.id });
+      expect(result).toMatchObject({ status: "assigned", assigneeName: cs2.name });
+    });
+
+    it("batch assign and 改派 ignore date/shift/channel rosters", async () => {
+      const freshId = await createTicket();
+      const assignedId = await createTicket();
+      await manager().ticket.assign({ ticketId: assignedId, assigneeId: seeded.users.cs1.id });
+
+      // cs2 is off every roster; the batch (first assignment + reassignment)
+      // must still land entirely on them
+      const result = await manager().ticket.batchAssign({
+        ticketIds: [freshId, assignedId],
+        assigneeId: cs2.id,
+      });
+      expect(result).toMatchObject({ assignedCount: 2, assigneeName: cs2.name });
+
+      for (const id of [freshId, assignedId]) {
+        expect((await manager().ticket.detail({ id })).assigneeId).toBe(cs2.id);
+      }
+    });
+
+    it("已停用 users still cannot receive batch assignments either", async () => {
+      const ticketId = await createTicket();
+      await expect(
+        manager().ticket.batchAssign({ ticketIds: [ticketId], assigneeId: inactiveUser.id }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("自动分配 stays roster-bound: the same ticket auto-assign skips, manual assign lands", async () => {
+      const { autoAssignTicketsBySchedule } = await import("../src/services/ticket-assign.service");
+      const { fixedClock } = await import("../src/clock");
+
+      // Pinned inside cs1's 支付 day shift; the ticket is 保司, so 按排班自动分配
+      // has no candidate and must skip — the roster's reach ends there
+      const ticketId = await createTicket();
+      const duringShift = new Date(2026, 8, 1, 10, 0); // local 2026-09-01 10:00
+      const actor = {
+        id: seeded.users.manager.id,
+        username: seeded.users.manager.username,
+        name: seeded.users.manager.name,
+        email: seeded.users.manager.email,
+        roleId: "role-under-test",
+        roleName: seeded.roles.csManager.name,
+        permissions: seeded.roles.csManager.permissions as Permission[],
+      };
+
+      const autoResult = await autoAssignTicketsBySchedule(
+        { prisma, clock: fixedClock(duringShift) },
+        actor,
+        { ticketIds: [ticketId] },
+      );
+      expect(autoResult.assigned).toHaveLength(0);
+      expect(autoResult.skipped).toMatchObject([{ channel: "保司" }]);
+
+      // …while manual assignment of the very same ticket to an off-duty user works
+      const manual = await manager().ticket.assign({ ticketId, assigneeId: cs2.id });
+      expect(manual).toMatchObject({ status: "assigned", assigneeName: cs2.name });
+    });
+  });
+
   describe("RBAC", () => {
     it("rejects every assignment surface without the matching permission (一线客服, 只读观察)", async () => {
       const ticketId = await createTicket();
