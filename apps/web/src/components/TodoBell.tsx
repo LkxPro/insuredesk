@@ -82,9 +82,11 @@ export function TodoBell() {
                     >
                       {item.workOrderNumber}
                     </span>
-                    <span className="truncate text-muted-foreground">{item.customerName}</span>
+                    <span className="truncate text-muted-foreground">
+                      {item.customerName ?? "—"}
+                    </span>
                     <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                      {item.complaintLevel}
+                      {item.complaintLevel ?? "—"}
                     </span>
                   </span>
                   {item.alerts.map((alert) => (

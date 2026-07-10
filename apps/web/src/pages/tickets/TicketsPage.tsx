@@ -123,6 +123,11 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
 /** Radix Select rejects empty item values, so 全部 rides a sentinel. */
 const ALL = "all";
 
+/** The one placeholder for 未填写 cells — unknown, not empty (issue #43). */
+function Unknown() {
+  return <span className="text-muted-foreground">—</span>;
+}
+
 function FilterSelect({
   label,
   value,
@@ -516,20 +521,23 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                     <TableCell>
                       <StatusBadge status={ticket.displayStatus} />
                     </TableCell>
-                    <TableCell>{ticket.customerName}</TableCell>
-                    <TableCell>{ticket.policyNumber}</TableCell>
-                    <TableCell>{ticket.channel}</TableCell>
-                    <TableCell>{ticket.complaintLevel}</TableCell>
+                    <TableCell>{ticket.customerName ?? <Unknown />}</TableCell>
+                    <TableCell>{ticket.policyNumber ?? <Unknown />}</TableCell>
+                    <TableCell>{ticket.channel ?? <Unknown />}</TableCell>
+                    <TableCell>{ticket.complaintLevel ?? <Unknown />}</TableCell>
                     <TableCell>{TICKET_SOURCE_LABELS[ticket.source]}</TableCell>
                     <TableCell>
                       {ticket.assigneeName ?? <span className="text-muted-foreground">未分配</span>}
                     </TableCell>
                     <TableCell>{formatDateTime(ticket.createdAt)}</TableCell>
                     <TableCell>
+                      {/* dueAt null = 特急不设时限 when a level exists, 未定级 otherwise */}
                       {ticket.dueAt ? (
                         formatDateTime(ticket.dueAt)
-                      ) : (
+                      ) : ticket.complaintLevel ? (
                         <span className="text-muted-foreground">不设时限</span>
+                      ) : (
+                        <Unknown />
                       )}
                     </TableCell>
                     {canAssign && (
