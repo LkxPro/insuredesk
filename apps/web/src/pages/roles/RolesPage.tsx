@@ -22,11 +22,11 @@ import { RolePermissionsDialog } from "./RolePermissionsDialog";
 import { RoleRenameDialog } from "./RoleRenameDialog";
 
 /**
- * 角色权限: custom roles configured against the 权限点清单. role.view opens
- * the page (route-guarded); each operation appears only with its own point —
- * role.create / role.edit / role.delete / role.edit_permission — and the API
- * re-checks regardless. The four preset roles are a fixed baseline: viewable
- * but never renamed, re-permissioned, or deleted.
+ * 角色权限: one flat role list configured against the 权限点清单. role.view
+ * opens the page (route-guarded); each operation appears only with its own
+ * point — role.create / role.edit / role.delete / role.edit_permission — and
+ * the API re-checks regardless. 管理员 is the only system role: viewable but
+ * never renamed, re-permissioned, or deleted.
  */
 
 export type RoleRow = inferRouterOutputs<AppRouter>["role"]["list"][number];
@@ -53,7 +53,7 @@ export function RolesPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">角色权限</h1>
           <p className="text-sm text-muted-foreground">
-            按权限点清单配置自定义角色；权限变更自成员下一次请求起生效，预设角色受保护。
+            按权限点清单配置角色；权限变更自成员下一次请求起生效，管理员为系统角色不可修改。
           </p>
         </div>
         {canCreate && (
@@ -76,7 +76,6 @@ export function RolesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>角色名称</TableHead>
-                <TableHead>类型</TableHead>
                 <TableHead>权限点</TableHead>
                 <TableHead>用户数</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -86,7 +85,7 @@ export function RolesPage() {
               {listQuery.isLoading &&
                 [1, 2, 3, 4].map((row) => (
                   <TableRow key={row}>
-                    {[1, 2, 3, 4, 5].map((cell) => (
+                    {[1, 2, 3, 4].map((cell) => (
                       <TableCell key={cell}>
                         <Skeleton className="h-5 w-full max-w-24" />
                       </TableCell>
@@ -95,19 +94,19 @@ export function RolesPage() {
                 ))}
               {!listQuery.isLoading && roles.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
                     暂无角色
                   </TableCell>
                 </TableRow>
               )}
               {roles.map((role) => (
                 <TableRow key={role.id}>
-                  <TableCell className="font-medium">{role.name}</TableCell>
-                  <TableCell>
-                    {role.preset ? (
-                      <Badge variant="secondary">预设</Badge>
-                    ) : (
-                      <Badge variant="outline">自定义</Badge>
+                  <TableCell className="font-medium">
+                    {role.name}
+                    {role.system && (
+                      <Badge variant="secondary" className="ml-2">
+                        系统
+                      </Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -117,14 +116,14 @@ export function RolesPage() {
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => setPermissionsTarget(role)}>
-                        {canEditPermissions && !role.preset ? "配置权限" : "查看权限"}
+                        {canEditPermissions && !role.system ? "配置权限" : "查看权限"}
                       </Button>
-                      {canRename && !role.preset && (
+                      {canRename && !role.system && (
                         <Button variant="ghost" size="sm" onClick={() => setRenameTarget(role)}>
                           重命名
                         </Button>
                       )}
-                      {canDelete && !role.preset && (
+                      {canDelete && !role.system && (
                         <Button
                           variant="ghost"
                           size="sm"

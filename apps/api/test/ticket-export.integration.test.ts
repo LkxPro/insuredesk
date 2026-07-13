@@ -61,10 +61,10 @@ describe("ticket export (Testcontainers)", () => {
     appRouter = routers.appRouter;
     demoPassword = seedData.DEMO_PASSWORD;
 
-    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
 
-    // No preset role holds ticket.export without ticket.view_all, so the
+    // No factory role holds ticket.export without ticket.view_all, so the
     // data-scope criterion needs a custom role: sees/export own tickets only.
     const scopedRole = await prisma.role.create({
       data: { name: "个人档导出", permissions: ["ticket.view", "ticket.export"] },

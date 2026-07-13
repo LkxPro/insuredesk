@@ -127,7 +127,7 @@ export function UsersPage() {
                   <TableCell className="text-muted-foreground">{user.email ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">{user.team ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={user.rolePreset ? "secondary" : "outline"}>
+                    <Badge variant={user.roleSystem ? "secondary" : "outline"}>
                       {user.roleName}
                     </Badge>
                   </TableCell>

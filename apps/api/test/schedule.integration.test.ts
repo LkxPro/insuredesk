@@ -58,7 +58,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
     appRouter = routers.appRouter;
     autoAssignTicketsBySchedule = assignService.autoAssignTicketsBySchedule;
 
-    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
   }, 180_000);
 

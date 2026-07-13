@@ -84,7 +84,7 @@ function throwOnDuplicateIdentity(error: unknown): never {
  */
 export async function listUsers({ prisma }: TicketServiceDeps) {
   const rows = await prisma.user.findMany({
-    include: { role: { select: { name: true, preset: true } } },
+    include: { role: { select: { name: true, system: true } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   return rows.map((row) => ({
@@ -96,7 +96,7 @@ export async function listUsers({ prisma }: TicketServiceDeps) {
     active: row.active,
     roleId: row.roleId,
     roleName: row.role.name,
-    rolePreset: row.role.preset,
+    roleSystem: row.role.system,
     createdAt: row.createdAt.toISOString(),
   }));
 }
@@ -230,7 +230,7 @@ export async function assignUserRole({ prisma }: TicketServiceDeps, input: UserA
  */
 export async function listRoleOptions({ prisma }: TicketServiceDeps) {
   return prisma.role.findMany({
-    select: { id: true, name: true, preset: true },
-    orderBy: [{ preset: "desc" }, { createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, name: true, system: true },
+    orderBy: [{ system: "desc" }, { createdAt: "asc" }, { id: "asc" }],
   });
 }

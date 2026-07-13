@@ -1,6 +1,7 @@
 import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import { PRESET_ROLES, type Permission } from "@insuredesk/shared";
+import { TEST_ROLES } from "@/test/roles";
+import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
@@ -97,7 +98,7 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
-  auth.user = userWith(PRESET_ROLES.CS_MANAGER);
+  auth.user = userWith(TEST_ROLES.CS_MANAGER);
   auth.isLoading = false;
   exportFetch.mockReset();
   toastSpies.error.mockReset();
@@ -126,7 +127,7 @@ async function pickExport(itemName: RegExp) {
 
 describe("permission gating (无权限 UI 无入口)", () => {
   it("hides the 导出 button without ticket.export", async () => {
-    auth.user = userWith(PRESET_ROLES.READ_ONLY); // ticket.view_all but no export
+    auth.user = userWith(TEST_ROLES.READ_ONLY); // ticket.view_all but no export
     renderAt("/tickets");
 
     expect(await screen.findByText("暂无匹配的工单")).toBeInTheDocument();

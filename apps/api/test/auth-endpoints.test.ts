@@ -39,7 +39,7 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
     });
     process.env.DATABASE_URL = databaseUrl;
 
-    const [{ prisma: appPrisma }, { seedPresetRolesAndUsers }, { parseEnv }, { buildServer }] =
+    const [{ prisma: appPrisma }, { seedFactoryRolesAndDemoUsers }, { parseEnv }, { buildServer }] =
       await Promise.all([
         import("../src/db"),
         import("../prisma/seed-data"),
@@ -47,7 +47,7 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
         import("../src/server"),
       ]);
     prisma = appPrisma;
-    await seedPresetRolesAndUsers(prisma);
+    await seedFactoryRolesAndDemoUsers(prisma);
 
     const env = parseEnv({
       DATABASE_URL: databaseUrl,

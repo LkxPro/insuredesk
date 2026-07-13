@@ -1,8 +1,7 @@
-import { PRESET_ROLES } from "@insuredesk/shared";
 import { PrismaClient } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { seedPresetRolesAndUsers } from "../prisma/seed-data";
+import { FACTORY_ROLES, seedFactoryRolesAndDemoUsers } from "../prisma/seed-data";
 import {
   PasswordAuthProvider,
   SessionService,
@@ -52,7 +51,7 @@ describe("Authentication and RBAC (Testcontainers)", () => {
     });
 
     // Seed test data (same fixture as `prisma db seed`)
-    await seedPresetRolesAndUsers(prisma);
+    await seedFactoryRolesAndDemoUsers(prisma);
 
     // Initialize services
     authProvider = new PasswordAuthProvider(prisma);
@@ -180,7 +179,7 @@ describe("Authentication and RBAC (Testcontainers)", () => {
       });
       expectPresent(user);
 
-      expect(user.role.permissions).toHaveLength(PRESET_ROLES.ADMIN.permissions.length);
+      expect(user.role.permissions).toHaveLength(FACTORY_ROLES.ADMIN.permissions.length);
       expect(user.role.permissions).toContain("ticket.view_all");
       expect(user.role.permissions).toContain("ticket.assign");
       expect(user.role.permissions).toContain("user.create");

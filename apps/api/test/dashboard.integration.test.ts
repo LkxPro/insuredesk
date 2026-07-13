@@ -51,7 +51,7 @@ describe("dashboard stats (Testcontainers)", () => {
     appRouter = routers.appRouter;
     getDashboardStats = dashboardService.getDashboardStats;
 
-    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
   }, 180_000);
 

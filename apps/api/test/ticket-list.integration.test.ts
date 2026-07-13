@@ -50,7 +50,7 @@ describe("ticket list (Testcontainers)", () => {
     appRouter = routers.appRouter;
     listTickets = ticketService.listTickets;
 
-    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
   }, 180_000);
 

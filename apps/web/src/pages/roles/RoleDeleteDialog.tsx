@@ -16,10 +16,10 @@ import { toast } from "sonner";
 import type { RoleRow } from "./RolesPage";
 
 /**
- * 删除自定义角色 (role.delete): explicit confirm — roles are configuration
- * with no undo. Preset roles never reach here (the button is hidden), and the
- * server refuses roles that still have holders; the in-dialog alert surfaces
- * that refusal.
+ * 删除角色 (role.delete): explicit confirm — roles are configuration with no
+ * undo. The 管理员 system role never reaches here (the button is hidden), and
+ * the server refuses roles that still have holders; the in-dialog alert
+ * surfaces that refusal.
  */
 export function RoleDeleteDialog({
   role,

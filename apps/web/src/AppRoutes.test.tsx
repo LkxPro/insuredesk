@@ -1,5 +1,6 @@
 import type { AuthUser } from "@/contexts/AuthContext";
-import { PRESET_ROLES, type Permission } from "@insuredesk/shared";
+import { TEST_ROLES } from "@/test/roles";
+import type { Permission } from "@insuredesk/shared";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -66,7 +67,7 @@ vi.mock("@/pages/roles/RolesPage", () => ({
   RolesPage: () => <h1>角色权限</h1>,
 }));
 
-/** Demo user holding a preset role, mirroring what `auth.me` returns. */
+/** Demo user holding one of the test personas, mirroring what `auth.me` returns. */
 function userWith(role: { name: string; permissions: readonly Permission[] }): AuthUser {
   return {
     id: "u1",
@@ -102,9 +103,9 @@ beforeEach(() => {
   auth.logout.mockReset();
 });
 
-describe("menu visibility per preset role", () => {
+describe("menu visibility per role persona", () => {
   it("管理员 sees all six entries", () => {
-    auth.user = userWith(PRESET_ROLES.ADMIN);
+    auth.user = userWith(TEST_ROLES.ADMIN);
     renderAt("/dashboard");
     expect(menuLabels()).toEqual([
       "数据看板",
@@ -117,19 +118,19 @@ describe("menu visibility per preset role", () => {
   });
 
   it("客服主管 sees dashboard, tickets, schedule", () => {
-    auth.user = userWith(PRESET_ROLES.CS_MANAGER);
+    auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt("/dashboard");
     expect(menuLabels()).toEqual(["数据看板", "工单管理", "排班配置"]);
   });
 
   it("一线客服 sees dashboard and tickets", () => {
-    auth.user = userWith(PRESET_ROLES.FRONTLINE_CS);
+    auth.user = userWith(TEST_ROLES.FRONTLINE_CS);
     renderAt("/dashboard");
     expect(menuLabels()).toEqual(["数据看板", "工单管理"]);
   });
 
   it("只读观察 sees dashboard and tickets", () => {
-    auth.user = userWith(PRESET_ROLES.READ_ONLY);
+    auth.user = userWith(TEST_ROLES.READ_ONLY);
     renderAt("/dashboard");
     expect(menuLabels()).toEqual(["数据看板", "工单管理"]);
   });
@@ -137,25 +138,25 @@ describe("menu visibility per preset role", () => {
 
 describe("route guards", () => {
   it("redirects to /403 when visiting a page without its permission", () => {
-    auth.user = userWith(PRESET_ROLES.FRONTLINE_CS);
+    auth.user = userWith(TEST_ROLES.FRONTLINE_CS);
     renderAt("/users");
     expect(screen.getByText("你没有访问该页面的权限")).toBeInTheDocument();
   });
 
   it.each(["/users", "/roles"])("客服主管 lacks the page permission: %s → 403", (path) => {
-    auth.user = userWith(PRESET_ROLES.CS_MANAGER);
+    auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt(path);
     expect(screen.getByText("你没有访问该页面的权限")).toBeInTheDocument();
   });
 
   it("客服主管 holds schedule.view, so /schedule renders", () => {
-    auth.user = userWith(PRESET_ROLES.CS_MANAGER);
+    auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt("/schedule");
     expect(screen.getByRole("heading", { name: "排班配置" })).toBeInTheDocument();
   });
 
   it("renders the page when the permission is held", () => {
-    auth.user = userWith(PRESET_ROLES.ADMIN);
+    auth.user = userWith(TEST_ROLES.ADMIN);
     renderAt("/users");
     expect(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
   });
@@ -168,7 +169,7 @@ describe("route guards", () => {
 
 describe("index redirect", () => {
   it("lands on the first visible menu page", () => {
-    auth.user = userWith(PRESET_ROLES.ADMIN);
+    auth.user = userWith(TEST_ROLES.ADMIN);
     renderAt("/");
     expect(screen.getByRole("heading", { name: "数据看板" })).toBeInTheDocument();
   });
@@ -182,14 +183,14 @@ describe("index redirect", () => {
 
 describe("shell chrome", () => {
   it("shows the current user's name and role", () => {
-    auth.user = userWith(PRESET_ROLES.ADMIN);
+    auth.user = userWith(TEST_ROLES.ADMIN);
     renderAt("/dashboard");
     expect(screen.getByText("测试用户")).toBeInTheDocument();
     expect(screen.getByText(/管理员/)).toBeInTheDocument();
   });
 
   it("logs out via the sidebar button", async () => {
-    auth.user = userWith(PRESET_ROLES.ADMIN);
+    auth.user = userWith(TEST_ROLES.ADMIN);
     auth.logout.mockImplementation(async () => {
       auth.user = null;
     });

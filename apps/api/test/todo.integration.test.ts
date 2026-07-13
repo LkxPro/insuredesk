@@ -50,7 +50,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     appRouter = routers.appRouter;
     listMyTodos = todoService.listMyTodos;
 
-    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
   }, 180_000);
 

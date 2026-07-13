@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import {
   DEMO_PASSWORD,
   seedDemoTickets,
-  seedPresetRolesAndUsers,
+  seedFactoryRolesAndDemoUsers,
   seedSlaPolicies,
 } from "./seed-data";
 
@@ -15,8 +15,8 @@ const prisma = new PrismaClient();
 
 /**
  * Seed script for development and testing.
- * Creates the 4 preset roles and sample users for each role.
- * The actual fixture lives in seed-data.ts, shared with the auth tests.
+ * Creates the factory roles (first initialization only) and one demo user per
+ * role. The actual fixture lives in seed-data.ts, shared with the auth tests.
  *
  * Invoked by dev-init.ts on `pnpm dev` when the users table is empty.
  */
@@ -24,7 +24,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Seeding database...");
 
-  const { roles, users } = await seedPresetRolesAndUsers(prisma);
+  const { roles, users } = await seedFactoryRolesAndDemoUsers(prisma);
 
   for (const role of Object.values(roles)) {
     console.log(`✓ Role: ${role.name}`);

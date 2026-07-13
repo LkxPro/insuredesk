@@ -46,7 +46,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
     prisma = appPrisma;
     appRouter = routers.appRouter;
 
-    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
 
     cs2 = await prisma.user.create({

@@ -9,9 +9,9 @@ import { systemClock } from "../clock";
 import { prisma } from "../db";
 import {
   DuplicateRoleNameError,
-  PresetRoleProtectedError,
   RoleInUseError,
   RoleNotFoundError,
+  SystemRoleProtectedError,
   createRole,
   deleteRole,
   listRoles,
@@ -33,7 +33,7 @@ function toTRPCError(error: unknown): never {
   if (error instanceof DuplicateRoleNameError || error instanceof RoleInUseError) {
     throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
-  if (error instanceof PresetRoleProtectedError) {
+  if (error instanceof SystemRoleProtectedError) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message, cause: error });
   }
   if (error instanceof RoleNotFoundError) {
@@ -46,22 +46,22 @@ export const roleRouter = router({
   /** The 角色权限 page's one read: every role + permissions + holder count. */
   list: requirePermission("role.view").query(() => listRoles(deps)),
 
-  /** New custom role from the 权限点清单 checkboxes. */
+  /** New role from the 权限点清单 checkboxes. */
   create: requirePermission("role.create")
     .input(roleCreateInputSchema)
     .mutation(({ input }) => createRole(deps, input).catch(toTRPCError)),
 
-  /** Rename a custom role — permissions ride updatePermissions. */
+  /** Rename a role — permissions ride updatePermissions. */
   rename: requirePermission("role.edit")
     .input(roleRenameInputSchema)
     .mutation(({ input }) => renameRole(deps, input).catch(toTRPCError)),
 
-  /** Replace a custom role's permission set — 即时生效 on the next request. */
+  /** Replace a role's permission set — 即时生效 on the next request. */
   updatePermissions: requirePermission("role.edit_permission")
     .input(roleUpdatePermissionsInputSchema)
     .mutation(({ input }) => updateRolePermissions(deps, input).catch(toTRPCError)),
 
-  /** Delete an unused custom role; preset roles and held roles refuse. */
+  /** Delete an unused role; 管理员 and held roles refuse. */
   delete: requirePermission("role.delete")
     .input(roleDeleteInputSchema)
     .mutation(({ input }) => deleteRole(deps, input).catch(toTRPCError)),

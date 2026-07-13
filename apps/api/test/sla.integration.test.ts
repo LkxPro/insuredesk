@@ -56,7 +56,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     appRouter = routers.appRouter;
     listMyTodos = todoService.listMyTodos;
 
-    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
   }, 180_000);
 
@@ -116,13 +116,13 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     );
   }
 
-  it("registers sla.view / sla.edit and seeds them to the 管理员 preset only", () => {
+  it("registers sla.view / sla.edit and factory-seeds them to 管理员 only", () => {
     expect(ALL_PERMISSIONS).toContain("sla.view");
     expect(ALL_PERMISSIONS).toContain("sla.edit");
     expect(seeded.roles.admin.permissions).toEqual(
       expect.arrayContaining(["sla.view", "sla.edit"]),
     );
-    // 访问与编辑限管理员: no other preset holds either
+    // 访问与编辑限管理员: no other factory role holds either
     for (const role of [seeded.roles.csManager, seeded.roles.frontline, seeded.roles.readOnly]) {
       expect(role.permissions).not.toContain("sla.view");
       expect(role.permissions).not.toContain("sla.edit");
