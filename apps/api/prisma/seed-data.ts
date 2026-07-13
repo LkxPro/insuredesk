@@ -48,6 +48,51 @@ async function upsertUser(
   });
 }
 
+/** Create (or refresh) the 4 preset roles. */
+export async function seedPresetRoles(prisma: PrismaClient): Promise<{
+  admin: Role;
+  csManager: Role;
+  frontline: Role;
+  readOnly: Role;
+}> {
+  return {
+    admin: await upsertRole(prisma, PRESET_ROLES.ADMIN),
+    csManager: await upsertRole(prisma, PRESET_ROLES.CS_MANAGER),
+    frontline: await upsertRole(prisma, PRESET_ROLES.FRONTLINE_CS),
+    readOnly: await upsertRole(prisma, PRESET_ROLES.READ_ONLY),
+  };
+}
+
+/**
+ * Production first-install bootstrap: preset roles, default SLA policies, and
+ * a single admin account. Never touches an existing user — the operator may
+ * have rotated the password long after first install, so a re-run only
+ * reports `adminCreated: false`.
+ */
+export async function bootstrapSystemData(
+  prisma: PrismaClient,
+  options: { adminUsername: string; adminPassword: string },
+): Promise<{ adminCreated: boolean }> {
+  const roles = await seedPresetRoles(prisma);
+  await seedSlaPolicies(prisma);
+
+  const existing = await prisma.user.findUnique({ where: { username: options.adminUsername } });
+  if (existing) {
+    return { adminCreated: false };
+  }
+
+  await prisma.user.create({
+    data: {
+      username: options.adminUsername,
+      name: options.adminUsername,
+      roleId: roles.admin.id,
+      passwordHash: await hashPassword(options.adminPassword),
+      active: true,
+    },
+  });
+  return { adminCreated: true };
+}
+
 /**
  * Create (or refresh) the 4 preset roles and one demo user per role.
  * Returns the created rows so callers can log or assert against them.
@@ -56,12 +101,7 @@ export async function seedPresetRolesAndUsers(prisma: PrismaClient): Promise<{
   roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
   users: { admin: User; manager: User; cs1: User; observer: User };
 }> {
-  const roles = {
-    admin: await upsertRole(prisma, PRESET_ROLES.ADMIN),
-    csManager: await upsertRole(prisma, PRESET_ROLES.CS_MANAGER),
-    frontline: await upsertRole(prisma, PRESET_ROLES.FRONTLINE_CS),
-    readOnly: await upsertRole(prisma, PRESET_ROLES.READ_ONLY),
-  };
+  const roles = await seedPresetRoles(prisma);
 
   const passwordHash = await hashPassword(DEMO_PASSWORD);
 

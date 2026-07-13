@@ -58,7 +58,8 @@ is **not committed** and is read by `docker-compose.prod.yml` via `env_file`.
 
 ```bash
 cp .env.example .env
-# edit .env: set POSTGRES_PASSWORD, SESSION_SECRET (openssl rand -hex 32), etc.
+# edit .env: set POSTGRES_PASSWORD, SESSION_SECRET (openssl rand -hex 32),
+# ADMIN_INITIAL_PASSWORD (for step 5), etc.
 ```
 
 Key points:
@@ -106,7 +107,27 @@ docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy
 `db:deploy` runs `prisma migrate deploy` — it applies committed migrations only,
 never generates new ones.
 
-### 5. Redeploying a new version
+### 5. Bootstrap system data (first install only)
+
+A freshly migrated database has no users, roles, or SLA policies — and creating
+users requires a logged-in admin, so the system cannot bootstrap itself through
+the UI. Set `ADMIN_INITIAL_PASSWORD` (and optionally `ADMIN_USERNAME`, default
+`admin`) in the server-side `.env`, then:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm api pnpm db:bootstrap
+```
+
+This creates the 4 preset roles, the 4 default SLA policies, and one admin
+account. It is idempotent: re-running upserts roles/policies but **never
+touches an existing user** — a rotated admin password survives re-runs. You can
+remove `ADMIN_INITIAL_PASSWORD` from `.env` once bootstrap has completed; the
+password itself is changeable later in 用户管理.
+
+Do **not** run `db:seed` in production — it creates demo accounts with the
+publicly documented password `password123` plus demo tickets.
+
+### 6. Redeploying a new version
 
 ```bash
 git pull
@@ -162,6 +183,7 @@ server {
 | Command | When | What it does |
 | --- | --- | --- |
 | `pnpm db:migrate` | Development | `prisma migrate dev` — creates + applies migrations from schema changes |
-| `pnpm db:seed` | Development | Creates/refreshes demo users, SLA policies, and demo tickets |
+| `pnpm db:seed` | Development **only** | Creates/refreshes demo users (weak shared password), SLA policies, and demo tickets |
 | `pnpm db:deploy` | Production | `prisma migrate deploy` — applies committed migrations only |
 | `docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy` | Production (containerized) | Runs `db:deploy` inside a one-off API container against `db` |
+| `docker compose -f docker-compose.prod.yml run --rm api pnpm db:bootstrap` | Production, first install | Preset roles + default SLA policies + initial admin (from `ADMIN_INITIAL_PASSWORD`); idempotent, never touches existing users |
