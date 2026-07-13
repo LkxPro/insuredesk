@@ -1,7 +1,8 @@
+import { ALL_PERMISSIONS } from "@insuredesk/shared";
 import { PrismaClient } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { FACTORY_ROLES, seedFactoryRolesAndDemoUsers } from "../prisma/seed-data";
+import { seedFactoryRolesAndDemoUsers } from "../prisma/seed-data";
 import {
   PasswordAuthProvider,
   SessionService,
@@ -173,16 +174,14 @@ describe("Authentication and RBAC (Testcontainers)", () => {
 
   describe("RBAC - Permission Resolution", () => {
     it("admin has all permissions", async () => {
-      const user = await prisma.user.findUnique({
-        where: { username: "admin" },
-        include: { role: true },
-      });
+      const user = await prisma.user.findUnique({ where: { username: "admin" } });
       expectPresent(user);
 
-      expect(user.role.permissions).toHaveLength(FACTORY_ROLES.ADMIN.permissions.length);
-      expect(user.role.permissions).toContain("ticket.view_all");
-      expect(user.role.permissions).toContain("ticket.assign");
-      expect(user.role.permissions).toContain("user.create");
+      // 系统角色的权限不读库,会话解析恒为当前代码的全量权限点
+      const token = await sessionService.createSession(user.id);
+      const authenticated = await sessionService.validateSession(token);
+      expectPresent(authenticated);
+      expect([...authenticated.permissions].sort()).toEqual([...ALL_PERMISSIONS].sort());
     });
 
     it("frontline CS has limited permissions", async () => {

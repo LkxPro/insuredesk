@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Permission } from "@insuredesk/shared";
+import { ALL_PERMISSIONS, type Permission } from "@insuredesk/shared";
 import type { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 
@@ -14,6 +14,18 @@ export const BCRYPT_ROUNDS = 10;
  */
 export function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, BCRYPT_ROUNDS);
+}
+
+/**
+ * The permission set a role actually grants. 系统角色不受权限配置约束:
+ * 不读库中数组,恒为当前代码的全量权限点,新增权限点无需迁移即生效。
+ * 判定与展示必须同走这里,不得直接读 role.permissions。
+ */
+export function effectivePermissions(role: {
+  system: boolean;
+  permissions: string[];
+}): Permission[] {
+  return role.system ? [...ALL_PERMISSIONS] : (role.permissions as Permission[]);
 }
 
 /**
@@ -146,7 +158,7 @@ export class SessionService {
       email: session.user.email,
       roleId: session.user.roleId,
       roleName: session.user.role.name,
-      permissions: session.user.role.permissions as Permission[],
+      permissions: effectivePermissions(session.user.role),
     };
   }
 

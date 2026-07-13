@@ -5,6 +5,7 @@ import type { Permission, TicketCreateInput, TicketEditInput } from "@insuredesk
 import type { PrismaClient, Role, User } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { effectivePermissions } from "../src/services/auth.service";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -86,7 +87,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
 
   /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
-    return callerWith(user, role.name, role.permissions as Permission[]);
+    return callerWith(user, role.name, effectivePermissions(role));
   }
 
   const admin = () => callerFor(seeded.users.admin, seeded.roles.admin);

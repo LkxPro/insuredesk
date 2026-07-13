@@ -1,10 +1,5 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
-import {
-  ALL_PERMISSIONS,
-  COMPLAINT_LEVELS,
-  DEFAULT_SLA_POLICIES,
-  TicketStatus,
-} from "@insuredesk/shared";
+import { COMPLAINT_LEVELS, DEFAULT_SLA_POLICIES, TicketStatus } from "@insuredesk/shared";
 import type { PrismaClient, Role, SlaPolicy, Ticket, User } from "@prisma/client";
 import type { Clock } from "../src/clock";
 import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service";
@@ -33,7 +28,9 @@ export const FACTORY_ROLES = {
   ADMIN: {
     name: "管理员",
     system: true,
-    permissions: [...ALL_PERMISSIONS] as Permission[],
+    // 系统角色的权限列在库中永远不被读取(登录与展示恒为代码全量),
+    // 留空以免存下一份会随版本漂移的假快照
+    permissions: [] as Permission[],
   },
   CS_MANAGER: {
     name: "客服主管",

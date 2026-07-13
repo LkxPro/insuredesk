@@ -10,6 +10,7 @@ import { prisma } from "../db";
 import {
   DuplicateEmailError,
   DuplicateUsernameError,
+  LastAdminError,
   RoleOptionNotFoundError,
   SelfDisableError,
   UserNotFoundError,
@@ -37,6 +38,9 @@ function toTRPCError(error: unknown): never {
   }
   if (error instanceof RoleOptionNotFoundError || error instanceof SelfDisableError) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  if (error instanceof LastAdminError) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message, cause: error });
   }
   if (error instanceof UserNotFoundError) {
     throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });

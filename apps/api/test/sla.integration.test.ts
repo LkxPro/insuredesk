@@ -5,13 +5,12 @@ import {
   ALL_PERMISSIONS,
   COMPLAINT_LEVELS,
   DEFAULT_SLA_POLICIES,
-  type Permission,
   type TicketCreateInput,
 } from "@insuredesk/shared";
 import type { PrismaClient, Role, User } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { AuthenticatedUser } from "../src/services/auth.service";
+import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -73,7 +72,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       email: user.email,
       roleId: role.id,
       roleName: role.name,
-      permissions: role.permissions as Permission[],
+      permissions: effectivePermissions(role),
     };
   }
 
@@ -116,12 +115,10 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     );
   }
 
-  it("registers sla.view / sla.edit and factory-seeds them to 管理员 only", () => {
+  it("registers sla.view / sla.edit and factory-grants them to 管理员 only", () => {
+    // 管理员动态持有全量权限点,两个点进 ALL_PERMISSIONS 即归管理员
     expect(ALL_PERMISSIONS).toContain("sla.view");
     expect(ALL_PERMISSIONS).toContain("sla.edit");
-    expect(seeded.roles.admin.permissions).toEqual(
-      expect.arrayContaining(["sla.view", "sla.edit"]),
-    );
     // 访问与编辑限管理员: no other factory role holds either
     for (const role of [seeded.roles.csManager, seeded.roles.frontline, seeded.roles.readOnly]) {
       expect(role.permissions).not.toContain("sla.view");

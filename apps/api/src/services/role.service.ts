@@ -1,11 +1,11 @@
 import type {
-  Permission,
   RoleCreateData,
   RoleDeleteInput,
   RoleRenameInput,
   RoleUpdatePermissionsData,
 } from "@insuredesk/shared";
 import { Prisma } from "@prisma/client";
+import { effectivePermissions } from "./auth.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
@@ -76,7 +76,7 @@ export async function listRoles({ prisma }: TicketServiceDeps) {
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
-    permissions: row.permissions as Permission[],
+    permissions: effectivePermissions(row),
     system: row.system,
     userCount: row._count.users,
     createdAt: row.createdAt.toISOString(),

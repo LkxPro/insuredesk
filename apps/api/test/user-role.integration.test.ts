@@ -6,7 +6,7 @@ import type { PrismaClient, Role, User } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { AuthenticatedUser } from "../src/services/auth.service";
+import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -31,6 +31,7 @@ describe("user + role management (Testcontainers)", () => {
     roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
     users: { admin: User; manager: User; cs1: User; observer: User };
   };
+  let demoPassword: string;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -54,6 +55,7 @@ describe("user + role management (Testcontainers)", () => {
     prisma = appPrisma;
     appRouter = routers.appRouter;
     seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
+    demoPassword = seedData.DEMO_PASSWORD;
 
     app = buildServer(
       parseEnv({
@@ -94,7 +96,7 @@ describe("user + role management (Testcontainers)", () => {
   }
 
   const admin = () =>
-    callerWith(seeded.users.admin, "管理员", seeded.roles.admin.permissions as Permission[]);
+    callerWith(seeded.users.admin, "管理员", effectivePermissions(seeded.roles.admin));
 
   /** POST /api/auth/login — the real credential door. */
   function login(username: string, password: string) {
@@ -569,6 +571,125 @@ describe("user + role management (Testcontainers)", () => {
         // Picker payload stays lean — the permission matrix needs role.view
         expect(options[0]).not.toHaveProperty("permissions");
       }
+    });
+  });
+
+  describe("管理员动态全量权限 (acceptance: 权限不读库,恒为当前代码的全量权限点)", () => {
+    it("清空管理员角色库中的权限数组后,登录仍拥有全部权限", async () => {
+      await prisma.role.update({
+        where: { id: seeded.roles.admin.id },
+        data: { permissions: [] },
+      });
+
+      const token = await loginToken("admin", demoPassword);
+      const identity = (await me(token)).json().result.data;
+      expect([...identity.permissions].sort()).toEqual([...ALL_PERMISSIONS].sort());
+
+      // 后端守卫与前端菜单同源(auth.me),这里再验一次真实守卫端点
+      const guarded = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      expect(guarded.statusCode).toBe(200);
+    });
+
+    it("角色页对管理员显示全量权限,而非库中快照", async () => {
+      await prisma.role.update({
+        where: { id: seeded.roles.admin.id },
+        data: { permissions: [] },
+      });
+
+      const listed = (await admin().role.list()).find((role) => role.system);
+      expect(listed?.permissions).toEqual([...ALL_PERMISSIONS]);
+    });
+  });
+
+  describe("最后管理员不变量 (acceptance: 始终至少一个启用状态的管理员用户)", () => {
+    /** A non-admin operator holding exactly the points these mutations need. */
+    const operator = () =>
+      callerWith(seeded.users.manager, "运维操作员", ["user.delete", "user.assign_role"]);
+
+    it("禁用最后一个启用的管理员被拒绝,提示明确", async () => {
+      await expect(
+        operator().user.setActive({ id: seeded.users.admin.id, active: false }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "系统必须至少保留一名启用的管理员",
+      });
+
+      // 拒绝即回滚:账号仍处于启用状态
+      const row = await prisma.user.findUniqueOrThrow({ where: { id: seeded.users.admin.id } });
+      expect(row.active).toBe(true);
+    });
+
+    it("把最后一个启用管理员的角色改派为其他角色被拒绝", async () => {
+      // 管理员改派自己的角色本身是被允许的委托 — 拦下它的只能是不变量
+      await expect(
+        admin().user.assignRole({ id: seeded.users.admin.id, roleId: seeded.roles.frontline.id }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "系统必须至少保留一名启用的管理员",
+      });
+
+      const row = await prisma.user.findUniqueOrThrow({ where: { id: seeded.users.admin.id } });
+      expect(row.roleId).toBe(seeded.roles.admin.id);
+    });
+
+    it("存在第二个启用管理员时,禁用/改派正常放行;禁用状态的管理员不计数", async () => {
+      const backup = await makeUser({ roleId: seeded.roles.admin.id });
+
+      // 第二个管理员被禁用时不顶数,原管理员仍是"最后一个"
+      await operator().user.setActive({ id: backup.id, active: false });
+      await expect(
+        operator().user.setActive({ id: seeded.users.admin.id, active: false }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      // 启用后放行
+      await operator().user.setActive({ id: backup.id, active: true });
+      const disabled = await operator().user.setActive({
+        id: seeded.users.admin.id,
+        active: false,
+      });
+      expect(disabled.active).toBe(false);
+
+      // 此刻 backup 是最后一个启用管理员,双向保护立即换防
+      await expect(
+        operator().user.setActive({ id: backup.id, active: false }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      await expect(
+        admin().user.assignRole({ id: backup.id, roleId: seeded.roles.frontline.id }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      // 改派禁用中的管理员不减少启用管理员数,不受不变量约束
+      await admin().user.assignRole({
+        id: seeded.users.admin.id,
+        roleId: seeded.roles.frontline.id,
+      });
+
+      // 恢复现场:原管理员归位,backup 退回普通角色
+      await admin().user.assignRole({ id: seeded.users.admin.id, roleId: seeded.roles.admin.id });
+      await operator().user.setActive({ id: seeded.users.admin.id, active: true });
+      await admin().user.assignRole({ id: backup.id, roleId: seeded.roles.frontline.id });
+    });
+
+    it("并发禁用仅剩的两个启用管理员,恰好放行一个", async () => {
+      const backup = await makeUser({ roleId: seeded.roles.admin.id });
+
+      // 两个事务各写不同的行,只有对不变量的串行化清点能拦住后到者
+      const results = await Promise.allSettled([
+        operator().user.setActive({ id: seeded.users.admin.id, active: false }),
+        operator().user.setActive({ id: backup.id, active: false }),
+      ]);
+
+      expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+      const enabledAdmins = await prisma.user.count({
+        where: { active: true, role: { system: true } },
+      });
+      expect(enabledAdmins).toBe(1);
+
+      // 恢复现场
+      await prisma.user.update({ where: { id: seeded.users.admin.id }, data: { active: true } });
+      await prisma.user.update({
+        where: { id: backup.id },
+        data: { active: true, roleId: seeded.roles.frontline.id },
+      });
     });
   });
 });
