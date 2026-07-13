@@ -15,7 +15,12 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
-import type { ReminderRule, ReminderRuleType } from "@insuredesk/shared";
+import {
+  type ReminderRule,
+  type ReminderRuleType,
+  type SlaReminderRuleDraft,
+  validateSlaPolicy,
+} from "@insuredesk/shared";
 import { AlertCircle, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -24,9 +29,11 @@ import type { SlaPolicyRow } from "./SlaPage";
 /**
  * 编辑 SLA 策略 (sla.edit): one level's firstResponseMinutes, overdueHours
  * (可空 = 不设超时), and the typed reminder-rule list with 增删改. The form
- * mirrors slaPolicyUpdateInputSchema — positive integers everywhere and
- * advanceMinutes strictly below its own checkpoint — so nothing the 保存
- * button accepts can be rejected by the API.
+ * only parses its text fields (its one adapter concern); every business rule
+ * — including the cross-rule checkpoint ordering, cumulative counts, and
+ * singleton checks — comes from the rule-engine's validateSlaPolicy, the same
+ * canonical implementation the API enforces (issue #47), so nothing the 保存
+ * button accepts can be rejected by the server.
  */
 
 interface RuleDraft {
@@ -92,28 +99,49 @@ interface RuleErrors {
   intervalHours?: string;
 }
 
-/** Mirrors slaPolicyEditableRuleSchema, field by field. */
-function validateRule(draft: RuleDraft): RuleErrors {
+const RULE_ERROR_FIELDS = [
+  "checkpointHours",
+  "requiredCount",
+  "advanceMinutes",
+  "intervalHours",
+] as const;
+
+/**
+ * The form-side half of validation, one parse per rule: numeric text fields
+ * that fail to parse get their short field errors, and the engine sees the
+ * failure as NaN so cross-checks against a broken field naturally stay
+ * silent. Everything semantic is the rule-engine's job.
+ */
+function parseRule(draft: RuleDraft): { candidate: SlaReminderRuleDraft; errors: RuleErrors } {
   if (draft.type === "rolling_follow_up") {
-    return parsePositiveInt(draft.intervalHours) === null
-      ? { intervalHours: "需为正整数（小时）" }
-      : {};
+    const intervalHours = parsePositiveInt(draft.intervalHours);
+    return {
+      candidate: { type: draft.type, intervalHours: intervalHours ?? Number.NaN },
+      errors: intervalHours === null ? { intervalHours: "需为正整数（小时）" } : {},
+    };
   }
-  const errors: RuleErrors = {};
   const checkpointHours = parsePositiveInt(draft.checkpointHours);
+  const requiredCount = parsePositiveInt(draft.requiredCount);
+  const advanceMinutes = parsePositiveInt(draft.advanceMinutes);
+  const errors: RuleErrors = {};
   if (checkpointHours === null) {
     errors.checkpointHours = "需为正整数（小时）";
   }
-  if (parsePositiveInt(draft.requiredCount) === null) {
+  if (requiredCount === null) {
     errors.requiredCount = "需为正整数（次）";
   }
-  const advanceMinutes = parsePositiveInt(draft.advanceMinutes);
   if (advanceMinutes === null) {
     errors.advanceMinutes = "需为正整数（分钟）";
-  } else if (checkpointHours !== null && advanceMinutes >= checkpointHours * 60) {
-    errors.advanceMinutes = "提前提醒必须小于检查点时长";
   }
-  return errors;
+  return {
+    candidate: {
+      type: draft.type,
+      checkpointHours: checkpointHours ?? Number.NaN,
+      requiredCount: requiredCount ?? Number.NaN,
+      advanceMinutes: advanceMinutes ?? Number.NaN,
+    },
+    errors,
+  };
 }
 
 function toReminderRule(draft: RuleDraft): ReminderRule {
@@ -160,11 +188,34 @@ export function SlaPolicyEditDialog({
     },
   });
 
-  const firstResponseError =
-    parsePositiveInt(firstResponseMinutes) === null ? "需为正整数（分钟）" : undefined;
-  const overdueError =
-    !noOverdue && parsePositiveInt(overdueHours) === null ? "需为正整数（小时）" : undefined;
-  const ruleErrors = rules.map(validateRule);
+  // Field parsing (form adapter) first, then the canonical engine validation
+  // over the parsed candidate policy. A field that failed parsing keeps its
+  // short parse message; engine issues fill every other field, including the
+  // cross-rule ones (ordering, cumulative counts, singleton rolling).
+  const parsedFirstResponse = parsePositiveInt(firstResponseMinutes);
+  const parsedOverdue = parsePositiveInt(overdueHours);
+  let firstResponseError = parsedFirstResponse === null ? "需为正整数（分钟）" : undefined;
+  let overdueError = !noOverdue && parsedOverdue === null ? "需为正整数（小时）" : undefined;
+  const parsedRules = rules.map(parseRule);
+  const ruleErrors = parsedRules.map(({ errors }) => errors);
+  for (const issue of validateSlaPolicy({
+    firstResponseMinutes: parsedFirstResponse ?? Number.NaN,
+    overdueHours: noOverdue ? null : (parsedOverdue ?? Number.NaN),
+    reminderRules: parsedRules.map(({ candidate }) => candidate),
+  })) {
+    const [head, index, field] = issue.path;
+    if (head === "firstResponseMinutes") {
+      firstResponseError ??= issue.message;
+    } else if (head === "overdueHours") {
+      overdueError ??= issue.message;
+    } else if (head === "reminderRules" && typeof index === "number") {
+      const errors = ruleErrors[index];
+      const key = RULE_ERROR_FIELDS.find((candidate) => candidate === field);
+      if (errors && key && errors[key] === undefined) {
+        errors[key] = issue.message;
+      }
+    }
+  }
   const invalid =
     firstResponseError !== undefined ||
     overdueError !== undefined ||

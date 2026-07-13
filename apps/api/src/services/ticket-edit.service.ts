@@ -15,7 +15,8 @@ import { type TicketServiceDeps, computeSlaStamp } from "./ticket.service";
  *   field and this update never writes one, so editing can never reopen a
  *   completed ticket
  * - 改 complaintLevel = 改 SLA: dueAt re-runs the creation formula (createdAt +
- *   the NEW level's overdueHours — computeDueAt, ADR 0002's fixed base), and
+ *   the NEW level's overdueHours — the rule-engine's deriveDueAt, ADR 0002's
+ *   fixed base), and
  *   跟进频次/首响要求 re-stamp from the new level's policy. This may flip the
  *   ticket straight into overdue (e.g. 特急→一般 past 48h) — intended, and the
  *   read-time display/list predicates pick it up with no further writes

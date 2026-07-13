@@ -2,9 +2,9 @@ import {
   COMPLAINT_LEVELS,
   type ComplaintLevel,
   type SlaPolicyUpdateInput,
-  reminderRulesSchema,
+  normalizeReminderRules,
 } from "@insuredesk/shared";
-import type { SlaPolicy } from "@prisma/client";
+import type { SlaPolicy as SlaPolicyRow } from "@prisma/client";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
@@ -18,14 +18,14 @@ import type { TicketServiceDeps } from "./ticket.service";
  * (ADR 0005 "只影响之后的读时判定").
  */
 
-function toDto(row: SlaPolicy) {
+function toDto(row: SlaPolicyRow) {
   return {
     // Truthful cast: list rows are looked up via COMPLAINT_LEVELS and update
     // rows arrive enum-validated, so the column value is always a level.
     complaintLevel: row.complaintLevel as ComplaintLevel,
     firstResponseMinutes: row.firstResponseMinutes,
     overdueHours: row.overdueHours,
-    reminderRules: reminderRulesSchema.parse(row.reminderRules),
+    reminderRules: normalizeReminderRules(row.reminderRules),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
