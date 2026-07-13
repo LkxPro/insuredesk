@@ -51,29 +51,22 @@ cp apps/api/.env.example apps/api/.env
 
 默认 `apps/api/.env.example` 已经匹配本地 `docker-compose.yml` 的 PostgreSQL 账号密码，第一次跑本地开发通常不用改。
 
-### 2. 启动数据库、迁移、填充演示数据
+### 2. 启动数据库和应用
 
 ```bash
 docker compose up -d
-pnpm db:migrate
-pnpm db:seed
+pnpm dev
 ```
 
-`pnpm db:seed` 会创建演示账号、角色、SLA 策略和 12 张演示工单。演示账号：
+`pnpm dev` 启动 API 和 Web 前会先自动应用迁移（`prisma migrate deploy`）；当 users 表为空时再自动填充演示数据——演示账号、角色、SLA 策略和 12 张演示工单（保单号 `DEMO-POL-*`）。数据库非空时跳过 seed，重启 dev server 不会替换你正在测试的演示工单。
+
+演示账号：
 
 ```text
 admin / password123
 manager / password123
 cs1 / password123
 observer / password123
-```
-
-演示工单使用 `DEMO-POL-*` 保单号。重复运行 seed 会替换这 12 张演示工单，不会无限累加。
-
-### 3. 启动应用
-
-```bash
-pnpm dev
 ```
 
 默认地址：
@@ -94,22 +87,14 @@ pnpm dev
 | `pnpm typecheck` | 跑 TypeScript 检查 |
 | `pnpm lint` | 跑 Biome 检查 |
 | `pnpm format` | 格式化代码 |
-| `pnpm db:migrate` | 开发环境执行 Prisma migration |
-| `pnpm db:seed` | 填充演示账号、SLA 和工单 |
-| `pnpm db:deploy` | 生产环境应用已提交的 migrations |
+| `pnpm db:migrate` | 改 schema 后生成并应用 migration |
 | `pnpm --filter @insuredesk/api run db:studio` | 打开 Prisma Studio |
 
 ## 数据库工作流
 
 ### 拉取上游后
 
-如果上游有 schema 或 migration 变化：
-
-```bash
-docker compose up -d
-pnpm db:migrate
-pnpm db:seed
-```
+上游的 schema 或 migration 变化不需要额外命令，`pnpm dev` 启动时会自动应用。
 
 ### 清空本地数据库
 
@@ -118,11 +103,10 @@ pnpm db:seed
 ```bash
 docker compose down -v
 docker compose up -d
-pnpm db:migrate
-pnpm db:seed
+pnpm dev
 ```
 
-`docker compose down -v` 会删除 PostgreSQL 数据卷。
+`docker compose down -v` 会删除 PostgreSQL 数据卷；重启后 `pnpm dev` 会对空库重新迁移并填充演示数据。
 
 ### 修改 Prisma schema
 
@@ -141,7 +125,7 @@ pnpm db:seed
    pnpm test
    ```
 
-生产环境不要用 `migrate dev`，只用 `pnpm db:deploy` 或容器里的等价命令。
+生产环境不要用 `migrate dev`——生产迁移由 API 容器启动时的 `prisma migrate deploy` 自动执行。
 
 ## 开发约定
 
@@ -214,15 +198,11 @@ docker compose -f docker-compose.prod.yml up -d --build
 - `db`: PostgreSQL，不暴露主机端口
 - `api`: API + Web SPA，绑定到宿主机 `127.0.0.1:3000`
 
-### 4. 执行数据库迁移
+API 容器每次启动都会自动执行 `prisma migrate deploy` 和幂等的 bootstrap（预置角色、SLA 策略，以及首次安装时的初始管理员 **admin/admin**），然后再起服务。迁移失败会导致容器启动失败，用 `docker logs insuredesk-api-prod` 排查。
 
-```bash
-docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy
-```
+> **⚠️ 首次部署后立即用 admin/admin 登录并在用户管理中修改密码。** 初始密码是硬编码且公开的；之后的重启不会覆盖已修改的密码。
 
-迁移是手动步骤，不在容器启动时自动执行。
-
-### 5. 配置 nginx
+### 4. 配置 nginx
 
 nginx 把公网域名反代到：
 
@@ -232,31 +212,22 @@ http://127.0.0.1:3000
 
 示例配置见 [docs/deployment.md](docs/deployment.md#host-nginx-reverse-proxy-example)。
 
-### 6. 以后发布新版本
+### 5. 以后发布新版本
 
 ```bash
 git pull
 docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy
 ```
 
-如果本次没有数据库 migration，最后一步可以跳过。
+新增的 migration 会在容器启动时自动应用。
 
 ## 常见问题
-
-### 登录提示 `Invalid username or password`
-
-通常是迁移后没跑 seed：
-
-```bash
-pnpm db:seed
-```
 
 ### API 启动时报环境变量错误
 
 检查 `apps/api/.env` 是否存在，以及 `SESSION_SECRET` 是否至少 32 个字符。
 
-### `pnpm db:migrate` 连不上数据库
+### `pnpm dev` 报连不上数据库
 
 先确认 PostgreSQL 容器在跑：
 

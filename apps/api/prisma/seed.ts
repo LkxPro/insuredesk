@@ -18,7 +18,7 @@ const prisma = new PrismaClient();
  * Creates the 4 preset roles and sample users for each role.
  * The actual fixture lives in seed-data.ts, shared with the auth tests.
  *
- * Run with: pnpm prisma db seed
+ * Invoked by dev-init.ts on `pnpm dev` when the users table is empty.
  */
 
 async function main() {

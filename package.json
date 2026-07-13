@@ -15,10 +15,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "db:migrate": "pnpm --filter @insuredesk/api run db:migrate",
-    "db:seed": "pnpm --filter @insuredesk/api run db:seed",
-    "db:bootstrap": "pnpm --filter @insuredesk/api run db:bootstrap",
-    "db:deploy": "pnpm --filter @insuredesk/api run db:deploy"
+    "db:migrate": "pnpm --filter @insuredesk/api run db:migrate"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

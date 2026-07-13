@@ -11,11 +11,11 @@ import { bootstrapSystemData } from "../prisma/seed-data";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Production bootstrap (`pnpm db:bootstrap`) against a real Postgres: on an
- * empty database it must create the 4 preset roles, the 4 default SLA
- * policies, and exactly one admin account; re-running must never touch an
- * existing user's credentials — the operator may have changed the password
- * long after first install.
+ * Production bootstrap (runs on every container start) against a real
+ * Postgres: on an empty database it must create the 4 preset roles, the 4
+ * default SLA policies, and exactly one admin account; re-running must never
+ * touch an existing user's credentials — the operator may have changed the
+ * password long after first install.
  */
 describe("bootstrapSystemData (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;

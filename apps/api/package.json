@@ -7,7 +7,7 @@
     ".": "./src/routers/index.ts"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx prisma/dev-init.ts && tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
@@ -15,13 +15,7 @@
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy",
-    "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:bootstrap": "tsx prisma/bootstrap.ts"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

@@ -3,11 +3,13 @@
 # Two services: postgres + api. The API serves both the tRPC API and the built
 # web SPA (@fastify/static), and binds only to 127.0.0.1:3000 — the host's
 # existing nginx reverse-proxies public traffic to it (HTTPS/domain live there,
-# not here). No nginx container, no auto-migration.
+# not here). No nginx container.
 #
 # Config comes from a hand-created server-side .env (see .env.example), never
-# committed. Migrations are run manually pre-deploy:
-#   docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy
+# committed. Every api start runs `prisma migrate deploy` + the idempotent
+# bootstrap (initial admin admin/admin — change the password right after first
+# deploy) before serving; a failed migration fails the container, so check
+# `docker logs insuredesk-api-prod`.
 #
 # See docs/deployment.md for the full deploy runbook.
 

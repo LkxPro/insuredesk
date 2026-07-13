@@ -129,9 +129,7 @@ interface AuthProvider {
 **Usage:**
 ```bash
 docker compose up -d          # Start PostgreSQL
-pnpm db:migrate              # Apply migrations
-pnpm db:seed                 # Seed roles and users
-pnpm dev                     # Start API and web
+pnpm dev                      # Auto-migrate (+ seed if empty), start API and web
 ```
 
 ### Environment Variables

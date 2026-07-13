@@ -1,5 +1,6 @@
 # InsureDesk development environment
-# Only containerizes PostgreSQL; apps/api and apps/web run on host via pnpm dev.
+# Only containerizes PostgreSQL; apps/api and apps/web run on host via pnpm dev,
+# which auto-runs `prisma migrate deploy` and seeds an empty database.
 # See ADR 0007 for rationale.
 
 services:

@@ -8,7 +8,9 @@ InsureDesk uses two Docker Compose files, one per scenario (ADR 0007):
   PostgreSQL + the API, where the API also serves the built web SPA. Sits behind
   the host's existing nginx.
 
-Migrations are **always run manually**, in both environments.
+Migrations and initialization run **automatically on startup** in both
+environments. The only manual database command left is `pnpm db:migrate`
+(`prisma migrate dev`), for generating a migration after a schema change.
 
 ---
 
@@ -18,10 +20,13 @@ Only Postgres runs in a container. The app runs on the host.
 
 ```bash
 docker compose up -d    # start PostgreSQL (named volume, port 5432 exposed)
-pnpm db:migrate         # apply migrations (first run, and after schema changes)
-pnpm db:seed            # create demo users, SLA policies, and demo tickets
 pnpm dev                # start api + web with hot reload
 ```
+
+`pnpm dev` first applies committed migrations (`prisma migrate deploy`), then —
+only when the users table is empty — seeds demo users, SLA policies, and demo
+tickets. A non-empty database is never re-seeded, so restarting the dev server
+doesn't replace demo tickets you're in the middle of testing with.
 
 - The API reads `apps/api/.env` (copy from `apps/api/.env.example`). Its
   `DATABASE_URL` points at `localhost:5432`.
@@ -32,8 +37,7 @@ pnpm dev                # start api + web with hot reload
   ```bash
   docker compose down -v   # -v drops the data volume
   docker compose up -d
-  pnpm db:migrate
-  pnpm db:seed
+  pnpm dev                 # re-migrates and re-seeds the now-empty database
   ```
 
 The API does **not** serve the frontend in development — Vite owns the dev
@@ -58,8 +62,7 @@ is **not committed** and is read by `docker-compose.prod.yml` via `env_file`.
 
 ```bash
 cp .env.example .env
-# edit .env: set POSTGRES_PASSWORD, SESSION_SECRET (openssl rand -hex 32),
-# ADMIN_INITIAL_PASSWORD (for step 5), etc.
+# edit .env: set POSTGRES_PASSWORD, SESSION_SECRET (openssl rand -hex 32), etc.
 ```
 
 Key points:
@@ -76,6 +79,18 @@ Key points:
 # start both services. Postgres comes up first (healthcheck-gated).
 docker compose -f docker-compose.prod.yml up -d --build
 ```
+
+Every API container start runs `prisma migrate deploy`, then an idempotent
+bootstrap (4 preset roles, 4 default SLA policies, and — only when no such
+user exists yet — the initial admin account **admin/admin**), then starts the
+server. A failed migration fails the container; check
+`docker logs insuredesk-api-prod`. `docker compose restart api` is safe: both
+steps are no-ops on an already-initialized database, and the bootstrap never
+touches an existing user.
+
+> **⚠️ Log in as admin/admin and change the password in 用户管理 immediately
+> after the first deploy.** The initial credentials are hardcoded and publicly
+> documented. Later restarts never overwrite the rotated password.
 
 > **Building behind a restricted network (e.g. mainland China).** The default
 > build pulls from `registry.npmjs.org` and `binaries.prisma.sh`, both of which
@@ -94,46 +109,15 @@ docker compose -f docker-compose.prod.yml up -d --build
 > `docker compose -f docker-compose.prod.yml up -d --build` as usual. Also
 > pre-pull the base image (`docker pull node:22-alpine`) if Docker Hub is flaky.
 
-### 4. Run migrations (manual, pre-deploy)
-
-Migrations are decoupled from app startup so a failed migration never takes down
-a running service. Run them against the DB before (or right after) bringing the
-API up:
-
-```bash
-docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy
-```
-
-`db:deploy` runs `prisma migrate deploy` — it applies committed migrations only,
-never generates new ones.
-
-### 5. Bootstrap system data (first install only)
-
-A freshly migrated database has no users, roles, or SLA policies — and creating
-users requires a logged-in admin, so the system cannot bootstrap itself through
-the UI. Set `ADMIN_INITIAL_PASSWORD` (and optionally `ADMIN_USERNAME`, default
-`admin`) in the server-side `.env`, then:
-
-```bash
-docker compose -f docker-compose.prod.yml run --rm api pnpm db:bootstrap
-```
-
-This creates the 4 preset roles, the 4 default SLA policies, and one admin
-account. It is idempotent: re-running upserts roles/policies but **never
-touches an existing user** — a rotated admin password survives re-runs. You can
-remove `ADMIN_INITIAL_PASSWORD` from `.env` once bootstrap has completed; the
-password itself is changeable later in 用户管理.
-
-Do **not** run `db:seed` in production — it creates demo accounts with the
-publicly documented password `password123` plus demo tickets.
-
-### 6. Redeploying a new version
+### 4. Redeploying a new version
 
 ```bash
 git pull
 docker compose -f docker-compose.prod.yml up -d --build   # rebuild + restart
-docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy  # if schema changed
 ```
+
+Schema changes need no extra step — the rebuilt container applies any new
+migrations on startup.
 
 ### Ports and exposure
 
@@ -175,15 +159,3 @@ server {
     return 301 https://$host$request_uri;
 }
 ```
-
----
-
-## Migration command reference
-
-| Command | When | What it does |
-| --- | --- | --- |
-| `pnpm db:migrate` | Development | `prisma migrate dev` — creates + applies migrations from schema changes |
-| `pnpm db:seed` | Development **only** | Creates/refreshes demo users (weak shared password), SLA policies, and demo tickets |
-| `pnpm db:deploy` | Production | `prisma migrate deploy` — applies committed migrations only |
-| `docker compose -f docker-compose.prod.yml run --rm api pnpm db:deploy` | Production (containerized) | Runs `db:deploy` inside a one-off API container against `db` |
-| `docker compose -f docker-compose.prod.yml run --rm api pnpm db:bootstrap` | Production, first install | Preset roles + default SLA policies + initial admin (from `ADMIN_INITIAL_PASSWORD`); idempotent, never touches existing users |

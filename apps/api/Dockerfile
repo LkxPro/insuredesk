@@ -78,7 +78,7 @@ RUN retry pnpm install --prod --frozen-lockfile --filter "@insuredesk/api..."
 # API + shared source (executed by tsx) and the Prisma schema (for migrations).
 COPY apps/api/src ./apps/api/src
 COPY apps/api/prisma ./apps/api/prisma
-COPY apps/api/tsconfig.json ./apps/api/
+COPY apps/api/tsconfig.json apps/api/docker-entrypoint.sh ./apps/api/
 COPY packages/shared/src ./packages/shared/src
 COPY packages/shared/tsconfig.json ./packages/shared/
 
@@ -96,5 +96,6 @@ ENV WEB_DIST_PATH=/app/apps/web/dist
 EXPOSE 3000
 
 # Scripts assume cwd = apps/api (relative .env load, Prisma schema path).
+# The entrypoint chains `prisma migrate deploy` → bootstrap → server.
 WORKDIR /app/apps/api
-CMD ["pnpm", "start"]
+CMD ["./docker-entrypoint.sh"]
