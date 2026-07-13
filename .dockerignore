@@ -21,8 +21,11 @@
 .github
 .gitignore
 
-# Tests — not needed at runtime.
+# Tests — not needed at runtime. Excluding *.test.tsx alongside the test/
+# setup dir keeps them consistent: the web build's `tsc --noEmit` fails if
+# test files enter the context without src/test/setup.ts's jest-dom types.
 **/*.test.ts
+**/*.test.tsx
 **/test
 **/coverage
 
