@@ -5,11 +5,14 @@ import {
   TicketStatus,
   channelSchema,
   complaintLevelSchema,
+  createAppliedSlaPolicy,
+  deriveDeadlineWarningAt,
   deriveDisplayStatus,
   deriveDueAt,
   formatFirstResponseRequirement,
   formatFollowUpFrequency,
   normalizeReminderRules,
+  normalizeSlaPolicy,
   nuclearBodyStatusSchema,
   prioritySchema,
   processLogActionSchema,
@@ -34,7 +37,15 @@ export interface TicketServiceDeps {
   clock: Clock;
 }
 
-/** Every complaint level must have a seeded SLAPolicy row; missing one is a config fault. */
+/** Every complaint level must have a seeded ComplaintLevel row; missing one is a config fault. */
+export class ComplaintLevelNotFoundError extends Error {
+  constructor(complaintLevel: string) {
+    super(`投诉等级「${complaintLevel}」未配置`);
+    this.name = "ComplaintLevelNotFoundError";
+  }
+}
+
+/** Legacy: Every complaint level must have a seeded SLAPolicy row; missing one is a config fault. */
 export class SlaPolicyNotConfiguredError extends Error {
   constructor(complaintLevel: string) {
     super(`投诉等级「${complaintLevel}」缺少 SLA 策略配置`);
@@ -43,11 +54,58 @@ export class SlaPolicyNotConfiguredError extends Error {
 }
 
 /**
- * The SLA fields a complaintLevel stamps onto a ticket, derived and described
- * by the rule-engine off the level's policy row (issue #47) — this adapter
- * only owns the database read. A null level (未定级, issue #43) stamps
- * all-null: no dueAt, no 首响/跟进 requirements — and hence no SLA time
- * alerts until an edit sets a level (off the original createdAt).
+ * NEW (issue #48): The SLA fields a complaintLevel stamps onto a ticket, using
+ * ComplaintLevel directory and AppliedSLAPolicy snapshot. A null level (未定级,
+ * issue #43) stamps all-null: no complaintLevelId, no snapshot, no times.
+ */
+export async function computeSlaStampV2(
+  db: Pick<PrismaClient, "complaintLevel">,
+  complaintLevel: string | null,
+  createdAt: Date,
+): Promise<{
+  complaintLevelId: string | null;
+  appliedSlaPolicy?: Prisma.InputJsonValue;
+  dueAt: Date | null;
+  deadlineWarningAt: Date | null;
+  // Legacy fields for backward compat during migration:
+  followUpFrequency: string | null;
+  firstResponseRequirement: string | null;
+}> {
+  if (complaintLevel === null) {
+    return {
+      complaintLevelId: null,
+      dueAt: null,
+      deadlineWarningAt: null,
+      followUpFrequency: null,
+      firstResponseRequirement: null,
+    };
+  }
+  const level = await db.complaintLevel.findUnique({ where: { name: complaintLevel } });
+  if (!level) {
+    throw new ComplaintLevelNotFoundError(complaintLevel);
+  }
+  const policy = normalizeSlaPolicy(level.policy);
+  const snapshot = createAppliedSlaPolicy(level.policyRevision, policy);
+  const dueAt = deriveDueAt(createdAt, policy.overdueHours);
+  const deadlineWarningAt = deriveDeadlineWarningAt(dueAt, policy.warningAdvanceMinutes);
+
+  return {
+    complaintLevelId: level.id,
+    appliedSlaPolicy: snapshot as unknown as Prisma.InputJsonValue,
+    dueAt,
+    deadlineWarningAt,
+    // Legacy fields — derived from snapshot for now:
+    followUpFrequency: formatFollowUpFrequency(policy.reminderRules),
+    firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
+  };
+}
+
+/**
+ * LEGACY (pre-#48): The SLA fields a complaintLevel stamps onto a ticket,
+ * derived and described by the rule-engine off the level's policy row (issue
+ * #47) — this adapter only owns the database read. A null level (未定级, issue
+ * #43) stamps all-null: no dueAt, no 首响/跟进 requirements — and hence no SLA
+ * time alerts until an edit sets a level (off the original createdAt).
  */
 export async function computeSlaStamp(
   db: Pick<PrismaClient, "slaPolicy">,
@@ -82,9 +140,9 @@ export async function computeSlaStamp(
  * - every user field is optional (issue #43): a fully blank submission is
  *   valid, unfilled fields persist as NULL ("unknown", never "")
  * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
- * - dueAt is fixed once, here: createdAt + the level's SLA overdueHours
- *   (null for 特急 — never overdue; null while 未定级 — no SLA clock fields)
- * - 跟进频次/首响要求 are stamped from the level's SLA config, not hardcoded
+ * - (issue #48) complaintLevelId + appliedSlaPolicy snapshot + dueAt + deadlineWarningAt
+ *   are all derived from ComplaintLevel and stamped together
+ * - 跟进频次/首响要求 are stamped from the level's SLA config for legacy compat
  * - source=manual records creatorId; "由谁创建" derives at read time (§3.1.8)
  * - the first `create` ProcessLog (operator name snapshot) lands in the same
  *   transaction, so a ticket can never exist without its timeline root
@@ -97,7 +155,7 @@ export async function createTicket(
   // One instant for createdAt, dueAt, and the log entry, taken from the
   // injectable clock (ADR 0006) — dueAt is exactly createdAt + overdueHours.
   const now = clock.now();
-  const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, now);
+  const slaStamp = await computeSlaStampV2(prisma, input.complaintLevel, now);
 
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.create({

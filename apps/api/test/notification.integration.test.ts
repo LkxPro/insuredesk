@@ -46,6 +46,7 @@ describe("assigned notifications (Testcontainers)", () => {
 
     seeded = await seedData.seedPresetRolesAndUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
+    await seedData.seedComplaintLevels(prisma);
   }, 180_000);
 
   afterAll(async () => {

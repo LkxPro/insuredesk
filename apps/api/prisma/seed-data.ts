@@ -5,7 +5,7 @@ import {
   PRESET_ROLES,
   TicketStatus,
 } from "@insuredesk/shared";
-import type { PrismaClient, Role, SlaPolicy, Ticket, User } from "@prisma/client";
+import type { ComplaintLevel, PrismaClient, Role, SlaPolicy, Ticket, User } from "@prisma/client";
 import type { Clock } from "../src/clock";
 import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service";
 import { assignTicket } from "../src/services/ticket-assign.service";
@@ -123,6 +123,46 @@ export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]
     );
   }
   return policies;
+}
+
+/**
+ * Create the four ComplaintLevel directory entries (issue #48), one per the
+ * default levels. Each embeds its SLAPolicy. Create-if-missing only: levels
+ * are admin-editable, so re-seeding must never revert configuration.
+ */
+export async function seedComplaintLevels(
+  prisma: PrismaClient,
+): Promise<ComplaintLevel[]> {
+  const levels: ComplaintLevel[] = [];
+  const defaultLevels = [
+    { name: "一般投诉", sortOrder: 1 },
+    { name: "高级投诉", sortOrder: 2 },
+    { name: "加急投诉", sortOrder: 3 },
+    { name: "特急投诉", sortOrder: 4 },
+  ] as const;
+
+  for (const { name, sortOrder } of defaultLevels) {
+    const policy = DEFAULT_SLA_POLICIES[name];
+    levels.push(
+      await prisma.complaintLevel.upsert({
+        where: { name },
+        update: {},
+        create: {
+          name,
+          sortOrder,
+          enabled: true,
+          policyRevision: 1,
+          policy: {
+            firstResponseMinutes: policy.firstResponseMinutes,
+            overdueHours: policy.overdueHours,
+            warningAdvanceMinutes: null, // No warning configured by default
+            reminderRules: policy.reminderRules,
+          },
+        },
+      }),
+    );
+  }
+  return levels;
 }
 
 const HOUR_MS = 60 * 60 * 1000;

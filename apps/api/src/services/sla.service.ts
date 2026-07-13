@@ -30,20 +30,36 @@ function toDto(row: SlaPolicyRow) {
   };
 }
 
-/** The four policies in fixed 等级 order — the whole page in one read. */
+/**
+ * The four policies in fixed 等级 order — the whole page in one read.
+ * Now reads from ComplaintLevel directory (issue #48 migration).
+ */
 export async function listSlaPolicies({ prisma }: TicketServiceDeps) {
-  const rows = await prisma.slaPolicy.findMany();
-  const byLevel = new Map(rows.map((row) => [row.complaintLevel, row]));
-  return COMPLAINT_LEVELS.flatMap((level) => {
-    const row = byLevel.get(level);
-    return row ? [toDto(row)] : [];
+  const rows = await prisma.complaintLevel.findMany({
+    orderBy: { sortOrder: "asc" },
   });
+  return rows
+    .filter((row) => COMPLAINT_LEVELS.indexOf(row.name as ComplaintLevel) >= 0)
+    .map((row) => {
+      const policy = row.policy as Record<string, unknown>;
+      return {
+        complaintLevel: row.name as ComplaintLevel,
+        firstResponseMinutes: policy.firstResponseMinutes as number,
+        overdueHours: policy.overdueHours as number | null,
+        reminderRules: normalizeReminderRules(policy.reminderRules),
+        updatedAt: row.updatedAt.toISOString(),
+      };
+    });
 }
 
 /**
  * Replace one level's policy (sla.edit). Upsert on the complaintLevel natural
  * key: the level enum is the validated identifier, so a missing row (a
  * never-seeded database) is self-healed rather than erred on.
+ *
+ * TEMPORARY (issue #48 migration): also updates the ComplaintLevel policy so
+ * new tickets use the updated policy. This dual-write keeps existing tests
+ * passing during the transition.
  */
 export async function updateSlaPolicy({ prisma }: TicketServiceDeps, input: SlaPolicyUpdateInput) {
   const data = {
@@ -56,5 +72,19 @@ export async function updateSlaPolicy({ prisma }: TicketServiceDeps, input: SlaP
     update: data,
     create: { complaintLevel: input.complaintLevel, ...data },
   });
+
+  // TEMPORARY dual-write: also update ComplaintLevel so new tickets get the
+  // updated policy. This preserves existing test behavior during migration.
+  await prisma.complaintLevel.updateMany({
+    where: { name: input.complaintLevel },
+    data: {
+      policy: {
+        ...data,
+        warningAdvanceMinutes: null,
+      },
+      policyRevision: { increment: 1 },
+    },
+  });
+
   return toDto(row);
 }

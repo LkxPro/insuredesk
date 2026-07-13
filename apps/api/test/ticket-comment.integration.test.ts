@@ -48,6 +48,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
 
     seeded = await seedData.seedPresetRolesAndUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
+    await seedData.seedComplaintLevels(prisma);
 
     cs2 = await prisma.user.create({
       data: {

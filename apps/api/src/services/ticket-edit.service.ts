@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
-import { type TicketServiceDeps, computeSlaStamp } from "./ticket.service";
+import { type TicketServiceDeps, computeSlaStampV2 } from "./ticket.service";
 
 /**
  * Edit domain logic (issue #28, PRD §4.5): every basic-info field editable in
@@ -121,11 +121,11 @@ export async function editTicket(
     // 改 complaintLevel = 改 SLA: everything the level stamped at creation
     // re-derives from the new level's policy, off the unchanged createdAt —
     // the SLA clock stays anchored to the ORIGINAL 录入时刻 even when the
-    // level is only supplied by a later edit (issue #43). Clearing the level
-    // clears all three stamps (未定级 = no SLA clock).
+    // level is only supplied by a later edit (issue #43, #48). Clearing the
+    // level clears all stamps (未定级 = no SLA clock).
     let slaFields: Prisma.TicketUpdateInput = {};
     if (changedFields.includes("complaintLevel")) {
-      slaFields = await computeSlaStamp(tx, next.complaintLevel, ticket.createdAt);
+      slaFields = await computeSlaStampV2(tx, next.complaintLevel, ticket.createdAt);
     }
 
     await tx.ticket.update({

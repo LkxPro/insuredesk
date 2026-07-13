@@ -63,6 +63,7 @@ describe("ticket export (Testcontainers)", () => {
 
     seeded = await seedData.seedPresetRolesAndUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
+    await seedData.seedComplaintLevels(prisma);
 
     // No preset role holds ticket.export without ticket.view_all, so the
     // data-scope criterion needs a custom role: sees/export own tickets only.

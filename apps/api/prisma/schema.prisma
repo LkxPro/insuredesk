@@ -122,15 +122,19 @@ model Ticket {
 
   // 分类与等级 (PRD §3.1.5)
   category       String?
-  /// The ONLY SLA driver — determines dueAt, 首响 and 跟进 requirements.
-  /// null = 未定级: no dueAt, no 首响/跟进 requirements, no SLA time alerts
-  /// until a later edit sets it (SLA then counts from the original createdAt).
+  /// NEW (issue #48): Stable FK to ComplaintLevel; null = 未定级 (no SLA).
+  /// Drives all SLA behavior via the frozen appliedSlaPolicy snapshot.
+  complaintLevelId String?
+  /// LEGACY: old string-based level, kept for CI during migration (issue #48).
+  /// Will be dropped after full cutover.
   complaintLevel String?
   /// Independent free label (low/medium/high/urgent), default empty, no SLA role
   priority       String?
-  /// 跟进频次要求, stamped from the level's SLA config; null while 未定级
+  /// LEGACY: 跟进频次要求 description strings (issue #48). Now derived from
+  /// appliedSlaPolicy at read time; these columns will be dropped.
   followUpFrequency        String?
-  /// 首响要求, stamped from the level's SLA config; null while 未定级
+  /// LEGACY: 首响要求 description string (issue #48). Now derived from
+  /// appliedSlaPolicy at read time; this column will be dropped.
   firstResponseRequirement String?
 
   // 处理状态 (PRD §3.1.6) — only the 4 base statuses are stored;
@@ -139,8 +143,15 @@ model Ticket {
   assigneeId       String?
   /// First-assignment time, audit only — never used to compute dueAt (ADR 0002)
   assignedAt       DateTime? @db.Timestamptz
-  /// Fixed at creation: createdAt + level's overdueHours; null for 特急
+  /// NEW (issue #48): Structured SLA snapshot — schemaVersion, policyRevision,
+  /// and full rule-engine policy. Null for 未定级 tickets. Frozen on completion.
+  appliedSlaPolicy Json?
+  /// Fixed at creation: createdAt + appliedSlaPolicy.overdueHours; null when no
+  /// deadline or 未定级. Recomputed from original createdAt on level change.
   dueAt            DateTime? @db.Timestamptz
+  /// NEW (issue #48): When pending_timeout begins (dueAt - warningAdvanceMinutes);
+  /// null when no warning configured or no dueAt. Recomputed on policy publish.
+  deadlineWarningAt DateTime? @db.Timestamptz
   nextContactTime  DateTime? @db.Timestamptz
   /// Maintained solely by addComment (+1 per follow-up)
   contactCount     Int       @default(0)
@@ -157,9 +168,10 @@ model Ticket {
   /// null and "由谁创建" derives from source at read time (PRD §3.1.8)
   creatorId String?
 
-  assignee    User?        @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  creator     User?        @relation("TicketCreator", fields: [creatorId], references: [id])
-  processLogs ProcessLog[]
+  assignee      User?          @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  creator       User?          @relation("TicketCreator", fields: [creatorId], references: [id])
+  complaintLevelRef ComplaintLevel? @relation(fields: [complaintLevelId], references: [id])
+  processLogs   ProcessLog[]
 
   @@index([assigneeId])
   @@index([status])
@@ -167,6 +179,8 @@ model Ticket {
   /// Computed-status predicates (pending_timeout/overdue) and 处理时限 sorting
   /// both range over dueAt (ADR 0001)
   @@index([dueAt])
+  @@index([deadlineWarningAt])
+  @@index([complaintLevelId])
   @@index([deletedAt])
   @@map("tickets")
 }
@@ -197,9 +211,35 @@ model ProcessLog {
   @@map("process_logs")
 }
 
-/// SLA rule configuration, one row per complaint level (PRD §3.8, ADR 0005).
-/// Seeded with PRD defaults; admin editor arrives in a later ticket. All
-/// durations count from ticket createdAt.
+/// Complaint-level directory: stable, admin-maintained catalog (issue #48).
+/// Each level embeds exactly one SLAPolicy. System creates four default levels
+/// at seed time; runtime logic never depends on their names.
+model ComplaintLevel {
+  id       String  @id @default(cuid())
+  /// Unique display name (e.g., "一般投诉", "高级投诉"); can be renamed
+  name     String  @unique
+  /// Admin can disable levels; disabled levels don't appear in new-ticket selectors
+  enabled  Boolean @default(true)
+  /// Display order for selectors and admin lists
+  sortOrder Int
+  /// Incremented on every policy publish; used for optimistic concurrency control
+  policyRevision Int @default(1)
+  /// Embedded SLAPolicy: firstResponseMinutes, overdueHours (nullable),
+  /// warningAdvanceMinutes (nullable), reminderRules (JSON array of typed rules).
+  /// Normalized via rule-engine at every boundary.
+  policy    Json
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  /// Tickets referencing this level (stable FK survives renames/disables)
+  tickets Ticket[]
+
+  @@index([enabled, sortOrder])
+  @@map("complaint_levels")
+}
+
+/// Legacy SLA configuration table — kept temporarily during migration (issue #48).
+/// Will be dropped after full cutover to ComplaintLevel.
 model SlaPolicy {
   id                   String   @id @default(cuid())
   /// 一般投诉/高级投诉/加急投诉/特急投诉 — natural key, one row each

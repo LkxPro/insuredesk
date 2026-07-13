@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import {
   DEMO_PASSWORD,
+  seedComplaintLevels,
   seedDemoTickets,
   seedPresetRolesAndUsers,
   seedSlaPolicies,
@@ -39,6 +40,11 @@ async function main() {
     console.log(
       `✓ SLAPolicy: ${policy.complaintLevel}（首响${policy.firstResponseMinutes}min / ${overdue}）`,
     );
+  }
+
+  const levels = await seedComplaintLevels(prisma);
+  for (const level of levels) {
+    console.log(`✓ ComplaintLevel: ${level.name} (排序${level.sortOrder})`);
   }
 
   const tickets = await seedDemoTickets(prisma, { roles, users });

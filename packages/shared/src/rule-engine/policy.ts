@@ -37,14 +37,62 @@ export type RollingFollowUpRule = z.infer<typeof rollingFollowUpRuleSchema>;
 export type ReminderRule = z.infer<typeof reminderRuleSchema>;
 
 /**
+ * Zod schema for the canonical SlaPolicy structure.
+ */
+export const slaPolicySchema = z.object({
+  firstResponseMinutes: z.number().int().positive(),
+  overdueHours: z.number().int().positive().nullable(),
+  warningAdvanceMinutes: z.number().int().positive().nullable().optional(),
+  reminderRules: reminderRulesSchema,
+});
+
+/**
+ * Zod schema for AppliedSlaPolicy snapshots (issue #48).
+ */
+export const appliedSlaPolicySchema = z.object({
+  schemaVersion: z.literal(1),
+  policyRevision: z.number().int().positive(),
+  policy: slaPolicySchema,
+});
+
+/**
  * The canonical policy value the engine derives, evaluates, and describes
  * from. overdueHours = null means the level has no processing deadline (never
  * due-soon/overdue); the reminder rules alone drive its follow-up cadence.
+ * warningAdvanceMinutes = null (or absent) means no early warning for deadlines.
  */
 export interface SlaPolicy {
   firstResponseMinutes: number;
   overdueHours: number | null;
+  warningAdvanceMinutes?: number | null;
   reminderRules: ReminderRule[];
+}
+
+/**
+ * The frozen SLA snapshot stored in Ticket.appliedSlaPolicy (issue #48).
+ * Includes schema version, policy revision from the ComplaintLevel, and the
+ * complete normalized policy. Created once at ticket creation or level change;
+ * frozen forever on completion.
+ */
+export interface AppliedSlaPolicy {
+  schemaVersion: number;
+  policyRevision: number;
+  policy: SlaPolicy;
+}
+
+/**
+ * Create an AppliedSlaPolicy snapshot from a ComplaintLevel's current policy
+ * and revision. The snapshot is immutable once written to a ticket.
+ */
+export function createAppliedSlaPolicy(
+  policyRevision: number,
+  policy: SlaPolicy,
+): AppliedSlaPolicy {
+  return {
+    schemaVersion: 1,
+    policyRevision,
+    policy,
+  };
 }
 
 /**
@@ -54,4 +102,21 @@ export interface SlaPolicy {
  */
 export function normalizeReminderRules(value: unknown): ReminderRule[] {
   return reminderRulesSchema.parse(value);
+}
+
+/**
+ * Normalize a ComplaintLevel.policy JSONB value into a canonical SlaPolicy.
+ * Throws if the stored shape doesn't match — policy writes go through the
+ * same schema, so a parse failure means data corruption or version skew.
+ */
+export function normalizeSlaPolicy(value: unknown): SlaPolicy {
+  return slaPolicySchema.parse(value);
+}
+
+/**
+ * Normalize a Ticket.appliedSlaPolicy JSONB value into a canonical
+ * AppliedSlaPolicy. Throws if the stored shape is invalid.
+ */
+export function normalizeAppliedSlaPolicy(value: unknown): AppliedSlaPolicy {
+  return appliedSlaPolicySchema.parse(value);
 }

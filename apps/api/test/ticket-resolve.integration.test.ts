@@ -49,6 +49,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
     seeded = await seedData.seedPresetRolesAndUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
+    await seedData.seedComplaintLevels(prisma);
 
     cs2 = await prisma.user.create({
       data: {

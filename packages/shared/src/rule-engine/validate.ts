@@ -28,12 +28,16 @@ export type SlaReminderRuleDraft = FollowUpCheckpointRule | RollingFollowUpRule 
 export interface SlaPolicyDraft {
   firstResponseMinutes: number;
   overdueHours: number | null;
+  warningAdvanceMinutes?: number | null;
   reminderRules: readonly SlaReminderRuleDraft[];
 }
 
 export const SLA_POLICY_VALIDATION_MESSAGES = {
   firstResponseMinutes: "首响违约线需为正整数（分钟）",
   overdueHours: "超时时长需为正整数（小时）",
+  warningAdvanceMinutes: "预警提前量需为正整数（分钟）",
+  warningWithoutDeadline: "无处理时限时不能配置预警",
+  warningExceedsDeadline: "预警提前量必须小于处理时限",
   checkpointHours: "检查点需为正整数（小时）",
   requiredCount: "要求累计跟进需为正整数（次）",
   advanceMinutes: "提前提醒需为正整数（分钟）",
@@ -69,6 +73,21 @@ export function validateSlaPolicy(draft: SlaPolicyDraft): SlaPolicyValidationIss
   }
   if (draft.overdueHours !== null && !isPositiveInt(draft.overdueHours)) {
     issues.push({ path: ["overdueHours"], message: messages.overdueHours });
+  }
+
+  // warningAdvanceMinutes validation (issue #48):
+  // Can only be set if there's a deadline, and must be strictly less than it.
+  const hasWarning =
+    draft.warningAdvanceMinutes !== null && draft.warningAdvanceMinutes !== undefined;
+  if (hasWarning) {
+    const warningValue = draft.warningAdvanceMinutes!;
+    if (draft.overdueHours === null) {
+      issues.push({ path: ["warningAdvanceMinutes"], message: messages.warningWithoutDeadline });
+    } else if (!isPositiveInt(warningValue)) {
+      issues.push({ path: ["warningAdvanceMinutes"], message: messages.warningAdvanceMinutes });
+    } else if (isPositiveInt(draft.overdueHours) && warningValue >= draft.overdueHours * 60) {
+      issues.push({ path: ["warningAdvanceMinutes"], message: messages.warningExceedsDeadline });
+    }
   }
 
   let previousCheckpoint: FollowUpCheckpointRule | undefined;
