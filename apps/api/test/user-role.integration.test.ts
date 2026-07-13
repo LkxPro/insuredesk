@@ -11,11 +11,11 @@ import type { AuthenticatedUser } from "../src/services/auth.service";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Issue #32 acceptance tests against a real Postgres: 用户管理 (create / edit /
- * 禁用-启用 / 分配角色), 角色管理 (custom roles against the 权限点清单, preset
- * protection), and the session-layer guarantees — a disabled user can neither
- * log in again nor ride an existing session, and role/permission changes bind
- * from the very next request.
+ * 用户与角色管理 acceptance tests against a real Postgres: 用户管理 (create /
+ * edit / 禁用-启用 / 分配角色), 角色管理 (roles against the 权限点清单, the
+ * 管理员-only system-role lock), and the session-layer guarantees — a disabled
+ * user can neither log in again nor ride an existing session, and
+ * role/permission changes bind from the very next request.
  *
  * Two surfaces on purpose: RBAC 逐项校验 runs through createCaller with
  * surgically-chosen permission sets (impossible to arrange via real roles
@@ -53,7 +53,7 @@ describe("user + role management (Testcontainers)", () => {
       ]);
     prisma = appPrisma;
     appRouter = routers.appRouter;
-    seeded = await seedData.seedPresetRolesAndUsers(prisma);
+    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
 
     app = buildServer(
       parseEnv({
@@ -162,7 +162,7 @@ describe("user + role management (Testcontainers)", () => {
         active: true,
         roleId: seeded.roles.frontline.id,
         roleName: "一线客服",
-        rolePreset: true,
+        roleSystem: false,
       });
 
       expect((await login("newbie", "secret-123")).statusCode).toBe(200);
@@ -329,15 +329,16 @@ describe("user + role management (Testcontainers)", () => {
       const listed = (await admin().role.list()).find((role) => role.id === created.id);
       expect(listed).toMatchObject({
         name: "质检专员",
-        preset: false,
+        system: false,
         userCount: 0,
         permissions: ["ticket.view", "ticket.view_all", "dashboard.view"],
       });
 
-      // The 4 preset roles are present and flagged
-      const presets = (await admin().role.list()).filter((role) => role.preset);
-      expect(presets.map((role) => role.name).sort()).toEqual(
-        ["一线客服", "只读观察", "客服主管", "管理员"].sort(),
+      // 管理员 is the one and only system role; the factory roles are ordinary
+      const list = await admin().role.list();
+      expect(list.filter((role) => role.system).map((role) => role.name)).toEqual(["管理员"]);
+      expect(list.map((role) => role.name)).toEqual(
+        expect.arrayContaining(["一线客服", "只读观察", "客服主管"]),
       );
     });
 
@@ -391,23 +392,56 @@ describe("user + role management (Testcontainers)", () => {
     });
   });
 
-  describe("预设角色保护 (acceptance: 不可删除)", () => {
-    it("none of the four preset roles can be deleted, renamed, or re-permissioned", async () => {
-      for (const role of Object.values(seeded.roles)) {
-        await expect(admin().role.delete({ id: role.id })).rejects.toMatchObject({
-          code: "PRECONDITION_FAILED",
-          message: expect.stringContaining("预设角色"),
-        });
-        await expect(
-          admin().role.rename({ id: role.id, name: `${role.name}2` }),
-        ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
-        await expect(
-          admin().role.updatePermissions({ id: role.id, permissions: [] }),
-        ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
-      }
+  describe("系统角色锁 (acceptance: 管理员全锁,出厂角色与手建角色无差别)", () => {
+    it("管理员 refuses rename, permission edits, and deletion", async () => {
+      const role = seeded.roles.admin;
+      await expect(admin().role.delete({ id: role.id })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("系统角色"),
+      });
+      await expect(admin().role.rename({ id: role.id, name: "超级管理员" })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+      });
+      await expect(
+        admin().role.updatePermissions({ id: role.id, permissions: [] }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
       // Untouched by the attempts above
-      const admins = await prisma.role.findUniqueOrThrow({ where: { name: "管理员" } });
-      expect(admins.permissions).toEqual(seeded.roles.admin.permissions);
+      const row = await prisma.role.findUniqueOrThrow({ where: { name: "管理员" } });
+      expect(row.permissions).toEqual(seeded.roles.admin.permissions);
+    });
+
+    it("factory roles rename and re-permission like any hand-made role", async () => {
+      const role = seeded.roles.csManager;
+
+      await admin().role.rename({ id: role.id, name: "客服组长" });
+      await admin().role.updatePermissions({
+        id: role.id,
+        permissions: [...(role.permissions as Permission[]), "sla.view"],
+      });
+
+      const listed = (await admin().role.list()).find((entry) => entry.id === role.id);
+      expect(listed).toMatchObject({ name: "客服组长", system: false });
+      expect(listed?.permissions).toContain("sla.view");
+
+      // Put the fixture back for the RBAC cases below
+      await admin().role.rename({ id: role.id, name: role.name });
+      await admin().role.updatePermissions({
+        id: role.id,
+        permissions: role.permissions as Permission[],
+      });
+    });
+
+    it("an unused factory role deletes for good", async () => {
+      await admin().user.assignRole({
+        id: seeded.users.observer.id,
+        roleId: seeded.roles.frontline.id,
+      });
+
+      await admin().role.delete({ id: seeded.roles.readOnly.id });
+
+      const list = await admin().role.list();
+      expect(list.find((entry) => entry.id === seeded.roles.readOnly.id)).toBeUndefined();
     });
   });
 

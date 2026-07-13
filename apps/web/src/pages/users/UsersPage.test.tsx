@@ -1,6 +1,7 @@
 import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import { PRESET_ROLES, type Permission } from "@insuredesk/shared";
+import { TEST_ROLES } from "@/test/roles";
+import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
@@ -63,7 +64,7 @@ type UserRow = {
   active: boolean;
   roleId: string;
   roleName: string;
-  rolePreset: boolean;
+  roleSystem: boolean;
   createdAt: string;
 };
 
@@ -77,15 +78,15 @@ function row(overrides: Partial<UserRow> = {}): UserRow {
     active: true,
     roleId: "r-frontline",
     roleName: "一线客服",
-    rolePreset: true,
+    roleSystem: false,
     createdAt: "2026-07-01T00:00:00.000Z",
     ...overrides,
   };
 }
 
 const ROLE_OPTIONS = [
-  { id: "r-frontline", name: "一线客服", preset: true },
-  { id: "r-custom", name: "质检专员", preset: false },
+  { id: "r-frontline", name: "一线客服", system: false },
+  { id: "r-custom", name: "质检专员", system: false },
 ];
 
 const canned = { users: [] as UserRow[] };
@@ -154,7 +155,7 @@ function renderUsersPage() {
 }
 
 beforeEach(() => {
-  auth.user = userWith(PRESET_ROLES.ADMIN);
+  auth.user = userWith(TEST_ROLES.ADMIN);
   auth.isLoading = false;
   canned.users = [];
   calls = [];
@@ -171,7 +172,7 @@ describe("the account table", () => {
         active: false,
         roleId: "r-custom",
         roleName: "质检专员",
-        rolePreset: false,
+        roleSystem: false,
       }),
     ];
     renderUsersPage();

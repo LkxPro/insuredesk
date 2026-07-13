@@ -1,9 +1,10 @@
-import { PRESET_ROLES, type Permission } from "@insuredesk/shared";
+import { TEST_ROLES } from "@/test/roles";
+import type { Permission } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
 import { NAV_ITEMS, visibleNavItems } from "./navigation";
 
 /**
- * Menu visibility per preset role — the page-permission matrix. Each menu
+ * Menu visibility per role persona — the page-permission matrix. Each menu
  * entry maps 1:1 to a page permission point; an entry only shows when the
  * role holds that permission.
  */
@@ -27,7 +28,7 @@ describe("NAV_ITEMS", () => {
 
 describe("visibleNavItems", () => {
   it("管理员 sees all six menu entries", () => {
-    expect(visiblePaths(PRESET_ROLES.ADMIN.permissions)).toEqual([
+    expect(visiblePaths(TEST_ROLES.ADMIN.permissions)).toEqual([
       "/dashboard",
       "/tickets",
       "/users",
@@ -38,7 +39,7 @@ describe("visibleNavItems", () => {
   });
 
   it("客服主管 sees dashboard, tickets and schedule", () => {
-    expect(visiblePaths(PRESET_ROLES.CS_MANAGER.permissions)).toEqual([
+    expect(visiblePaths(TEST_ROLES.CS_MANAGER.permissions)).toEqual([
       "/dashboard",
       "/tickets",
       "/schedule",
@@ -46,11 +47,11 @@ describe("visibleNavItems", () => {
   });
 
   it("一线客服 sees dashboard and tickets only", () => {
-    expect(visiblePaths(PRESET_ROLES.FRONTLINE_CS.permissions)).toEqual(["/dashboard", "/tickets"]);
+    expect(visiblePaths(TEST_ROLES.FRONTLINE_CS.permissions)).toEqual(["/dashboard", "/tickets"]);
   });
 
   it("只读观察 sees dashboard and tickets only", () => {
-    expect(visiblePaths(PRESET_ROLES.READ_ONLY.permissions)).toEqual(["/dashboard", "/tickets"]);
+    expect(visiblePaths(TEST_ROLES.READ_ONLY.permissions)).toEqual(["/dashboard", "/tickets"]);
   });
 
   it("returns nothing for a role with no page permissions", () => {

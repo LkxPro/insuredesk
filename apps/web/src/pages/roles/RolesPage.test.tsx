@@ -1,6 +1,7 @@
 import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import { PRESET_ROLES, type Permission } from "@insuredesk/shared";
+import { TEST_ROLES } from "@/test/roles";
+import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
@@ -10,11 +11,11 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 角色权限 page: the role table separates preset from custom, preset roles
- * never offer rename/delete and open the checklist read-only, and the
- * create/permissions dialogs fire their mutations with the ticked permission
- * points. Same faked-fetch tRPC pipeline and useAuth-seam mock as the
- * users-page tests.
+ * 角色权限 page: one flat role table where only the 管理员 (system) row is
+ * locked — no rename/delete, checklist read-only — while every other role
+ * offers the full edit surface, and the create/permissions dialogs fire their
+ * mutations with the ticked permission points. Same faked-fetch tRPC pipeline
+ * and useAuth-seam mock as the users-page tests.
  */
 
 const auth = vi.hoisted(() => ({
@@ -48,25 +49,25 @@ type RoleRow = {
   id: string;
   name: string;
   permissions: Permission[];
-  preset: boolean;
+  system: boolean;
   userCount: number;
   createdAt: string;
 };
 
-const PRESET_ADMIN: RoleRow = {
+const ADMIN_ROLE: RoleRow = {
   id: "r-admin",
   name: "管理员",
-  permissions: [...PRESET_ROLES.ADMIN.permissions],
-  preset: true,
+  permissions: [...TEST_ROLES.ADMIN.permissions],
+  system: true,
   userCount: 1,
   createdAt: "2026-07-01T00:00:00.000Z",
 };
 
-const CUSTOM_ROLE: RoleRow = {
-  id: "r-custom",
+const QA_ROLE: RoleRow = {
+  id: "r-qa",
   name: "质检专员",
   permissions: ["ticket.view", "ticket.view_all"],
-  preset: false,
+  system: false,
   userCount: 0,
   createdAt: "2026-07-02T00:00:00.000Z",
 };
@@ -134,21 +135,24 @@ function renderRolesPage() {
 }
 
 beforeEach(() => {
-  auth.user = userWith(PRESET_ROLES.ADMIN);
+  auth.user = userWith(TEST_ROLES.ADMIN);
   auth.isLoading = false;
-  canned.roles = [PRESET_ADMIN, CUSTOM_ROLE];
+  canned.roles = [ADMIN_ROLE, QA_ROLE];
   calls = [];
 });
 
 describe("the role table", () => {
-  it("separates preset from custom roles and protects preset rows", async () => {
+  it("is one flat list: only the 管理员 row is locked, every other role is editable", async () => {
     renderRolesPage();
 
     await screen.findByText("质检专员");
-    expect(screen.getByText("预设")).toBeInTheDocument();
-    expect(screen.getByText("自定义")).toBeInTheDocument();
+    // No 预设/自定义 classification — the only marker is the system badge
+    expect(screen.queryByText("类型")).not.toBeInTheDocument();
+    expect(screen.queryByText("预设")).not.toBeInTheDocument();
+    expect(screen.queryByText("自定义")).not.toBeInTheDocument();
+    expect(screen.getByText("系统")).toBeInTheDocument();
 
-    // Only the custom row offers 重命名/删除; the preset row is view-only
+    // Only the non-system row offers 重命名/删除; the 管理员 row is view-only
     expect(screen.getAllByRole("button", { name: "重命名" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "删除" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "查看权限" })).toHaveLength(1);
@@ -166,13 +170,14 @@ describe("the role table", () => {
     expect(screen.getAllByRole("button", { name: "查看权限" })).toHaveLength(2);
   });
 
-  it("preset roles open the checklist read-only, ticked to their permissions", async () => {
+  it("the 管理员 row opens the checklist read-only, ticked to its permissions", async () => {
     renderRolesPage();
     await screen.findByText("管理员");
 
     fireEvent.click(screen.getByRole("button", { name: "查看权限" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("heading", { name: "查看权限" })).toBeInTheDocument();
+    expect(within(dialog).getByText(/系统角色/)).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
 
     const box = within(dialog).getByRole("checkbox", { name: /访问工单列表/ });
@@ -217,7 +222,7 @@ describe("configuring roles", () => {
 
     await waitFor(() =>
       expect(calls.find((call) => call.path === "role.updatePermissions")?.input).toEqual({
-        id: "r-custom",
+        id: "r-qa",
         permissions: ["ticket.view", "ticket.view_all", "dashboard.view"],
       }),
     );
@@ -233,13 +238,13 @@ describe("configuring roles", () => {
     fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
     await waitFor(() =>
       expect(calls.find((call) => call.path === "role.delete")?.input).toEqual({
-        id: "r-custom",
+        id: "r-qa",
       }),
     );
   });
 
   it("a held role disables the destructive confirm and explains why", async () => {
-    canned.roles = [PRESET_ADMIN, { ...CUSTOM_ROLE, userCount: 3 }];
+    canned.roles = [ADMIN_ROLE, { ...QA_ROLE, userCount: 3 }];
     renderRolesPage();
     await screen.findByText("质检专员");
 

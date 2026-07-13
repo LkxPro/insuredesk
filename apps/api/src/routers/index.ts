@@ -53,7 +53,7 @@ export const appRouter = router({
   user: userRouter,
 
   /**
-   * 角色管理 - 自定义角色 + 权限点清单配置，预设角色受保护
+   * 角色管理 - 权限点清单配置，管理员（系统角色）全锁
    */
   role: roleRouter,
 

@@ -12,12 +12,11 @@ import type { TicketServiceDeps } from "./ticket.service";
  * 角色管理 domain logic. Pure service layer — the router maps the domain
  * errors below to transport codes.
  *
- * The four preset roles are the fixed permission baseline: no rename, no
- * permission edit, no delete. (Broader than delete protection on purpose: an
- * editable baseline invites lockouts — 管理员 minus role.edit_permission is
- * unrecoverable — and re-seeding would silently revert edits. Admins clone
- * custom roles instead.) Permission changes on custom roles take effect on the
- * next request: sessions resolve permissions from the role at validation time.
+ * 管理员 is the only system role and the only hard boundary: name, permissions
+ * and deletion are all locked. Every other role — factory-seeded or hand-made
+ * — is freely renamed, re-permissioned, and deleted; deletion is blocked only
+ * while users still hold the role. Permission changes take effect on the next
+ * request: sessions resolve permissions from the role at validation time.
  */
 
 export class RoleNotFoundError extends Error {
@@ -34,10 +33,10 @@ export class DuplicateRoleNameError extends Error {
   }
 }
 
-export class PresetRoleProtectedError extends Error {
+export class SystemRoleProtectedError extends Error {
   constructor() {
-    super("预设角色受保护，不可修改或删除");
-    this.name = "PresetRoleProtectedError";
+    super("管理员是系统角色，不可修改或删除");
+    this.name = "SystemRoleProtectedError";
   }
 }
 
@@ -53,42 +52,42 @@ function isDuplicateName(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-/** Load a role for mutation, enforcing existence + preset protection. */
+/** Load a role for mutation, enforcing existence + the system-role lock. */
 async function findMutableRole(prisma: TicketServiceDeps["prisma"], id: string) {
-  const role = await prisma.role.findUnique({ where: { id }, select: { id: true, preset: true } });
+  const role = await prisma.role.findUnique({ where: { id }, select: { id: true, system: true } });
   if (!role) {
     throw new RoleNotFoundError();
   }
-  if (role.preset) {
-    throw new PresetRoleProtectedError();
+  if (role.system) {
+    throw new SystemRoleProtectedError();
   }
   return role;
 }
 
 /**
  * Every role with its full permission set and holder count — the 角色权限
- * page's one read. Preset roles first, then custom roles by age.
+ * page's one read. 管理员 first, then the rest by age.
  */
 export async function listRoles({ prisma }: TicketServiceDeps) {
   const rows = await prisma.role.findMany({
     include: { _count: { select: { users: true } } },
-    orderBy: [{ preset: "desc" }, { createdAt: "asc" }, { id: "asc" }],
+    orderBy: [{ system: "desc" }, { createdAt: "asc" }, { id: "asc" }],
   });
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
     permissions: row.permissions as Permission[],
-    preset: row.preset,
+    system: row.system,
     userCount: row._count.users,
     createdAt: row.createdAt.toISOString(),
   }));
 }
 
-/** New custom role from the 权限点清单 checkboxes; names are unique. */
+/** New role from the 权限点清单 checkboxes; names are unique. */
 export async function createRole({ prisma }: TicketServiceDeps, input: RoleCreateData) {
   try {
     const created = await prisma.role.create({
-      data: { name: input.name, permissions: input.permissions, preset: false },
+      data: { name: input.name, permissions: input.permissions },
       select: { id: true, name: true },
     });
     return created;
@@ -100,7 +99,7 @@ export async function createRole({ prisma }: TicketServiceDeps, input: RoleCreat
   }
 }
 
-/** Rename a custom role (role.edit). */
+/** Rename a role (role.edit); 管理员 refuses. */
 export async function renameRole({ prisma }: TicketServiceDeps, input: RoleRenameInput) {
   await findMutableRole(prisma, input.id);
   try {
@@ -118,8 +117,8 @@ export async function renameRole({ prisma }: TicketServiceDeps, input: RoleRenam
 }
 
 /**
- * Replace a custom role's permission set (role.edit_permission). Every holder
- * is re-judged on their next request — nothing to invalidate.
+ * Replace a role's permission set (role.edit_permission); 管理员 refuses.
+ * Every holder is re-judged on their next request — nothing to invalidate.
  */
 export async function updateRolePermissions(
   { prisma }: TicketServiceDeps,
@@ -133,17 +132,17 @@ export async function updateRolePermissions(
   });
 }
 
-/** Delete an unused custom role (role.delete); holders block the delete. */
+/** Delete a role (role.delete); 管理员 and roles with holders refuse. */
 export async function deleteRole({ prisma }: TicketServiceDeps, input: RoleDeleteInput) {
   const role = await prisma.role.findUnique({
     where: { id: input.id },
-    select: { id: true, preset: true, _count: { select: { users: true } } },
+    select: { id: true, system: true, _count: { select: { users: true } } },
   });
   if (!role) {
     throw new RoleNotFoundError();
   }
-  if (role.preset) {
-    throw new PresetRoleProtectedError();
+  if (role.system) {
+    throw new SystemRoleProtectedError();
   }
   if (role._count.users > 0) {
     throw new RoleInUseError(role._count.users);

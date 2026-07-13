@@ -1,8 +1,8 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
 import {
+  ALL_PERMISSIONS,
   COMPLAINT_LEVELS,
   DEFAULT_SLA_POLICIES,
-  PRESET_ROLES,
   TicketStatus,
 } from "@insuredesk/shared";
 import type { PrismaClient, Role, SlaPolicy, Ticket, User } from "@prisma/client";
@@ -12,28 +12,87 @@ import { assignTicket } from "../src/services/ticket-assign.service";
 import { computeSlaStamp, createTicket } from "../src/services/ticket.service";
 
 /**
- * Single source of truth for the preset roles and demo users. Consumed by both
- * seed.ts (dev database) and the Testcontainers auth tests, so the two can
- * never drift apart.
+ * Single source of truth for the factory roles and demo users. Consumed by
+ * both seed.ts (dev database) and the Testcontainers auth tests, so the two
+ * can never drift apart.
  *
- * Lives in the api package (not @insuredesk/shared) on purpose: the shared
- * package is bundled into the browser and must not depend on @prisma/client
- * or bcryptjs.
- *
- * Upserts keep seeding idempotent: safe to re-run against an existing database.
+ * Lives in the api package (not @insuredesk/shared) on purpose: factory roles
+ * are a seed-time concern that must not ride the browser bundle, and this
+ * module depends on @prisma/client and bcryptjs.
  */
 
 /** Password shared by every demo account. */
 export const DEMO_PASSWORD = "password123";
 
-async function upsertRole(
-  prisma: PrismaClient,
-  preset: { name: string; permissions: readonly Permission[] },
-): Promise<Role> {
-  return prisma.role.upsert({
-    where: { name: preset.name },
-    update: { permissions: [...preset.permissions] },
-    create: { name: preset.name, permissions: [...preset.permissions], preset: true },
+/**
+ * 出厂角色: created once, only while the roles table is still empty. After
+ * first initialization every non-system role belongs to the operator — it can
+ * be renamed, re-permissioned, or deleted, and no re-run may undo that.
+ */
+export const FACTORY_ROLES = {
+  ADMIN: {
+    name: "管理员",
+    system: true,
+    permissions: [...ALL_PERMISSIONS] as Permission[],
+  },
+  CS_MANAGER: {
+    name: "客服主管",
+    system: false,
+    permissions: [
+      "dashboard.view",
+      "dashboard.view_all",
+      "dashboard.export",
+      "ticket.view",
+      "ticket.view_all",
+      "ticket.create",
+      "ticket.edit",
+      "ticket.process",
+      "ticket.assign",
+      "ticket.batch_assign",
+      "ticket.export",
+      "schedule.view",
+      "schedule.edit",
+    ] as Permission[],
+  },
+  FRONTLINE_CS: {
+    name: "一线客服",
+    system: false,
+    permissions: ["dashboard.view", "ticket.view", "ticket.process"] as Permission[],
+  },
+  READ_ONLY: {
+    name: "只读观察",
+    system: false,
+    permissions: [
+      "dashboard.view",
+      "dashboard.view_all",
+      "ticket.view",
+      "ticket.view_all",
+    ] as Permission[],
+  },
+} as const;
+
+type FactoryRoles = { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
+
+/**
+ * First initialization only: create the factory roles while the roles table
+ * is empty. Any existing row means the system is already initialized and the
+ * roles belong to the operator — return null and touch nothing.
+ */
+export async function createFactoryRoles(prisma: PrismaClient): Promise<FactoryRoles | null> {
+  return prisma.$transaction(async (tx) => {
+    if ((await tx.role.count()) > 0) {
+      return null;
+    }
+    const create = (spec: (typeof FACTORY_ROLES)[keyof typeof FACTORY_ROLES]) =>
+      tx.role.create({
+        data: { name: spec.name, permissions: [...spec.permissions], system: spec.system },
+      });
+    return {
+      admin: await create(FACTORY_ROLES.ADMIN),
+      csManager: await create(FACTORY_ROLES.CS_MANAGER),
+      frontline: await create(FACTORY_ROLES.FRONTLINE_CS),
+      readOnly: await create(FACTORY_ROLES.READ_ONLY),
+    };
   });
 }
 
@@ -48,60 +107,67 @@ async function upsertUser(
   });
 }
 
-/** Create (or refresh) the 4 preset roles. */
-export async function seedPresetRoles(prisma: PrismaClient): Promise<{
-  admin: Role;
-  csManager: Role;
-  frontline: Role;
-  readOnly: Role;
-}> {
-  return {
-    admin: await upsertRole(prisma, PRESET_ROLES.ADMIN),
-    csManager: await upsertRole(prisma, PRESET_ROLES.CS_MANAGER),
-    frontline: await upsertRole(prisma, PRESET_ROLES.FRONTLINE_CS),
-    readOnly: await upsertRole(prisma, PRESET_ROLES.READ_ONLY),
-  };
-}
-
 /**
- * Production first-install bootstrap: preset roles, default SLA policies, and
- * a single admin account. Never touches an existing user — the operator may
- * have rotated the password long after first install, so a re-run only
- * reports `adminCreated: false`.
+ * Production bootstrap: factory roles (first initialization only), default
+ * SLA policies, and a single admin account. Never touches an existing user —
+ * the operator may have rotated the password long after first install, so a
+ * re-run only reports `adminCreated: false`.
  */
 export async function bootstrapSystemData(
   prisma: PrismaClient,
   options: { adminUsername: string; adminPassword: string },
-): Promise<{ adminCreated: boolean }> {
-  const roles = await seedPresetRoles(prisma);
+): Promise<{ adminCreated: boolean; rolesCreated: boolean }> {
+  const factoryRoles = await createFactoryRoles(prisma);
   await seedSlaPolicies(prisma);
 
   const existing = await prisma.user.findUnique({ where: { username: options.adminUsername } });
   if (existing) {
-    return { adminCreated: false };
+    return { adminCreated: false, rolesCreated: factoryRoles !== null };
   }
 
+  const systemRole =
+    factoryRoles?.admin ?? (await prisma.role.findFirstOrThrow({ where: { system: true } }));
   await prisma.user.create({
     data: {
       username: options.adminUsername,
       name: options.adminUsername,
-      roleId: roles.admin.id,
+      roleId: systemRole.id,
       passwordHash: await hashPassword(options.adminPassword),
       active: true,
     },
   });
-  return { adminCreated: true };
+  return { adminCreated: true, rolesCreated: factoryRoles !== null };
+}
+
+/** Resolve the factory roles by name on an already-initialized database. */
+async function findFactoryRoles(prisma: PrismaClient): Promise<FactoryRoles> {
+  const byName = async (name: string) => {
+    const role = await prisma.role.findUnique({ where: { name } });
+    if (!role) {
+      throw new Error(
+        `出厂角色「${name}」不存在（已被改名或删除）。demo 数据依赖出厂角色，请用 docker compose down -v 重建空库后再 seed。`,
+      );
+    }
+    return role;
+  };
+  return {
+    admin: await byName(FACTORY_ROLES.ADMIN.name),
+    csManager: await byName(FACTORY_ROLES.CS_MANAGER.name),
+    frontline: await byName(FACTORY_ROLES.FRONTLINE_CS.name),
+    readOnly: await byName(FACTORY_ROLES.READ_ONLY.name),
+  };
 }
 
 /**
- * Create (or refresh) the 4 preset roles and one demo user per role.
- * Returns the created rows so callers can log or assert against them.
+ * Dev fixture: the factory roles (created only on first initialization) and
+ * one demo user per role. Returns the rows so callers can log or assert
+ * against them.
  */
-export async function seedPresetRolesAndUsers(prisma: PrismaClient): Promise<{
-  roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
+export async function seedFactoryRolesAndDemoUsers(prisma: PrismaClient): Promise<{
+  roles: FactoryRoles;
   users: { admin: User; manager: User; cs1: User; observer: User };
 }> {
-  const roles = await seedPresetRoles(prisma);
+  const roles = (await createFactoryRoles(prisma)) ?? (await findFactoryRoles(prisma));
 
   const passwordHash = await hashPassword(DEMO_PASSWORD);
 
@@ -142,8 +208,8 @@ export async function seedPresetRolesAndUsers(prisma: PrismaClient): Promise<{
 /**
  * Create the four SLAPolicy rows, one per complaint level, with the PRD §3.8
  * defaults from DEFAULT_SLA_POLICIES. Create-if-missing only: policies are
- * admin-editable (issue #33), so re-seeding must never silently revert an
- * admin's configuration back to the documented defaults.
+ * admin-editable, so re-seeding must never silently revert an admin's
+ * configuration back to the documented defaults.
  */
 export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]> {
   const policies: SlaPolicy[] = [];
@@ -184,7 +250,7 @@ const DEMO_TICKET_POLICY_NUMBERS = [
 
 type DemoTicketPolicyNumber = (typeof DEMO_TICKET_POLICY_NUMBERS)[number];
 
-type SeededUsersAndRoles = Awaited<ReturnType<typeof seedPresetRolesAndUsers>>;
+type SeededUsersAndRoles = Awaited<ReturnType<typeof seedFactoryRolesAndDemoUsers>>;
 
 interface DemoTicketSpec {
   policyNumber: DemoTicketPolicyNumber;

@@ -78,7 +78,7 @@ export function AssignRoleDialog({
               {(roleOptions.data ?? []).map((role) => (
                 <SelectItem key={role.id} value={role.id}>
                   {role.name}
-                  {role.preset && "（预设）"}
+                  {role.system && "（系统）"}
                 </SelectItem>
               ))}
             </SelectContent>

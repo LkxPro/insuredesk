@@ -1,6 +1,7 @@
 import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import { PRESET_ROLES, type Permission } from "@insuredesk/shared";
+import { TEST_ROLES } from "@/test/roles";
+import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
@@ -71,15 +72,15 @@ beforeEach(() => {
 
 describe("新建工单 entry on /tickets", () => {
   it("客服主管 (holds ticket.create) sees the button, linked to /tickets/new", () => {
-    auth.user = userWith(PRESET_ROLES.CS_MANAGER);
+    auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt("/tickets");
     const link = screen.getByRole("link", { name: /新建工单/ });
     expect(link).toHaveAttribute("href", "/tickets/new");
   });
 
   it.each([
-    ["一线客服", PRESET_ROLES.FRONTLINE_CS],
-    ["只读观察", PRESET_ROLES.READ_ONLY],
+    ["一线客服", TEST_ROLES.FRONTLINE_CS],
+    ["只读观察", TEST_ROLES.READ_ONLY],
   ])("%s (no ticket.create) has no entry at all", (_name, role) => {
     auth.user = userWith(role);
     renderAt("/tickets");
@@ -90,13 +91,13 @@ describe("新建工单 entry on /tickets", () => {
 
 describe("/tickets/new route guard", () => {
   it("renders the creation form for 客服主管", () => {
-    auth.user = userWith(PRESET_ROLES.CS_MANAGER);
+    auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt("/tickets/new");
     expect(screen.getByRole("heading", { name: "新建工单" })).toBeInTheDocument();
   });
 
   it("bounces 一线客服 to /403", () => {
-    auth.user = userWith(PRESET_ROLES.FRONTLINE_CS);
+    auth.user = userWith(TEST_ROLES.FRONTLINE_CS);
     renderAt("/tickets/new");
     expect(screen.getByText("你没有访问该页面的权限")).toBeInTheDocument();
   });

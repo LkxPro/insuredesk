@@ -1,7 +1,7 @@
 // InsureDesk Prisma schema.
 //
 // Domain models arrive with the tickets that introduce them, each with its own
-// migration. This schema now includes authentication and RBAC models from #2.
+// migration.
 
 generator client {
   provider = "prisma-client-js"
@@ -13,7 +13,7 @@ datasource db {
 }
 
 // ============================================================================
-// Authentication & Authorization (Issue #2)
+// Authentication & Authorization
 // ============================================================================
 
 /// User accounts with role-based access control.
@@ -51,14 +51,13 @@ model User {
 }
 
 /// Roles define collections of permission points.
-/// Preset roles: 管理员, 客服主管, 一线客服, 只读观察 (see PRESET_ROLES in shared/permissions.ts)
 model Role {
   id          String   @id @default(cuid())
   name        String   @unique // e.g., "管理员", "一线客服"
   /// Flat array of permission-point strings (e.g., ["ticket.view", "ticket.view_all"])
   permissions String[] // Postgres text array
-  /// If true, this is a preset role and should not be deleted
-  preset      Boolean  @default(false)
+  /// 系统角色（仅管理员）：名称、权限、删除全锁
+  system      Boolean  @default(false)
   createdAt   DateTime @default(now()) @db.Timestamptz
   updatedAt   DateTime @updatedAt @db.Timestamptz
 

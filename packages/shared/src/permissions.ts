@@ -46,8 +46,8 @@ export const ROLE_PERMISSIONS = [
 
 // System configuration permissions
 // sla.view / sla.edit are absent from the PRD permission matrix; they exist
-// because SLA policies are 管理员可编辑, which needs its own page + operation
-// point. Only the 管理员 preset holds them.
+// because SLA policies need their own page + operation point. Out of the
+// factory only 管理员 holds them.
 export const SYSTEM_PERMISSIONS = [
   "schedule.view", // Access schedule configuration (page permission)
   "schedule.edit", // Edit schedule (operation permission)
@@ -111,69 +111,3 @@ export const PERMISSION_GROUPS = [
   { label: "角色权限", permissions: ROLE_PERMISSIONS },
   { label: "系统配置", permissions: SYSTEM_PERMISSIONS },
 ] as const;
-
-// Preset role permission mappings (used in seed data)
-
-export const PRESET_ROLES = {
-  /**
-   * 管理员 (Admin) - Full system access
-   */
-  ADMIN: {
-    name: "管理员",
-    permissions: [...ALL_PERMISSIONS],
-  },
-
-  /**
-   * 客服主管 (CS Manager) - Can view all data, assign tickets, export reports
-   */
-  CS_MANAGER: {
-    name: "客服主管",
-    permissions: [
-      // Dashboard - full access
-      "dashboard.view",
-      "dashboard.view_all",
-      "dashboard.export",
-      // Tickets - full access except delete
-      "ticket.view",
-      "ticket.view_all",
-      "ticket.create",
-      "ticket.edit",
-      "ticket.process",
-      "ticket.assign",
-      "ticket.batch_assign",
-      "ticket.export",
-      // Schedule - view and edit
-      "schedule.view",
-      "schedule.edit",
-    ] as Permission[],
-  },
-
-  /**
-   * 一线客服 (Frontline CS) - Can only view and process their own assigned tickets
-   */
-  FRONTLINE_CS: {
-    name: "一线客服",
-    permissions: [
-      // Dashboard - view only
-      "dashboard.view",
-      // Tickets - view and process own tickets only (no ticket.view_all)
-      "ticket.view",
-      "ticket.process",
-    ] as Permission[],
-  },
-
-  /**
-   * 只读观察 (Read-only Observer) - Can view all data but no operations
-   */
-  READ_ONLY: {
-    name: "只读观察",
-    permissions: [
-      // Dashboard - view all data
-      "dashboard.view",
-      "dashboard.view_all",
-      // Tickets - view all tickets only
-      "ticket.view",
-      "ticket.view_all",
-    ] as Permission[],
-  },
-} as const;

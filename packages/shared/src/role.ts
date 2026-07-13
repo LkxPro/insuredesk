@@ -3,10 +3,9 @@ import { permissionSchema } from "./permissions";
 
 /**
  * 角色管理 contracts, shared by the 角色权限 page and the API — one schema,
- * both ends. A role is a named set of permission points; the four preset
- * roles are a fixed baseline and are fully protected (no rename / permission
- * edit / delete) — admins create custom roles instead of mutating the
- * baseline.
+ * both ends. A role is a named set of permission points; 管理员 is the only
+ * system role (no rename / permission edit / delete), every other role is
+ * freely configured.
  */
 
 export const roleNameSchema = z

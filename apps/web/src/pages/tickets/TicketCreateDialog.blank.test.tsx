@@ -1,6 +1,7 @@
 import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import { PRESET_ROLES, type Permission } from "@insuredesk/shared";
+import { TEST_ROLES } from "@/test/roles";
+import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
@@ -161,7 +162,7 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
-  auth.user = userWith(PRESET_ROLES.CS_MANAGER);
+  auth.user = userWith(TEST_ROLES.CS_MANAGER);
   auth.isLoading = false;
   calls = [];
 });

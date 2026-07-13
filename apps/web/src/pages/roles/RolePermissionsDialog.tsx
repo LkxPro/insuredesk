@@ -19,9 +19,9 @@ import { PermissionChecklist } from "./PermissionChecklist";
 import type { RoleRow } from "./RolesPage";
 
 /**
- * 权限配置 (role.edit_permission) — and the read-only 查看权限 view for
- * preset roles or viewers without the point. Saving replaces the full set;
- * every holder is re-judged on their next request (即时生效).
+ * 权限配置 (role.edit_permission) — and the read-only 查看权限 view for the
+ * 管理员 system role or viewers without the point. Saving replaces the full
+ * set; every holder is re-judged on their next request (即时生效).
  */
 export function RolePermissionsDialog({
   role,
@@ -29,13 +29,13 @@ export function RolePermissionsDialog({
   onOpenChange,
 }: {
   role: RoleRow | null;
-  /** Whether the viewer holds role.edit_permission — preset roles stay read-only regardless. */
+  /** Whether the viewer holds role.edit_permission — the system role stays read-only regardless. */
   editable: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const utils = trpc.useUtils();
   const open = role !== null;
-  const canEdit = editable && role !== null && !role.preset;
+  const canEdit = editable && role !== null && !role.system;
   const [permissions, setPermissions] = useState<Permission[]>([]);
 
   useEffect(() => {
@@ -63,8 +63,8 @@ export function RolePermissionsDialog({
             {role &&
               (canEdit
                 ? `勾选「${role.name}」可用的权限点，保存后自成员下一次请求起生效。`
-                : role.preset
-                  ? `「${role.name}」是预设角色，权限为固定基线，不可修改。`
+                : role.system
+                  ? `「${role.name}」是系统角色，权限不可修改。`
                   : `「${role.name}」的权限清单（无编辑权限，仅可查看）。`)}
           </DialogDescription>
         </DialogHeader>

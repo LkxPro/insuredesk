@@ -81,12 +81,14 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 Every API container start runs `prisma migrate deploy`, then an idempotent
-bootstrap (4 preset roles, 4 default SLA policies, and — only when no such
-user exists yet — the initial admin account **admin/admin**), then starts the
-server. A failed migration fails the container; check
-`docker logs insuredesk-api-prod`. `docker compose restart api` is safe: both
-steps are no-ops on an already-initialized database, and the bootstrap never
-touches an existing user.
+bootstrap (the factory roles — only while the roles table is still empty, 4
+default SLA policies, and — only when no such user exists yet — the initial
+admin account **admin/admin**), then starts the server. A failed migration
+fails the container; check `docker logs insuredesk-api-prod`.
+`docker compose restart api` is safe: both steps are no-ops on an
+already-initialized database, and the bootstrap never touches existing roles
+or users — renamed, re-permissioned, or deleted factory roles stay exactly as
+the operator left them.
 
 > **⚠️ Log in as admin/admin and change the password in 用户管理 immediately
 > after the first deploy.** The initial credentials are hardcoded and publicly

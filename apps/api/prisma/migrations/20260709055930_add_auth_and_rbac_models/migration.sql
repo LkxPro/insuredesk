@@ -20,7 +20,7 @@ CREATE TABLE "roles" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "permissions" TEXT[],
-    "preset" BOOLEAN NOT NULL DEFAULT false,
+    "system" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ NOT NULL,
 

@@ -7,8 +7,8 @@ import { requirePermission, router } from "../trpc";
 /**
  * SLA 策略配置 routes: thin wrappers — the shared Zod schema is the whole
  * write contract (positive numbers, advanceMinutes below its checkpoint),
- * business logic in sla.service. sla.view / sla.edit are held only by the
- * 管理员 preset.
+ * business logic in sla.service. Out of the factory, sla.view / sla.edit
+ * are held only by 管理员.
  */
 
 const deps = { prisma, clock: systemClock };
