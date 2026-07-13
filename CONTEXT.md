@@ -18,7 +18,7 @@ _Avoid_: 拿 id 示人——id 是不透明主键，只作外键/URL 引用
 _Avoid_: 与 source 混用——source 是录入方式（manual/feishu_form/community），兼作"由谁创建"的判别器
 
 **Status（工单状态）**：
-数据库只存 4 个基础状态（unassigned/assigned/processing/completed）；pending_timeout 与 overdue 是**计算状态**，查询时按 dueAt 实时算、仅覆盖显示（ADR 0001）。状态只能经生命周期动作流转，不可直接编辑；completed 是终态，不可重开。
+数据库只存 4 个基础状态（unassigned/assigned/processing/completed）；pending_timeout 与 overdue 是**计算状态**，查询时按 deadlineWarningAt / dueAt 实时算、仅覆盖显示（ADR 0001）。状态只能经生命周期动作流转，不可直接编辑；completed 是终态，不可重开。
 
 **CompletionStatus（完结状态）**：
 完结时必选的原因，12 种封闭枚举、无"其他"（全列表见 PRD §9.1）。
@@ -35,7 +35,7 @@ _Avoid_: 与 source 混用——source 是录入方式（manual/feishu_form/comm
 ### SLA 与提醒
 
 **ComplaintLevel（投诉等级）**：
-一般/高级/加急/特急投诉，4 级。**唯一驱动 SLA 的字段**——决定首响时限、跟进频次、超时时长与提醒规则（各级规则见 PRD §4.2，管理员可配置）。可不填（未定级，#43）：dueAt/首响要求/跟进频次全空，不产生 SLA 时间类告警；后续编辑补级时，SLA 仍以原始 createdAt 起算。
+管理员可新增、改名、排序和停用的投诉等级目录，是**唯一驱动 SLA 的概念**——每个等级内含一份 SLAPolicy；已被工单使用的等级只能停用，不能物理删除。系统初始提供一般/高级/加急/特急投诉及其默认策略；工单也可不定级（#43），此时无 dueAt、首响/跟进要求和 SLA 时间类告警，后续补级仍从原始 createdAt 起算。
 _Avoid_: priority（它不驱动任何 SLA）
 
 **Priority（优先级）**：
@@ -45,13 +45,19 @@ _Avoid_: priority（它不驱动任何 SLA）
 一切 SLA 计时（首响/跟进检查点/超时）自 **createdAt（录入时刻）** 起算，与是否分配无关——未分配的工单也在计时、也会超时，有意倒逼尽快分配（ADR 0002）。
 
 **dueAt（处理时限）**：
-创建时一次算定：createdAt + 等级对应时长（一般/高级 48h、加急 72h、特急不设），分配/改派永不重算（ADR 0002）；改 complaintLevel 时按新等级重算。
+以原始 createdAt 为起点，按工单的 AppliedSLAPolicy 超时时长计算；分配/改派永不重算。改 complaintLevel 或管理员修改 SLAPolicy 时，同等级未完结工单替换快照并重算；已完结工单保留原 dueAt，避免改写历史超时口径。
+
+**deadlineWarningAt（处理时限预警时刻）**：
+工单进入 pending_timeout 的起点，由 dueAt 减去 AppliedSLAPolicy 的可配置提前预警时间得到；不设处理时限或不设提前预警时为空。系统初始四套策略默认提前 120 分钟预警。
 
 **首响（First Response）**：
 首次实际电话联系客户 = 工单第一条 comment，无独立字段。firstResponseMinutes 只作"待首响"告警的染红阈值，不入考核（PRD §3.8）。
 
 **SLAPolicy（SLA 策略）**：
-按投诉等级各一条的可配置规则：首响违约线 + 超时时长 + 类型化提醒规则列表（follow_up_checkpoint / rolling_follow_up 两种；字段与各级默认值见 PRD §3.8，取舍见 ADR 0005）。
+ComplaintLevel 所含的可配置 SLA 规则值，没有脱离等级的独立生命周期：首响违约线 + 超时时长 + 处理时限提前预警 + 类型化提醒规则列表。管理员可自由增删、排序和配置规则实例；规则类型由系统提供（当前为 follow_up_checkpoint / rolling_follow_up），不接受自定义表达式或脚本。修改后提醒规则立即用于当前判定，并刷新同等级未完结工单的 AppliedSLAPolicy、dueAt 与 deadlineWarningAt；已完结工单的这些 SLA 信息整体冻结。
+
+**AppliedSLAPolicy（工单 SLA 快照）**：
+一张工单当前实际采用的结构化 SLAPolicy 副本，是处理时限、首响要求、跟进频次与待办判定的共同依据。未完结工单会随所属等级策略更新而替换快照；完结时快照冻结，保留历史口径。
 
 **收件箱（AppNotification）**：
 通知两轨制之轨 1：用户操作触发的真事件（本期仅 assigned），同步落库，有已读/未读与 toast（ADR 0004）。
