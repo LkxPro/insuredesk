@@ -14,7 +14,7 @@ import { computeSlaStamp, createTicket } from "../src/services/ticket.service";
 /**
  * Single source of truth for the preset roles and demo users. Consumed by both
  * seed.ts (dev database) and the Testcontainers auth tests, so the two can
- * never drift apart (issue #19).
+ * never drift apart.
  *
  * Lives in the api package (not @insuredesk/shared) on purpose: the shared
  * package is bundled into the browser and must not depend on @prisma/client

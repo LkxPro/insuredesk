@@ -1,25 +1,44 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { PrismaClient } from "@prisma/client";
 
 if (existsSync(".env")) {
   process.loadEnvFile(".env");
 }
 
 /**
- * Runs before `tsx watch` on every `pnpm dev`: applies committed migrations,
- * then seeds — but only into an empty database. A non-empty users table means
- * a developer may be mid-test on the demo tickets; re-seeding would replace
- * them under their feet.
+ * Runs before `tsx watch` on every `pnpm dev`: applies committed migrations
+ * and regenerates the Prisma client, then seeds — but only into an empty
+ * database. A non-empty users table means a developer may be mid-test on the
+ * demo tickets; re-seeding would replace them under their feet.
  */
 
-try {
-  execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], { stdio: "inherit" });
-} catch {
-  console.error("❌ migrate deploy failed — is PostgreSQL up? (docker compose up -d)");
-  process.exit(1);
+// `docker compose up -d` returns before a fresh Postgres volume finishes
+// initdb, so retry instead of failing the very first `pnpm dev`.
+const MIGRATE_ATTEMPTS = 15;
+for (let attempt = 1; ; attempt++) {
+  try {
+    process.stdout.write(
+      execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], { stdio: "pipe" }),
+    );
+    break;
+  } catch (error) {
+    if (attempt === MIGRATE_ATTEMPTS) {
+      process.stderr.write(String((error as { stderr?: Buffer }).stderr ?? error));
+      console.error("❌ migrate deploy failed — is PostgreSQL up? (docker compose up -d)");
+      process.exit(1);
+    }
+    console.log(`⏳ database not reachable yet, retrying (${attempt}/${MIGRATE_ATTEMPTS})...`);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
 }
 
+// `migrate deploy` (unlike `migrate dev`) never generates the client, so a
+// fresh clone would otherwise start with the ungenerated stub.
+execFileSync("pnpm", ["exec", "prisma", "generate"], { stdio: "inherit" });
+
+// Imported only after `prisma generate` — a static top-level import would
+// load the stub that throws on instantiation.
+const { PrismaClient } = await import("@prisma/client");
 const prisma = new PrismaClient();
 const userCount = await prisma.user.count();
 await prisma.$disconnect();

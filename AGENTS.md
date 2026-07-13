@@ -7,12 +7,12 @@ Dev containerizes **only PostgreSQL**; the app runs on the host with hot reload
 
 ```bash
 docker compose up -d    # start PostgreSQL (the #1 "forgot to start the DB" gotcha)
-pnpm db:migrate         # apply migrations (first run / after schema changes)
-pnpm dev                # start api + web
+pnpm dev                # auto-runs migrate deploy (+ seed if DB is empty), then api + web
 ```
 
-`docker compose down -v` drops the data volume for a clean database. Full dev
-setup, production deploy steps, migration commands, and the host nginx
+`docker compose down -v` drops the data volume for a clean database. Schema
+changes still go through `pnpm db:migrate` (generates + applies the migration
+file). Full dev setup, production deploy steps, and the host nginx
 reverse-proxy config are in `docs/deployment.md`.
 
 ## Agent skills

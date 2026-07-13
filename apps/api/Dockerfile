@@ -96,6 +96,5 @@ ENV WEB_DIST_PATH=/app/apps/web/dist
 EXPOSE 3000
 
 # Scripts assume cwd = apps/api (relative .env load, Prisma schema path).
-# The entrypoint chains `prisma migrate deploy` → bootstrap → server.
 WORKDIR /app/apps/api
 CMD ["./docker-entrypoint.sh"]
