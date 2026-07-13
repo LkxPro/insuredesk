@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 import type { AppRouter } from "@insuredesk/api";
-import { COMPLAINT_LEVELS, type ReminderRule } from "@insuredesk/shared";
+import { COMPLAINT_LEVELS, describeReminderRule } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
 import { AlertCircle } from "lucide-react";
 import { useState } from "react";
@@ -23,13 +23,6 @@ import { SlaPolicyEditDialog } from "./SlaPolicyEditDialog";
  */
 
 export type SlaPolicyRow = inferRouterOutputs<AppRouter>["sla"]["list"][number];
-
-/** One reminder rule as prose, matching the PRD §3.8 semantics. */
-export function describeRule(rule: ReminderRule): string {
-  return rule.type === "follow_up_checkpoint"
-    ? `${rule.checkpointHours} 小时内累计跟进 ${rule.requiredCount} 次，提前 ${rule.advanceMinutes} 分钟提醒`
-    : `距上次跟进每满 ${rule.intervalHours} 小时提醒，直至完结`;
-}
 
 function PolicyCard({
   policy,
@@ -82,7 +75,7 @@ function PolicyCard({
                   <Badge variant="secondary" className="shrink-0">
                     {rule.type === "follow_up_checkpoint" ? "检查点" : "滚动"}
                   </Badge>
-                  <span>{describeRule(rule)}</span>
+                  <span>{describeReminderRule(rule)}</span>
                 </li>
               ))}
             </ul>

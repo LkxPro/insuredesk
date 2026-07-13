@@ -6,12 +6,13 @@ import {
   channelSchema,
   complaintLevelSchema,
   deriveDisplayStatus,
+  deriveDueAt,
   formatFirstResponseRequirement,
   formatFollowUpFrequency,
+  normalizeReminderRules,
   nuclearBodyStatusSchema,
   prioritySchema,
   processLogActionSchema,
-  reminderRulesSchema,
   ticketCategorySchema,
   ticketSourceSchema,
   ticketStatusSchema,
@@ -41,21 +42,12 @@ export class SlaPolicyNotConfiguredError extends Error {
   }
 }
 
-const HOUR_MS = 60 * 60 * 1000;
-
 /**
- * THE dueAt formula (PRD §9.2): createdAt + the level's overdueHours, null for
- * 特急 (no deadline). Creation stamps it; a complaintLevel edit re-runs it with
- * the new level's hours against the same unchanging createdAt (PRD §4.5).
- */
-export function computeDueAt(createdAt: Date, overdueHours: number | null): Date | null {
-  return overdueHours === null ? null : new Date(createdAt.getTime() + overdueHours * HOUR_MS);
-}
-
-/**
- * The SLA fields a complaintLevel stamps onto a ticket. A null level (未定级,
- * issue #43) stamps all-null: no dueAt, no 首响/跟进 requirements — and hence
- * no SLA time alerts until an edit sets a level (off the original createdAt).
+ * The SLA fields a complaintLevel stamps onto a ticket, derived and described
+ * by the rule-engine off the level's policy row (issue #47) — this adapter
+ * only owns the database read. A null level (未定级, issue #43) stamps
+ * all-null: no dueAt, no 首响/跟进 requirements — and hence no SLA time
+ * alerts until an edit sets a level (off the original createdAt).
  */
 export async function computeSlaStamp(
   db: Pick<PrismaClient, "slaPolicy">,
@@ -74,8 +66,12 @@ export async function computeSlaStamp(
     throw new SlaPolicyNotConfiguredError(complaintLevel);
   }
   return {
-    dueAt: computeDueAt(createdAt, policy.overdueHours),
-    followUpFrequency: formatFollowUpFrequency(reminderRulesSchema.parse(policy.reminderRules)),
+    // THE dueAt formula (PRD §9.2): createdAt + the level's overdueHours,
+    // null for 特急 (no deadline). Creation stamps it; a complaintLevel edit
+    // re-runs it with the new level's hours against the same unchanging
+    // createdAt (PRD §4.5).
+    dueAt: deriveDueAt(createdAt, policy.overdueHours),
+    followUpFrequency: formatFollowUpFrequency(normalizeReminderRules(policy.reminderRules)),
     firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
   };
 }

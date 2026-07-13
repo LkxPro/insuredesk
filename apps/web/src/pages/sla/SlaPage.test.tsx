@@ -16,11 +16,12 @@ import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
  * SLA 策略 page (issue #33): one card per complaint level, 编辑 only with
- * sla.edit, and the editor dialog mirrors slaPolicyUpdateInputSchema — the
- * 保存 button refuses positive-integer violations and an advanceMinutes at or
- * past its own checkpoint, and ships parsed numbers (or null for 不设超时).
- * Same faked-fetch tRPC pipeline and useAuth-seam mock as the roles-page
- * tests.
+ * sla.edit, and the editor dialog enforces the rule-engine's canonical
+ * validation (issue #47) — the 保存 button refuses positive-integer
+ * violations, an advanceMinutes at or past its own checkpoint, and the
+ * cross-rule ordering/singleton errors, and ships parsed numbers (or null for
+ * 不设超时). Same faked-fetch tRPC pipeline and useAuth-seam mock as the
+ * roles-page tests.
  */
 
 const auth = vi.hoisted(() => ({
@@ -247,6 +248,31 @@ describe("editing a policy", () => {
       target: { value: "30" },
     });
     expect(within(dialog).getByRole("button", { name: "保存" })).toBeEnabled();
+  });
+
+  it("跨规则校验来自 rule-engine：检查点乱序与重复滚动提醒都拦下保存", async () => {
+    renderSlaPage();
+    const dialog = await openEditDialog("一般投诉"); // seeded checkpoints 24h / 48h
+
+    // Make the second checkpoint earlier than the first — an ordering error
+    fireEvent.change(nth(within(dialog).getAllByLabelText("检查点（小时）"), 1), {
+      target: { value: "12" },
+    });
+    expect(await within(dialog).findByText("检查点需晚于上一条检查点规则")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "保存" })).toBeDisabled();
+
+    // Restore the order, then add two rolling rules — a singleton violation
+    fireEvent.change(nth(within(dialog).getAllByLabelText("检查点（小时）"), 1), {
+      target: { value: "48" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "添加滚动提醒" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "添加滚动提醒" }));
+    const intervals = within(dialog).getAllByLabelText("跟进间隔（小时）");
+    fireEvent.change(nth(intervals, 0), { target: { value: "12" } });
+    fireEvent.change(nth(intervals, 1), { target: { value: "6" } });
+    expect(await within(dialog).findByText("滚动提醒最多配置一条")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(calls.some((call) => call.path === "sla.update")).toBe(false);
   });
 
   it("non-numeric and zero inputs are refused as 正整数 violations", async () => {

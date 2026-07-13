@@ -6,6 +6,7 @@ import {
   COMPLAINT_LEVELS,
   DEFAULT_SLA_POLICIES,
   type Permission,
+  type SlaPolicyUpdateInput,
   type TicketCreateInput,
 } from "@insuredesk/shared";
 import type { PrismaClient, Role, User } from "@prisma/client";
@@ -318,6 +319,63 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       await expect(
         admin().sla.update({ ...base, reminderRules: checkpoint({ advanceMinutes: 0 }) }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("rejects cross-rule violations via the rule-engine's canonical validation (issue #47)", async () => {
+      // Out-of-order checkpoints (equal hours are duplicates, not a sort)
+      await expect(
+        admin().sla.update({
+          ...base,
+          reminderRules: [
+            ...checkpoint({ checkpointHours: 48 }),
+            ...checkpoint({ checkpointHours: 24 }),
+          ],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      // A later checkpoint asking for fewer cumulative follow-ups
+      await expect(
+        admin().sla.update({
+          ...base,
+          reminderRules: [
+            ...checkpoint({ requiredCount: 2 }),
+            ...checkpoint({ checkpointHours: 48, requiredCount: 1 }),
+          ],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      // Two rolling cadences against the same last-comment clock
+      await expect(
+        admin().sla.update({
+          ...base,
+          reminderRules: [
+            { type: "rolling_follow_up", intervalHours: 12 },
+            { type: "rolling_follow_up", intervalHours: 6 },
+          ],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      // Unknown rule types must be rejected, never silently skipped
+      await expect(
+        admin().sla.update({
+          ...base,
+          reminderRules: [
+            { type: "escalate_to_supervisor", hours: 1 },
+          ] as unknown as SlaPolicyUpdateInput["reminderRules"],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      // The strictly-ascending, non-shrinking shape is still accepted
+      await expect(
+        admin().sla.update({
+          ...base,
+          reminderRules: [
+            ...checkpoint({ checkpointHours: 24, requiredCount: 1 }),
+            ...checkpoint({ checkpointHours: 48, requiredCount: 1 }),
+            { type: "rolling_follow_up", intervalHours: 12 },
+          ],
+        }),
+      ).resolves.toMatchObject({ complaintLevel: "一般投诉" });
     });
   });
 });
