@@ -8,14 +8,14 @@ import type { SlaPolicy } from "@prisma/client";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * SLA 策略配置 domain logic (issue #33, PRD §3.8, ADR 0005). Pure service
- * layer per ADR 0006 — the router wraps these with sla.view / sla.edit.
+ * SLA 策略配置 domain logic. Pure service layer — the router wraps these
+ * with sla.view / sla.edit.
  *
  * There is deliberately no "apply to existing tickets" step: dueAt is stamped
- * once at creation (re-stamped only on a complaintLevel edit, PRD §4.5), and
- * every other consumer — the 我的待办 predicates, the dashboard counters —
- * reads the policy rows at evaluation time. Saving a row IS the rollout
- * (ADR 0005 "只影响之后的读时判定").
+ * once at creation (re-stamped only on a complaintLevel edit), and every
+ * other consumer — the 我的待办 predicates, the dashboard counters — reads
+ * the policy rows at evaluation time. Saving a row IS the rollout —
+ * 只影响之后的读时判定.
  */
 
 function toDto(row: SlaPolicy) {

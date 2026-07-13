@@ -24,12 +24,12 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 /**
- * 分配 / 改派 / 批量分配 dialog (issue #24). mode="single" drives
- * ticket.assign, mode="batch" drives ticket.batchAssign — the caller gates
- * each entry point on the matching permission. The dialog only
- * picks WHO — status, assignedAt and the ProcessLog trail are derived
- * server-side, and dueAt never changes (ADR 0002); for a reassignment the
- * remaining time is shown so a supervisor sees what the new assignee inherits.
+ * 分配 / 改派 / 批量分配 dialog. mode="single" drives ticket.assign,
+ * mode="batch" drives ticket.batchAssign — the caller gates each entry point
+ * on the matching permission. The dialog only picks WHO — status, assignedAt
+ * and the ProcessLog trail are derived server-side, and dueAt never changes;
+ * for a reassignment the remaining time is shown so a supervisor sees what
+ * the new assignee inherits.
  */
 
 export type AssignTarget = {
@@ -40,7 +40,7 @@ export type AssignTarget = {
   dueAt: string | null;
 };
 
-/** ADR 0002 hint: 改派不重置时限 — say how much of it is already gone. */
+/** 改派不重置时限 hint — say how much of the deadline is already gone. */
 function remainingTimeHint(dueAt: string | null): string {
   if (!dueAt) {
     return "不设时限（特急）";
@@ -80,7 +80,7 @@ export function AssignTicketDialog({
   const single = mode === "single" ? targets[0] : undefined;
   const isReassign = Boolean(single?.assigneeId);
   // Batch selections can mix fresh assignments with 改派 — count the latter
-  // so the ADR 0002 warning shows whenever a deadline is being inherited
+  // so the warning shows whenever a deadline is being inherited
   const reassignCount = single ? 0 : targets.filter((target) => target.assigneeId).length;
   const title = single ? (isReassign ? "改派工单" : "分配工单") : "批量分配";
 

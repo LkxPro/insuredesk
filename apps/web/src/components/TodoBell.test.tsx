@@ -8,8 +8,8 @@ import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { beforeEach, describe, expect, it } from "vitest";
 
 /**
- * Issue #30 我的待办 indicator: red-dot count over the 轨 2 items carried by
- * the shared notification.list poll, a popover alert list with 黄/红 severity
+ * 我的待办 indicator: red-dot count over the 轨 2 items carried by the
+ * shared notification.list poll, a popover alert list with 黄/红 severity
  * chips, and click-through to the ticket detail. Same faked-fetch tRPC
  * pipeline as the NotificationBell tests. There are no read-state mutations to
  * exercise — a todo entry only leaves the list by its condition ceasing to
@@ -61,7 +61,7 @@ const canned = { todoItems: [] as TodoItem[] };
 
 function respond(path: string): unknown {
   if (path === "notification.list") {
-    // The one merged 30s poll payload (ADR 0004): 轨 1 inbox + 轨 2 todo
+    // The one merged 30s poll payload: 轨 1 inbox + 轨 2 todo
     return {
       items: [],
       unreadCount: 0,

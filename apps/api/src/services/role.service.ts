@@ -9,12 +9,12 @@ import { Prisma } from "@prisma/client";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * 角色管理 domain logic (issue #32, PRD §2.3/§5.1.4). Pure service layer per
- * ADR 0006 — the router maps the domain errors below to transport codes.
+ * 角色管理 domain logic. Pure service layer — the router maps the domain
+ * errors below to transport codes.
  *
- * The four preset roles are the fixed PRD §5.2 baseline: no rename, no
- * permission edit, no delete. (The issue only mandates delete protection, but
- * an editable baseline invites lockouts — 管理员 minus role.edit_permission is
+ * The four preset roles are the fixed permission baseline: no rename, no
+ * permission edit, no delete. (Broader than delete protection on purpose: an
+ * editable baseline invites lockouts — 管理员 minus role.edit_permission is
  * unrecoverable — and re-seeding would silently revert edits. Admins clone
  * custom roles instead.) Permission changes on custom roles take effect on the
  * next request: sessions resolve permissions from the role at validation time.

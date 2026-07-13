@@ -6,26 +6,26 @@ import { TicketNotFoundError } from "./ticket-assign.service";
 import { type TicketServiceDeps, computeSlaStamp } from "./ticket.service";
 
 /**
- * Edit domain logic (issue #28, PRD §4.5): every basic-info field editable in
- * any status, 已完结 included. Pure service layer per ADR 0006 — the router
- * maps the domain errors to transport codes.
+ * Edit domain logic: every basic-info field editable in any status, 已完结
+ * included. Pure service layer — the router maps the domain errors to
+ * transport codes.
  *
  * Invariants enforced here:
  * - status is untouchable by construction: the input schema has no status
  *   field and this update never writes one, so editing can never reopen a
  *   completed ticket
  * - 改 complaintLevel = 改 SLA: dueAt re-runs the creation formula (createdAt +
- *   the NEW level's overdueHours — computeDueAt, ADR 0002's fixed base), and
+ *   the NEW level's overdueHours — computeDueAt, off the fixed createdAt base), and
  *   跟进频次/首响要求 re-stamp from the new level's policy. This may flip the
  *   ticket straight into overdue (e.g. 特急→一般 past 48h) — intended, and the
  *   read-time display/list predicates pick it up with no further writes
  * - 提醒只对未来生效: nothing to do here BY DESIGN — 轨 2 reminders are
- *   computed at read time from the current level's rules (ADR 0004), so
+ *   computed at read time from the current level's rules, so
  *   already-passed checkpoints of the new level simply never fire; there is no
  *   stored reminder to skip or back-fill
  * - priority is a free label: editing it drives no SLA field whatsoever
  * - 留痕: one `edit` ProcessLog per effective edit, remark = the changed
- *   fields with before→after values, from/to empty (PRD §3.2); an edit that
+ *   fields with before→after values, from/to empty; an edit that
  *   changes nothing writes nothing
  */
 
@@ -33,7 +33,7 @@ import { type TicketServiceDeps, computeSlaStamp } from "./ticket.service";
 type EditableFields = Omit<TicketEditData, "ticketId">;
 type EditableFieldKey = keyof EditableFields;
 
-/** Timeline labels for the edit remark, matching the form/PRD §3.1 wording. */
+/** Timeline labels for the edit remark, matching the form wording. */
 const FIELD_LABELS: Record<EditableFieldKey, string> = {
   feedbackTime: "反馈时间",
   channel: "反馈渠道",
@@ -113,14 +113,14 @@ export async function editTicket(
     const changedFields = EDITABLE_FIELD_KEYS.filter((key) => !sameValue(ticket[key], next[key]));
     if (changedFields.length === 0) {
       // Nothing changed → no update, no log: a remark with no field diffs
-      // would violate its own contract (remark 记录改动的字段, PRD §4.5)
+      // would violate its own contract (remark 记录改动的字段)
       return { id: ticket.id, workOrderNumber: ticket.workOrderNumber, changedFields };
     }
 
     // 改 complaintLevel = 改 SLA: everything the level stamped at creation
     // re-derives from the new level's policy, off the unchanged createdAt —
     // the SLA clock stays anchored to the ORIGINAL 录入时刻 even when the
-    // level is only supplied by a later edit (issue #43). Clearing the level
+    // level is only supplied by a later edit. Clearing the level
     // clears all three stamps (未定级 = no SLA clock).
     let slaFields: Prisma.TicketUpdateInput = {};
     if (changedFields.includes("complaintLevel")) {
@@ -132,7 +132,7 @@ export async function editTicket(
       data: { ...next, ...slaFields },
     });
 
-    // 多字段改动记在 remark 里，from/to 留空 (PRD §3.2)
+    // 多字段改动记在 remark 里，from/to 留空
     await tx.processLog.create({
       data: {
         ticketId: ticket.id,

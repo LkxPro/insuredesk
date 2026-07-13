@@ -3,10 +3,10 @@ import { CalendarClock, LayoutDashboard, ShieldCheck, Ticket, Timer, Users } fro
 import type { LucideIcon } from "lucide-react";
 
 /**
- * Single source of truth for the app shell navigation. Each entry maps 1:1 to
- * a page permission point (PRD §5.1): the sidebar only renders entries the
- * current user holds, and the route for `path` is guarded by the same
- * `permission` — so menu visibility and URL access can never disagree.
+ * Single source of truth for the app shell navigation. Each entry maps 1:1
+ * to a page permission point: the sidebar only renders entries the current
+ * user holds, and the route for `path` is guarded by the same `permission`
+ * — so menu visibility and URL access can never disagree.
  */
 
 export interface NavItem {

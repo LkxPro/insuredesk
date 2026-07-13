@@ -18,12 +18,11 @@ import {
 } from "./ticket.service";
 
 /**
- * 导出工单 (issue #34, PRD §2.1): the viewer's *filtered list*, as a file.
- * Reuses the list's WHERE/ORDER builders verbatim, so filters, soft-delete
- * exclusion, and the RBAC data scope (个人档只能导出本人名下, PRD §5.2) can
- * never drift from what the list page shows. Read-only by design: an export
- * writes no ProcessLog — it is a list-level batch read, not a per-ticket
- * timeline event (PRD §3.2).
+ * 导出工单: the viewer's *filtered list*, as a file. Reuses the list's
+ * WHERE/ORDER builders verbatim, so filters, soft-delete exclusion, and the
+ * RBAC data scope (个人档只能导出本人名下) can never drift from what the
+ * list page shows. Read-only by design: an export writes no ProcessLog — it
+ * is a list-level batch read, not a per-ticket timeline event.
  */
 
 export interface TicketExportFile {
@@ -34,7 +33,7 @@ export interface TicketExportFile {
 }
 
 const exportInclude = {
-  // Current follow-up owner is derived via JOIN, never stored (CONTEXT.md "Follower")
+  // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
 } satisfies Prisma.TicketInclude;
 

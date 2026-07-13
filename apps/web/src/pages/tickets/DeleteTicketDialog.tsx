@@ -16,12 +16,11 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 /**
- * 删除工单 double-confirmation (issue #28, PRD §4.5): ticket.delete is a
- * dangerous operation — the entry-point button only opens this dialog, and
- * only the explicit destructive confirm fires the mutation. The delete is
- * soft (deletedAt server-side) but this phase has no restore, so the copy
- * treats it as irreversible. Success leaves the now-invisible detail page
- * for the list.
+ * 删除工单 double-confirmation: ticket.delete is a dangerous operation —
+ * the entry-point button only opens this dialog, and only the explicit
+ * destructive confirm fires the mutation. The delete is soft (deletedAt
+ * server-side) but this phase has no restore, so the copy treats it as
+ * irreversible. Success leaves the now-invisible detail page for the list.
  */
 export function DeleteTicketDialog({
   open,

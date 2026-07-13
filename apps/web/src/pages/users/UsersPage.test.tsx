@@ -10,10 +10,10 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 用户管理 page (issue #32): the account table renders role/state, operation
- * buttons appear only with their own permission points (mirroring the API
- * guards), and the dialogs fire the right mutations. Same faked-fetch tRPC
- * pipeline and useAuth-seam mock as the schedule-page tests.
+ * 用户管理 page: the account table renders role/state, operation buttons
+ * appear only with their own permission points (mirroring the API guards),
+ * and the dialogs fire the right mutations. Same faked-fetch tRPC pipeline
+ * and useAuth-seam mock as the schedule-page tests.
  */
 
 const auth = vi.hoisted(() => ({

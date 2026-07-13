@@ -22,12 +22,11 @@ import { RolePermissionsDialog } from "./RolePermissionsDialog";
 import { RoleRenameDialog } from "./RoleRenameDialog";
 
 /**
- * 角色权限 (issue #32, PRD §2.3/§5.1.4): custom roles configured against the
- * PRD §5.1 权限点清单. role.view opens the page (route-guarded); each
- * operation appears only with its own point — role.create / role.edit /
- * role.delete / role.edit_permission — and the API re-checks regardless. The
- * four preset roles are the fixed PRD §5.2 baseline: viewable but never
- * renamed, re-permissioned, or deleted.
+ * 角色权限: custom roles configured against the 权限点清单. role.view opens
+ * the page (route-guarded); each operation appears only with its own point —
+ * role.create / role.edit / role.delete / role.edit_permission — and the API
+ * re-checks regardless. The four preset roles are a fixed baseline: viewable
+ * but never renamed, re-permissioned, or deleted.
  */
 
 export type RoleRow = inferRouterOutputs<AppRouter>["role"]["list"][number];

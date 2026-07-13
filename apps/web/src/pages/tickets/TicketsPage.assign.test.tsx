@@ -10,11 +10,11 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Issue #24 assignment entry points: 分配/改派/批量分配 exist only for holders
- * of the matching permission (mirroring the API guards), the dialog carries
- * the ADR 0002 "时限不顺延" hint on reassignment, and confirming fires the
- * right mutation with the right payload. Same faked-fetch tRPC pipeline and
- * useAuth-seam mock as TicketsPage.list.test.tsx.
+ * Assignment entry points: 分配/改派/批量分配 exist only for holders of the
+ * matching permission (mirroring the API guards), the dialog carries the
+ * "时限不顺延" hint on reassignment, and confirming fires the right mutation
+ * with the right payload. Same faked-fetch tRPC pipeline and useAuth-seam
+ * mock as TicketsPage.list.test.tsx.
  */
 
 const auth = vi.hoisted(() => ({
@@ -102,7 +102,7 @@ const canned = { items: [] as ListItem[], total: 0 };
 let calls: Array<{ path: string; input: unknown }>;
 
 function respond(path: string, input: unknown): unknown {
-  // The AppLayout bell (issue #25) polls notification.list in the same batch;
+  // The AppLayout bell polls notification.list in the same batch;
   // an empty inbox keeps these tests focused on the assignment surfaces.
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
@@ -275,9 +275,9 @@ describe("single assignment from the list", () => {
   });
 
   it("候选人来自 ticket.assigneeOptions（全部启用用户，与排班无关），仅当前责任人置灰 (#42)", async () => {
-    // PRD §4.3 手动分配与排班相互独立: the dialog's people picker is the
-    // schedule-free active-user list — no schedule.* procedure is consulted,
-    // and every option except the current assignee is selectable.
+    // 手动分配与排班相互独立: the dialog's people picker is the schedule-free
+    // active-user list — no schedule.* procedure is consulted, and every
+    // option except the current assignee is selectable.
     canned.items = [
       listItem({
         status: "assigned",

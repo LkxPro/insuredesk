@@ -11,11 +11,11 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 /**
- * 添加跟进 card on the detail page (issue #26, PRD §4.4) — one submission =
- * one actual customer contact. The caller gates rendering on ticket.process
- * and an in-flight status (assigned/processing); everything derived —
- * contactCount, processingResult, the assigned → processing transition and
- * its ProcessLog pair — happens server-side in ticket.addComment.
+ * 添加跟进 card on the detail page — one submission = one actual customer
+ * contact. The caller gates rendering on ticket.process and an in-flight
+ * status (assigned/processing); everything derived — contactCount,
+ * processingResult, the assigned → processing transition and its ProcessLog
+ * pair — happens server-side in ticket.addComment.
  */
 export function AddCommentCard({ ticketId }: { ticketId: string }) {
   const utils = trpc.useUtils();

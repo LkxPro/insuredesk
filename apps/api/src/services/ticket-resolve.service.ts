@@ -5,18 +5,18 @@ import { TicketNotFoundError } from "./ticket-assign.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * Resolve domain logic (issue #27, PRD §4.4): 完结工单 with a mandatory
- * completionStatus (12 种封闭枚举, PRD §9.1) and a 完结备注. Pure service
- * layer per ADR 0006 — the router maps the domain errors to transport codes.
+ * Resolve domain logic: 完结工单 with a mandatory completionStatus
+ * (12 种封闭枚举) and a 完结备注. Pure service layer — the router maps the
+ * domain errors to transport codes.
  *
  * Invariants enforced here:
  * - only assigned / processing tickets can resolve; completed is a 终态 —
- *   no reopen path exists anywhere (状态只能经生命周期动作流转, PRD §4.5)
+ *   no reopen path exists anywhere (状态只能经生命周期动作流转)
  * - completionTime / completionStatus are written ONLY by this action, in the
- *   same instant as the resolve + status_change ProcessLog pair (PRD §3.2)
+ *   same instant as the resolve + status_change ProcessLog pair
  * - the resolved ticket leaves the pending_timeout / overdue 实时运营口径 by
- *   construction: those predicates exclude status = completed (ADR 0003), and
- *   the read-time 我的待办 alarms stop with them (ADR 0004) — nothing else to
+ *   construction: those predicates exclude status = completed, and
+ *   the read-time 我的待办 alarms stop with them — nothing else to
  *   flip here
  * - dueAt / assignedAt / contactCount are never touched
  */
@@ -100,7 +100,7 @@ export async function resolveTicket(
       data: { ...operator, action: "resolve", remark: input.remark },
     });
 
-    // 状态变更一律独立记录 (PRD §3.2): the transition gets its own entry,
+    // 状态变更一律独立记录: the transition gets its own entry,
     // created after the resolve log so the timeline reads cause → effect
     await tx.processLog.create({
       data: {

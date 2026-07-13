@@ -11,13 +11,13 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Issue #23 acceptance tests for the ticket list against a real Postgres:
- * soft-delete exclusion, filters (incl. the computed statuses resolved to SQL
- * predicates, ADR 0001), search, sort, pagination, RBAC data scope (PRD §5.2),
- * and the <1s load target for 100 rows (PRD §6.1). Runs through
- * appRouter.createCaller — the same procedure pipeline the HTTP adapter uses.
- * Computed-status *boundary* cases use the service directly with a fixed
- * clock; everything else goes through the caller with the system clock.
+ * Acceptance tests for the ticket list against a real Postgres: soft-delete
+ * exclusion, filters (incl. the computed statuses resolved to SQL
+ * predicates), search, sort, pagination, RBAC data scope, and the <1s load
+ * target for 100 rows. Runs through appRouter.createCaller — the same
+ * procedure pipeline the HTTP adapter uses. Computed-status *boundary* cases
+ * use the service directly with a fixed clock; everything else goes through
+ * the caller with the system clock.
  */
 describe("ticket list (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;
@@ -109,8 +109,7 @@ describe("ticket list (Testcontainers)", () => {
 
   /**
    * Create a ticket through the real creation flow, then shape the row
-   * directly for states the API can't produce yet (assignment, completion,
-   * soft delete arrive with later issues).
+   * directly into the state under test (assignment, completion, soft delete).
    */
   async function makeTicket(
     input: Partial<TicketCreateInput> = {},

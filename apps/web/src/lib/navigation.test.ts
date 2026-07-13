@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { NAV_ITEMS, visibleNavItems } from "./navigation";
 
 /**
- * Menu visibility per preset role — the PRD §5.1 page-permission matrix.
- * Each menu entry maps 1:1 to a page permission point; an entry only shows
- * when the role holds that permission.
+ * Menu visibility per preset role — the page-permission matrix. Each menu
+ * entry maps 1:1 to a page permission point; an entry only shows when the
+ * role holds that permission.
  */
 
 function visiblePaths(permissions: readonly Permission[]): string[] {

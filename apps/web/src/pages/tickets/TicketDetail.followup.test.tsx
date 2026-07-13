@@ -10,7 +10,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Issue #26 添加跟进 entry point on the detail page: the card exists only for
+ * 添加跟进 entry point on the detail page: the card exists only for
  * holders of ticket.process on an in-flight (assigned/processing) ticket —
  * mirroring the API guards — and submitting fires ticket.addComment with the
  * remark, omitting an unset 下次联系时间 as null. Same faked-fetch tRPC
@@ -106,7 +106,7 @@ let detail: Record<string, unknown>;
 let calls: Array<{ path: string; input: unknown }>;
 
 function respond(path: string, input: unknown): unknown {
-  // The AppLayout bell (issue #25) polls notification.list in the same batch
+  // The AppLayout bell polls notification.list in the same batch
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }

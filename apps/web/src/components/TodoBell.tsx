@@ -10,14 +10,14 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 
 /**
- * 轨 2 我的待办 red-dot indicator (issue #30, PRD §3.7, ADR 0004): the count
- * of my tickets currently carrying a time alert — 待首响 / 检查点未达 / 特急
- * 欠跟进 / due_soon / overdue — with a popover list linking to each ticket.
+ * 轨 2 我的待办 red-dot indicator: the count of my tickets currently carrying
+ * a time alert — 待首响 / 检查点未达 / 特急欠跟进 / due_soon / overdue — with
+ * a popover list linking to each ticket.
  *
  * It consumes the SAME notification.list query as the inbox bell: react-query
  * dedupes the two hooks into one cache entry, so the 30s poll stays a single
- * request carrying both tracks (ADR 0004 送达). Nothing here is stored or
- * marked read — an alert disappears the moment its condition stops holding.
+ * request carrying both tracks. Nothing here is stored or marked read — an
+ * alert disappears the moment its condition stops holding.
  */
 
 type TodoItem = inferRouterOutputs<AppRouter>["notification"]["list"]["todo"]["items"][number];

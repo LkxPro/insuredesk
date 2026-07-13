@@ -2,15 +2,13 @@ import type { Permission } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service";
 
 /**
- * Query-layer data-scope helpers for enforcing RBAC data permissions.
- *
- * From the acceptance criteria:
- * "Query-layer data-scope helper: absence of `ticket.view_all` forces
- * `WHERE assigneeId = 当前用户` (unit of reuse for all ticket reads)"
+ * Query-layer data-scope helpers for enforcing RBAC data permissions — the
+ * unit of reuse for all ticket reads: absence of `ticket.view_all` forces
+ * `WHERE assigneeId = 当前用户`.
  *
  * These helpers automatically restrict queries to only data the user is
  * allowed to see based on their permissions. They are the enforcement point
- * for data-level RBAC (see PRD §5.2).
+ * for data-level RBAC.
  *
  * Usage pattern:
  * ```ts
@@ -64,7 +62,3 @@ export function applyTicketDataScope(user: AuthenticatedUser | null): Record<str
 export function applyDashboardDataScope(user: AuthenticatedUser | null): Record<string, unknown> {
   return applyDataScope(user, "dashboard.view_all");
 }
-
-// Note: The Ticket model doesn't exist yet (will come in a future issue).
-// This data-scope helper is defined now to satisfy issue #2's acceptance
-// criteria. It will be used when ticket queries are implemented.

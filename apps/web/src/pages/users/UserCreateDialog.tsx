@@ -30,7 +30,7 @@ import { toast } from "sonner";
 /**
  * 新增用户 (user.create): account basics + initial password + role. The field
  * contract is the shared userCreateInputSchema — the exact schema the API
- * parses (ADR 0006).
+ * parses.
  */
 export function UserCreateDialog({
   open,

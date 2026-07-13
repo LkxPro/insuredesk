@@ -5,20 +5,19 @@ import { TicketNotFoundError } from "./ticket-assign.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * Follow-up domain logic (issue #26, PRD §4.4): 添加跟进备注 = one actual
- * customer contact. Pure service layer per ADR 0006 — the router maps the
- * domain errors to transport codes.
+ * Follow-up domain logic: 添加跟进备注 = one actual customer contact. Pure
+ * service layer — the router maps the domain errors to transport codes.
  *
  * Invariants enforced here:
  * - contactCount / processingResult / nextContactTime change ONLY through this
- *   action (PRD §3.1.6 单点维护): count +1, result = the latest remark, and
+ *   action (单点维护): count +1, result = the latest remark, and
  *   nextContactTime is rewritten wholesale — an omitted value clears the
  *   previous follow-up's plan rather than leaving a stale past time behind
  * - the FIRST follow-up moves assigned → processing, with the mandatory
- *   separate status_change log entry (PRD §3.2); because that transition fires
+ *   separate status_change log entry; because that transition fires
  *   on every comment while still assigned, a 改派 before any follow-up changes
- *   nothing — the new assignee's first comment still triggers it (PRD §4.4)
- * - dueAt / assignedAt are never touched (ADR 0002)
+ *   nothing — the new assignee's first comment still triggers it
+ * - dueAt / assignedAt are never touched
  */
 
 /** Ticket visible but its state does not accept follow-ups. */
@@ -75,7 +74,7 @@ export async function addTicketComment(
     // Claim the transition with a conditional write, not the read above: two
     // concurrent first follow-ups would both have read `assigned`, but only
     // the claimer may write the status_change entry — the loser's comment is
-    // a "subsequent" one (仅写一条 comment, PRD §4.4)
+    // a "subsequent" one (仅写一条 comment)
     const claimedTransition =
       isFirstFollowUp &&
       (
@@ -107,7 +106,7 @@ export async function addTicketComment(
     });
 
     if (claimedTransition) {
-      // 状态变更一律独立记录 (PRD §3.2): the transition gets its own entry,
+      // 状态变更一律独立记录: the transition gets its own entry,
       // created after the comment log so the timeline reads cause → effect
       await tx.processLog.create({
         data: {

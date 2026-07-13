@@ -27,10 +27,10 @@ import { toast } from "sonner";
 import { TicketFormFields, type TicketFormValues, ticketFormSchema } from "./TicketFormFields";
 
 /**
- * 编辑工单 dialog (issue #28, PRD §4.5): the same basic-info field set as
- * creation — shared TicketFormFields — prefilled from the current detail, open
- * in ANY status (已完结 included). status is not a field here by design; the
- * server re-derives SLA fields on a complaintLevel change and writes the edit
+ * 编辑工单 dialog: the same basic-info field set as creation — shared
+ * TicketFormFields — prefilled from the current detail, open in ANY status
+ * (已完结 included). status is not a field here by design; the server
+ * re-derives SLA fields on a complaintLevel change and writes the edit
  * ProcessLog, so success just invalidates the queries.
  */
 

@@ -10,10 +10,10 @@ import { hashPassword } from "./auth.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * 用户管理 domain logic (issue #32, PRD §2.3/§5.1.3). Pure service layer per
- * ADR 0006 — the router maps the domain errors below to transport codes.
+ * 用户管理 domain logic. Pure service layer — the router maps the domain
+ * errors below to transport codes.
  *
- * Accounts are never hard deleted: the PRD's `user.delete` point gates
+ * Accounts are never hard deleted: the `user.delete` point gates
  * 禁用/启用 (the `active` flag), so tickets, process logs, and rosters always
  * keep a live FK target. A disabled account is locked out on BOTH doors:
  * login refuses (PasswordAuthProvider filters on active) and existing
@@ -159,7 +159,7 @@ export async function updateUser({ prisma }: TicketServiceDeps, input: UserUpdat
 }
 
 /**
- * 禁用/启用 (the PRD's user.delete point). Disabling deletes the user's
+ * 禁用/启用 (the user.delete permission point). Disabling deletes the user's
  * sessions in the same transaction — the "已有会话的下一次请求被拒" guarantee
  * holds even without this (validateSession re-checks `active`), but dead rows
  * shouldn't linger. Self-disable is refused: the operator would saw off the

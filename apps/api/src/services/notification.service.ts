@@ -3,7 +3,7 @@ import type { AuthenticatedUser } from "./auth.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * 轨 1 收件箱 (issue #25, PRD §3.7, ADR 0004): user-action-triggered TRUE
+ * 轨 1 收件箱: user-action-triggered TRUE
  * events, this phase solely `assigned`. The write runs INSIDE the assignment
  * transaction — notification and assignment commit or roll back together, and
  * every assignment surface (single, batch, future 按排班自动分配) shares this
@@ -22,9 +22,9 @@ function formatDuration(totalMinutes: number) {
 }
 
 /**
- * 改派 annotation (acceptance: 改派通知标注剩余时间): how long the NEW owner
+ * 改派 annotation (改派通知标注剩余时间): how long the NEW owner
  * has until dueAt as of the reassignment instant — or how far past it the
- * ticket already is. 特急 tickets have no deadline (dueAt null, PRD §3.8).
+ * ticket already is. 特急 tickets have no deadline (dueAt null).
  */
 function formatRemainingTime(dueAt: Date | null, now: Date) {
   if (dueAt === null) {
@@ -41,7 +41,7 @@ function formatRemainingTime(dueAt: Date | null, now: Date) {
 
 /**
  * Pure message builder for the `assigned` notification. operatorName is a
- * name snapshot at event time (PRD §3.2 conventions), immune to later renames.
+ * name snapshot at event time, immune to later renames.
  */
 export function buildAssignedNotification(params: {
   workOrderNumber: string;
@@ -99,7 +99,7 @@ export async function writeAssignedNotification(
 
 /**
  * The bell's poll payload: the viewer's latest notifications plus their total
- * unread count, in one request (ADR 0004 送达: one 30s poll). Notifications
+ * unread count, in one request (one 30s poll). Notifications
  * are strictly personal — targetUserId is pinned to the viewer, no data-scope
  * variance, no extra permission point.
  */

@@ -23,9 +23,9 @@ import { applyTicketDataScope } from "./data-scope.service";
 import { displayStatusTicketWhere } from "./ticket-display-status";
 
 /**
- * Ticket domain logic (issue #22): manual creation and detail reads. Pure
- * service layer per ADR 0006 — no tRPC/HTTP types; the router maps domain
- * errors to transport codes.
+ * Ticket domain logic: manual creation and detail reads. Pure service
+ * layer — no tRPC/HTTP types; the router maps domain errors to transport
+ * codes.
  */
 
 export interface TicketServiceDeps {
@@ -44,17 +44,17 @@ export class SlaPolicyNotConfiguredError extends Error {
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * THE dueAt formula (PRD §9.2): createdAt + the level's overdueHours, null for
- * 特急 (no deadline). Creation stamps it; a complaintLevel edit re-runs it with
- * the new level's hours against the same unchanging createdAt (PRD §4.5).
+ * THE dueAt formula: createdAt + the level's overdueHours, null for 特急
+ * (no deadline). Creation stamps it; a complaintLevel edit re-runs it with
+ * the new level's hours against the same unchanging createdAt.
  */
 export function computeDueAt(createdAt: Date, overdueHours: number | null): Date | null {
   return overdueHours === null ? null : new Date(createdAt.getTime() + overdueHours * HOUR_MS);
 }
 
 /**
- * The SLA fields a complaintLevel stamps onto a ticket. A null level (未定级,
- * issue #43) stamps all-null: no dueAt, no 首响/跟进 requirements — and hence
+ * The SLA fields a complaintLevel stamps onto a ticket. A null level (未定级)
+ * stamps all-null: no dueAt, no 首响/跟进 requirements — and hence
  * no SLA time alerts until an edit sets a level (off the original createdAt).
  */
 export async function computeSlaStamp(
@@ -81,15 +81,15 @@ export async function computeSlaStamp(
 }
 
 /**
- * Create a manually-entered ticket (PRD §3.1, §9.2, §9.3):
+ * Create a manually-entered ticket:
  *
- * - every user field is optional (issue #43): a fully blank submission is
- *   valid, unfilled fields persist as NULL ("unknown", never "")
+ * - every user field is optional: a fully blank submission is valid,
+ *   unfilled fields persist as NULL ("unknown", never "")
  * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
  * - dueAt is fixed once, here: createdAt + the level's SLA overdueHours
  *   (null for 特急 — never overdue; null while 未定级 — no SLA clock fields)
  * - 跟进频次/首响要求 are stamped from the level's SLA config, not hardcoded
- * - source=manual records creatorId; "由谁创建" derives at read time (§3.1.8)
+ * - source=manual records creatorId; "由谁创建" derives at read time
  * - the first `create` ProcessLog (operator name snapshot) lands in the same
  *   transaction, so a ticket can never exist without its timeline root
  */
@@ -99,7 +99,7 @@ export async function createTicket(
   input: TicketCreateData,
 ) {
   // One instant for createdAt, dueAt, and the log entry, taken from the
-  // injectable clock (ADR 0006) — dueAt is exactly createdAt + overdueHours.
+  // injectable clock — dueAt is exactly createdAt + overdueHours.
   const now = clock.now();
   const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, now);
 
@@ -120,7 +120,7 @@ export async function createTicket(
       data: {
         ticketId: ticket.id,
         operatorId: creator.id,
-        // Name snapshot on purpose (PRD §3.2): the timeline shows who it was
+        // Name snapshot on purpose: the timeline shows who it was
         // at the time, even after renames — unlike the derived createdBy.
         operatorName: creator.name,
         action: "create",
@@ -134,13 +134,13 @@ export async function createTicket(
 }
 
 const listInclude = {
-  // Current follow-up owner is derived via JOIN, never stored (CONTEXT.md "Follower")
+  // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
 } satisfies Prisma.TicketInclude;
 
 type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
 
-/** The list's filter/sort subset — shared verbatim by the export (issue #34). */
+/** The list's filter/sort subset — shared verbatim by the export. */
 type TicketListFilters = Pick<
   TicketListQuery,
   "status" | "channel" | "complaintLevel" | "source" | "search" | "sortBy" | "sortOrder"
@@ -148,14 +148,13 @@ type TicketListFilters = Pick<
 
 /**
  * The ONE WHERE for "what this viewer's filtered list contains" — shared by
- * the paged list and the export so the two can never disagree (issue #34
- * 筛选条件与导出内容一致 by construction). Applies:
+ * the paged list and the export so the two can never disagree. Applies:
  *
- * - soft-delete exclusion (deletedAt null, PRD §4.5)
+ * - soft-delete exclusion (deletedAt null)
  * - the RBAC data scope — no `ticket.view_all` → only own tickets, so the
- *   unassigned pool never reaches 一线客服 (PRD §5.2)
+ *   unassigned pool never reaches 一线客服
  * - the filters, with computed statuses resolved through the single-truth
- *   predicate module (ADR 0001) rather than restated here
+ *   predicate module rather than restated here
  */
 export function buildTicketListWhere(
   viewer: AuthenticatedUser,
@@ -209,7 +208,7 @@ export function buildTicketListOrderBy(
 }
 
 /**
- * Paged ticket list for 工单管理 (issue #23): the shared WHERE/ORDER above,
+ * Paged ticket list for 工单管理: the shared WHERE/ORDER above,
  * plus pagination. One `clock.now()` serves the whole request, so the rows a
  * computed-status filter selects and the displayStatus they serialize with can
  * never disagree.
@@ -300,13 +299,13 @@ export async function getTicketDetail(
 
 /**
  * Wire shape for the web app: dates as ISO-8601 strings (no transformer on the
- * tRPC link), plus the read-time derivations — createdBy (PRD §3.1.8) and the
- * computed display status (PRD §3.1.6).
+ * tRPC link), plus the read-time derivations — createdBy and the computed
+ * display status.
  */
 function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
   // Re-narrow the String columns through the shared schemas so the wire type
   // carries the enum unions — the web renders without a single cast. Nullable
-  // columns (未填写, issue #43) pass null through untouched.
+  // columns (未填写) pass null through untouched.
   const source = ticketSourceSchema.parse(ticket.source);
   const status = ticketStatusSchema.parse(ticket.status);
   const priority = parseNullable(prioritySchema, ticket.priority);
@@ -320,7 +319,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     source,
     // 由谁创建 is derived at read time, never snapshotted onto the ticket:
     // internal tickets show the creator's *current* name, external ones the
-    // source label (PRD §3.1.8).
+    // source label.
     createdBy: source === "manual" ? (ticket.creator?.name ?? null) : TICKET_SOURCE_LABELS[source],
     channel: parseNullable(channelSchema, ticket.channel),
     project: ticket.project,
@@ -344,7 +343,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     status,
     displayStatus: deriveDisplayStatus(status, ticket.dueAt, now),
     assigneeId: ticket.assigneeId,
-    // Current follow-up owner is derived via JOIN, never stored (CONTEXT.md "Follower")
+    // Current follow-up owner is derived via JOIN, never stored
     assigneeName: ticket.assignee?.name ?? null,
     assignedAt: ticket.assignedAt?.toISOString() ?? null,
     dueAt: ticket.dueAt?.toISOString() ?? null,

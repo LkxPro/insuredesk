@@ -6,8 +6,8 @@ import {
 import type { Prisma } from "@prisma/client";
 
 /**
- * The single source of truth for time-based ticket predicates in SQL
- * (ADR 0001, PRD §3.7): the WHERE-clause mirror of the shared
+ * The single source of truth for time-based ticket predicates in SQL:
+ * the WHERE-clause mirror of the shared
  * `deriveDisplayStatus`. The list's computed-status filter uses it today; the
  * dashboard's 已超时数 card and 我的待办 must reuse these fragments — never
  * restate the conditions — so the whole system reddens at the same instant.
@@ -23,7 +23,7 @@ import type { Prisma } from "@prisma/client";
  * with serialization, so filtering and display can never disagree mid-query.
  */
 
-/** 已超时（实时运营视角）：在途且已过 dueAt；完结即移出（ADR 0003）. */
+/** 已超时（实时运营视角）：在途且已过 dueAt；完结即移出. */
 export function overdueTicketWhere(now: Date): Prisma.TicketWhereInput {
   return {
     status: { not: TicketStatus.Completed },

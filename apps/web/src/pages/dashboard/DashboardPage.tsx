@@ -28,14 +28,14 @@ import {
 import { AlertCircle, Users } from "lucide-react";
 
 /**
- * 数据看板 (issue #29, PRD §2.2): 9 metric cards, the 4-channel distribution,
- * and the Top-10 跟进人考核表 — one query, one screen. All 口径 live
- * server-side (dashboard.service.ts); this page renders the payload as-is.
- * Data scope is server-enforced too: without dashboard.view_all the numbers
- * cover only the viewer's own tickets, and the header says so.
+ * 数据看板: 9 metric cards, the 4-channel distribution, and the Top-10
+ * 跟进人考核表 — one query, one screen. All 口径 live server-side
+ * (dashboard.service.ts); this page renders the payload as-is. Data scope
+ * is server-enforced too: without dashboard.view_all the numbers cover only
+ * the viewer's own tickets, and the header says so.
  */
 
-/** The two read-time overlay cards carry the alert palette (PRD §3.1.6 tone). */
+/** The two read-time overlay cards carry the alert palette. */
 const METRIC_TONES: Partial<Record<DashboardMetricKey, string>> = {
   pendingTimeout: "text-amber-600 dark:text-amber-500",
   overdue: "text-destructive",

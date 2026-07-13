@@ -5,7 +5,7 @@ import { TicketNotFoundError } from "./ticket-assign.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * Soft-delete domain logic (issue #28, PRD §4.5): the dangerous ticket.delete
+ * Soft-delete domain logic: the dangerous ticket.delete
  * operation. Stamps deletedAt and nothing else — no physical delete, no
  * ProcessLog entry (the action enum is closed and 删除 is not in it; the
  * existing logs and attachments stay behind the tombstone, 可追溯).
@@ -13,7 +13,7 @@ import type { TicketServiceDeps } from "./ticket.service";
  * The exclusion side needs no code here: every default read — list, detail,
  * the other lifecycle actions, and any statistics — already filters
  * deletedAt = null, so a deleted ticket drops out of all of them the moment
- * this commits. 本期只删不恢复: no restore path exists (DBA-only, PRD §4.5).
+ * this commits. 本期只删不恢复: no restore path exists (DBA-only).
  */
 
 /**

@@ -18,7 +18,7 @@ import { Navigate, Route, Routes } from "react-router";
  * Route tree, kept separate from <App> so tests can mount it in a
  * MemoryRouter. Shell pages are generated from NAV_ITEMS: every menu entry
  * gets a route guarded by the same permission point that controls its menu
- * visibility, so the two can never disagree (issue #21).
+ * visibility, so the two can never disagree.
  */
 
 // Record<NavPath, …> makes "menu entry without a page" a compile error.
@@ -63,10 +63,10 @@ export function AppRoutes() {
             }
           />
         ))}
-        {/* Sub-pages of 工单管理 (issue #22): create needs ticket.create; the
-            detail read only ticket.view — data scope is enforced server-side.
-            /tickets/new renders 工单管理 with the creation dialog open, so the
-            modal stays deep-linkable and guarded like a page. */}
+        {/* Sub-pages of 工单管理: create needs ticket.create; the detail read
+            only ticket.view — data scope is enforced server-side. /tickets/new
+            renders 工单管理 with the creation dialog open, so the modal stays
+            deep-linkable and guarded like a page. */}
         <Route
           path="/tickets/new"
           element={

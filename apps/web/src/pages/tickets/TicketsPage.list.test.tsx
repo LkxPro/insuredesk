@@ -10,9 +10,9 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Issue #23 list page: rows render from ticket.list with the computed display
- * status, URL filters reach the query input (deep-linkable like /tickets/new),
- * and search / sort / pagination re-query with the right input. The tRPC link
+ * List page: rows render from ticket.list with the computed display status,
+ * URL filters reach the query input (deep-linkable like /tickets/new), and
+ * search / sort / pagination re-query with the right input. The tRPC link
  * gets a faked `fetch`, so the real procedure pipeline shape is exercised
  * without a server. Same useAuth-seam mock as TicketsPage.test.tsx.
  */
@@ -90,8 +90,8 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   const batch = raw ? (JSON.parse(raw) as Record<string, Record<string, unknown>>) : {};
   const paths = (url.pathname.split("/api/trpc/")[1] ?? "").split(",");
   const body = paths.map((path, index) => {
-    // The AppLayout bell (issue #25) polls notification.list in the same
-    // batch; an empty inbox keeps these tests focused on ticket.list.
+    // The AppLayout bell polls notification.list in the same batch;
+    // an empty inbox keeps these tests focused on ticket.list.
     if (path === "notification.list") {
       return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
     }

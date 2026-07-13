@@ -9,12 +9,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Issue #27 acceptance tests against a real Postgres: resolving (完结) moves an
+ * Acceptance tests against a real Postgres: resolving (完结) moves an
  * in-flight ticket to the completed 终态 with completionTime + the mandatory
- * completionStatus (12 种封闭枚举, PRD §9.1), writing the resolve +
- * status_change ProcessLog pair (PRD §3.2/§4.4). completed is terminal — no
- * reopen, no further follow-ups — and a resolved ticket immediately leaves the
- * pending_timeout / overdue 实时运营口径 (ADR 0003). Runs through
+ * completionStatus (12 种封闭枚举), writing the resolve + status_change
+ * ProcessLog pair. completed is terminal — no reopen, no further follow-ups —
+ * and a resolved ticket immediately leaves the pending_timeout / overdue
+ * 实时运营口径. Runs through
  * appRouter.createCaller — the same procedure pipeline (permission middleware
  * included) the HTTP adapter uses.
  */
@@ -153,7 +153,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       expect(detail.completionStatus).toBe("已协商解决");
 
       // Two log entries beyond the in-flight history, in order: the resolve
-      // first, then the separate transition entry (PRD §3.2)
+      // first, then the separate transition entry
       expect(detail.processLogs.map((log) => log.action)).toEqual([
         "create",
         "assign",
@@ -377,7 +377,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
       expect(await listUnder("overdue", workOrderNumber)).toEqual([]);
       const after = await listUnder("completed", workOrderNumber);
-      // Past dueAt no longer computes: the stored 终态 wins (ADR 0001/0003)
+      // Past dueAt no longer computes: the stored 终态 wins
       expect(after.map((item) => item.displayStatus)).toEqual(["completed"]);
     });
 

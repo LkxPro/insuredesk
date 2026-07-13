@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildAssignedNotification } from "../src/services/notification.service";
 
 /**
- * Pure message builder behind the 轨 1 assigned notification (issue #25,
- * PRD §3.7): first assignment vs 改派 wording, and the 改派 remaining-time
- * annotation derived from dueAt/now — including already-overdue and
- * no-deadline (特急) tickets. No database needed.
+ * Pure message builder behind the 轨 1 assigned notification: first
+ * assignment vs 改派 wording, and the 改派 remaining-time annotation derived
+ * from dueAt/now — including already-overdue and no-deadline (特急) tickets.
+ * No database needed.
  */
 
 const now = new Date("2026-07-09T10:00:00Z");

@@ -23,9 +23,6 @@ export const appRouter = router({
     uptimeSeconds: process.uptime(),
   })),
 
-  /**
-   * Authentication routes - me query
-   */
   auth: authRouter,
 
   /**
@@ -33,38 +30,35 @@ export const appRouter = router({
    */
   demo: demoRouter,
 
-  /**
-   * Ticket routes - manual creation + detail timeline (issue #22)
-   */
   ticket: ticketRouter,
 
   /**
-   * The 30s poll — 轨 1 收件箱 + 轨 2 我的待办 in one request (issues #25/#30)
+   * The 30s poll — 轨 1 收件箱 + 轨 2 我的待办 in one request
    */
   notification: notificationRouter,
 
   /**
-   * 数据看板 - 9 指标卡 + 渠道统计 + 跟进人考核 (issue #29)
+   * 数据看板 - 9 指标卡 + 渠道统计 + 跟进人考核
    */
   dashboard: dashboardRouter,
 
   /**
-   * 排班配置 - 排班日历 CRUD，喂给按排班自动分配 (issue #31)
+   * 排班配置 - 排班日历 CRUD，喂给按排班自动分配
    */
   schedule: scheduleRouter,
 
   /**
-   * 用户管理 - 新增/编辑/禁用启用/分配角色 (issue #32)
+   * 用户管理 - 新增/编辑/禁用启用/分配角色
    */
   user: userRouter,
 
   /**
-   * 角色管理 - 自定义角色 + 权限点清单配置，预设角色受保护 (issue #32)
+   * 角色管理 - 自定义角色 + 权限点清单配置，预设角色受保护
    */
   role: roleRouter,
 
   /**
-   * SLA 策略配置 - 按投诉等级编辑首响/超时/提醒规则，限管理员 (issue #33)
+   * SLA 策略配置 - 按投诉等级编辑首响/超时/提醒规则，限管理员
    */
   sla: slaRouter,
 });

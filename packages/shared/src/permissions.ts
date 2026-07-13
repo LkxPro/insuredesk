@@ -2,8 +2,6 @@ import { z } from "zod";
 
 /**
  * Flat permission-point string enum covering all access controls in the system.
- * See PRD §5.1 for the complete permission matrix and role mappings.
- *
  * Permission points are organized by feature area but stored as flat strings.
  * Roles are collections of permission points, managed in the database.
  */
@@ -47,9 +45,9 @@ export const ROLE_PERMISSIONS = [
 ] as const;
 
 // System configuration permissions
-// sla.view / sla.edit are absent from the PRD §5.1 matrix; they exist because
-// §3.8 says SLA policies are 管理员可编辑, which needs its own page + operation
-// point (issue #33). Only the 管理员 preset holds them.
+// sla.view / sla.edit are absent from the PRD permission matrix; they exist
+// because SLA policies are 管理员可编辑, which needs its own page + operation
+// point. Only the 管理员 preset holds them.
 export const SYSTEM_PERMISSIONS = [
   "schedule.view", // Access schedule configuration (page permission)
   "schedule.edit", // Edit schedule (operation permission)
@@ -70,10 +68,10 @@ export const permissionSchema = z.enum(ALL_PERMISSIONS);
 export type Permission = (typeof ALL_PERMISSIONS)[number];
 
 /**
- * Human-readable labels for the 权限点清单 (PRD §5.1), used by the 角色权限
- * checklist UI. Wording follows the PRD except user.delete: the PRD names the
- * point "删除用户" but its operation is 禁用/启用 — accounts are never hard
- * deleted (they anchor tickets, logs, and rosters), so the label says what the
+ * Human-readable labels for the 权限点清单, used by the 角色权限 checklist UI.
+ * Wording follows the PRD except user.delete: the PRD names the point
+ * "删除用户" but its operation is 禁用/启用 — accounts are never hard deleted
+ * (they anchor tickets, logs, and rosters), so the label says what the
  * permission actually grants.
  */
 export const PERMISSION_LABELS: Record<Permission, string> = {
@@ -105,7 +103,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "sla.edit": "编辑 SLA 策略",
 };
 
-/** PRD §5.1 sections, in document order — the 权限点清单 checklist grouping. */
+/** 权限点清单 checklist grouping, in PRD document order. */
 export const PERMISSION_GROUPS = [
   { label: "数据看板", permissions: DASHBOARD_PERMISSIONS },
   { label: "工单管理", permissions: TICKET_PERMISSIONS },
@@ -115,7 +113,6 @@ export const PERMISSION_GROUPS = [
 ] as const;
 
 // Preset role permission mappings (used in seed data)
-// See PRD §5.2 for role descriptions
 
 export const PRESET_ROLES = {
   /**

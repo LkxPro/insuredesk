@@ -12,13 +12,13 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Issue #29 acceptance tests for 数据看板 against a real Postgres: the 9
- * metric cards per PRD §2.2 (with the time cards reusing the single-truth
- * predicates, ADR 0001), the deliberate difference between the two overdue
- * 口径 (ADR 0003), soft-delete exclusion, the 4-channel table, the Top-10
- * 跟进人考核表, the dashboard.view_all data scope, and the <2s compute target
- * (PRD §6.1). Runs through appRouter.createCaller; clock-sensitive 口径 cases
- * use the service directly with a fixed clock, like the list tests.
+ * Acceptance tests for 数据看板 against a real Postgres: the 9 metric cards
+ * (with the time cards reusing the single-truth predicates), the deliberate
+ * difference between the two overdue 口径, soft-delete exclusion, the
+ * 4-channel table, the Top-10 跟进人考核表, the dashboard.view_all data
+ * scope, and the <2s compute target. Runs through appRouter.createCaller;
+ * clock-sensitive 口径 cases use the service directly with a fixed clock,
+ * like the list tests.
  */
 describe("dashboard stats (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;

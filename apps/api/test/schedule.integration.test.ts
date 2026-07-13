@@ -13,9 +13,9 @@ import type * as AssignService from "../src/services/ticket-assign.service";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Issue #31 acceptance tests against a real Postgres: the 排班日历 CRUD
+ * Acceptance tests against a real Postgres: the 排班日历 CRUD
  * (stamped shift windows, the unique roster cell, schedule.view/edit RBAC)
- * and 按排班自动分配 (PRD §4.3.4) — channel + on-shift candidate matching,
+ * and 按排班自动分配 — channel + on-shift candidate matching,
  * least-在手 selection, the random tie-break, the no-on-duty boundary, and
  * that an auto pick rides the exact same write path as manual assignment
  * (assign + status_change logs, inbox notification, assignedAt, dueAt
@@ -556,7 +556,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
       expect(detail.assigneeId).toBe(duty.id);
       expect(detail.status).toBe("assigned");
       expect(detail.assignedAt).not.toBeNull();
-      // dueAt fixed at creation; auto-assignment must not recompute it (ADR 0002)
+      // dueAt fixed at creation; auto-assignment must not recompute it
       expect(detail.dueAt).toBe(before.dueAt);
 
       // Identical trail to manual assignment: assign first, then status_change

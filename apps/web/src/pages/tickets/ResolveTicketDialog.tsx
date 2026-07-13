@@ -26,11 +26,11 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 /**
- * 完结工单 dialog (issue #27, PRD §4.4): the mandatory completion reason —
- * one of the 12 封闭枚举 (PRD §9.1) — plus the 完结备注. The caller gates the
- * entry point on ticket.process and an in-flight status; completionTime, the
- * → completed transition and its ProcessLog pair are derived server-side in
- * ticket.resolve. completed is a 终态, hence the warning copy.
+ * 完结工单 dialog: the mandatory completion reason — one of the 12 封闭枚举 —
+ * plus the 完结备注. The caller gates the entry point on ticket.process and
+ * an in-flight status; completionTime, the → completed transition and its
+ * ProcessLog pair are derived server-side in ticket.resolve. completed is a
+ * 终态, hence the warning copy.
  */
 export function ResolveTicketDialog({
   open,

@@ -49,11 +49,11 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 /**
- * 排班配置 (issue #31, PRD §2.4/§3.6): one day at a time, a 渠道 × 班次 grid
- * of on-duty people. schedule.view opens the page (route-guarded); add/remove
- * are shown only with schedule.edit — the API re-checks regardless. This
- * roster is what 按排班自动分配 draws its candidates from, so the grid mirrors
- * exactly how that algorithm matches: date + channel + shift window.
+ * 排班配置: one day at a time, a 渠道 × 班次 grid of on-duty people.
+ * schedule.view opens the page (route-guarded); add/remove are shown only
+ * with schedule.edit — the API re-checks regardless. This roster is what
+ * 按排班自动分配 draws its candidates from, so the grid mirrors exactly how
+ * that algorithm matches: date + channel + shift window.
  */
 
 /** A grid cell address — where a new duty entry goes. */

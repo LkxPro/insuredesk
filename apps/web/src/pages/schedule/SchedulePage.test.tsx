@@ -11,10 +11,10 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 排班配置 page (issue #31): the 渠道 × 班次 grid renders one day's roster,
- * add/remove exist only with schedule.edit (mirroring the API guards), and
- * the add dialog fires schedule.create with the addressed cell. Same
- * faked-fetch tRPC pipeline and useAuth-seam mock as the tickets-page tests.
+ * 排班配置 page: the 渠道 × 班次 grid renders one day's roster, add/remove
+ * exist only with schedule.edit (mirroring the API guards), and the add
+ * dialog fires schedule.create with the addressed cell. Same faked-fetch
+ * tRPC pipeline and useAuth-seam mock as the tickets-page tests.
  */
 
 const auth = vi.hoisted(() => ({

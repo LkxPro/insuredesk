@@ -18,10 +18,10 @@ import { listAssigneeOptions } from "../services/ticket-assign.service";
 import { requirePermission, router } from "../trpc";
 
 /**
- * 排班配置 routes (issue #31): the calendar read and the duty-entry
- * add/remove. Thin wrappers per ADR 0006 — validation via the shared Zod
- * schemas, RBAC via requirePermission (schedule.view to read, schedule.edit
- * to change), business logic in schedule.service.
+ * 排班配置 routes: the calendar read and the duty-entry add/remove. Thin
+ * wrappers — validation via the shared Zod schemas, RBAC via
+ * requirePermission (schedule.view to read, schedule.edit to change),
+ * business logic in schedule.service.
  */
 
 const deps = { prisma, clock: systemClock };

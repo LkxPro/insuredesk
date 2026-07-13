@@ -23,10 +23,9 @@ import {
 import { requireAnyPermission, requirePermission, router } from "../trpc";
 
 /**
- * 用户管理 routes (issue #32): thin wrappers per ADR 0006 — validation via the
- * shared Zod schemas, one permission point per operation exactly as PRD §5.1.3
- * assigns them (user.view / user.create / user.edit / user.delete /
- * user.assign_role), business logic in user.service.
+ * 用户管理 routes: thin wrappers — validation via the shared Zod schemas,
+ * one permission point per operation (user.view / user.create / user.edit /
+ * user.delete / user.assign_role), business logic in user.service.
  */
 
 const deps = { prisma, clock: systemClock };
@@ -59,7 +58,7 @@ export const userRouter = router({
     .input(userUpdateInputSchema)
     .mutation(({ input }) => updateUser(deps, input).catch(toTRPCError)),
 
-  /** 禁用/启用 — the PRD's user.delete point; disabling kills live sessions. */
+  /** 禁用/启用 rides the user.delete permission point; disabling kills live sessions. */
   setActive: requirePermission("user.delete")
     .input(userSetActiveInputSchema)
     .mutation(({ ctx, input }) => setUserActive(deps, ctx.user, input).catch(toTRPCError)),

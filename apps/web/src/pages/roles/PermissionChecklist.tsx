@@ -2,11 +2,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PERMISSION_GROUPS, PERMISSION_LABELS, type Permission } from "@insuredesk/shared";
 
 /**
- * The PRD §5.1 权限点清单 as grouped checkboxes — the single configuration
- * surface for 角色权限. Groups follow the PRD's five sections; each entry
- * shows the Chinese label plus the raw permission point so the checklist maps
- * 1:1 onto the PRD table. Renders read-only for preset roles and for viewers
- * without role.edit_permission.
+ * The 权限点清单 as grouped checkboxes — the single configuration surface
+ * for 角色权限. Groups follow the PRD's five sections; each entry shows the
+ * Chinese label plus the raw permission point so the checklist maps 1:1 onto
+ * the PRD table. Renders read-only for preset roles and for viewers without
+ * role.edit_permission.
  */
 export function PermissionChecklist({
   value,

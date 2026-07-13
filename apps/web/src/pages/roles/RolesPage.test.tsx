@@ -10,11 +10,11 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 角色权限 page (issue #32): the role table separates preset from custom,
- * preset roles never offer rename/delete and open the checklist read-only,
- * and the create/permissions dialogs fire their mutations with the ticked
- * permission points. Same faked-fetch tRPC pipeline and useAuth-seam mock as
- * the users-page tests.
+ * 角色权限 page: the role table separates preset from custom, preset roles
+ * never offer rename/delete and open the checklist read-only, and the
+ * create/permissions dialogs fire their mutations with the ticked permission
+ * points. Same faked-fetch tRPC pipeline and useAuth-seam mock as the
+ * users-page tests.
  */
 
 const auth = vi.hoisted(() => ({

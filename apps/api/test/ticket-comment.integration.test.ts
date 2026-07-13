@@ -9,11 +9,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Issue #26 acceptance tests against a real Postgres: adding a follow-up
- * (跟进备注) maintains contactCount / processingResult / nextContactTime in one
- * action (PRD §3.1.6 单点维护), the FIRST follow-up moves assigned →
- * processing with the comment + status_change ProcessLog pair (PRD §4.4), and
- * later follow-ups append a single comment entry with no transition. Runs
+ * Acceptance tests against a real Postgres: adding a follow-up (跟进备注)
+ * maintains contactCount / processingResult / nextContactTime in one action
+ * (单点维护), the FIRST follow-up moves assigned → processing with the
+ * comment + status_change ProcessLog pair, and later follow-ups append a
+ * single comment entry with no transition. Runs
  * through appRouter.createCaller — the same procedure pipeline (permission
  * middleware included) the HTTP adapter uses.
  */
@@ -145,7 +145,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       expect(detail.nextContactTime).toBe("2026-07-12T02:00:00.000Z");
 
       // Two log entries beyond create/assign/status_change, in order: the
-      // comment first, then the separate transition entry (PRD §3.2)
+      // comment first, then the separate transition entry
       expect(detail.processLogs.map((log) => log.action)).toEqual([
         "create",
         "assign",

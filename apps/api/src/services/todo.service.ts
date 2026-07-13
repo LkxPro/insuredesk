@@ -11,23 +11,23 @@ import type { AuthenticatedUser } from "./auth.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * 轨 2 我的待办 (issue #30, PRD §3.7/§3.8/§4.2, ADR 0004/0005): the viewer's
+ * 轨 2 我的待办: the viewer's
  * time-derived alert list, computed on every 30s poll and never stored. The
  * whole track is one read: my open tickets × the SLAPolicy predicates × now.
  *
  * Invariants the shape of this module enforces:
  * - the query is pinned to assigneeId = viewer.id — NOT the RBAC data scope.
  *   待办 is strictly personal even for a supervisor with ticket.view_all, and
- *   unassigned tickets (assigneeId null) can never match anyone (PRD §3.8
- *   告警归属). A 改派 moves every alert to the new owner by construction.
+ *   unassigned tickets (assigneeId null) can never match anyone (告警归属).
+ *   A 改派 moves every alert to the new owner by construction.
  * - status ≠ completed in the WHERE is the "completed 后全部告警停止" rule:
- *   dropping out of the query IS the stop, nothing to cancel (ADR 0004).
+ *   dropping out of the query IS the stop, nothing to cancel.
  * - overdue / due_soon are not restated: they come from deriveDisplayStatus,
- *   the same single-truth predicate the list and dashboard use (ADR 0001).
+ *   the same single-truth predicate the list and dashboard use.
  * - checkpoint / rolling / 染红 thresholds all come from the SLAPolicy rows —
  *   an admin edit, or a complaintLevel edit, changes only the NEXT evaluation;
  *   a checkpoint whose window already passed simply never matches again, so
- *   "已过检查点不补发" needs no special case (ADR 0005).
+ *   "已过检查点不补发" needs no special case.
  */
 
 const MINUTE_MS = 60 * 1000;
@@ -64,7 +64,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
   const [tickets, policyRows] = await Promise.all([
     prisma.ticket.findMany({
       // assigneeId pinned to the viewer + not-completed IS the todo universe
-      // (see module doc); soft-deleted tickets alert nobody (PRD §4.5).
+      // (see module doc); soft-deleted tickets alert nobody.
       where: { deletedAt: null, assigneeId: viewer.id, status: { not: TicketStatus.Completed } },
       select: {
         id: true,
@@ -83,7 +83,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
   // A deleted policy row must not break the poll: SLA-driven alerts degrade
   // (待首响 stays warning, no checkpoints/rolling) while the policy-free
   // alerts (待首响 presence, due_soon/overdue from dueAt) keep working.
-  // 未定级 tickets (complaintLevel null, issue #43) take the same degraded
+  // 未定级 tickets (complaintLevel null) take the same degraded
   // path by construction: no policy → no SLA time alerts.
   const policies = new Map(
     policyRows.map((row) => [
@@ -98,7 +98,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
   const lookupPolicy = (complaintLevel: string | null) =>
     complaintLevel === null ? undefined : policies.get(complaintLevel);
 
-  // 滚动提醒时钟以上一条 comment 为基准 (ADR 0005) — fetch the latest comment
+  // 滚动提醒时钟以上一条 comment 为基准 — fetch the latest comment
   // instant, only for tickets whose policy actually has a rolling rule.
   const rollingTicketIds = tickets
     .filter((ticket) =>
@@ -123,7 +123,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
       // 待首响: no first comment yet → in the todo from the moment it is
       // assigned, no trigger threshold. Strictly past firstResponseMinutes the
       // severity turns critical (超过 is strict, matching the overdue 已超过
-      // convention) — a color change only, never a count (PRD §3.8).
+      // convention) — a color change only, never a count.
       if (ticket.contactCount === 0) {
         const redLineMs =
           policy === undefined
@@ -141,7 +141,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
       }
 
       // due_soon / overdue wear the shared display-status derivation as
-      // alerts — the one place the time predicates live (ADR 0001).
+      // alerts — the one place the time predicates live.
       const displayStatus = deriveDisplayStatus(
         ticketStatusSchema.parse(ticket.status),
         ticket.dueAt,
@@ -189,8 +189,8 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
 }
 
 /**
- * One SLAPolicy reminder rule against one ticket at one instant (ADR 0005:
- * rules run as read-time predicates — no send/dedup/idempotence concepts).
+ * One SLAPolicy reminder rule against one ticket at one instant (rules run
+ * as read-time predicates — no send/dedup/idempotence concepts).
  */
 function evaluateRule(
   rule: ReminderRule,
@@ -201,7 +201,7 @@ function evaluateRule(
   if (rule.type === "follow_up_checkpoint") {
     // In from (checkpoint − advance) inclusive, out at the checkpoint
     // exclusive — or the moment 累计 comments (contactCount, cumulative from
-    // createdAt across assignees) reach requiredCount (PRD §3.8 判定语义).
+    // createdAt across assignees) reach requiredCount.
     const checkpointMs = ticket.createdAt.getTime() + rule.checkpointHours * HOUR_MS;
     const windowStartMs = checkpointMs - rule.advanceMinutes * MINUTE_MS;
     if (
@@ -220,7 +220,7 @@ function evaluateRule(
     return [];
   }
 
-  // rolling_follow_up (特急): the clock starts at the LAST comment (ADR 0005),
+  // rolling_follow_up (特急): the clock starts at the LAST comment,
   // so before any comment exists there is nothing to roll from — the constant
   // 待首响 alert already holds the ticket in the todo until first contact.
   if (

@@ -17,7 +17,7 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Issue #22 acceptance tests against a real Postgres: work-order sequence
+ * Acceptance tests against a real Postgres: work-order sequence
  * (incl. concurrency), dueAt fixed from the SLA config at creation, the
  * `create` ProcessLog, the SLAPolicy seed, RBAC rejection, and the
  * data-scoped detail read. Runs through appRouter.createCaller — the same
@@ -130,17 +130,17 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(detail.feedbackTime).toBe(baseInput.feedbackTime);
       expect("deletedAt" in detail).toBe(false); // soft-delete marker never leaves the API
 
-      // dueAt fixed at creation from the SLA config: exactly createdAt + 48h (PRD §9.2)
+      // dueAt fixed at creation from the SLA config: exactly createdAt + 48h
       expect(detail.dueAt).not.toBeNull();
       const dueMs = new Date(detail.dueAt as string).getTime();
       const createdMs = new Date(detail.createdAt).getTime();
       expect(dueMs - createdMs).toBe(48 * HOUR_MS);
 
-      // 跟进频次/首响要求 stamped from the level's SLA config, not hardcoded (PRD §3.1.5)
+      // 跟进频次/首响要求 stamped from the level's SLA config, not hardcoded
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
       expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
 
-      // creatorId recorded for source=manual (PRD §3.1.8)
+      // creatorId recorded for source=manual
       const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
       expect(row.creatorId).toBe(seeded.users.manager.id);
 
@@ -207,8 +207,8 @@ describe("ticket creation + detail (Testcontainers)", () => {
   });
 
   it("keeps full digits past sequence value 999999 (no lpad truncation)", async () => {
-    // Jump the global sequence to the 6→7 digit boundary; gaps are allowed
-    // (PRD §9.3) so later tests are unaffected.
+    // Jump the global sequence to the 6→7 digit boundary; gaps are allowed,
+    // so later tests are unaffected.
     await prisma.$executeRaw`SELECT setval('work_order_number_seq', 999999)`;
 
     const first = await manager().ticket.create(baseInput);

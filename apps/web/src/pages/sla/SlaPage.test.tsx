@@ -15,7 +15,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * SLA 策略 page (issue #33): one card per complaint level, 编辑 only with
+ * SLA 策略 page: one card per complaint level, 编辑 only with
  * sla.edit, and the editor dialog mirrors slaPolicyUpdateInputSchema — the
  * 保存 button refuses positive-integer violations and an advanceMinutes at or
  * past its own checkpoint, and ships parsed numbers (or null for 不设超时).

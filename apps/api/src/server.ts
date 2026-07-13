@@ -17,11 +17,6 @@ import { createContext } from "./trpc";
  * Build the Fastify app with tRPC mounted at /trpc. Logging is structured pino
  * (Fastify-native) with a per-request `traceId`; pretty-printed only in dev.
  * Extracted from the entrypoint so tests can build the app without listening.
- *
- * Enhanced with session-based authentication (issue #2):
- * - httpOnly session cookies
- * - Session extraction middleware that populates ctx.user
- * - REST endpoints for login/logout (easier cookie handling than tRPC)
  */
 export function buildServer(env: Env) {
   const app = Fastify({
@@ -47,13 +42,11 @@ export function buildServer(env: Env) {
     done();
   });
 
-  // Register cookie plugin for httpOnly session cookies
   app.register(fastifyCookie, {
     secret: env.SESSION_SECRET,
     hook: "onRequest",
   });
 
-  // Session service for validating session tokens
   const sessionService = new SessionService(prisma, env.SESSION_MAX_AGE_SECONDS);
   const authProvider = new PasswordAuthProvider(prisma);
 
@@ -70,7 +63,6 @@ export function buildServer(env: Env) {
       req.authenticatedUser = user;
       req.sessionToken = sessionToken;
     } else {
-      // Invalid/expired session - clear the cookie
       reply.clearCookie("session");
     }
   });
@@ -83,14 +75,12 @@ export function buildServer(env: Env) {
     }
     const { username, password } = parsed.data;
 
-    // Authenticate user
     const userId = await authProvider.authenticate({ username, password });
 
     if (!userId) {
       return reply.code(401).send({ error: "Invalid username or password" });
     }
 
-    // Create session
     const token = await sessionService.createSession(userId);
     const user = await sessionService.validateSession(token);
 
@@ -98,7 +88,6 @@ export function buildServer(env: Env) {
       return reply.code(500).send({ error: "Failed to create session" });
     }
 
-    // Set httpOnly cookie
     reply.setCookie("session", token, {
       httpOnly: true,
       secure: env.NODE_ENV === "production",
@@ -121,7 +110,6 @@ export function buildServer(env: Env) {
     };
   });
 
-  // REST endpoint for logout
   app.post("/api/auth/logout", async (req, reply) => {
     // Only set by the session hook when the cookie held a *valid* session;
     // deleting a stale token is a no-op anyway.
@@ -132,7 +120,7 @@ export function buildServer(env: Env) {
     return { success: true };
   });
 
-  // File download for 导出工单 (issue #34) — REST like the auth endpoints.
+  // File download for 导出工单 — REST like the auth endpoints.
   registerTicketExportRoute(app);
 
   // No CORS plugin: the web app talks to the API same-origin — via the Vite
@@ -154,7 +142,7 @@ export function buildServer(env: Env) {
   // Plain HTTP liveness endpoint for infra/load-balancer probes.
   app.get("/healthz", () => ({ status: "ok" }));
 
-  // In production the API also serves the built SPA (ADR 0007): a single
+  // In production the API also serves the built SPA: a single
   // container fronts both the tRPC API and the static frontend, behind the
   // host's nginx. In dev this is skipped — Vite owns the dev server.
   if (env.NODE_ENV === "production") {

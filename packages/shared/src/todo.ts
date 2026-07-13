@@ -1,14 +1,13 @@
 import { z } from "zod";
 
 /**
- * 轨 2 我的待办 contracts (issue #30, PRD §3.7/§3.8, ADR 0004): time-derived
- * alerts computed at read time against the viewer's own tickets — never
- * stored, so unlike 轨 1 there is no table shape here, only the alert
- * vocabulary the API emits and the web renders.
+ * 轨 2 我的待办 contracts: time-derived alerts computed at read time against
+ * the viewer's own tickets — never stored, so unlike 轨 1 there is no table
+ * shape here, only the alert vocabulary the API emits and the web renders.
  */
 
 export const TODO_ALERT_TYPES = [
-  /** 名下 assigned/processing 且尚无第一条 comment — 常驻待办 (PRD §3.8). */
+  /** 名下 assigned/processing 且尚无第一条 comment — 常驻待办. */
   "awaiting_first_response",
   /** 检查点将至而累计跟进未达标 (SLAPolicy follow_up_checkpoint). */
   "follow_up_checkpoint",

@@ -15,10 +15,9 @@ import { zhCN } from "date-fns/locale";
 import { Calendar as CalendarIcon } from "lucide-react";
 
 /**
- * 日期 + 时/分 picker (extracted from the ticket-creation form, issue #26).
- * Controlled around a partial LOCAL datetime string "YYYY-MM-DDTHH:mm"
- * ("" = unset) — the submit handler owns the conversion to an absolute
- * instant, mirroring how feedbackTime is held until submit.
+ * 日期 + 时/分 picker. Controlled around a partial LOCAL datetime string
+ * "YYYY-MM-DDTHH:mm" ("" = unset) — the submit handler owns the conversion
+ * to an absolute instant, mirroring how feedbackTime is held until submit.
  */
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));

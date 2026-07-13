@@ -21,10 +21,9 @@ import {
 import { requirePermission, router } from "../trpc";
 
 /**
- * 角色管理 routes (issue #32): thin wrappers per ADR 0006 — validation via the
- * shared Zod schemas, one permission point per operation exactly as PRD §5.1.4
- * assigns them (role.view / role.create / role.edit / role.delete /
- * role.edit_permission), business logic in role.service.
+ * 角色管理 routes: thin wrappers — validation via the shared Zod schemas,
+ * one permission point per operation (role.view / role.create / role.edit /
+ * role.delete / role.edit_permission), business logic in role.service.
  */
 
 const deps = { prisma, clock: systemClock };

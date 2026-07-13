@@ -5,10 +5,10 @@ import { listSlaPolicies, updateSlaPolicy } from "../services/sla.service";
 import { requirePermission, router } from "../trpc";
 
 /**
- * SLA 策略配置 routes (issue #33): thin wrappers per ADR 0006 — the shared Zod
- * schema is the whole write contract (positive numbers, advanceMinutes below
- * its checkpoint), business logic in sla.service. sla.view / sla.edit are held
- * only by the 管理员 preset (PRD §3.8 "管理员可编辑").
+ * SLA 策略配置 routes: thin wrappers — the shared Zod schema is the whole
+ * write contract (positive numbers, advanceMinutes below its checkpoint),
+ * business logic in sla.service. sla.view / sla.edit are held only by the
+ * 管理员 preset.
  */
 
 const deps = { prisma, clock: systemClock };

@@ -11,14 +11,14 @@ import {
 import { ticketDisplayStatusSchema } from "./ticket-status";
 
 /**
- * Manual ticket-creation contract (PRD §3.1), shared by the web form
- * (react-hook-form resolver) and the API mutation input — one schema, both
- * ends (ADR 0006). System-derived fields (workOrderNumber, source, creatorId,
- * dueAt, followUpFrequency, firstResponseRequirement, status…) are stamped
+ * Manual ticket-creation contract, shared by the web form (react-hook-form
+ * resolver) and the API mutation input — one schema, both ends.
+ * System-derived fields (workOrderNumber, source, creatorId, dueAt,
+ * followUpFrequency, firstResponseRequirement, status…) are stamped
  * server-side and deliberately absent here.
  *
- * Every user-entered field is optional (issue #43): a fully blank form is a
- * valid submission, and anything unfilled persists as NULL — "unknown", never
+ * Every user-entered field is optional: a fully blank form is a valid
+ * submission, and anything unfilled persists as NULL — "unknown", never
  * "" or an assumed value. hasContacted unfilled means 未知, not false.
  */
 
@@ -61,7 +61,7 @@ export const ticketCreateInputSchema = z.object({
   contactId: optionalText(200),
   category: optionalEnum(ticketCategorySchema),
   complaintLevel: optionalEnum(complaintLevelSchema),
-  /** 独立自由标签，默认空（PRD §3.1.5）；"" 来自未选择的下拉框。 */
+  /** 独立自由标签，默认空；"" 来自未选择的下拉框。 */
   priority: optionalEnum(prioritySchema),
 });
 
@@ -71,12 +71,12 @@ export type TicketCreateInput = z.input<typeof ticketCreateInputSchema>;
 export type TicketCreateData = z.output<typeof ticketCreateInputSchema>;
 
 /**
- * 编辑工单 contract (issue #28, PRD §4.5): every basic-info field — the same
- * set the creation form collects — editable in any status, 已完结 included.
- * status is deliberately absent: it moves only through lifecycle actions, and
- * editing can never reopen a completed ticket. System-derived fields (dueAt,
- * followUpFrequency, firstResponseRequirement…) stay server-stamped — a
- * complaintLevel change recomputes them from the new level's SLA policy.
+ * 编辑工单 contract: every basic-info field — the same set the creation form
+ * collects — editable in any status, 已完结 included. status is deliberately
+ * absent: it moves only through lifecycle actions, and editing can never
+ * reopen a completed ticket. System-derived fields (dueAt, followUpFrequency,
+ * firstResponseRequirement…) stay server-stamped — a complaintLevel change
+ * recomputes them from the new level's SLA policy.
  */
 export const ticketEditInputSchema = ticketCreateInputSchema.extend({
   ticketId: z.string().min(1),
@@ -88,9 +88,9 @@ export type TicketEditInput = z.input<typeof ticketEditInputSchema>;
 export type TicketEditData = z.output<typeof ticketEditInputSchema>;
 
 /**
- * 删除工单 contract (issue #28, PRD §4.5): a dangerous, UI-double-confirmed
- * soft delete — the server stamps deletedAt, nothing is physically removed,
- * and this phase offers no restore.
+ * 删除工单 contract: a dangerous, UI-double-confirmed soft delete — the
+ * server stamps deletedAt, nothing is physically removed, and this phase
+ * offers no restore.
  */
 export const ticketDeleteInputSchema = z.object({
   ticketId: z.string().min(1),
@@ -98,10 +98,10 @@ export const ticketDeleteInputSchema = z.object({
 export type TicketDeleteInput = z.infer<typeof ticketDeleteInputSchema>;
 
 /**
- * Assignment contracts (issue #24, PRD §4.3). Only the target is caller-chosen:
- * assignedAt / status / the ProcessLog entries are derived server-side, and
- * dueAt is never touched (ADR 0002). status is deliberately absent everywhere —
- * it moves only through lifecycle actions.
+ * Assignment contracts. Only the target is caller-chosen: assignedAt / status
+ * / the ProcessLog entries are derived server-side, and dueAt is never
+ * touched. status is deliberately absent everywhere — it moves only through
+ * lifecycle actions.
  */
 export const ticketAssignInputSchema = z.object({
   ticketId: z.string().min(1),
@@ -112,7 +112,6 @@ export type TicketAssignInput = z.infer<typeof ticketAssignInputSchema>;
 /** 批量分配单次上限（即列表单页上限）；列表多选与 API 校验共用这一个数。 */
 export const BATCH_ASSIGN_LIMIT = 100;
 
-/** 批量分配：多选工单统一分配给同一责任人。 */
 export const ticketBatchAssignInputSchema = z.object({
   ticketIds: z
     .array(z.string().min(1))
@@ -123,10 +122,10 @@ export const ticketBatchAssignInputSchema = z.object({
 export type TicketBatchAssignInput = z.infer<typeof ticketBatchAssignInputSchema>;
 
 /**
- * 按排班自动分配 (issue #31, PRD §4.3.4): supervisor-triggered, one or many
- * UNASSIGNED tickets. No assignee in the input — the system picks, per ticket,
- * the least-loaded on-duty person of the ticket's channel; a channel with
- * nobody on duty leaves its tickets unassigned and is reported back.
+ * 按排班自动分配: supervisor-triggered, one or many UNASSIGNED tickets. No
+ * assignee in the input — the system picks, per ticket, the least-loaded
+ * on-duty person of the ticket's channel; a channel with nobody on duty
+ * leaves its tickets unassigned and is reported back.
  */
 export const ticketAutoAssignInputSchema = z.object({
   ticketIds: z
@@ -137,10 +136,10 @@ export const ticketAutoAssignInputSchema = z.object({
 export type TicketAutoAssignInput = z.infer<typeof ticketAutoAssignInputSchema>;
 
 /**
- * 添加跟进 contract (issue #26, PRD §4.4): one remark per actual customer
- * contact, with an optional next-contact plan. contactCount / processingResult
- * / nextContactTime and the assigned → processing transition are all derived
- * server-side from this single action (PRD §3.1.6 单点维护).
+ * 添加跟进 contract: one remark per actual customer contact, with an optional
+ * next-contact plan. contactCount / processingResult / nextContactTime and
+ * the assigned → processing transition are all derived server-side from this
+ * single action.
  */
 export const ticketAddCommentInputSchema = z.object({
   ticketId: z.string().min(1),
@@ -162,10 +161,10 @@ export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
 export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
 
 /**
- * 完结工单 contract (issue #27, PRD §4.4): the mandatory completion reason —
- * one of the 12 封闭枚举, no "其他" (PRD §9.1) — plus the 完结备注 that becomes
- * the resolve log's remark. completionTime / the → completed transition and
- * its ProcessLog pair are derived server-side; completed is a 终态.
+ * 完结工单 contract: the mandatory completion reason — one of the 12 封闭枚举,
+ * no "其他" — plus the 完结备注 that becomes the resolve log's remark.
+ * completionTime / the → completed transition and its ProcessLog pair are
+ * derived server-side; completed is a 终态.
  */
 export const ticketResolveInputSchema = z.object({
   ticketId: z.string().min(1),
@@ -174,16 +173,16 @@ export const ticketResolveInputSchema = z.object({
 });
 export type TicketResolveInput = z.infer<typeof ticketResolveInputSchema>;
 
-/** List sort keys (PRD §2.1): 创建时间 / 处理时限. */
+/** List sort keys: 创建时间 / 处理时限. */
 export const TICKET_SORT_FIELDS = ["createdAt", "dueAt"] as const;
 export const ticketSortFieldSchema = z.enum(TICKET_SORT_FIELDS);
 export type TicketSortField = (typeof TICKET_SORT_FIELDS)[number];
 
 /**
- * Ticket-list query contract (issue #23), shared by the list page's filter
- * state and the API input — one schema, both ends (ADR 0006). The 状态 filter
- * accepts all 6 display statuses: computed ones are resolved to SQL predicates
- * server-side (ADR 0001), never stored.
+ * Ticket-list query contract, shared by the list page's filter state and the
+ * API input — one schema, both ends. The 状态 filter accepts all 6 display
+ * statuses: computed ones are resolved to SQL predicates server-side, never
+ * stored.
  */
 export const ticketListInputSchema = z.object({
   status: ticketDisplayStatusSchema.optional(),
@@ -208,15 +207,14 @@ export type TicketListInput = z.input<typeof ticketListInputSchema>;
 /** Server-side shape (after defaults/transforms) — what the service receives. */
 export type TicketListQuery = z.output<typeof ticketListInputSchema>;
 
-/** 导出文件格式 (issue #34, PRD §2.1): Excel 或 CSV. */
 export const TICKET_EXPORT_FORMATS = ["xlsx", "csv"] as const;
 export const ticketExportFormatSchema = z.enum(TICKET_EXPORT_FORMATS);
 export type TicketExportFormat = (typeof TICKET_EXPORT_FORMATS)[number];
 
 /**
- * 导出工单 contract (issue #34): the list's filter/sort set — pagination
- * deliberately absent, an export always covers *every* matching row — plus the
- * file format and the viewer's IANA time zone. Date columns are formatted
+ * 导出工单 contract: the list's filter/sort set — pagination deliberately
+ * absent, an export always covers *every* matching row — plus the file
+ * format and the viewer's IANA time zone. Date columns are formatted
  * server-side, so the client sends its zone to keep the file consistent with
  * what the list page shows (local-time display convention); absent or invalid
  * zones fall back to UTC rather than failing the download.

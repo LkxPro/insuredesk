@@ -10,12 +10,12 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Issue #29 数据看板 page: the 9 metric cards, the channel table, the Top-10
- * 考核表, and the own-scope hint all render from dashboard.stats. The tRPC
- * link gets a faked `fetch` (same seam as TicketsPage.list.test.tsx), so the
- * page runs against the real procedure pipeline shape without a server. All
- * 口径 are server-side and covered by the API integration tests; here the
- * payload is canned and only the rendering is under test.
+ * 数据看板 page: the 9 metric cards, the channel table, the Top-10 考核表,
+ * and the own-scope hint all render from dashboard.stats. The tRPC link gets
+ * a faked `fetch` (same seam as TicketsPage.list.test.tsx), so the page runs
+ * against the real procedure pipeline shape without a server. All 口径 are
+ * server-side and covered by the API integration tests; here the payload is
+ * canned and only the rendering is under test.
  */
 
 const auth = vi.hoisted(() => ({
@@ -112,7 +112,7 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = new URL(String(input));
   const paths = (url.pathname.split("/api/trpc/")[1] ?? "").split(",");
   const body = paths.map((path) => {
-    // The AppLayout bell (issue #25) polls notification.list in the same batch.
+    // The AppLayout bell polls notification.list in the same batch.
     if (path === "notification.list") {
       return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
     }

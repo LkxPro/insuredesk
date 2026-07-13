@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { PermissionChecklist } from "./PermissionChecklist";
 
 /**
- * 新增角色 (role.create): a name plus the PRD §5.1 checklist. An empty
+ * 新增角色 (role.create): a name plus the permission checklist. An empty
  * permission set is allowed — such a role simply sees nothing until
  * configured (the server treats permissions as data, not a minimum).
  */

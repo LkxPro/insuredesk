@@ -11,7 +11,7 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * The high-value integration test: spin up a real Postgres, run `migrate deploy`
  * against it, then drive the app's own Prisma client. Proves the migrate
  * pipeline, connectivity, and the client wiring end-to-end — the things that
- * mock/SQLite substitutes cannot faithfully exercise (see ADR 0006 test strategy).
+ * mock/SQLite substitutes cannot faithfully exercise.
  */
 describe("postgres connectivity + migration", () => {
   let container: StartedPostgreSqlContainer;

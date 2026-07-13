@@ -30,17 +30,16 @@ import { Controller, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 
 /**
- * The shared basic-info form body: one field set serving both 新建工单
- * (issue #22) and 编辑工单 (issue #28) — the PRD makes them the same field
- * list by design (§4.5 所有基本信息字段均可编辑), so the dialogs share this
- * component instead of two drifting copies.
+ * The shared basic-info form body: one field set serving both 新建工单 and
+ * 编辑工单 — they are the same field list by design (所有基本信息字段均可编辑),
+ * so the dialogs share this component instead of two drifting copies.
  *
- * Every field is optional (issue #43): a fully blank form submits cleanly and
- * unfilled fields reach the server as null. No label says 选填 — optional is
- * the rule, not the exception. Validation is the shared
- * ticketCreateInputSchema — the contract the API parses — with one form-side
- * deviation: feedbackTime is held as a local datetime string ("" = unfilled)
- * until submit, when the caller converts it to an absolute instant or null.
+ * Every field is optional: a fully blank form submits cleanly and unfilled
+ * fields reach the server as null. No label says 选填 — optional is the rule,
+ * not the exception. Validation is the shared ticketCreateInputSchema — the
+ * contract the API parses — with one form-side deviation: feedbackTime is
+ * held as a local datetime string ("" = unfilled) until submit, when the
+ * caller converts it to an absolute instant or null.
  */
 export const ticketFormSchema = ticketCreateInputSchema.extend({
   feedbackTime: z.string(),

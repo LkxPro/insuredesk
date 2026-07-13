@@ -10,10 +10,10 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 按排班自动分配 entry points (issue #31): the per-row 自动分配 action exists
- * only on 未分配 rows, the selection-bar button disables when the selection
- * contains assigned tickets, confirming fires ticket.autoAssign, and skipped
- * (no on-duty) tickets keep their selection for the manual fallback. Same
+ * 按排班自动分配 entry points: the per-row 自动分配 action exists only on
+ * 未分配 rows, the selection-bar button disables when the selection contains
+ * assigned tickets, confirming fires ticket.autoAssign, and skipped (no
+ * on-duty) tickets keep their selection for the manual fallback. Same
  * faked-fetch tRPC pipeline and useAuth-seam mock as TicketsPage.assign.test.
  */
 

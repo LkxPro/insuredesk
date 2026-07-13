@@ -70,8 +70,8 @@ import { TicketCreateDialog } from "./TicketCreateDialog";
 import { downloadTicketExport } from "./ticket-export";
 
 /**
- * 工单管理 list (issue #23): filters (状态 incl. the computed statuses, 渠道,
- * 投诉等级, 来源), 工单号/客户姓名/保单号 search, 创建时间/处理时限 sort, and
+ * 工单管理 list: filters (状态 incl. the computed statuses, 渠道, 投诉等级,
+ * 来源), 工单号/客户姓名/保单号 search, 创建时间/处理时限 sort, and
  * pagination. All list state lives in the URL — same deep-link treatment as
  * /tickets/new — and is parsed through the shared ticketListInputSchema, so an
  * edited query string degrades to defaults instead of crashing. Data scope is
@@ -80,14 +80,14 @@ import { downloadTicketExport } from "./ticket-export";
  * Creation stays a modal dialog over this page, driven by the /tickets/new
  * route (`createOpen`), shown only to holders of ticket.create.
  *
- * Assignment (issue #24) adds two permission-gated entry points: a per-row
- * 分配/改派 action (ticket.assign) and multi-select checkboxes feeding 批量分配
+ * Assignment adds two permission-gated entry points: a per-row 分配/改派
+ * action (ticket.assign) and multi-select checkboxes feeding 批量分配
  * (ticket.batch_assign). Selection is kept as id → AssignTarget so it survives
  * paging; completed tickets are terminal and not selectable.
  *
- * 按排班自动分配 (issue #31) rides the same two surfaces, for 未分配 tickets
- * only: a per-row 自动分配 action and a selection-bar button that lights up
- * when every selected ticket is unassigned. The system picks the assignee, so
+ * 按排班自动分配 rides the same two surfaces, for 未分配 tickets only: a
+ * per-row 自动分配 action and a selection-bar button that lights up when
+ * every selected ticket is unassigned. The system picks the assignee, so
  * both routes go through the confirm-only AutoAssignDialog.
  */
 
@@ -123,7 +123,7 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
 /** Radix Select rejects empty item values, so 全部 rides a sentinel. */
 const ALL = "all";
 
-/** The one placeholder for 未填写 cells — unknown, not empty (issue #43). */
+/** The one placeholder for 未填写 cells — unknown, not empty. */
 function Unknown() {
   return <span className="text-muted-foreground">—</span>;
 }
@@ -282,10 +282,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const allPageSelected =
     selectableItems.length > 0 && selectableItems.every((ticket) => selected.has(ticket.id));
 
-  // 按排班自动分配 only ever targets 未分配 tickets (PRD §4.3.4)
+  // 按排班自动分配 only ever targets 未分配 tickets
   const selectedHasAssigned = [...selected.values()].some((target) => target.assigneeId !== null);
 
-  /** 导出当前筛选结果 (issue #34) — the server re-applies scope and filters. */
+  /** 导出当前筛选结果 — the server re-applies scope and filters. */
   async function handleExport(format: TicketExportFormat) {
     setExporting(true);
     try {

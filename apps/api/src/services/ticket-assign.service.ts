@@ -13,17 +13,17 @@ import { findOnDutyUserIdsByChannel } from "./schedule.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * Assignment domain logic (issues #24/#31, PRD §4.3): first assignment, 改派,
- * 批量分配, and 按排班自动分配. Pure service layer per ADR 0006 — the router
- * maps the domain errors below to transport codes.
+ * Assignment domain logic: first assignment, 改派, 批量分配, and
+ * 按排班自动分配. Pure service layer — the router maps the domain errors
+ * below to transport codes.
  *
  * Invariants enforced here:
  * - dueAt is never written — it is fixed at creation and assignment cannot
- *   move it (ADR 0002); it is only read to annotate the 改派 notification's
- *   remaining time (issue #25)
+ *   move it; it is only read to annotate the 改派 notification's
+ *   remaining time
  * - assignedAt is stamped on FIRST assignment only; 改派 keeps it
  * - status moves only through this lifecycle action (unassigned → assigned),
- *   with the mandatory separate status_change log entry (PRD §3.2)
+ *   with the mandatory separate status_change log entry
  */
 
 /** Ticket invisible to the actor, soft-deleted, or plain missing. */
@@ -109,7 +109,7 @@ async function applyAssignment(
     where: { id: ticket.id },
     data: isFirstAssignment
       ? // 首次分配: enters the assignee's queue and leaves 未分配 — dueAt is
-        // deliberately absent (ADR 0002)
+        // deliberately absent
         { assigneeId: assignee.id, assignedAt: now, status: TicketStatus.Assigned }
       : // 改派: only the owner changes; assignedAt keeps the FIRST assignment
         { assigneeId: assignee.id },
@@ -122,7 +122,7 @@ async function applyAssignment(
     at: now,
   };
 
-  // from/to are name snapshots (PRD §3.2): who it was at this moment, immune
+  // from/to are name snapshots: who it was at this moment, immune
   // to later renames. First assignment has no predecessor → from stays null.
   await tx.processLog.create({
     data: {
@@ -134,7 +134,7 @@ async function applyAssignment(
     },
   });
 
-  // 轨 1 收件箱 (issue #25, ADR 0004): notify the NEW owner synchronously,
+  // 轨 1 收件箱: notify the NEW owner synchronously,
   // inside this same transaction. Single, batch, and 按排班自动分配 all funnel
   // through applyAssignment, so this is THE one write path — and an aborted
   // assignment leaves no orphaned notification.
@@ -147,7 +147,7 @@ async function applyAssignment(
   });
 
   if (isFirstAssignment) {
-    // 状态变更一律独立记录 (PRD §3.2): the transition gets its own entry,
+    // 状态变更一律独立记录: the transition gets its own entry,
     // created after the assign log so the timeline reads cause → effect
     await tx.processLog.create({
       data: {
@@ -164,7 +164,7 @@ async function applyAssignment(
 }
 
 /**
- * Assign or reassign one ticket (PRD §4.3 手动分配/改派). The lookup carries
+ * Assign or reassign one ticket (手动分配/改派). The lookup carries
  * the viewer data scope: an assigner without ticket.view_all can only act on
  * tickets they could see anyway, surfaced as not-found (no existence leak).
  */
@@ -195,7 +195,7 @@ export async function assignTicket(
 }
 
 /**
- * 批量分配 (PRD §4.3): every selected ticket goes to the same assignee under
+ * 批量分配: every selected ticket goes to the same assignee under
  * the single-assignment rules, in ONE transaction — a completed or invisible
  * ticket aborts the whole batch (a partial batch would leave an ambiguous
  * audit trail, and the error names the offending ticket so the operator can
@@ -247,7 +247,7 @@ export async function batchAssignTickets(
 }
 
 /**
- * 按排班自动分配 (issue #31, PRD §4.3.4): supervisor-triggered on one or many
+ * 按排班自动分配: supervisor-triggered on one or many
  * 未分配 tickets — never fired by ticket creation. Per ticket, the candidate
  * set is the channel's 当前在岗值班人 (schedule.service on-duty predicate);
  * the least-loaded candidate wins (在手 = assigned + processing count), ties
@@ -334,9 +334,9 @@ export async function autoAssignTicketsBySchedule(
 
     for (const ticket of ordered) {
       if (ticket.channel === null) {
-        // 未填写渠道 (issue #43): 排班按渠道匹配, so there is no candidate set
+        // 未填写渠道: 排班按渠道匹配, so there is no candidate set
         // to draw from — stay unassigned, report why. Manual assignment is
-        // channel-independent and remains available (PRD §4.3, #42).
+        // channel-independent and remains available.
         skipped.push({
           ticketId: ticket.id,
           workOrderNumber: ticket.workOrderNumber,
@@ -347,7 +347,7 @@ export async function autoAssignTicketsBySchedule(
       }
       const onDuty = onDutyByChannel.get(ticket.channel);
       if (!onDuty || onDuty.size === 0) {
-        // PRD §4.3 边界: nobody on duty for this channel → leave it and tell
+        // Nobody on duty for this channel → leave it and tell
         // the supervisor to assign by hand
         skipped.push({
           ticketId: ticket.id,
@@ -369,7 +369,7 @@ export async function autoAssignTicketsBySchedule(
           tied.push(userId);
         }
       }
-      // 平手随机取一 (PRD §4.3.4)
+      // 平手随机取一
       const chosenId = tied[Math.floor(Math.random() * tied.length)] as string;
       const assignee = { id: chosenId, name: nameById.get(chosenId) ?? "" };
 

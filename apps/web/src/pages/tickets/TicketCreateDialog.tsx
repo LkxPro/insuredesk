@@ -19,10 +19,10 @@ import { toast } from "sonner";
 import { TicketFormFields, type TicketFormValues, ticketFormSchema } from "./TicketFormFields";
 
 /**
- * Manual ticket creation (issue #22), presented as a modal dialog over 工单管理
- * rather than a separate page. The field set and validation live in the shared
- * TicketFormFields (also serving 编辑工单, issue #28); this dialog owns the
- * blank defaults and the ticket.create submit.
+ * Manual ticket creation, presented as a modal dialog over 工单管理 rather
+ * than a separate page. The field set and validation live in the shared
+ * TicketFormFields (also serving 编辑工单); this dialog owns the blank
+ * defaults and the ticket.create submit.
  */
 export function TicketCreateDialog({
   open,
@@ -35,7 +35,7 @@ export function TicketCreateDialog({
 
   const form = useForm<TicketFormValues>({
     resolver: zodResolver(ticketFormSchema),
-    // Everything optional (issue #43): a fully blank dialog is submittable.
+    // Everything optional: a fully blank dialog is submittable.
     defaultValues: { feedbackTime: "", hasContacted: null, priority: "" },
   });
 

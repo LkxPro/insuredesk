@@ -3,8 +3,8 @@ import { TICKET_STATUS_LABELS, type TicketDisplayStatus } from "@insuredesk/shar
 
 /**
  * Status badge shared by the list and detail pages, keyed on the *display*
- * status (ADR 0001) — the computed pending_timeout/overdue tints included, so
- * every surface colors a status the same way.
+ * status — the computed pending_timeout/overdue tints included, so every
+ * surface colors a status the same way.
  */
 
 /** Status color coding on the shared Badge; tints, not solid fills. */

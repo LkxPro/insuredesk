@@ -37,7 +37,7 @@ export function createContext({ req }: CreateFastifyContextOptions): Context {
 
 const t = initTRPC.context<Context>().create({
   // Standardize Zod validation failures: every error response carries a
-  // field-level `zodError` alongside the default shape (ADR 0006 error handling).
+  // field-level `zodError` alongside the default shape.
   errorFormatter({ shape, error }) {
     return {
       ...shape,

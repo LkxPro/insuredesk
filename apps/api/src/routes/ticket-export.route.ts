@@ -5,13 +5,12 @@ import { prisma } from "../db";
 import { exportTickets } from "../services/ticket-export.service";
 
 /**
- * 导出工单 download endpoint (issue #34). REST rather than tRPC because the
- * response is a file, not JSON — same reasoning as the auth endpoints, and
- * exactly the "REST reuses the same service + Zod schema" seam ADR 0006
- * reserves. The session hook has already populated req.authenticatedUser, so
- * the guard order mirrors the tRPC middlewares: 401 unauthenticated, 403
- * without ticket.export (UI 无入口、API 拒绝), 400 on a query the shared
- * schema rejects.
+ * 导出工单 download endpoint. REST rather than tRPC because the response is
+ * a file, not JSON — same reasoning as the auth endpoints, and the route
+ * reuses the same service + Zod schema. The session hook has already
+ * populated req.authenticatedUser, so the guard order mirrors the tRPC
+ * middlewares: 401 unauthenticated, 403 without ticket.export (UI 无入口、
+ * API 拒绝), 400 on a query the shared schema rejects.
  */
 export function registerTicketExportRoute(app: FastifyInstance) {
   app.get("/api/tickets/export", async (req, reply) => {

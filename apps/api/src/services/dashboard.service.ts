@@ -13,16 +13,16 @@ import { overdueTicketWhere, pendingTimeoutTicketWhere } from "./ticket-display-
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * 数据看板 aggregation (issue #29, PRD §2.2): the 9 metric cards, the 4-channel
- * distribution, and the Top-10 跟进人考核表, all in one read.
+ * 数据看板 aggregation: the 9 metric cards, the 4-channel distribution, and
+ * the Top-10 跟进人考核表, all in one read.
  *
- * Every count shares one WHERE base: soft-delete exclusion (PRD §4.5) plus the
+ * Every count shares one WHERE base: soft-delete exclusion plus the
  * dashboard data scope — no `dashboard.view_all` → statistics narrow to the
  * viewer's own tickets. The 预警/超时 cards reuse the single-truth time
- * predicates from ticket-display-status.ts (ADR 0001), never restating them,
+ * predicates from ticket-display-status.ts, never restating them,
  * so the dashboard reddens at the same instant as the list and 我的待办.
  *
- * Two overdue 口径 coexist ON PURPOSE (ADR 0003):
+ * Two overdue 口径 coexist ON PURPOSE:
  * - 已超时 card  = 实时运营视角: in-flight past dueAt, drops out on completion
  * - 考核 超时单数 = 历史追责视角: ever overdue — in-flight past dueAt OR
  *   completed late (completionTime > dueAt)
@@ -36,7 +36,7 @@ const REGULATORY_CHANNEL = "监管" satisfies Channel;
 
 export interface DashboardAssigneeStats {
   assigneeId: string;
-  /** Current display name via JOIN — attribution follows the CURRENT assignee (ADR 0003). */
+  /** Current display name via JOIN — attribution follows the CURRENT assignee. */
   assigneeName: string;
   /** 名下工单总数 (非软删) — the 超时率 denominator. */
   totalCount: number;

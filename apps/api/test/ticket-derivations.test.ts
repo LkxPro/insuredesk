@@ -7,9 +7,9 @@ import {
 import { describe, expect, it } from "vitest";
 
 /**
- * Pure derivation helpers behind ticket creation and the detail read
- * (issue #22): SLA-config → human-readable requirement strings, and the
- * read-time display status (PRD §3.1.6). No database needed.
+ * Pure derivation helpers behind ticket creation and the detail read:
+ * SLA-config → human-readable requirement strings, and the read-time
+ * display status. No database needed.
  */
 
 describe("formatFirstResponseRequirement", () => {

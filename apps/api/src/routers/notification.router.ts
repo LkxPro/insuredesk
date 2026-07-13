@@ -10,12 +10,11 @@ import { listMyTodos } from "../services/todo.service";
 import { protectedProcedure, router } from "../trpc";
 
 /**
- * The 30s poll payload + 轨 1 read-state mutations (issues #25/#30, PRD §3.7).
- * ADR 0004 送达: one request merges both tracks — `list` carries the 轨 1
- * inbox slice AND the 轨 2 我的待办 computed at read time. Everything is
- * strictly personal — every query is pinned to the authenticated viewer, so
- * plain protectedProcedure is the whole guard: no permission point, no
- * data-scope variance.
+ * The 30s poll payload + 轨 1 read-state mutations. One request merges both
+ * tracks — `list` carries the 轨 1 inbox slice AND the 轨 2 我的待办 computed
+ * at read time. Everything is strictly personal — every query is pinned to
+ * the authenticated viewer, so plain protectedProcedure is the whole guard:
+ * no permission point, no data-scope variance.
  */
 
 const deps = { prisma, clock: systemClock };
@@ -23,7 +22,7 @@ const deps = { prisma, clock: systemClock };
 export const notificationRouter = router({
   /**
    * The poll: latest 轨 1 notifications + unread count, and the 轨 2 todo
-   * list computed for this instant — one request per 30s tick (ADR 0004).
+   * list computed for this instant — one request per 30s tick.
    */
   list: protectedProcedure
     .input(notificationListInputSchema.default({}))

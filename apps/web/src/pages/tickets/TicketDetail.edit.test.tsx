@@ -10,7 +10,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Issue #28 detail-page entry points: 编辑 exists for ticket.edit holders in
+ * Detail-page entry points: 编辑 exists for ticket.edit holders in
  * ANY status (已完结 included) and submits the full basic-info payload —
  * status not among the fields; 删除 exists only for ticket.delete holders,
  * fires nothing until the double-confirmation dialog's destructive confirm,
@@ -118,7 +118,7 @@ let detail: Record<string, unknown>;
 let calls: Array<{ path: string; input: unknown }>;
 
 function respond(path: string, input: unknown): unknown {
-  // The AppLayout bell (issue #25) polls notification.list in the same batch
+  // The AppLayout bell polls notification.list in the same batch
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }

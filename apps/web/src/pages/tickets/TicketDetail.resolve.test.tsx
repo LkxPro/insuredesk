@@ -10,7 +10,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Issue #27 完结工单 entry point on the detail page: the button exists only for
+ * 完结工单 entry point on the detail page: the button exists only for
  * holders of ticket.process on an in-flight (assigned/processing) ticket —
  * mirroring the API guards — and confirming fires ticket.resolve with the
  * mandatory completionStatus (12 种封闭枚举) plus the 完结备注. Same
@@ -117,7 +117,7 @@ let detail: Record<string, unknown>;
 let calls: Array<{ path: string; input: unknown }>;
 
 function respond(path: string, input: unknown): unknown {
-  // The AppLayout bell (issue #25) polls notification.list in the same batch
+  // The AppLayout bell polls notification.list in the same batch
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }

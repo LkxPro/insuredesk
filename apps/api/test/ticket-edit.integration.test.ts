@@ -11,10 +11,10 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Issue #28 acceptance tests against a real Postgres: 编辑工单 (any status,
+ * Acceptance tests against a real Postgres: 编辑工单 (any status,
  * 已完结 included; status untouchable; 改 complaintLevel 重算 dueAt off
  * createdAt + re-stamps the SLA requirement strings; one `edit` ProcessLog
- * per effective edit with the field diff in remark, PRD §4.5/§3.2) and 软删除
+ * per effective edit with the field diff in remark) and 软删除
  * (deletedAt tombstone; default list, detail and every lifecycle action
  * exclude it; ProcessLogs survive; no restore). Runs through
  * appRouter.createCaller — the same procedure pipeline (permission middleware
@@ -158,7 +158,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.priority).toBe("high");
 
       // 留痕: exactly one edit entry on top of create, remark carries the
-      // per-field diff (PRD §3.2 edit conventions), from/to stay empty
+      // per-field diff, from/to stay empty
       expect(detail.processLogs.map((log) => log.action)).toEqual(["create", "edit"]);
       const editLog = detail.processLogs.at(-1);
       expect(editLog).toMatchObject({
@@ -216,7 +216,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
   describe("改 complaintLevel = 改 SLA（重算 dueAt、切换要求）", () => {
     it("特急→一般 on a 70h-old ticket: dueAt = createdAt + 48h, immediately overdue", async () => {
       const ticketId = await createTicket({ complaintLevel: "特急投诉" });
-      // 特急: no deadline at all (PRD §3.8)
+      // 特急: no deadline at all
       expect((await manager().ticket.detail({ id: ticketId })).dueAt).toBeNull();
 
       // Backdate the ticket well past 一般's 48h window
@@ -226,7 +226,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       await manager().ticket.edit(editInput(ticketId, { complaintLevel: "一般投诉" }));
 
       const detail = await manager().ticket.detail({ id: ticketId });
-      // The creation formula re-runs off the UNCHANGED createdAt (PRD §4.5)
+      // The creation formula re-runs off the UNCHANGED createdAt
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 48 * HOUR_MS).toISOString());
       // 录入已超 48h → the ticket flips overdue the moment the edit commits
       expect(detail.displayStatus).toBe("overdue");
@@ -342,7 +342,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       await expect(
         observer().ticket.edit(editInput(ticketId, { customerName: "无权编辑" })),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      // 客服主管 deliberately lacks the dangerous ticket.delete (PRD §5.2)
+      // 客服主管 deliberately lacks the dangerous ticket.delete
       await expect(manager().ticket.delete({ ticketId })).rejects.toMatchObject({
         code: "FORBIDDEN",
       });

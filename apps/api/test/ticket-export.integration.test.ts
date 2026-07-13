@@ -13,7 +13,7 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Issue #34 acceptance tests for 导出工单, driven over the real HTTP surface
+ * Acceptance tests for 导出工单, driven over the real HTTP surface
  * (buildServer + app.inject with session cookies — the download is a REST
  * endpoint, not a tRPC procedure):
  *
@@ -22,7 +22,7 @@ const HOUR_MS = 60 * 60 * 1000;
  *   same filters — soft-deletes excluded, data scope applied (个人档只能
  *   导出本人名下), computed 状态 at export time (导出时刻口径)
  * - both formats round-trip (CSV parsed as text, XLSX re-read via exceljs)
- * - 导出不产生 ProcessLog (PRD §3.2)
+ * - 导出不产生 ProcessLog
  */
 describe("ticket export (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;
@@ -33,7 +33,7 @@ describe("ticket export (Testcontainers)", () => {
     roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
     users: { admin: User; manager: User; cs1: User; observer: User };
   };
-  /** ticket.export WITHOUT ticket.view_all — the 个人档 exporter (PRD §5.2). */
+  /** ticket.export WITHOUT ticket.view_all — the 个人档 exporter. */
   let scopedExporter: User;
   let demoPassword: string;
 

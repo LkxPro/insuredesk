@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 /**
- * 用户管理 contracts (issue #32, PRD §2.3/§5.1.3), shared by the 用户管理 page
- * and the API — one schema, both ends (ADR 0006). Accounts are never hard
- * deleted: `user.delete` maps to 禁用/启用 (the `active` flag), so history
- * (tickets, process logs, rosters) always keeps a live FK target.
+ * 用户管理 contracts, shared by the 用户管理 page and the API — one schema,
+ * both ends. Accounts are never hard deleted: `user.delete` maps to 禁用/启用
+ * (the `active` flag), so history (tickets, process logs, rosters) always
+ * keeps a live FK target.
  */
 
 /** Login handle — ASCII word charset so it survives URLs, logs, and seeds. */
@@ -25,7 +25,7 @@ const optionalEmailSchema = z
   .union([z.string().trim().email("邮箱格式不正确"), z.literal(""), z.null(), z.undefined()])
   .transform((value) => (value ? value : null));
 
-/** Pure organizational label — drives no permission or filter (PRD §5.2). */
+/** Pure organizational label — drives no permission or filter. */
 const optionalTeamSchema = z
   .string()
   .trim()

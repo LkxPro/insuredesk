@@ -9,11 +9,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Issue #24 acceptance tests against a real Postgres: first assignment vs
- * reassignment field behavior (dueAt/assignedAt invariants, ADR 0002), the
- * assign + status_change ProcessLog pair (order and content, PRD §3.2), batch
- * assignment as one all-or-nothing transaction, and permission/data-scope
- * rejections. Runs through appRouter.createCaller — the same procedure
+ * Acceptance tests against a real Postgres: first assignment vs reassignment
+ * field behavior (dueAt/assignedAt invariants), the assign + status_change
+ * ProcessLog pair (order and content), batch assignment as one all-or-nothing
+ * transaction, and permission/data-scope rejections. Runs through
+ * appRouter.createCaller — the same procedure
  * pipeline (permission middleware included) the HTTP adapter uses.
  */
 describe("ticket assignment (Testcontainers)", () => {
@@ -141,12 +141,12 @@ describe("ticket assignment (Testcontainers)", () => {
       expect(detail.assigneeName).toBe(seeded.users.cs1.name);
       expect(detail.status).toBe("assigned");
       expect(detail.assignedAt).not.toBeNull();
-      // dueAt anchored to createdAt at creation; assignment never recomputes it (ADR 0002)
+      // dueAt anchored to createdAt at creation; assignment never recomputes it
       expect(detail.dueAt).toBe(before.dueAt);
       expect(detail.createdAt).toBe(before.createdAt);
 
       // Two log entries beyond `create`, in order: assign first, then the
-      // separate status_change (PRD §3.2 记录生成规则), both at the same instant
+      // separate status_change, both at the same instant
       expect(detail.processLogs.map((log) => log.action)).toEqual([
         "create",
         "assign",
@@ -202,7 +202,7 @@ describe("ticket assignment (Testcontainers)", () => {
     it("keeps a processing ticket processing (no status_change on reassign)", async () => {
       const ticketId = await createTicket();
       await manager().ticket.assign({ ticketId, assigneeId: seeded.users.cs1.id });
-      // 处理中 arrives with the follow-up action (#26); simulate the state here
+      // 处理中 normally arrives with the follow-up action; simulate the state here
       await prisma.ticket.update({ where: { id: ticketId }, data: { status: "processing" } });
 
       await manager().ticket.assign({ ticketId, assigneeId: cs2.id });
@@ -431,10 +431,10 @@ describe("ticket assignment (Testcontainers)", () => {
   });
 
   describe("手动分配与排班相互独立 (#42)", () => {
-    // Regression guard for PRD §4.3 手动分配与排班相互独立: schedules must
-    // never gate manual/batch assignment or reassignment. cs2 has no roster
-    // rows at all; cs1's roster (set up below) covers a different channel —
-    // neither fact may block a manual pick.
+    // Regression guard for 手动分配与排班相互独立: schedules must never gate
+    // manual/batch assignment or reassignment. cs2 has no roster rows at all;
+    // cs1's roster (set up below) covers a different channel — neither fact
+    // may block a manual pick.
     const dutyDate = "2026-09-01";
 
     beforeAll(async () => {

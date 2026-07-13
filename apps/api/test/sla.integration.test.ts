@@ -18,11 +18,11 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Issue #33 acceptance tests against a real Postgres: the SLA 策略 editor is
+ * Acceptance tests against a real Postgres: the SLA 策略 editor is
  * admin-only (sla.view / sla.edit), a saved policy takes effect immediately —
  * the next created ticket stamps dueAt from the new overdueHours and the next
  * 待办 evaluation judges by the new rules — while existing tickets keep their
- * dueAt (re-stamped only on a complaintLevel edit, PRD §4.5), and the shared
+ * dueAt (re-stamped only on a complaintLevel edit), and the shared
  * Zod contract rejects malformed rules at the API boundary.
  */
 describe("SLA 策略配置 (Testcontainers)", () => {
@@ -122,7 +122,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     expect(seeded.roles.admin.permissions).toEqual(
       expect.arrayContaining(["sla.view", "sla.edit"]),
     );
-    // 访问与编辑限管理员 (issue #33 decision note): no other preset holds either
+    // 访问与编辑限管理员: no other preset holds either
     for (const role of [seeded.roles.csManager, seeded.roles.frontline, seeded.roles.readOnly]) {
       expect(role.permissions).not.toContain("sla.view");
       expect(role.permissions).not.toContain("sla.edit");
@@ -186,7 +186,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
         reminderRules: DEFAULT_SLA_POLICIES.一般投诉.reminderRules,
       });
 
-      // 存量工单 dueAt 不变 — dueAt 建单一次算定 (PRD §9.2)
+      // 存量工单 dueAt 不变 — dueAt 建单一次算定
       const existingAfter = await manager().ticket.detail({ id: existing.id });
       expect(existingAfter.dueAt).toBe(existingBefore.dueAt);
 

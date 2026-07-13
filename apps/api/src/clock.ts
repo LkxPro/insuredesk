@@ -1,5 +1,5 @@
 /**
- * Injectable clock (ADR 0006): every business time derivation and read-time
+ * Injectable clock: every business time derivation and read-time
  * predicate obtains "now" through a Clock, so tests can pin time. Pure
  * absolute-instant comparisons (e.g. session expiry) are exempt and may use
  * bare `new Date()`.

@@ -20,8 +20,6 @@ export function hashPassword(plain: string): Promise<string> {
  * Pluggable authentication abstraction. Current implementation supports password
  * login; future Feishu SSO will add a second implementation that calls the same
  * session-establishment path.
- *
- * See ADR 0006 for the pluggable auth design.
  */
 export interface AuthProvider {
   /**
@@ -45,7 +43,6 @@ export class PasswordAuthProvider implements AuthProvider {
 
     const { username, password } = credentials;
 
-    // Find active user by username
     const user = await this.prisma.user.findUnique({
       where: { username, active: true },
       select: { id: true, passwordHash: true },
@@ -55,7 +52,6 @@ export class PasswordAuthProvider implements AuthProvider {
       return null;
     }
 
-    // Verify password
     const valid = await bcrypt.compare(password, user.passwordHash);
     return valid ? user.id : null;
   }
@@ -187,23 +183,14 @@ export interface AuthenticatedUser {
   permissions: Permission[];
 }
 
-/**
- * Check if a user has a specific permission.
- */
 export function hasPermission(user: AuthenticatedUser, permission: Permission): boolean {
   return user.permissions.includes(permission);
 }
 
-/**
- * Check if a user has ALL of the given permissions.
- */
 export function hasAllPermissions(user: AuthenticatedUser, permissions: Permission[]): boolean {
   return permissions.every((p) => user.permissions.includes(p));
 }
 
-/**
- * Check if a user has ANY of the given permissions.
- */
 export function hasAnyPermission(user: AuthenticatedUser, permissions: Permission[]): boolean {
   return permissions.some((p) => user.permissions.includes(p));
 }

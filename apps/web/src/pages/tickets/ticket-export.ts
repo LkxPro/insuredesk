@@ -2,7 +2,7 @@ import type { TicketExportFormat, TicketListQuery } from "@insuredesk/shared";
 import { format as formatDate } from "date-fns";
 
 /**
- * 导出工单 client (issue #34): turns the list page's current query into the
+ * 导出工单 client: turns the list page's current query into the
  * GET /api/tickets/export download. Split from the page so the URL building —
  * the "按列表当前筛选条件导出" contract — is a pure, testable function.
  */

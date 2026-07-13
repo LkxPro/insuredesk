@@ -1,7 +1,7 @@
 /**
- * 数据看板 contract (issue #29, PRD §2.2): the 9 metric-card keys and their
- * display labels, single-sourced so the API payload shape, the web card grid,
- * and the integration tests can never disagree on what the 9 cards are.
+ * 数据看板 contract: the 9 metric-card keys and their display labels,
+ * single-sourced so the API payload shape, the web card grid, and the
+ * integration tests can never disagree on what the 9 cards are.
  *
  * The cards are deliberately NOT a partition (unlike the list's display-status
  * filter): the 4 status cards count the stored status, the 2 time cards are
@@ -35,5 +35,5 @@ export const DASHBOARD_METRIC_LABELS: Record<DashboardMetricKey, string> = {
   regulatory: "监管单",
 };
 
-/** 跟进人考核表条目上限 (PRD §2.2: Top 10). */
+/** 跟进人考核表条目上限. */
 export const DASHBOARD_TOP_ASSIGNEE_LIMIT = 10;

@@ -7,10 +7,10 @@ import { AppRoutes } from "./AppRoutes";
 import { ThemeProvider } from "./components/ThemeProvider";
 
 /**
- * App shell behavior per issue #21: sidebar menu entries follow the current
- * user's page permissions, and direct URL access without the page permission
- * bounces to /403. Auth state is mocked at the useAuth seam — these tests
- * exercise routing and rendering, not the session plumbing.
+ * App shell behavior: sidebar menu entries follow the current user's page
+ * permissions, and direct URL access without the page permission bounces
+ * to /403. Auth state is mocked at the useAuth seam — these tests exercise
+ * routing and rendering, not the session plumbing.
  */
 
 const auth = vi.hoisted(() => ({
@@ -31,35 +31,34 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-// The header bell (issue #25) polls over tRPC, and these routing tests mount
-// no tRPC provider — stub it at its seam, same spirit as the useAuth mock.
+// The header bell polls over tRPC, and these routing tests mount no tRPC
+// provider — stub it at its seam, same spirit as the useAuth mock.
 // Its real behavior is covered in NotificationBell.test.tsx.
 vi.mock("@/components/NotificationBell", () => ({
   NotificationBell: () => null,
 }));
 
-// Same for the 我的待办 indicator (issue #30), which shares that poll.
+// Same for the 我的待办 indicator, which shares that poll.
 // Its real behavior is covered in TodoBell.test.tsx.
 vi.mock("@/components/TodoBell", () => ({
   TodoBell: () => null,
 }));
 
-// Same treatment for the real 数据看板 page (issue #29): it queries
-// dashboard.stats on mount. Its real behavior is covered in
-// DashboardPage.test.tsx; here only the route/menu wiring matters.
+// Same treatment for the real 数据看板 page: it queries dashboard.stats on
+// mount. Its real behavior is covered in DashboardPage.test.tsx; here only
+// the route/menu wiring matters.
 vi.mock("@/pages/dashboard/DashboardPage", () => ({
   DashboardPage: () => <h1>数据看板</h1>,
 }));
 
-// And for the real 排班配置 page (issue #31): it queries schedule.list on
-// mount. Its real behavior is covered in SchedulePage.test.tsx.
+// And for the real 排班配置 page: it queries schedule.list on mount.
+// Its real behavior is covered in SchedulePage.test.tsx.
 vi.mock("@/pages/schedule/SchedulePage", () => ({
   SchedulePage: () => <h1>排班配置</h1>,
 }));
 
-// And for the real 用户管理 / 角色权限 pages (issue #32): they query
-// user.list / role.list on mount. Covered in UsersPage.test.tsx and
-// RolesPage.test.tsx.
+// And for the real 用户管理 / 角色权限 pages: they query user.list /
+// role.list on mount. Covered in UsersPage.test.tsx and RolesPage.test.tsx.
 vi.mock("@/pages/users/UsersPage", () => ({
   UsersPage: () => <h1>用户管理</h1>,
 }));

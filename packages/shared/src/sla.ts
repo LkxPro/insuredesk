@@ -2,11 +2,11 @@ import { z } from "zod";
 import { type ComplaintLevel, complaintLevelSchema, reminderRuleTypeSchema } from "./enums";
 
 /**
- * SLAPolicy contracts (PRD §3.8): one policy row per complaint level, holding
- * the first-response red-line, the overdue duration, and a typed list of
+ * SLAPolicy contracts: one policy row per complaint level, holding the
+ * first-response red-line, the overdue duration, and a typed list of
  * reminder rules. The rules are stored as JSONB and validated with these
- * schemas at every read/write boundary, so the database column can never hold
- * a shape the apps don't understand (ADR 0005).
+ * schemas at every read/write boundary, so the database column can never
+ * hold a shape the apps don't understand.
  */
 
 export const followUpCheckpointRuleSchema = z.object({
@@ -36,7 +36,7 @@ export type RollingFollowUpRule = z.infer<typeof rollingFollowUpRuleSchema>;
 export type ReminderRule = z.infer<typeof reminderRuleSchema>;
 
 /**
- * 管理员编辑器 payload (issue #33), one save per complaint level. Stricter than
+ * 管理员编辑器 payload, one save per complaint level. Stricter than
  * the storage schema on purpose: the read boundary tolerates
  * advanceMinutes = 0, but saving one would create a dead rule (the alert
  * window [checkpoint − advance, checkpoint) is empty), and an advance ≥ the
@@ -79,9 +79,8 @@ export interface SlaPolicyDefaults {
 }
 
 /**
- * Seed defaults per PRD §3.8 (admin-editable later; the editor is a separate
- * ticket). dueAt derives from overdueHours at ticket creation — never
- * hardcoded in ticket logic (PRD §9.2).
+ * Seed defaults (admin-editable). dueAt derives from overdueHours at ticket
+ * creation — never hardcoded in ticket logic.
  */
 export const DEFAULT_SLA_POLICIES: Record<ComplaintLevel, SlaPolicyDefaults> = {
   一般投诉: {
@@ -122,7 +121,7 @@ export const DEFAULT_SLA_POLICIES: Record<ComplaintLevel, SlaPolicyDefaults> = {
 
 /**
  * Human-readable 首响要求 stamped onto the ticket at creation, derived from the
- * selected level's SLA config (PRD §3.1.5 "由投诉等级的 SLA 配置带出").
+ * selected level's SLA config.
  */
 export function formatFirstResponseRequirement(firstResponseMinutes: number): string {
   return `${firstResponseMinutes}分钟内完成首次响应`;
@@ -130,7 +129,7 @@ export function formatFirstResponseRequirement(firstResponseMinutes: number): st
 
 /**
  * Human-readable 跟进频次要求 stamped onto the ticket at creation, derived from
- * the selected level's reminder rules (PRD §3.1.5).
+ * the selected level's reminder rules.
  */
 export function formatFollowUpFrequency(rules: readonly ReminderRule[]): string {
   return rules

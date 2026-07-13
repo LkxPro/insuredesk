@@ -16,13 +16,13 @@ import { toast } from "sonner";
 import type { AssignTarget } from "./AssignTicketDialog";
 
 /**
- * 按排班自动分配 confirm dialog (issue #31, PRD §4.3.4). Unlike the manual
- * dialog there is nothing to pick — the system chooses per ticket among the
- * channel's 当前在岗值班人, least 在手 first, ties at random — so this is a
- * confirm step that spells the algorithm out before firing. Tickets whose
- * channel has nobody on duty stay unassigned and come back as a per-channel
- * warning, telling the supervisor to assign those by hand (they also stay
- * selected, ready for a manual 批量分配).
+ * 按排班自动分配 confirm dialog. Unlike the manual dialog there is nothing
+ * to pick — the system chooses per ticket among the channel's 当前在岗值班人,
+ * least 在手 first, ties at random — so this is a confirm step that spells
+ * the algorithm out before firing. Tickets whose channel has nobody on duty
+ * stay unassigned and come back as a per-channel warning, telling the
+ * supervisor to assign those by hand (they also stay selected, ready for a
+ * manual 批量分配).
  */
 export function AutoAssignDialog({
   open,
@@ -48,9 +48,9 @@ export function AutoAssignDialog({
         toast.success(`已按排班自动分配 ${result.assigned.length} 个工单`);
       }
 
-      // PRD §4.3 边界: channels with nobody on duty are called out one by one;
-      // tickets with no channel at all (未填写, issue #43) get their own line —
-      // the fix is to fill in the channel or assign by hand.
+      // Channels with nobody on duty are called out one by one; tickets with
+      // no channel at all (未填写) get their own line — the fix is to fill in
+      // the channel or assign by hand.
       const skippedByChannel = new Map<string, number>();
       let missingChannelCount = 0;
       for (const entry of result.skipped) {

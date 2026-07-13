@@ -12,10 +12,9 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 /**
- * 轨 1 收件箱 bell (issue #25, PRD §3.7, ADR 0004): polls notification.list
- * every 30 seconds — unread-count red badge, a toast for each newly arrived
- * notification, and a popover inbox where clicking an entry marks it read and
- * jumps to the ticket detail.
+ * 轨 1 收件箱 bell: polls notification.list every 30 seconds — unread-count
+ * red badge, a toast for each newly arrived notification, and a popover inbox
+ * where clicking an entry marks it read and jumps to the ticket detail.
  */
 
 /** Server list-item shape, inferred from the router — one contract, no drift. */

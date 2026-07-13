@@ -2,11 +2,11 @@ import { z } from "zod";
 import { permissionSchema } from "./permissions";
 
 /**
- * 角色管理 contracts (issue #32, PRD §2.3/§5.1.4), shared by the 角色权限 page
- * and the API — one schema, both ends (ADR 0006). A role is a named set of
- * permission points; the four preset roles are the fixed PRD §5.2 baseline and
- * are fully protected (no rename / permission edit / delete) — admins create
- * custom roles instead of mutating the baseline.
+ * 角色管理 contracts, shared by the 角色权限 page and the API — one schema,
+ * both ends. A role is a named set of permission points; the four preset
+ * roles are a fixed baseline and are fully protected (no rename / permission
+ * edit / delete) — admins create custom roles instead of mutating the
+ * baseline.
  */
 
 export const roleNameSchema = z
@@ -17,7 +17,7 @@ export const roleNameSchema = z
 
 /**
  * The 权限点清单 checkbox payload: every entry must be a known permission
- * point (PRD §5.1) — unknown strings are rejected, duplicates collapsed.
+ * point — unknown strings are rejected, duplicates collapsed.
  */
 export const rolePermissionsSchema = z
   .array(permissionSchema)

@@ -13,18 +13,17 @@ import { useState } from "react";
 import { SlaPolicyEditDialog } from "./SlaPolicyEditDialog";
 
 /**
- * SLA 策略 (issue #33, PRD §3.8, ADR 0005): one card per complaint level —
- * 首响违约线 / 超时时长 (可空 = 不设超时) / typed reminder rules. sla.view
- * opens the page (route-guarded); the per-level 编辑 dialog appears only with
- * sla.edit, and the API re-checks regardless. A save is the whole rollout:
- * new tickets stamp dueAt from the new hours and the 待办 poll judges by the
- * new rules, while existing tickets keep their dueAt (re-stamped only on a
- * complaintLevel edit).
+ * SLA 策略: one card per complaint level — 首响违约线 / 超时时长 (可空 =
+ * 不设超时) / typed reminder rules. sla.view opens the page (route-guarded);
+ * the per-level 编辑 dialog appears only with sla.edit, and the API re-checks
+ * regardless. A save is the whole rollout: new tickets stamp dueAt from the
+ * new hours and the 待办 poll judges by the new rules, while existing tickets
+ * keep their dueAt (re-stamped only on a complaintLevel edit).
  */
 
 export type SlaPolicyRow = inferRouterOutputs<AppRouter>["sla"]["list"][number];
 
-/** One reminder rule as prose, matching the PRD §3.8 semantics. */
+/** One reminder rule as prose. */
 export function describeRule(rule: ReminderRule): string {
   return rule.type === "follow_up_checkpoint"
     ? `${rule.checkpointHours} 小时内累计跟进 ${rule.requiredCount} 次，提前 ${rule.advanceMinutes} 分钟提醒`

@@ -10,7 +10,7 @@ import { buildServer } from "../src/server";
  * The API doubles as the production web server: in production it serves the
  * built SPA (apps/web/dist) via @fastify/static, with unknown paths falling
  * back to index.html for client-side routing. In development it does none of
- * this — Vite owns the dev server (ADR 0007). These tests pin that boundary at
+ * this — Vite owns the dev server. These tests pin that boundary at
  * buildServer, using a throwaway dist dir so no real build is needed.
  */
 

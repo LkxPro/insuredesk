@@ -12,8 +12,8 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
 /**
- * Issue #30 acceptance tests against a real Postgres: 轨 2 我的待办 computed
- * at read time from SLAPolicy rows — nothing stored, no background job. Every
+ * Acceptance tests against a real Postgres: 轨 2 我的待办 computed at read
+ * time from SLAPolicy rows — nothing stored, no background job. Every
  * boundary is probed with a fixed clock through the service (the router runs
  * the system clock), mirroring the ticket-list computed-status test setup.
  * Tickets are created/assigned/commented/resolved through the real procedures
@@ -354,7 +354,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       expect(typesOf(onTheDot.items[0])).toEqual(["rolling_follow_up"]);
       expect(onTheDot.items[0]?.alerts[0]?.severity).toBe("critical");
 
-      // no dueAt → however far time goes, never due_soon/overdue (PRD §9.2)
+      // no dueAt → however far time goes, never due_soon/overdue
       const muchLater = await todosAt(owner, seeded.roles.frontline, plus(commentAt, 1000 * HOUR));
       expect(typesOf(muchLater.items[0])).toEqual(["rolling_follow_up"]);
       expect(muchLater.items[0]?.dueAt).toBeNull();

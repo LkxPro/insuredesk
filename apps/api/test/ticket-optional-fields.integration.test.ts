@@ -11,8 +11,8 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Issue #43 acceptance tests against a real Postgres: 新建工单 with no
- * required business fields. A fully blank submission succeeds; unfilled
+ * Acceptance tests against a real Postgres: 新建工单 with no required
+ * business fields. A fully blank submission succeeds; unfilled
  * fields persist as NULL (never ""); hasContacted unfilled means 未知, not
  * false; system fields (workOrderNumber/source/createdAt/creatorId/status)
  * still generate. 未定级 tickets carry no dueAt / SLA requirement strings and
@@ -197,7 +197,7 @@ describe("optional business fields (Testcontainers)", () => {
       await manager().ticket.edit(blankEditInput(created.id, { complaintLevel: "一般投诉" }));
 
       const detail = await manager().ticket.detail({ id: created.id });
-      // dueAt anchors to 录入时刻, not the edit instant (ADR 0002) — 70h old
+      // dueAt anchors to 录入时刻, not the edit instant — 70h old
       // against 一般's 48h window means instantly overdue.
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 48 * HOUR_MS).toISOString());
       expect(detail.displayStatus).toBe("overdue");

@@ -35,11 +35,10 @@ import {
 import { requireAnyPermission, requirePermission, router } from "../trpc";
 
 /**
- * Ticket routes (issues #22/#23/#24/#26/#27/#28/#31): manual creation, the
- * detail page read, the filterable list, assignment (manual, batch, and
- * by-schedule), follow-ups, resolution, editing, and soft deletion. Thin
- * wrappers per ADR 0006 — validation via the shared Zod schemas, RBAC via
- * requirePermission, business logic in the ticket services.
+ * Ticket routes: manual creation, the detail page read, the filterable list,
+ * assignment (manual, batch, and by-schedule), follow-ups, resolution,
+ * editing, and soft deletion. Thin wrappers — validation via the shared Zod
+ * schemas, RBAC via requirePermission, business logic in the ticket services.
  */
 
 const deps = { prisma, clock: systemClock };
@@ -83,7 +82,7 @@ export const ticketRouter = router({
 
   /**
    * Paged, filterable list for 工单管理. Data scope applies: without
-   * ticket.view_all the query is pinned to assigneeId = 本人 (PRD §5.2).
+   * ticket.view_all the query is pinned to assigneeId = 本人.
    */
   list: requirePermission("ticket.view")
     .input(ticketListInputSchema)
@@ -104,7 +103,7 @@ export const ticketRouter = router({
     }),
 
   /**
-   * Assign or reassign one ticket (issue #24). Guarded by ticket.assign —
+   * Assign or reassign one ticket. Guarded by ticket.assign —
    * the UI hides its entry points without it, and the API rejects regardless.
    */
   assign: requirePermission("ticket.assign")
@@ -118,7 +117,7 @@ export const ticketRouter = router({
     }),
 
   /**
-   * 添加跟进备注 (issue #26). Guarded by ticket.process; the data scope inside
+   * 添加跟进备注. Guarded by ticket.process; the data scope inside
    * keeps a frontline CS on their own tickets.
    */
   addComment: requirePermission("ticket.process")
@@ -142,7 +141,7 @@ export const ticketRouter = router({
     }),
 
   /**
-   * 完结工单 (issue #27). Guarded by ticket.process like follow-ups — 完结 is
+   * 完结工单. Guarded by ticket.process like follow-ups — 完结 is
    * part of 处理工单; the data scope inside keeps a frontline CS on their own
    * tickets.
    */
@@ -167,7 +166,7 @@ export const ticketRouter = router({
     }),
 
   /**
-   * 编辑工单基本信息 (issue #28) — any status, 已完结 included; status itself
+   * 编辑工单基本信息 — any status, 已完结 included; status itself
    * is not an editable field. Guarded by ticket.edit; the data scope inside
    * keeps an editor without ticket.view_all on their own tickets.
    */
@@ -192,7 +191,7 @@ export const ticketRouter = router({
     }),
 
   /**
-   * 删除工单 (issue #28): soft delete — dangerous, double-confirmed in the UI,
+   * 删除工单: soft delete — dangerous, double-confirmed in the UI,
    * guarded by ticket.delete. No restore this phase.
    */
   delete: requirePermission("ticket.delete")
@@ -209,7 +208,7 @@ export const ticketRouter = router({
     }),
 
   /**
-   * 批量分配: the whole selection to one assignee, all-or-nothing (issue #24).
+   * 批量分配: the whole selection to one assignee, all-or-nothing.
    */
   batchAssign: requirePermission("ticket.batch_assign")
     .input(ticketBatchAssignInputSchema)
@@ -222,7 +221,7 @@ export const ticketRouter = router({
     }),
 
   /**
-   * 按排班自动分配 (issue #31): the system picks per ticket, so the required
+   * 按排班自动分配: the system picks per ticket, so the required
    * authority mirrors the manual split — one ticket rides ticket.assign, a
    * multi-ticket selection additionally needs ticket.batch_assign.
    */

@@ -9,13 +9,12 @@ import { Prisma } from "@prisma/client";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * 排班 domain logic (issue #31, PRD §2.4/§3.6): the 排班日历 CRUD plus the
- * on-duty predicate that 按排班自动分配 (PRD §4.3.4) builds its candidate set
- * from. Pure service layer per ADR 0006 — the router maps the domain errors
- * below to transport codes.
+ * 排班 domain logic: the 排班日历 CRUD plus the on-duty predicate that
+ * 按排班自动分配 builds its candidate set from. Pure service layer — the
+ * router maps the domain errors below to transport codes.
  *
  * Time model: a schedule row is a wall-clock roster fact — date (YYYY-MM-DD)
- * and shift window (HH:mm) in the server's local timezone (ADR 0006 时间处理).
+ * and shift window (HH:mm) in the server's local timezone.
  * "当前在班" therefore renders clock.now() the same way and compares the
  * zero-padded strings lexicographically; no instants, no timezone math.
  */
@@ -115,7 +114,7 @@ export async function listSchedules({ prisma }: TicketServiceDeps, input: Schedu
 /**
  * Add one on-duty entry. The shift window is stamped here from SHIFT_TIMES —
  * callers pick only date/shift/channel/user, so a stored row can never
- * disagree with its shift's hours (PRD §3.6 班次配置).
+ * disagree with its shift's hours.
  */
 export async function createSchedule({ prisma }: TicketServiceDeps, input: ScheduleCreateData) {
   const user = await prisma.user.findUnique({

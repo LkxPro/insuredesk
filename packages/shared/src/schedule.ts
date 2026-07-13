@@ -2,13 +2,13 @@ import { z } from "zod";
 import { type Shift, channelSchema, shiftSchema } from "./enums";
 
 /**
- * 排班 contracts (issue #31, PRD §2.4/§3.6), shared by the 排班配置 page and
- * the API — one schema, both ends (ADR 0006). A schedule entry is a wall-clock
- * roster fact (date + shift window in the server's local timezone), so date
- * and times travel as plain strings, never as instants.
+ * 排班 contracts, shared by the 排班配置 page and the API — one schema, both
+ * ends. A schedule entry is a wall-clock roster fact (date + shift window in
+ * the server's local timezone), so date and times travel as plain strings,
+ * never as instants.
  */
 
-/** Shift windows (PRD §3.6 班次配置) — the single source for stamped times. */
+/** Shift windows — the single source for stamped times. */
 export const SHIFT_TIMES: Record<Shift, { startTime: string; endTime: string }> = {
   day: { startTime: "09:00", endTime: "18:00" },
   night: { startTime: "12:00", endTime: "21:00" },
