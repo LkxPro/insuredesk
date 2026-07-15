@@ -249,7 +249,7 @@ export function SchedulePage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="flex w-full max-w-full min-w-0 flex-1 flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">排班表</h1>
@@ -315,7 +315,7 @@ export function SchedulePage() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="rounded-md border">
+        <div className="max-w-full min-w-0 rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>

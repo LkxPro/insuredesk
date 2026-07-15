@@ -159,6 +159,24 @@ beforeEach(() => {
 });
 
 describe("schedule grid", () => {
+  it("contains the wide date grid inside the available content width", async () => {
+    renderPage();
+
+    const heading = await screen.findByRole("heading", { name: "排班表" });
+    const page = heading.closest(".flex.flex-1.flex-col");
+    const table = await screen.findByRole("table");
+    const content = page?.parentElement;
+    const inset = content?.parentElement;
+    const tableFrame = table.parentElement?.parentElement;
+
+    expect(page).toHaveClass("min-w-0", "max-w-full");
+    expect(content).toHaveClass("min-w-0");
+    expect(inset).toHaveAttribute("data-slot", "sidebar-inset");
+    expect(inset).toHaveClass("min-w-0");
+    expect(tableFrame).toHaveClass("min-w-0", "max-w-full");
+    expect(table.parentElement).toHaveClass("w-full", "overflow-x-auto");
+  });
+
   it("loads this month and renders people as rows, dates as columns, and colored shifts", async () => {
     renderPage();
 
