@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
-import { Calendar as CalendarIcon } from "lucide-react";
+import { Calendar as CalendarIcon, X } from "lucide-react";
 
 /**
  * 日期 + 时/分 picker. Controlled around a partial LOCAL datetime string
@@ -118,6 +118,19 @@ export function DateTimePicker({
           </SelectGroup>
         </SelectContent>
       </Select>
+      {value ? (
+        <Button
+          id={`${id}-clear`}
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="shrink-0 text-muted-foreground"
+          aria-label="清空时间"
+          onClick={() => onChange("")}
+        >
+          <X />
+        </Button>
+      ) : null}
     </div>
   );
 }

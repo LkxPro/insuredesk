@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
@@ -32,6 +32,17 @@ vi.mock("@/contexts/AuthContext", () => ({
     logout: vi.fn(),
   }),
 }));
+
+// Radix Select (the picker's 时/分) drives its dropdown with pointer-capture
+// and scroll APIs that jsdom doesn't implement.
+beforeAll(() => {
+  Object.assign(window.HTMLElement.prototype, {
+    scrollIntoView: vi.fn(),
+    hasPointerCapture: vi.fn(() => false),
+    setPointerCapture: vi.fn(),
+    releasePointerCapture: vi.fn(),
+  });
+});
 
 function userWith(role: { name: string; permissions: readonly Permission[] }): AuthUser {
   return {
@@ -219,5 +230,35 @@ describe("submitting a follow-up", () => {
     });
     // Server-derived fields changed → the detail is refetched
     expect(calls.filter((call) => call.path === "ticket.detail").length).toBeGreaterThan(1);
+  });
+
+  it("clears a set 下次联系时间 back to unset: submits nextContactTime as null (issue #62)", async () => {
+    renderDetail();
+
+    const remark = await screen.findByLabelText("跟进备注");
+    fireEvent.change(remark, { target: { value: "已电话联系客户" } });
+
+    // No value yet → no clear affordance
+    expect(screen.queryByRole("button", { name: "清空时间" })).not.toBeInTheDocument();
+
+    // Pick a date to give the field a value, surfacing the clear button
+    fireEvent.click(screen.getByLabelText("下次联系时间（可选）"));
+    const day = await screen.findByRole("button", { name: /15/ });
+    fireEvent.click(day);
+
+    const clear = await screen.findByRole("button", { name: "清空时间" });
+    fireEvent.click(clear);
+    expect(screen.queryByRole("button", { name: "清空时间" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "提交跟进" }));
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === "ticket.addComment")).toBe(true);
+    });
+    expect(calls.find((call) => call.path === "ticket.addComment")?.input).toEqual({
+      ticketId: "t1",
+      remark: "已电话联系客户",
+      nextContactTime: null,
+    });
   });
 });

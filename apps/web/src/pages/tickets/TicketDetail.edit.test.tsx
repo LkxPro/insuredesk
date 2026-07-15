@@ -244,6 +244,29 @@ describe("editing from the dialog", () => {
       expect(calls.filter((call) => call.path === "ticket.detail").length).toBeGreaterThan(1);
     });
   });
+
+  it("clears a filled 反馈时间 back to 未填写: submits feedbackTime as null (issue #62)", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+
+    // Prefilled from the detail, so the clear affordance is present
+    await screen.findByLabelText("客户姓名");
+    fireEvent.click(screen.getByRole("button", { name: "清空时间" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === "ticket.edit")).toBe(true);
+    });
+    const mutation = calls.find((call) => call.path === "ticket.edit");
+    expect(mutation?.input).toMatchObject({
+      ticketId: "t1",
+      feedbackTime: null,
+      // Other prefilled fields ride along unchanged
+      customerName: "王小明",
+      channel: "保司",
+    });
+  });
 });
 
 describe("删除 entry-point gating and 二次确认", () => {

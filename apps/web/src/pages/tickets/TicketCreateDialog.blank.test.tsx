@@ -6,17 +6,22 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Issue #43 UI regression: the 新建工单 form submits fully blank — no
- * required-field validation errors, every unfilled field reaching the wire as
- * null — no label carries 选填/非必填 wording, and the detail page renders a
- * null-heavy ticket with consistent 未知 placeholders. Same faked-fetch tRPC
- * pipeline and useAuth-seam mock as the sibling ticket tests.
+ * Issue #43 UI regression, adjusted for #62: the 新建工单 form submits with
+ * only feedbackTime prefilled (打开对话框的时刻) — no required-field validation
+ * errors, every OTHER unfilled field reaching the wire as null — no label
+ * carries 选填/非必填 wording, and the detail page renders a null-heavy ticket
+ * with consistent 未知 placeholders. Clearing feedbackTime restores the null
+ * (未填写) semantics #43 relied on. Same faked-fetch tRPC pipeline and
+ * useAuth-seam mock as the sibling ticket tests.
  */
+
+/** Frozen 此刻 so the prefilled feedbackTime is a known, minute-precise instant. */
+const NOW = new Date("2026-07-15T09:30:00.000Z");
 
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
@@ -165,10 +170,16 @@ beforeEach(() => {
   auth.user = userWith(TEST_ROLES.CS_MANAGER);
   auth.isLoading = false;
   calls = [];
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(NOW);
 });
 
-describe("完全空白提交 (issue #43)", () => {
-  it("submits an untouched form: no validation errors, all fields null on the wire", async () => {
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
+  it("submits an untouched form: only feedbackTime prefilled to 此刻, every other field null", async () => {
     renderAt("/tickets/new");
     await screen.findByRole("heading", { name: "新建工单" });
 
@@ -178,8 +189,9 @@ describe("完全空白提交 (issue #43)", () => {
       expect(calls.some((call) => call.path === "ticket.create")).toBe(true);
     });
     const mutation = calls.find((call) => call.path === "ticket.create");
+    // feedbackTime defaults to the open instant, minute precision (秒归零)
     expect(mutation?.input).toMatchObject({
-      feedbackTime: null,
+      feedbackTime: NOW.toISOString(),
       channel: null,
       project: null,
       customerName: null,
@@ -194,6 +206,27 @@ describe("完全空白提交 (issue #43)", () => {
 
     // Success path is unchanged: straight to the new ticket's detail
     expect(await screen.findByRole("heading", { name: "WO100001" })).toBeInTheDocument();
+  });
+
+  it("clearing the prefilled feedbackTime submits it as null (未填写), others still null", async () => {
+    renderAt("/tickets/new");
+    await screen.findByRole("heading", { name: "新建工单" });
+
+    // The prefilled default shows the clear affordance; clearing returns to 未填写
+    fireEvent.click(screen.getByRole("button", { name: "清空时间" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === "ticket.create")).toBe(true);
+    });
+    const mutation = calls.find((call) => call.path === "ticket.create");
+    expect(mutation?.input).toMatchObject({
+      feedbackTime: null,
+      channel: null,
+      customerName: null,
+      hasContacted: null,
+      complaintLevel: null,
+    });
   });
 
   it("labels carry no 选填/非必填 wording", async () => {

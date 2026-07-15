@@ -12,11 +12,27 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { format } from "date-fns";
 import { AlertCircle } from "lucide-react";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { TicketFormFields, type TicketFormValues, ticketFormSchema } from "./TicketFormFields";
+
+/**
+ * Blank defaults with feedbackTime prefilled to the current local minute —
+ * built fresh on each open so a reopen refreshes 此刻, never restoring a
+ * stale draft. 手工建单多在客户刚反馈后，默认当前时间省一步操作；清空按钮
+ * 兜住"反馈时间未知"的少数场景，提交为 null。
+ */
+function createDefaults(): TicketFormValues {
+  return {
+    feedbackTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    hasContacted: null,
+    priority: "",
+  };
+}
 
 /**
  * Manual ticket creation, presented as a modal dialog over 工单管理 rather
@@ -35,9 +51,17 @@ export function TicketCreateDialog({
 
   const form = useForm<TicketFormValues>({
     resolver: zodResolver(ticketFormSchema),
-    // Everything optional: a fully blank dialog is submittable.
-    defaultValues: { feedbackTime: "", hasContacted: null, priority: "" },
+    defaultValues: createDefaults(),
   });
+
+  // /tickets and /tickets/new render this same page without remounting, so the
+  // page-load defaultValues would keep a stale feedbackTime; resetting on open
+  // both re-stamps 此刻 and drops any cancelled draft (草稿不保留).
+  useEffect(() => {
+    if (open) {
+      form.reset(createDefaults());
+    }
+  }, [open, form]);
 
   const create = trpc.ticket.create.useMutation({
     onSuccess: (ticket) => {
