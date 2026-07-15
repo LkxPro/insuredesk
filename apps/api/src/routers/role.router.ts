@@ -3,6 +3,7 @@ import {
   roleDeleteInputSchema,
   roleRenameInputSchema,
   roleUpdatePermissionsInputSchema,
+  roleUpdateRequiredFieldsInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock";
@@ -17,6 +18,7 @@ import {
   listRoles,
   renameRole,
   updateRolePermissions,
+  updateRoleRequiredFields,
 } from "../services/role.service";
 import { requirePermission, router } from "../trpc";
 
@@ -60,6 +62,11 @@ export const roleRouter = router({
   updatePermissions: requirePermission("role.edit_permission")
     .input(roleUpdatePermissionsInputSchema)
     .mutation(({ input }) => updateRolePermissions(deps, input).catch(toTRPCError)),
+
+  /** 配置角色建单必填字段集 — 只在手工建单时生效，编辑不受约束。 */
+  updateRequiredFields: requirePermission("role.edit_permission")
+    .input(roleUpdateRequiredFieldsInputSchema)
+    .mutation(({ input }) => updateRoleRequiredFields(deps, input).catch(toTRPCError)),
 
   /** Delete an unused role; 管理员 and held roles refuse. */
   delete: requirePermission("role.delete")

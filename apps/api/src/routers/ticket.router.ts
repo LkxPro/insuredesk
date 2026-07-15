@@ -27,6 +27,7 @@ import { deleteTicket } from "../services/ticket-delete.service";
 import { editTicket } from "../services/ticket-edit.service";
 import { TicketNotResolvableError, resolveTicket } from "../services/ticket-resolve.service";
 import {
+  RequiredFieldsMissingError,
   SlaPolicyNotConfiguredError,
   createTicket,
   getTicketDetail,
@@ -72,6 +73,13 @@ export const ticketRouter = router({
         if (error instanceof SlaPolicyNotConfiguredError) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
+            message: error.message,
+            cause: error,
+          });
+        }
+        if (error instanceof RequiredFieldsMissingError) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
             message: error.message,
             cause: error,
           });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { permissionSchema } from "./permissions";
+import { TICKET_CREATE_FIELD_KEYS } from "./ticket";
 
 /**
  * 角色管理 contracts, shared by the 角色权限 page and the API — one schema,
@@ -48,3 +49,20 @@ export const roleDeleteInputSchema = z.object({
   id: z.string().min(1),
 });
 export type RoleDeleteInput = z.infer<typeof roleDeleteInputSchema>;
+
+/**
+ * 角色建单必填字段集 schema: 每个 key 必须属于建单字段清单，默认空数组 = 全非必填。
+ * 三态字段（hasContacted/nuclearBodyStatus）配为必填 = 必须明确选择，不能留默认值。
+ */
+export const requiredTicketFieldsSchema = z
+  .array(z.enum(TICKET_CREATE_FIELD_KEYS))
+  .default([])
+  .transform((values) => [...new Set(values)]);
+
+/** 角色配置必填集 contract: 管理员不可配（编辑接口拦截），其他角色自由配置。 */
+export const roleUpdateRequiredFieldsInputSchema = z.object({
+  id: z.string().min(1),
+  requiredTicketFields: requiredTicketFieldsSchema,
+});
+export type RoleUpdateRequiredFieldsInput = z.input<typeof roleUpdateRequiredFieldsInputSchema>;
+export type RoleUpdateRequiredFieldsData = z.output<typeof roleUpdateRequiredFieldsInputSchema>;

@@ -38,6 +38,33 @@ const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
     .nullish()
     .transform((value): z.output<T> | null => (value ? value : null));
 
+/**
+ * 建单表单字段清单，从建单 schema 派生——合法字段域，前后端共用。
+ * 顺序与表单呈现一致；角色可配置必填集时，校验每个 key 属于此清单。
+ */
+export const TICKET_CREATE_FIELD_KEYS = [
+  "feedbackTime",
+  "channel",
+  "project",
+  "brokerageEntity",
+  "paymentChannel",
+  "internalOrderNumber",
+  "policyNumber",
+  "userComplaintChannel",
+  "customerName",
+  "phone",
+  "contactPhone",
+  "customerRequest",
+  "nuclearBodyStatus",
+  "hasContacted",
+  "contactId",
+  "category",
+  "complaintLevel",
+  "priority",
+] as const;
+
+export type TicketCreateFieldKey = (typeof TICKET_CREATE_FIELD_KEYS)[number];
+
 export const ticketCreateInputSchema = z.object({
   /** 客户实际反馈时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。 */
   feedbackTime: optionalEnum(z.string().datetime({ offset: true, message: "反馈时间格式不正确" })),

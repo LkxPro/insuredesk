@@ -1,6 +1,8 @@
 import {
+  TICKET_CREATE_FIELD_KEYS,
   TICKET_SOURCE_LABELS,
   type TicketCreateData,
+  type TicketCreateFieldKey,
   type TicketListQuery,
   TicketStatus,
   channelSchema,
@@ -40,6 +42,35 @@ export class SlaPolicyNotConfiguredError extends Error {
     this.name = "SlaPolicyNotConfiguredError";
   }
 }
+
+/** 角色建单必填字段校验失败：缺任一必填字段即拒绝，一次性报出全部缺失。 */
+export class RequiredFieldsMissingError extends Error {
+  constructor(missingFields: string[]) {
+    super(`以下字段为必填项：${missingFields.join("、")}`);
+    this.name = "RequiredFieldsMissingError";
+  }
+}
+
+const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
+  feedbackTime: "反馈时间",
+  channel: "业务渠道",
+  project: "项目名称",
+  brokerageEntity: "经纪主体",
+  paymentChannel: "支付渠道",
+  internalOrderNumber: "内部工单号",
+  policyNumber: "保单号",
+  userComplaintChannel: "用户投诉渠道",
+  customerName: "客户姓名",
+  phone: "手机号",
+  contactPhone: "联系电话",
+  customerRequest: "客户诉求",
+  nuclearBodyStatus: "保司侧是否核身",
+  hasContacted: "是否已联系",
+  contactId: "联系人ID",
+  category: "分类",
+  complaintLevel: "投诉等级",
+  priority: "优先级",
+};
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -81,10 +112,34 @@ export async function computeSlaStamp(
 }
 
 /**
+ * 校验角色建单必填字段集：每项属于清单且值非空（三态字段必须明确选是/否）。
+ * 缺失字段一次性全部报出，沿用现有中文风格。读取时忽略未知 key（防御字段改名）。
+ */
+function validateRequiredFields(
+  input: TicketCreateData,
+  requiredFields: string[],
+): void {
+  const missingLabels: string[] = [];
+  for (const field of requiredFields) {
+    if (!TICKET_CREATE_FIELD_KEYS.includes(field as TicketCreateFieldKey)) {
+      continue;
+    }
+    const value = input[field as TicketCreateFieldKey];
+    if (value === null || value === undefined) {
+      missingLabels.push(FIELD_LABELS[field as TicketCreateFieldKey]);
+    }
+  }
+  if (missingLabels.length > 0) {
+    throw new RequiredFieldsMissingError(missingLabels);
+  }
+}
+
+/**
  * Create a manually-entered ticket:
  *
  * - every user field is optional: a fully blank submission is valid,
  *   unfilled fields persist as NULL ("unknown", never "")
+ * - requiredTicketFields of creator's role: missing any → reject with all missing fields
  * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
  * - dueAt is fixed once, here: createdAt + the level's SLA overdueHours
  *   (null for 特急 — never overdue; null while 未定级 — no SLA clock fields)
@@ -98,8 +153,14 @@ export async function createTicket(
   creator: AuthenticatedUser,
   input: TicketCreateData,
 ) {
-  // One instant for createdAt, dueAt, and the log entry, taken from the
-  // injectable clock — dueAt is exactly createdAt + overdueHours.
+  const role = await prisma.role.findUnique({
+    where: { id: creator.roleId },
+    select: { requiredTicketFields: true },
+  });
+  if (role) {
+    validateRequiredFields(input, role.requiredTicketFields);
+  }
+
   const now = clock.now();
   const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, now);
 

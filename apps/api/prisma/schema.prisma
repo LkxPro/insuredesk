@@ -58,6 +58,8 @@ model Role {
   permissions String[] // Postgres text array
   /// 系统角色（仅管理员）：名称、权限、删除全锁
   system      Boolean  @default(false)
+  /// 建单必填字段集（数组每项属于 TICKET_CREATE_FIELD_KEYS）；空 = 全非必填
+  requiredTicketFields String[] @default([])
   createdAt   DateTime @default(now()) @db.Timestamptz
   updatedAt   DateTime @updatedAt @db.Timestamptz
 

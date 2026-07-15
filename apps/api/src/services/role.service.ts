@@ -3,6 +3,7 @@ import type {
   RoleDeleteInput,
   RoleRenameInput,
   RoleUpdatePermissionsData,
+  RoleUpdateRequiredFieldsData,
 } from "@insuredesk/shared";
 import { Prisma } from "@prisma/client";
 import { effectivePermissions } from "./auth.service";
@@ -79,6 +80,7 @@ export async function listRoles({ prisma }: TicketServiceDeps) {
     permissions: effectivePermissions(row),
     system: row.system,
     userCount: row._count.users,
+    requiredTicketFields: row.requiredTicketFields,
     createdAt: row.createdAt.toISOString(),
   }));
 }
@@ -129,6 +131,22 @@ export async function updateRolePermissions(
     where: { id: input.id },
     data: { permissions: input.permissions },
     select: { id: true, name: true, permissions: true },
+  });
+}
+
+/**
+ * 配置角色建单必填字段集 (role.edit_permission)；管理员拒绝。
+ * 必填约束只在建单时生效，编辑不受影响；字段清单外的 key 被 Zod 提前拦截。
+ */
+export async function updateRoleRequiredFields(
+  { prisma }: TicketServiceDeps,
+  input: RoleUpdateRequiredFieldsData,
+) {
+  await findMutableRole(prisma, input.id);
+  return prisma.role.update({
+    where: { id: input.id },
+    data: { requiredTicketFields: input.requiredTicketFields },
+    select: { id: true, name: true, requiredTicketFields: true },
   });
 }
 
