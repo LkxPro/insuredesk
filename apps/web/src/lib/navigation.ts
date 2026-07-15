@@ -1,5 +1,13 @@
 import type { Permission } from "@insuredesk/shared";
-import { CalendarClock, LayoutDashboard, ShieldCheck, Ticket, Timer, Users } from "lucide-react";
+import {
+  CalendarClock,
+  CalendarDays,
+  LayoutDashboard,
+  ShieldCheck,
+  Ticket,
+  Timer,
+  Users,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -21,6 +29,7 @@ export const NAV_ITEMS = [
   { path: "/tickets", label: "工单管理", permission: "ticket.view", icon: Ticket },
   { path: "/users", label: "用户管理", permission: "user.view", icon: Users },
   { path: "/roles", label: "角色权限", permission: "role.view", icon: ShieldCheck },
+  { path: "/schedule", label: "排班表", permission: "schedule.view", icon: CalendarDays },
   {
     path: "/shift-types",
     label: "班次管理",

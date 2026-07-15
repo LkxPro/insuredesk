@@ -6,6 +6,7 @@ import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { RolesPage } from "@/pages/roles/RolesPage";
+import { SchedulePage } from "@/pages/schedule/SchedulePage";
 import { ShiftTypesPage } from "@/pages/shift-types/ShiftTypesPage";
 import { SlaPage } from "@/pages/sla/SlaPage";
 import { TicketDetail } from "@/pages/tickets/TicketDetail";
@@ -27,6 +28,7 @@ const PAGES: Record<NavPath, ReactElement> = {
   "/tickets": <TicketsPage />,
   "/users": <UsersPage />,
   "/roles": <RolesPage />,
+  "/schedule": <SchedulePage />,
   "/shift-types": <ShiftTypesPage />,
   "/sla": <SlaPage />,
 };

@@ -1,5 +1,6 @@
 import {
   type TicketAssignInput,
+  type TicketAutoAssignInput,
   type TicketBatchAssignInput,
   TicketStatus,
   ticketStatusSchema,
@@ -8,6 +9,7 @@ import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { writeAssignedNotification } from "./notification.service";
+import { findOnDutyUserIds, localDateTimeParts } from "./schedule.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
@@ -44,6 +46,12 @@ export class TicketNotAssignableError extends Error {
 
   static alreadyAssigned(workOrderNumber: string, assigneeName: string) {
     return new TicketNotAssignableError(`工单 ${workOrderNumber} 已由「${assigneeName}」负责`);
+  }
+
+  static notUnassigned(workOrderNumber: string, assigneeName: string) {
+    return new TicketNotAssignableError(
+      `按排班自动分配仅适用于未分配工单；工单 ${workOrderNumber} 已由「${assigneeName}」负责`,
+    );
   }
 }
 
@@ -234,6 +242,106 @@ export async function batchAssignTickets(
       skippedCount,
       assigneeName: assignee.name,
     };
+  });
+}
+
+/**
+ * Assign unassigned tickets among every currently-on-duty active user. Ticket
+ * channel is deliberately absent from candidate selection. The least number
+ * of live assigned/processing tickets wins; ties are random, and each pick is
+ * added to the in-action load so a batch spreads naturally.
+ */
+export async function autoAssignTicketsBySchedule(
+  { prisma, clock }: TicketServiceDeps,
+  actor: AuthenticatedUser,
+  input: TicketAutoAssignInput,
+) {
+  const now = clock.now();
+  const ticketIds = [...new Set(input.ticketIds)];
+
+  return prisma.$transaction(async (tx) => {
+    const tickets = await tx.ticket.findMany({
+      where: { id: { in: ticketIds }, deletedAt: null, ...applyTicketDataScope(actor) },
+      include: assignmentInclude,
+    });
+    if (tickets.length !== ticketIds.length) throw new TicketNotFoundError();
+
+    const byId = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+    const ordered = ticketIds.map((ticketId) => {
+      const ticket = byId.get(ticketId);
+      if (!ticket) throw new TicketNotFoundError();
+      if (ticket.status === TicketStatus.Completed) {
+        throw TicketNotAssignableError.completed(ticket.workOrderNumber);
+      }
+      if (ticket.assigneeId !== null) {
+        throw TicketNotAssignableError.notUnassigned(
+          ticket.workOrderNumber,
+          ticket.assignee?.name ?? "",
+        );
+      }
+      return ticket;
+    });
+
+    const wallClock = localDateTimeParts(now);
+    const candidateIds = await findOnDutyUserIds(tx, wallClock.date, wallClock.time);
+    const candidates = await tx.user.findMany({
+      where: { id: { in: candidateIds }, active: true },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(candidates.map((user) => [user.id, user.name]));
+    const validCandidateIds = candidateIds.filter((id) => nameById.has(id));
+
+    const loadRows = await tx.ticket.groupBy({
+      by: ["assigneeId"],
+      where: {
+        assigneeId: { in: validCandidateIds },
+        status: { in: [TicketStatus.Assigned, TicketStatus.Processing] },
+        deletedAt: null,
+      },
+      _count: { _all: true },
+    });
+    const loadById = new Map(loadRows.map((row) => [row.assigneeId, row._count._all]));
+
+    const assigned: { ticketId: string; workOrderNumber: string; assigneeName: string }[] = [];
+    const skipped: {
+      ticketId: string;
+      workOrderNumber: string;
+      reason: "no_on_duty";
+    }[] = [];
+
+    for (const ticket of ordered) {
+      if (validCandidateIds.length === 0) {
+        skipped.push({
+          ticketId: ticket.id,
+          workOrderNumber: ticket.workOrderNumber,
+          reason: "no_on_duty",
+        });
+        continue;
+      }
+
+      let leastLoad = Number.POSITIVE_INFINITY;
+      let tied: string[] = [];
+      for (const userId of validCandidateIds) {
+        const load = loadById.get(userId) ?? 0;
+        if (load < leastLoad) {
+          leastLoad = load;
+          tied = [userId];
+        } else if (load === leastLoad) {
+          tied.push(userId);
+        }
+      }
+      const chosenId = tied[Math.floor(Math.random() * tied.length)] as string;
+      const assignee = { id: chosenId, name: nameById.get(chosenId) ?? "" };
+      await applyAssignment(tx, actor, ticket, assignee, now);
+      loadById.set(chosenId, (loadById.get(chosenId) ?? 0) + 1);
+      assigned.push({
+        ticketId: ticket.id,
+        workOrderNumber: ticket.workOrderNumber,
+        assigneeName: assignee.name,
+      });
+    }
+
+    return { assigned, skipped };
   });
 }
 

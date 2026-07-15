@@ -105,7 +105,7 @@ beforeEach(() => {
 });
 
 describe("menu visibility per role persona", () => {
-  it("管理员 sees all six entries", () => {
+  it("管理员 sees all seven entries", () => {
     auth.user = userWith(TEST_ROLES.ADMIN);
     renderAt("/dashboard");
     expect(menuLabels()).toEqual([
@@ -113,15 +113,16 @@ describe("menu visibility per role persona", () => {
       "工单管理",
       "用户管理",
       "角色权限",
+      "排班表",
       "班次管理",
       "SLA 策略",
     ]);
   });
 
-  it("客服主管 sees dashboard and tickets", () => {
+  it("客服主管 sees dashboard, tickets, and schedule", () => {
     auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt("/dashboard");
-    expect(menuLabels()).toEqual(["数据看板", "工单管理"]);
+    expect(menuLabels()).toEqual(["数据看板", "工单管理", "排班表"]);
   });
 
   it("一线客服 sees dashboard and tickets", () => {

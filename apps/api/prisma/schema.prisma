@@ -43,7 +43,7 @@ model User {
   createdTickets  Ticket[] @relation("TicketCreator")
   /// 轨 1 inbox notifications addressed to this user (issue #25)
   notifications   AppNotification[]
-  /// 排班 duty entries for this user (issue #31)
+  /// 排班 records for this user
   schedules       Schedule[]
 
   @@index([roleId])
@@ -236,7 +236,7 @@ model ShiftType {
   @@map("shift_types")
 }
 
-/// 一人一天一班的排班记录。#65 只建立数据基础；CRUD 与在岗查询由 #66 实现。
+/// 一人一天一班的排班记录。日期与班次时段均按墙钟字符串解释。
 model Schedule {
   id      String @id @default(cuid())
   date    String

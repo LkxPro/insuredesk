@@ -14,12 +14,13 @@ function visiblePaths(permissions: readonly Permission[]): string[] {
 }
 
 describe("NAV_ITEMS", () => {
-  it("covers the six page permissions, one menu entry each", () => {
+  it("covers the seven page permissions, one menu entry each", () => {
     expect(NAV_ITEMS.map((item) => item.permission)).toEqual([
       "dashboard.view",
       "ticket.view",
       "user.view",
       "role.view",
+      "schedule.view",
       "schedule.manage_shifts",
       "sla.view",
     ]);
@@ -27,19 +28,24 @@ describe("NAV_ITEMS", () => {
 });
 
 describe("visibleNavItems", () => {
-  it("管理员 sees all six menu entries", () => {
+  it("管理员 sees all seven menu entries", () => {
     expect(visiblePaths(TEST_ROLES.ADMIN.permissions)).toEqual([
       "/dashboard",
       "/tickets",
       "/users",
       "/roles",
+      "/schedule",
       "/shift-types",
       "/sla",
     ]);
   });
 
-  it("客服主管 sees dashboard and tickets", () => {
-    expect(visiblePaths(TEST_ROLES.CS_MANAGER.permissions)).toEqual(["/dashboard", "/tickets"]);
+  it("客服主管 sees dashboard, tickets, and schedule", () => {
+    expect(visiblePaths(TEST_ROLES.CS_MANAGER.permissions)).toEqual([
+      "/dashboard",
+      "/tickets",
+      "/schedule",
+    ]);
   });
 
   it("一线客服 sees dashboard and tickets only", () => {

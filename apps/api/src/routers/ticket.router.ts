@@ -1,6 +1,7 @@
 import {
   ticketAddCommentInputSchema,
   ticketAssignInputSchema,
+  ticketAutoAssignInputSchema,
   ticketBatchAssignInputSchema,
   ticketCreateInputSchema,
   ticketDeleteInputSchema,
@@ -17,6 +18,7 @@ import {
   TicketNotAssignableError,
   TicketNotFoundError,
   assignTicket,
+  autoAssignTicketsBySchedule,
   batchAssignTickets,
   listAssigneeOptions,
 } from "../services/ticket-assign.service";
@@ -221,6 +223,23 @@ export const ticketRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         return await batchAssignTickets(deps, ctx.user, input);
+      } catch (error) {
+        mapAssignmentError(error);
+      }
+    }),
+
+  /** Single auto assignment needs ticket.assign; a batch additionally needs batch_assign. */
+  autoAssign: requireAnyPermission(["ticket.assign", "ticket.batch_assign"])
+    .input(ticketAutoAssignInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (input.ticketIds.length > 1 && !ctx.user.permissions.includes("ticket.batch_assign")) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Missing required permission: ticket.batch_assign",
+        });
+      }
+      try {
+        return await autoAssignTicketsBySchedule(deps, ctx.user, input);
       } catch (error) {
         mapAssignmentError(error);
       }

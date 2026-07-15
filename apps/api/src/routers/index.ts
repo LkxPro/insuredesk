@@ -5,6 +5,7 @@ import { dashboardRouter } from "./dashboard.router";
 import { demoRouter } from "./demo.router";
 import { notificationRouter } from "./notification.router";
 import { roleRouter } from "./role.router";
+import { scheduleRouter } from "./schedule.router";
 import { shiftTypeRouter } from "./shift-type.router";
 import { slaRouter } from "./sla.router";
 import { ticketRouter } from "./ticket.router";
@@ -41,6 +42,9 @@ export const appRouter = router({
    * 数据看板 - 9 指标卡 + 渠道统计 + 跟进人考核
    */
   dashboard: dashboardRouter,
+
+  /** 排班日期网格与编辑操作。 */
+  schedule: scheduleRouter,
 
   /** 管理员配置班次名称、颜色、多时段与显示顺序。 */
   shiftType: shiftTypeRouter,

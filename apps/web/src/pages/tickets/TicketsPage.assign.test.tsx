@@ -132,6 +132,17 @@ function respond(path: string, input: unknown): unknown {
       assigneeName: ASSIGNEES.find((user) => user.id === assigneeId)?.name ?? "",
     };
   }
+  if (path === "ticket.autoAssign") {
+    const { ticketIds } = input as { ticketIds: string[] };
+    return {
+      assigned: ticketIds.map((ticketId) => ({
+        ticketId,
+        workOrderNumber: "WO100001",
+        assigneeName: "张客服",
+      })),
+      skipped: [],
+    };
+  }
   throw new Error(`Unexpected tRPC path: ${path}`);
 }
 
@@ -310,6 +321,27 @@ describe("single assignment from the list", () => {
 
     expect(calls.some((call) => call.path === "ticket.assigneeOptions")).toBe(true);
     expect(calls.every((call) => !call.path.startsWith("schedule."))).toBe(true);
+  });
+});
+
+describe("schedule-based automatic assignment", () => {
+  it("offers unassigned tickets and confirms against the global current on-duty pool", async () => {
+    canned.items = [listItem({ channel: "监管" })];
+    canned.total = 1;
+    renderAt("/tickets");
+    await screen.findByText("WO100001");
+
+    fireEvent.click(screen.getByRole("button", { name: "自动分配" }));
+    expect(await screen.findByRole("heading", { name: "按排班自动分配" })).toBeInTheDocument();
+    expect(screen.getByText(/当前所有在岗人员/)).toBeInTheDocument();
+    expect(screen.queryByText(/渠道的当前在岗/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "ticket.autoAssign")?.input).toEqual({
+        ticketIds: ["t1"],
+      }),
+    );
   });
 });
 

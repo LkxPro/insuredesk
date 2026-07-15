@@ -58,11 +58,13 @@ import {
   Search,
   Ticket,
   UserPlus,
+  Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
+import { AutoAssignDialog } from "./AutoAssignDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { downloadTicketExport } from "./ticket-export";
@@ -205,6 +207,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [selected, setSelected] = useState<ReadonlyMap<string, AssignTarget>>(new Map());
   const [singleTarget, setSingleTarget] = useState<AssignTarget | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
@@ -273,6 +276,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const selectableItems = items.filter((ticket) => ticket.status !== "completed");
   const allPageSelected =
     selectableItems.length > 0 && selectableItems.every((ticket) => selected.has(ticket.id));
+  const selectedHasAssigned = [...selected.values()].some((target) => target.assigneeId !== null);
 
   /** 导出当前筛选结果 — the server re-applies scope and filters. */
   async function handleExport(format: TicketExportFormat) {
@@ -397,6 +401,15 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             <UserPlus data-icon="inline-start" />
             批量分配
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={selectedHasAssigned || selected.size > BATCH_ASSIGN_LIMIT}
+            onClick={() => setAutoTargets([...selected.values()])}
+          >
+            <Zap data-icon="inline-start" />
+            按排班自动分配
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Map())}>
             清除选择
           </Button>
@@ -404,6 +417,9 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             <span className="text-destructive">
               一次最多分配 {BATCH_ASSIGN_LIMIT} 个，请减少选择
             </span>
+          )}
+          {selectedHasAssigned && (
+            <span className="text-muted-foreground">自动分配仅适用于未分配工单</span>
           )}
         </div>
       )}
@@ -448,7 +464,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 <TableHead>
                   <SortHead field="dueAt" label="处理时限" query={query} onToggle={toggleSort} />
                 </TableHead>
-                {canAssign && <TableHead className="w-28">操作</TableHead>}
+                {canAssign && <TableHead className="w-40">操作</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -531,6 +547,18 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                             >
                               {ticket.assigneeId ? "改派" : "分配"}
                             </Button>
+                            {ticket.assigneeId === null && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setAutoTargets([toTarget(ticket)]);
+                                }}
+                              >
+                                自动分配
+                              </Button>
+                            )}
                           </div>
                         )}
                       </TableCell>
@@ -596,6 +624,23 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onOpenChange={setBatchOpen}
           targets={[...selected.values()]}
           onAssigned={() => setSelected(new Map())}
+        />
+      )}
+
+      {(canAssign || canBatchAssign) && autoTargets && (
+        <AutoAssignDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setAutoTargets(null);
+          }}
+          targets={autoTargets}
+          onAssigned={(assignedIds) =>
+            setSelected((previous) => {
+              const next = new Map(previous);
+              for (const id of assignedIds) next.delete(id);
+              return next;
+            })
+          }
         />
       )}
     </div>
