@@ -84,9 +84,9 @@ describe("RequiredFieldsChecklist", () => {
     render(<RequiredFieldsChecklist value={[]} disabled={true} />);
 
     const checkboxes = screen.getAllByRole("checkbox");
-    checkboxes.forEach((checkbox) => {
+    for (const checkbox of checkboxes) {
       expect(checkbox).toBeDisabled();
-    });
+    }
   });
 
   it("does not call onChange when disabled", async () => {

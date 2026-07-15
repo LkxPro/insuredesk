@@ -115,10 +115,7 @@ export async function computeSlaStamp(
  * 校验角色建单必填字段集：每项属于清单且值非空（三态字段必须明确选是/否）。
  * 缺失字段一次性全部报出，沿用现有中文风格。读取时忽略未知 key（防御字段改名）。
  */
-function validateRequiredFields(
-  input: TicketCreateData,
-  requiredFields: string[],
-): void {
+function validateRequiredFields(input: TicketCreateData, requiredFields: string[]): void {
   const missingLabels: string[] = [];
   for (const field of requiredFields) {
     if (!TICKET_CREATE_FIELD_KEYS.includes(field as TicketCreateFieldKey)) {

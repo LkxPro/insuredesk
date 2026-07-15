@@ -26,6 +26,8 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * the todo-test setup. Rosters are set up through the real schedule.create
  * procedure; each case uses its own duty date so cases never see each
  * other's rosters, and fresh duty users so 在手 baselines start at zero.
+ * Fixed-clock cases roster in 2099 so their dates can never equal the real
+ * today the router cases run on — the system-clock world stays roster-free.
  */
 describe("schedule + auto-assign (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;
@@ -312,7 +314,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
 
   describe("按排班自动分配: candidate matching (channel + 在班)", () => {
     it("only the ticket channel's currently-on-shift duty users are candidates", async () => {
-      const date = "2026-07-15";
+      const date = "2099-07-15";
       const rightChannel = await makeDutyUser("保司早班");
       const wrongChannel = await makeDutyUser("经纪早班");
       const offShift = await makeDutyUser("保司晚班");
@@ -351,7 +353,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
     });
 
     it("shift windows are start-inclusive, end-exclusive; both shifts overlap midday", async () => {
-      const date = "2026-07-16";
+      const date = "2099-07-16";
       const dayDuty = await makeDutyUser("边界早班");
       await manager().schedule.create({ date, shift: "day", channel: "支付", userId: dayDuty.id });
 
@@ -385,7 +387,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
     });
 
     it("deactivated duty users are never candidates even if still rostered", async () => {
-      const date = "2026-07-17";
+      const date = "2099-07-17";
       const retiring = await makeDutyUser("停用前排班");
       await manager().schedule.create({ date, shift: "day", channel: "监管", userId: retiring.id });
       await prisma.user.update({ where: { id: retiring.id }, data: { active: false } });
@@ -399,7 +401,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
 
   describe("按排班自动分配: least 在手 selection", () => {
     it("picks the candidate with the fewest assigned+processing tickets", async () => {
-      const date = "2026-07-18";
+      const date = "2099-07-18";
       const busy = await makeDutyUser("在手很多");
       const idle = await makeDutyUser("在手为零");
       await manager().schedule.create({ date, shift: "day", channel: "保司", userId: busy.id });
@@ -420,7 +422,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
     });
 
     it("completed and soft-deleted tickets do not count as 在手", async () => {
-      const date = "2026-07-19";
+      const date = "2099-07-19";
       const looksBusy = await makeDutyUser("只剩历史单");
       const trulyBusy = await makeDutyUser("真有在手单");
       await manager().schedule.create({
@@ -460,7 +462,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
     });
 
     it("平手随机取一: a tie lands on one of the tied candidates", async () => {
-      const date = "2026-07-20";
+      const date = "2099-07-20";
       const tiedA = await makeDutyUser("平手甲");
       const tiedB = await makeDutyUser("平手乙");
       await manager().schedule.create({ date, shift: "day", channel: "经纪", userId: tiedA.id });
@@ -473,7 +475,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
     });
 
     it("one multi-ticket action counts its own picks: two tickets spread over two idle candidates", async () => {
-      const date = "2026-07-21";
+      const date = "2099-07-21";
       const first = await makeDutyUser("分摊甲");
       const second = await makeDutyUser("分摊乙");
       await manager().schedule.create({ date, shift: "day", channel: "监管", userId: first.id });
@@ -492,7 +494,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
 
   describe("按排班自动分配: no-on-duty boundary", () => {
     it("a channel with nobody on duty is skipped and reported, the ticket untouched", async () => {
-      const date = "2026-07-22"; // no roster at all this day
+      const date = "2099-07-22"; // no roster at all this day
       const ticketId = await createTicket("支付");
       const result = await autoAssignAt(localInstant(date, 10), [ticketId]);
 
@@ -508,7 +510,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
     });
 
     it("a mixed batch assigns covered channels and skips the uncovered ones", async () => {
-      const date = "2026-07-23";
+      const date = "2099-07-23";
       const onDuty = await makeDutyUser("有人渠道");
       await manager().schedule.create({ date, shift: "day", channel: "保司", userId: onDuty.id });
 
@@ -624,8 +626,8 @@ describe("schedule + auto-assign (Testcontainers)", () => {
     });
 
     it("RBAC: one ticket rides ticket.assign; more than one additionally needs ticket.batch_assign", async () => {
-      // 经纪 is never rostered for the real today in this file, so these stay
-      // in the skipped (yet guard-passing) path regardless of test order
+      // Every fixed-clock case rosters on a 2099 date, so the real today
+      // carries no roster: 经纪 stays in the skipped (yet guard-passing) path
       const ticketA = await createTicket("经纪");
       const ticketB = await createTicket("经纪");
 

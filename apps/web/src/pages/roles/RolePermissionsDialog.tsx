@@ -130,7 +130,10 @@ export function RolePermissionsDialog({
                 if (!role) return;
                 Promise.all([
                   updatePermissions.mutateAsync({ id: role.id, permissions }),
-                  updateRequiredFields.mutateAsync({ id: role.id, requiredTicketFields: requiredFields }),
+                  updateRequiredFields.mutateAsync({
+                    id: role.id,
+                    requiredTicketFields: requiredFields,
+                  }),
                 ]).catch(() => {
                   // Errors are already displayed via the Alert components
                 });

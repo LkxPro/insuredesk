@@ -19,7 +19,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { buildTicketFormSchema, TicketFormFields, type TicketFormValues } from "./TicketFormFields";
+import { TicketFormFields, type TicketFormValues, buildTicketFormSchema } from "./TicketFormFields";
 
 /**
  * Blank defaults with feedbackTime prefilled to the current local minute —

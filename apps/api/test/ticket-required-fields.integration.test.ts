@@ -80,7 +80,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
-      requiredTicketFields: [],
+        requiredTicketFields: [],
       },
       sessionToken: null,
     });
@@ -104,11 +104,13 @@ describe("role required ticket fields (Testcontainers)", () => {
   }
 
   function admin() {
-    return callerWithPermissions(
-      seeded.users.admin,
-      "管理员",
-      ["role.view", "role.edit_permission", "role.edit", "role.create", "role.delete"],
-    );
+    return callerWithPermissions(seeded.users.admin, "管理员", [
+      "role.view",
+      "role.edit_permission",
+      "role.edit",
+      "role.create",
+      "role.delete",
+    ]);
   }
 
   function manager() {
@@ -183,7 +185,9 @@ describe("role required ticket fields (Testcontainers)", () => {
 
     it("rejects when missing one required field", async () => {
       const input = { ...validInput, customerName: null };
-      await expect(requiredUser().ticket.create(input)).rejects.toThrow(/以下字段为必填项：客户姓名/);
+      await expect(requiredUser().ticket.create(input)).rejects.toThrow(
+        /以下字段为必填项：客户姓名/,
+      );
     });
 
     it("rejects when missing multiple required fields and lists them all", async () => {

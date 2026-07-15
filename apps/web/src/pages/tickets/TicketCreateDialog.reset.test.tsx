@@ -15,7 +15,19 @@ import { TicketCreateDialog } from "./TicketCreateDialog";
  * Reopening refreshes the time and never restores a cancelled draft. The
  * dialog talks to trpc/react-router, so it renders inside a faked-fetch
  * client and a MemoryRouter — no network, no navigation asserted here.
+ * useAuth-seam mock as the sibling ticket tests; a null user keeps
+ * requiredTicketFields empty, so no field is marked required here.
  */
+
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    user: null,
+    isLoading: false,
+    hasPermission: () => false,
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
+}));
 
 beforeAll(() => {
   Object.assign(window.HTMLElement.prototype, {

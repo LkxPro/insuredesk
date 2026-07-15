@@ -212,7 +212,8 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
           </Field>
           <Field data-invalid={!!errors.internalOrderNumber}>
             <FieldLabel htmlFor="internalOrderNumber">
-              内部订单号{isRequired("internalOrderNumber") && <span className="text-destructive">*</span>}
+              内部订单号
+              {isRequired("internalOrderNumber") && <span className="text-destructive">*</span>}
             </FieldLabel>
             <Input
               id="internalOrderNumber"
@@ -234,7 +235,8 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
           </Field>
           <Field data-invalid={!!errors.userComplaintChannel}>
             <FieldLabel htmlFor="userComplaintChannel">
-              用户投诉渠道{isRequired("userComplaintChannel") && <span className="text-destructive">*</span>}
+              用户投诉渠道
+              {isRequired("userComplaintChannel") && <span className="text-destructive">*</span>}
             </FieldLabel>
             <Input
               id="userComplaintChannel"
@@ -284,7 +286,8 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
           </Field>
           <Field data-invalid={!!errors.nuclearBodyStatus}>
             <FieldLabel htmlFor="nuclearBodyStatus">
-              保司侧是否核身{isRequired("nuclearBodyStatus") && <span className="text-destructive">*</span>}
+              保司侧是否核身
+              {isRequired("nuclearBodyStatus") && <span className="text-destructive">*</span>}
             </FieldLabel>
             <Controller
               control={control}

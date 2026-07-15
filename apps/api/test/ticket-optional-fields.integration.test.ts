@@ -70,7 +70,7 @@ describe("optional business fields (Testcontainers)", () => {
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
-      requiredTicketFields: [],
+        requiredTicketFields: [],
       },
       sessionToken: null,
     });
@@ -179,7 +179,7 @@ describe("optional business fields (Testcontainers)", () => {
           roleId: seeded.roles.frontline.id,
           roleName: seeded.roles.frontline.name,
           permissions: seeded.roles.frontline.permissions as Permission[],
-      requiredTicketFields: [],
+          requiredTicketFields: [],
         },
       );
       const entry = todos.items.find((item) => item.ticketId === created.id);
@@ -317,7 +317,7 @@ describe("optional business fields (Testcontainers)", () => {
           roleId: seeded.roles.csManager.id,
           roleName: seeded.roles.csManager.name,
           permissions: seeded.roles.csManager.permissions as Permission[],
-      requiredTicketFields: [],
+          requiredTicketFields: [],
         },
         {
           format: "csv",

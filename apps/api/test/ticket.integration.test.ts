@@ -72,7 +72,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
-      requiredTicketFields: [],
+        requiredTicketFields: [],
       },
       sessionToken: null,
     });

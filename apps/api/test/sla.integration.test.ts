@@ -158,7 +158,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
         user: {
           ...identityOf(seeded.users.observer, seeded.roles.readOnly),
           permissions: ["sla.view"],
-      requiredTicketFields: [],
+          requiredTicketFields: [],
         },
         sessionToken: null,
       });

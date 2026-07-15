@@ -496,7 +496,7 @@ describe("ticket assignment (Testcontainers)", () => {
         roleId: "role-under-test",
         roleName: seeded.roles.csManager.name,
         permissions: seeded.roles.csManager.permissions as Permission[],
-      requiredTicketFields: [],
+        requiredTicketFields: [],
       };
 
       const autoResult = await autoAssignTicketsBySchedule(
