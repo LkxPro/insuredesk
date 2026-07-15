@@ -43,7 +43,6 @@ export const appRouter = router({
    */
   dashboard: dashboardRouter,
 
-  /** 排班日期网格与编辑操作。 */
   schedule: scheduleRouter,
 
   /** 管理员配置班次名称、颜色、多时段与显示顺序。 */

@@ -53,6 +53,7 @@ const canned = {
     users: [
       { id: "zhang", name: "张客服", username: "zhang", active: true },
       { id: "wang", name: "王客服", username: "wang", active: true },
+      { id: "retired", name: "停用客服", username: "retired", active: false },
     ],
     shifts: [
       {
@@ -83,6 +84,19 @@ const canned = {
         shiftName: "早班",
         shiftColor: "#10b981",
         shiftSegments: [{ start: "09:00", end: "13:00" }],
+        remark: null,
+      },
+      {
+        id: "schedule-retired",
+        date: TODAY,
+        userId: "retired",
+        userName: "停用客服",
+        username: "retired",
+        userActive: false,
+        shiftId: "full",
+        shiftName: "全班",
+        shiftColor: "#3b82f6",
+        shiftSegments: [{ start: "09:00", end: "18:00" }],
         remark: null,
       },
     ],
@@ -223,5 +237,22 @@ describe("schedule grid", () => {
     await screen.findByText("张客服");
     expect(screen.queryByRole("button", { name: /设置 张客服/ })).not.toBeInTheDocument();
     expect(screen.getByText("早班")).toBeInTheDocument();
+  });
+
+  it("lets editors clear an existing schedule for an inactive user without assigning a new shift", async () => {
+    renderPage();
+    await screen.findByText("停用客服");
+
+    const cell = screen.getByRole("button", { name: `清除 停用客服 ${TODAY} 排班：全班` });
+    fireEvent.pointerDown(cell, { button: 0, ctrlKey: false, pointerId: 3 });
+    fireEvent.click(cell);
+
+    expect(screen.queryByRole("menuitem", { name: "早班 09:00–13:00" })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "清除排班" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "schedule.delete")?.input).toEqual({
+        id: "schedule-retired",
+      }),
+    );
   });
 });

@@ -13,9 +13,8 @@ import type * as AssignService from "../src/services/ticket-assign.service";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Issue #66 acceptance tests at the public tRPC/service seams. A real
- * Postgres exercises the user/day uniqueness, shift JSON, RBAC, assignment
- * transaction, load aggregate, logs, and notification write together.
+ * Real Postgres exercises user/day uniqueness, shift JSON, RBAC, assignment
+ * transactions, load aggregation, logs, and notification writes together.
  */
 describe("schedule workflow and schedule-based auto assignment (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;

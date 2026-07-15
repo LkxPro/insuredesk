@@ -139,11 +139,13 @@ export type TicketAssignInput = z.infer<typeof ticketAssignInputSchema>;
 /** 批量分配单次上限（即列表单页上限）；列表多选与 API 校验共用这一个数。 */
 export const BATCH_ASSIGN_LIMIT = 100;
 
+const ticketIdsSchema = z
+  .array(z.string().min(1))
+  .min(1, "请选择工单")
+  .max(BATCH_ASSIGN_LIMIT, `一次最多分配 ${BATCH_ASSIGN_LIMIT} 个工单`);
+
 export const ticketBatchAssignInputSchema = z.object({
-  ticketIds: z
-    .array(z.string().min(1))
-    .min(1, "请选择工单")
-    .max(BATCH_ASSIGN_LIMIT, `一次最多分配 ${BATCH_ASSIGN_LIMIT} 个工单`),
+  ticketIds: ticketIdsSchema,
   assigneeId: z.string().min(1, "请选择责任人"),
 });
 export type TicketBatchAssignInput = z.infer<typeof ticketBatchAssignInputSchema>;
@@ -154,10 +156,7 @@ export type TicketBatchAssignInput = z.infer<typeof ticketBatchAssignInputSchema
  * least-loaded person for each unassigned ticket.
  */
 export const ticketAutoAssignInputSchema = z.object({
-  ticketIds: z
-    .array(z.string().min(1))
-    .min(1, "请选择工单")
-    .max(BATCH_ASSIGN_LIMIT, `一次最多分配 ${BATCH_ASSIGN_LIMIT} 个工单`),
+  ticketIds: ticketIdsSchema,
 });
 export type TicketAutoAssignInput = z.infer<typeof ticketAutoAssignInputSchema>;
 

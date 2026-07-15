@@ -228,7 +228,6 @@ export const ticketRouter = router({
       }
     }),
 
-  /** Single auto assignment needs ticket.assign; a batch additionally needs batch_assign. */
   autoAssign: requireAnyPermission(["ticket.assign", "ticket.batch_assign"])
     .input(ticketAutoAssignInputSchema)
     .mutation(async ({ ctx, input }) => {

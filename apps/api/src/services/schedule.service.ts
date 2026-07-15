@@ -92,7 +92,6 @@ export async function listSchedules(prisma: PrismaClient, input: ScheduleListInp
   };
 }
 
-/** Set or replace one user/day cell. */
 export async function createSchedule(prisma: PrismaClient, input: ScheduleCreateData) {
   const [user, shift] = await Promise.all([
     prisma.user.findUnique({
@@ -128,7 +127,6 @@ export async function deleteSchedule(prisma: PrismaClient, input: ScheduleDelete
   }
 }
 
-/** clock.now() rendered exactly like Schedule's wall-clock fields. */
 export function localDateTimeParts(now: Date): { date: string; time: string } {
   const pad = (value: number) => String(value).padStart(2, "0");
   return {
@@ -161,14 +159,14 @@ function segmentCovers(
 }
 
 /**
- * Active users whose scheduled shift covers `date` + `now`. Normal segments
+ * Active users whose scheduled shift covers `date` + `wallClockTime`. Normal segments
  * are start-inclusive/end-exclusive. Overnight segments also inspect the
  * previous day's roster for the after-midnight tail.
  */
 export async function findOnDutyUserIds(
   db: PrismaClient | Prisma.TransactionClient,
   date: string,
-  now: string,
+  wallClockTime: string,
 ): Promise<string[]> {
   const priorDate = previousDate(date);
   const rows = await db.schedule.findMany({
@@ -187,7 +185,7 @@ export async function findOnDutyUserIds(
   const ids = new Set<string>();
   for (const row of rows) {
     const segments = shiftTypeSegmentsSchema.parse(row.shift.segments);
-    if (segments.some((segment) => segmentCovers(row.date, date, now, segment))) {
+    if (segments.some((segment) => segmentCovers(row.date, date, wallClockTime, segment))) {
       ids.add(row.userId);
     }
   }

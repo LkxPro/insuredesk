@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** A wall-clock calendar day. Impossible dates are rejected by round-tripping. */
+/** A calendar day in local wall-clock form. */
 export const scheduleDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式应为 YYYY-MM-DD")

@@ -118,7 +118,7 @@ function ScheduleCell({
     ? `${entry.shiftName} · ${segmentsLabel({ segments: entry.shiftSegments })}`
     : "未排班";
 
-  if (!editable || !user.active) {
+  if (!editable || (!user.active && !entry)) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -141,28 +141,30 @@ function ScheduleCell({
                 type="button"
                 variant="ghost"
                 className="h-auto p-0"
-                aria-label={`设置 ${user.name} ${date} 排班：${entry?.shiftName ?? "未排班"}`}
+                aria-label={`${user.active ? "设置" : "清除"} ${user.name} ${date} 排班：${entry?.shiftName ?? "未排班"}`}
                 disabled={pending}
               >
                 <ShiftVisual entry={entry} />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              <DropdownMenuGroup>
-                {shifts.map((shift) => (
-                  <DropdownMenuItem key={shift.id} onSelect={() => onSet(shift.id)}>
-                    <span
-                      className="size-3 rounded-sm"
-                      style={{ backgroundColor: shift.color }}
-                      aria-hidden="true"
-                    />
-                    {shift.name} {segmentsLabel(shift)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
+              {user.active && (
+                <DropdownMenuGroup>
+                  {shifts.map((shift) => (
+                    <DropdownMenuItem key={shift.id} onSelect={() => onSet(shift.id)}>
+                      <span
+                        className="size-3 rounded-sm"
+                        style={{ backgroundColor: shift.color }}
+                        aria-hidden="true"
+                      />
+                      {shift.name} {segmentsLabel(shift)}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuGroup>
+              )}
               {entry && (
                 <>
-                  <DropdownMenuSeparator />
+                  {user.active && <DropdownMenuSeparator />}
                   <DropdownMenuGroup>
                     <DropdownMenuItem variant="destructive" onSelect={onClear}>
                       <Trash2 />
