@@ -52,10 +52,10 @@ vi.mock("@/pages/dashboard/DashboardPage", () => ({
   DashboardPage: () => <h1>数据看板</h1>,
 }));
 
-// And for the real 排班配置 page: it queries schedule.list on mount.
-// Its real behavior is covered in SchedulePage.test.tsx.
-vi.mock("@/pages/schedule/SchedulePage", () => ({
-  SchedulePage: () => <h1>排班配置</h1>,
+// And for the real 班次管理 page: it queries shiftType.list on mount.
+// Its real behavior is covered in ShiftTypesPage.test.tsx.
+vi.mock("@/pages/shift-types/ShiftTypesPage", () => ({
+  ShiftTypesPage: () => <h1>班次管理</h1>,
 }));
 
 // And for the real 用户管理 / 角色权限 pages: they query user.list /
@@ -113,15 +113,15 @@ describe("menu visibility per role persona", () => {
       "工单管理",
       "用户管理",
       "角色权限",
-      "排班配置",
+      "班次管理",
       "SLA 策略",
     ]);
   });
 
-  it("客服主管 sees dashboard, tickets, schedule", () => {
+  it("客服主管 sees dashboard and tickets", () => {
     auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt("/dashboard");
-    expect(menuLabels()).toEqual(["数据看板", "工单管理", "排班配置"]);
+    expect(menuLabels()).toEqual(["数据看板", "工单管理"]);
   });
 
   it("一线客服 sees dashboard and tickets", () => {
@@ -150,10 +150,16 @@ describe("route guards", () => {
     expect(screen.getByText("你没有访问该页面的权限")).toBeInTheDocument();
   });
 
-  it("客服主管 holds schedule.view, so /schedule renders", () => {
+  it("客服主管 lacks schedule.manage_shifts, so /shift-types is forbidden", () => {
     auth.user = userWith(TEST_ROLES.CS_MANAGER);
-    renderAt("/schedule");
-    expect(screen.getByRole("heading", { name: "排班配置" })).toBeInTheDocument();
+    renderAt("/shift-types");
+    expect(screen.getByText("你没有访问该页面的权限")).toBeInTheDocument();
+  });
+
+  it("管理员 can open shift management", () => {
+    auth.user = userWith(TEST_ROLES.ADMIN);
+    renderAt("/shift-types");
+    expect(screen.getByRole("heading", { name: "班次管理" })).toBeInTheDocument();
   });
 
   it("renders the page when the permission is held", () => {

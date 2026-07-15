@@ -149,20 +149,6 @@ export const ticketBatchAssignInputSchema = z.object({
 export type TicketBatchAssignInput = z.infer<typeof ticketBatchAssignInputSchema>;
 
 /**
- * 按排班自动分配: supervisor-triggered, one or many UNASSIGNED tickets. No
- * assignee in the input — the system picks, per ticket, the least-loaded
- * on-duty person of the ticket's channel; a channel with nobody on duty
- * leaves its tickets unassigned and is reported back.
- */
-export const ticketAutoAssignInputSchema = z.object({
-  ticketIds: z
-    .array(z.string().min(1))
-    .min(1, "请选择工单")
-    .max(BATCH_ASSIGN_LIMIT, `一次最多分配 ${BATCH_ASSIGN_LIMIT} 个工单`),
-});
-export type TicketAutoAssignInput = z.infer<typeof ticketAutoAssignInputSchema>;
-
-/**
  * 添加跟进 contract: one remark per actual customer contact, with an optional
  * next-contact plan. contactCount / processingResult / nextContactTime and
  * the assigned → processing transition are all derived server-side from this

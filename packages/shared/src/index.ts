@@ -5,7 +5,7 @@ export * from "./health";
 export * from "./notification";
 export * from "./permissions";
 export * from "./role";
-export * from "./schedule";
+export * from "./shift-type";
 export * from "./sla";
 export * from "./ticket";
 export * from "./ticket-status";

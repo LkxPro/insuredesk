@@ -6,7 +6,7 @@ import type { TicketServiceDeps } from "./ticket.service";
  * 轨 1 收件箱: user-action-triggered TRUE
  * events, this phase solely `assigned`. The write runs INSIDE the assignment
  * transaction — notification and assignment commit or roll back together, and
- * every assignment surface (single, batch, future 按排班自动分配) shares this
+ * every assignment surface (single, batch, and future automatic assignment) shares this
  * one path by construction. Time-derived alerts (overdue/due_soon/待首响…)
  * are 轨 2, computed at read time: nothing here ever polls or scans.
  */

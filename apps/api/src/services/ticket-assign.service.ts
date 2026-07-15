@@ -1,6 +1,5 @@
 import {
   type TicketAssignInput,
-  type TicketAutoAssignInput,
   type TicketBatchAssignInput,
   TicketStatus,
   ticketStatusSchema,
@@ -9,13 +8,11 @@ import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { writeAssignedNotification } from "./notification.service";
-import { findOnDutyUserIdsByChannel } from "./schedule.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * Assignment domain logic: first assignment, 改派, 批量分配, and
- * 按排班自动分配. Pure service layer — the router maps the domain errors
- * below to transport codes.
+ * Assignment domain logic: first assignment, 改派, and 批量分配. Pure service
+ * layer — the router maps the domain errors below to transport codes.
  *
  * Invariants enforced here:
  * - dueAt is never written — it is fixed at creation and assignment cannot
@@ -47,12 +44,6 @@ export class TicketNotAssignableError extends Error {
 
   static alreadyAssigned(workOrderNumber: string, assigneeName: string) {
     return new TicketNotAssignableError(`工单 ${workOrderNumber} 已由「${assigneeName}」负责`);
-  }
-
-  static notUnassigned(workOrderNumber: string, assigneeName: string) {
-    return new TicketNotAssignableError(
-      `工单 ${workOrderNumber} 已由「${assigneeName}」负责，按排班自动分配仅适用于未分配工单`,
-    );
   }
 }
 
@@ -135,7 +126,7 @@ async function applyAssignment(
   });
 
   // 轨 1 收件箱: notify the NEW owner synchronously,
-  // inside this same transaction. Single, batch, and 按排班自动分配 all funnel
+  // inside this same transaction. Single and batch assignment both funnel
   // through applyAssignment, so this is THE one write path — and an aborted
   // assignment leaves no orphaned notification.
   await writeAssignedNotification(tx, {
@@ -243,148 +234,6 @@ export async function batchAssignTickets(
       skippedCount,
       assigneeName: assignee.name,
     };
-  });
-}
-
-/**
- * 按排班自动分配: supervisor-triggered on one or many
- * 未分配 tickets — never fired by ticket creation. Per ticket, the candidate
- * set is the channel's 当前在岗值班人 (schedule.service on-duty predicate);
- * the least-loaded candidate wins (在手 = assigned + processing count), ties
- * broken at random. A channel with nobody on duty leaves its tickets
- * unassigned and reports them back, so the supervisor is explicitly told to
- * handle those by hand.
- *
- * Every pick funnels through applyAssignment — the SAME write path as manual
- * assignment, so assigneeId / assignedAt / status transition / the double
- * ProcessLog / the inbox notification all take effect identically.
- *
- * Hard failures (unknown/deleted/out-of-scope id, completed, already
- * assigned) abort the whole action like 批量分配 does: they mean the operator
- * acted on a stale list, and a partial run would leave an ambiguous trail.
- */
-export async function autoAssignTicketsBySchedule(
-  { prisma, clock }: TicketServiceDeps,
-  actor: AuthenticatedUser,
-  input: TicketAutoAssignInput,
-) {
-  const now = clock.now();
-  const ticketIds = [...new Set(input.ticketIds)];
-
-  return prisma.$transaction(async (tx) => {
-    const tickets = await tx.ticket.findMany({
-      where: { id: { in: ticketIds }, deletedAt: null, ...applyTicketDataScope(actor) },
-      include: assignmentInclude,
-    });
-    if (tickets.length !== ticketIds.length) {
-      throw new TicketNotFoundError();
-    }
-
-    // Keep the caller's selection order so failures and picks are deterministic
-    const byId = new Map(tickets.map((ticket) => [ticket.id, ticket]));
-    const ordered = ticketIds.map((ticketId) => {
-      const ticket = byId.get(ticketId);
-      if (!ticket) {
-        throw new TicketNotFoundError();
-      }
-      if (ticket.status === TicketStatus.Completed) {
-        throw TicketNotAssignableError.completed(ticket.workOrderNumber);
-      }
-      if (ticket.assigneeId !== null) {
-        throw TicketNotAssignableError.notUnassigned(
-          ticket.workOrderNumber,
-          ticket.assignee?.name ?? "",
-        );
-      }
-      return ticket;
-    });
-
-    const channels = [
-      ...new Set(ordered.flatMap((ticket) => (ticket.channel === null ? [] : [ticket.channel]))),
-    ];
-    const onDutyByChannel = await findOnDutyUserIdsByChannel(tx, channels, now);
-
-    const candidateIds = [...new Set([...onDutyByChannel.values()].flatMap((ids) => [...ids]))];
-    const candidates = await tx.user.findMany({
-      where: { id: { in: candidateIds } },
-      select: { id: true, name: true },
-    });
-    const nameById = new Map(candidates.map((user) => [user.id, user.name]));
-
-    // 在手 baseline per candidate; soft-deleted tickets don't count as load
-    const loadRows = await tx.ticket.groupBy({
-      by: ["assigneeId"],
-      where: {
-        assigneeId: { in: candidateIds },
-        status: { in: [TicketStatus.Assigned, TicketStatus.Processing] },
-        deletedAt: null,
-      },
-      _count: { _all: true },
-    });
-    const loadById = new Map(loadRows.map((row) => [row.assigneeId, row._count._all]));
-
-    const assigned: { ticketId: string; workOrderNumber: string; assigneeName: string }[] = [];
-    const skipped: {
-      ticketId: string;
-      workOrderNumber: string;
-      channel: string | null;
-      /** Why the system could not pick — the supervisor acts on this. */
-      reason: "missing_channel" | "no_on_duty";
-    }[] = [];
-
-    for (const ticket of ordered) {
-      if (ticket.channel === null) {
-        // 未填写渠道: 排班按渠道匹配, so there is no candidate set
-        // to draw from — stay unassigned, report why. Manual assignment is
-        // channel-independent and remains available.
-        skipped.push({
-          ticketId: ticket.id,
-          workOrderNumber: ticket.workOrderNumber,
-          channel: null,
-          reason: "missing_channel",
-        });
-        continue;
-      }
-      const onDuty = onDutyByChannel.get(ticket.channel);
-      if (!onDuty || onDuty.size === 0) {
-        // Nobody on duty for this channel → leave it and tell
-        // the supervisor to assign by hand
-        skipped.push({
-          ticketId: ticket.id,
-          workOrderNumber: ticket.workOrderNumber,
-          channel: ticket.channel,
-          reason: "no_on_duty",
-        });
-        continue;
-      }
-
-      let leastLoad = Number.POSITIVE_INFINITY;
-      let tied: string[] = [];
-      for (const userId of onDuty) {
-        const load = loadById.get(userId) ?? 0;
-        if (load < leastLoad) {
-          leastLoad = load;
-          tied = [userId];
-        } else if (load === leastLoad) {
-          tied.push(userId);
-        }
-      }
-      // 平手随机取一
-      const chosenId = tied[Math.floor(Math.random() * tied.length)] as string;
-      const assignee = { id: chosenId, name: nameById.get(chosenId) ?? "" };
-
-      await applyAssignment(tx, actor, ticket, assignee, now);
-      // Count the pick immediately, so one action spreads its own batch
-      // instead of dumping every ticket on the initially least-loaded person
-      loadById.set(chosenId, (loadById.get(chosenId) ?? 0) + 1);
-      assigned.push({
-        ticketId: ticket.id,
-        workOrderNumber: ticket.workOrderNumber,
-        assigneeName: assignee.name,
-      });
-    }
-
-    return { assigned, skipped };
   });
 }
 

@@ -51,6 +51,7 @@ export const ROLE_PERMISSIONS = [
 export const SYSTEM_PERMISSIONS = [
   "schedule.view", // Access schedule configuration (page permission)
   "schedule.edit", // Edit schedule (operation permission)
+  "schedule.manage_shifts", // Manage shift definitions (admin configuration)
   "sla.view", // Access SLA policy configuration (page permission)
   "sla.edit", // Edit SLA policies (operation permission)
 ] as const;
@@ -99,6 +100,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "role.edit_permission": "编辑权限配置",
   "schedule.view": "访问排班配置",
   "schedule.edit": "编辑排班",
+  "schedule.manage_shifts": "管理班次定义",
   "sla.view": "访问 SLA 策略",
   "sla.edit": "编辑 SLA 策略",
 };

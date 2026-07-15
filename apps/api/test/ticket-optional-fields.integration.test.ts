@@ -244,7 +244,7 @@ describe("optional business fields (Testcontainers)", () => {
   });
 
   describe("分配", () => {
-    it("manual assignment works with no channel (手动分配与排班无关)", async () => {
+    it("manual assignment works with no channel", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
 
       const result = await manager().ticket.assign({
@@ -252,25 +252,6 @@ describe("optional business fields (Testcontainers)", () => {
         assigneeId: seeded.users.cs1.id,
       });
       expect(result.status).toBe("assigned");
-    });
-
-    it("按排班自动分配 skips a channel-less ticket with an explicit missing_channel reason", async () => {
-      const created = await manager().ticket.create({} as TicketCreateInput);
-
-      const result = await manager().ticket.autoAssign({ ticketIds: [created.id] });
-      expect(result.assigned).toEqual([]);
-      expect(result.skipped).toEqual([
-        {
-          ticketId: created.id,
-          workOrderNumber: created.workOrderNumber,
-          channel: null,
-          reason: "missing_channel",
-        },
-      ]);
-
-      const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
-      expect(row.status).toBe("unassigned");
-      expect(row.assigneeId).toBeNull();
     });
   });
 

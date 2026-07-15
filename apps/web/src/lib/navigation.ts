@@ -21,7 +21,12 @@ export const NAV_ITEMS = [
   { path: "/tickets", label: "工单管理", permission: "ticket.view", icon: Ticket },
   { path: "/users", label: "用户管理", permission: "user.view", icon: Users },
   { path: "/roles", label: "角色权限", permission: "role.view", icon: ShieldCheck },
-  { path: "/schedule", label: "排班配置", permission: "schedule.view", icon: CalendarClock },
+  {
+    path: "/shift-types",
+    label: "班次管理",
+    permission: "schedule.manage_shifts",
+    icon: CalendarClock,
+  },
   { path: "/sla", label: "SLA 策略", permission: "sla.view", icon: Timer },
 ] as const satisfies readonly NavItem[];
 

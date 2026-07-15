@@ -4,6 +4,7 @@ import {
   DEMO_PASSWORD,
   seedDemoTickets,
   seedFactoryRolesAndDemoUsers,
+  seedShiftTypes,
   seedSlaPolicies,
 } from "./seed-data";
 
@@ -39,6 +40,11 @@ async function main() {
     console.log(
       `✓ SLAPolicy: ${policy.complaintLevel}（首响${policy.firstResponseMinutes}min / ${overdue}）`,
     );
+  }
+
+  const shifts = await seedShiftTypes(prisma);
+  for (const shift of shifts) {
+    console.log(`✓ ShiftType: ${shift.name}`);
   }
 
   const tickets = await seedDemoTickets(prisma, { roles, users });

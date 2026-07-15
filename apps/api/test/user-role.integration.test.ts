@@ -120,13 +120,8 @@ describe("user + role management (Testcontainers)", () => {
     return app.inject({ method: "GET", url: "/trpc/auth.me", cookies: { session: token } });
   }
 
-  /** GET a tRPC query with an input payload riding the given session token. */
-  function queryWithInput(path: string, input: unknown, token: string) {
-    return app.inject({
-      method: "GET",
-      url: `/trpc/${path}?input=${encodeURIComponent(JSON.stringify(input))}`,
-      cookies: { session: token },
-    });
+  function query(path: string, token: string) {
+    return app.inject({ method: "GET", url: `/trpc/${path}`, cookies: { session: token } });
   }
 
   let userSeq = 0;
@@ -287,17 +282,21 @@ describe("user + role management (Testcontainers)", () => {
 
   describe("分配角色 + 角色权限变更即时生效 (acceptance: 下次请求按新权限判定)", () => {
     it("a role reassignment binds on the target's next request, same session", async () => {
-      const member = await makeUser(); // 一线客服: no schedule.view
+      const member = await makeUser(); // 一线客服: no schedule.manage_shifts
       const token = await loginToken(member.username, member.password);
 
-      const before = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      const before = await query("shiftType.list", token);
       expect(before.statusCode).toBe(403);
 
-      await admin().user.assignRole({ id: member.id, roleId: seeded.roles.csManager.id });
+      const shiftMaintainer = await admin().role.create({
+        name: "班次维护员",
+        permissions: ["schedule.manage_shifts"],
+      });
+      await admin().user.assignRole({ id: member.id, roleId: shiftMaintainer.id });
 
       const identity = await me(token);
-      expect(identity.json().result.data.roleName).toBe("客服主管");
-      const after = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      expect(identity.json().result.data.roleName).toBe("班次维护员");
+      const after = await query("shiftType.list", token);
       expect(after.statusCode).toBe(200);
     });
 
@@ -306,18 +305,18 @@ describe("user + role management (Testcontainers)", () => {
       const member = await makeUser({ roleId: role.id });
       const token = await loginToken(member.username, member.password);
 
-      const denied = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      const denied = await query("shiftType.list", token);
       expect(denied.statusCode).toBe(403);
 
       await admin().role.updatePermissions({
         id: role.id,
-        permissions: ["ticket.view", "schedule.view"],
+        permissions: ["ticket.view", "schedule.manage_shifts"],
       });
-      const granted = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      const granted = await query("shiftType.list", token);
       expect(granted.statusCode).toBe(200);
 
       await admin().role.updatePermissions({ id: role.id, permissions: ["ticket.view"] });
-      const revoked = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      const revoked = await query("shiftType.list", token);
       expect(revoked.statusCode).toBe(403);
     });
   });
@@ -588,7 +587,7 @@ describe("user + role management (Testcontainers)", () => {
       expect([...identity.permissions].sort()).toEqual([...ALL_PERMISSIONS].sort());
 
       // 后端守卫与前端菜单同源(auth.me),这里再验一次真实守卫端点
-      const guarded = await queryWithInput("schedule.list", { date: "2026-08-01" }, token);
+      const guarded = await query("shiftType.list", token);
       expect(guarded.statusCode).toBe(200);
     });
 

@@ -7,9 +7,9 @@ if (existsSync(".env")) {
 
 /**
  * Runs before `tsx watch` on every `pnpm dev`: applies committed migrations
- * and regenerates the Prisma client, then seeds — but only into an empty
- * database. A non-empty users table means a developer may be mid-test on the
- * demo tickets; re-seeding would replace them under their feet.
+ * and regenerates the Prisma client. Required system catalogs are seeded on
+ * every start; destructive demo fixtures still run only into an empty
+ * database so a developer's in-progress tickets are never replaced.
  */
 
 // `docker compose up -d` returns before a fresh Postgres volume finishes
@@ -39,7 +39,10 @@ execFileSync("pnpm", ["exec", "prisma", "generate"], { stdio: "inherit" });
 // Imported only after `prisma generate` — a static top-level import would
 // load the stub that throws on instantiation.
 const { PrismaClient } = await import("@prisma/client");
+const { seedShiftTypes } = await import("./seed-data");
 const prisma = new PrismaClient();
+await seedShiftTypes(prisma);
+console.log("✓ Shift types: 4 (created if missing)");
 const userCount = await prisma.user.count();
 await prisma.$disconnect();
 

@@ -12,7 +12,8 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /**
  * Production bootstrap (runs on every container start) against a real
  * Postgres. First initialization (empty roles table) creates 管理员 + the
- * three factory roles, the default SLA policies, and one admin account.
+ * three factory roles, the default SLA policies, the four default shift
+ * definitions, and one admin account.
  * Re-runs must leave roles exactly as the operator configured them — edited
  * permissions stay edited, deleted factory roles stay deleted — and must
  * never touch an existing user's credentials.
@@ -39,7 +40,7 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     await container?.stop();
   });
 
-  it("first run creates 管理员 + three factory roles, SLA policies, and the admin account", async () => {
+  it("first run creates roles, SLA policies, default shifts, and the admin account", async () => {
     const result = await bootstrapSystemData(prisma, {
       adminUsername: "sysadmin",
       adminPassword: "first-install-pass",
@@ -56,6 +57,33 @@ describe("bootstrapSystemData (Testcontainers)", () => {
 
     const policies = await prisma.slaPolicy.findMany();
     expect(policies).toHaveLength(4);
+
+    expect(
+      await prisma.shiftType.findMany({
+        orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+        select: { name: true, color: true, segments: true, displayOrder: true },
+      }),
+    ).toEqual([
+      {
+        name: "早班",
+        color: "#10b981",
+        segments: [{ start: "09:00", end: "13:00" }],
+        displayOrder: 1,
+      },
+      {
+        name: "晚班",
+        color: "#f59e0b",
+        segments: [{ start: "15:00", end: "21:00" }],
+        displayOrder: 2,
+      },
+      {
+        name: "全班",
+        color: "#3b82f6",
+        segments: [{ start: "09:00", end: "18:00" }],
+        displayOrder: 3,
+      },
+      { name: "休", color: "#9ca3af", segments: [], displayOrder: 99 },
+    ]);
 
     const admin = await prisma.user.findUnique({
       where: { username: "sysadmin" },
@@ -84,6 +112,25 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     expect(roles.map((role) => role.name).sort()).toEqual(["一线客服", "管理员", "运营主管"]);
     const renamed = roles.find((role) => role.name === "运营主管");
     expect(renamed?.permissions).toEqual(["ticket.view"]);
+  });
+
+  it("re-running never recreates renamed or deleted default shifts", async () => {
+    await prisma.shiftType.update({
+      where: { name: "早班" },
+      data: { name: "清晨班", color: "#123456" },
+    });
+    await prisma.shiftType.delete({ where: { name: "晚班" } });
+
+    await bootstrapSystemData(prisma, {
+      adminUsername: "sysadmin",
+      adminPassword: "first-install-pass",
+    });
+
+    expect((await prisma.shiftType.findUniqueOrThrow({ where: { name: "清晨班" } })).color).toBe(
+      "#123456",
+    );
+    expect(await prisma.shiftType.findUnique({ where: { name: "早班" } })).toBeNull();
+    expect(await prisma.shiftType.findUnique({ where: { name: "晚班" } })).toBeNull();
   });
 
   it("re-running never rewrites the existing admin's password hash", async () => {

@@ -58,13 +58,11 @@ import {
   Search,
   Ticket,
   UserPlus,
-  Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
-import { AutoAssignDialog } from "./AutoAssignDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { downloadTicketExport } from "./ticket-export";
@@ -84,11 +82,6 @@ import { downloadTicketExport } from "./ticket-export";
  * action (ticket.assign) and multi-select checkboxes feeding 批量分配
  * (ticket.batch_assign). Selection is kept as id → AssignTarget so it survives
  * paging; completed tickets are terminal and not selectable.
- *
- * 按排班自动分配 rides the same two surfaces, for 未分配 tickets only: a
- * per-row 自动分配 action and a selection-bar button that lights up when
- * every selected ticket is unassigned. The system picks the assignee, so
- * both routes go through the confirm-only AutoAssignDialog.
  */
 
 const BASE_COLUMN_COUNT = 10;
@@ -212,7 +205,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [selected, setSelected] = useState<ReadonlyMap<string, AssignTarget>>(new Map());
   const [singleTarget, setSingleTarget] = useState<AssignTarget | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
-  const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
@@ -281,9 +273,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const selectableItems = items.filter((ticket) => ticket.status !== "completed");
   const allPageSelected =
     selectableItems.length > 0 && selectableItems.every((ticket) => selected.has(ticket.id));
-
-  // 按排班自动分配 only ever targets 未分配 tickets
-  const selectedHasAssigned = [...selected.values()].some((target) => target.assigneeId !== null);
 
   /** 导出当前筛选结果 — the server re-applies scope and filters. */
   async function handleExport(format: TicketExportFormat) {
@@ -408,21 +397,9 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             <UserPlus data-icon="inline-start" />
             批量分配
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={selectedHasAssigned || selected.size > BATCH_ASSIGN_LIMIT}
-            onClick={() => setAutoTargets([...selected.values()])}
-          >
-            <Zap data-icon="inline-start" />
-            按排班自动分配
-          </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Map())}>
             清除选择
           </Button>
-          {selectedHasAssigned && (
-            <span className="text-muted-foreground">自动分配仅适用于未分配工单</span>
-          )}
           {selected.size > BATCH_ASSIGN_LIMIT && (
             <span className="text-destructive">
               一次最多分配 {BATCH_ASSIGN_LIMIT} 个，请减少选择
@@ -554,18 +531,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                             >
                               {ticket.assigneeId ? "改派" : "分配"}
                             </Button>
-                            {ticket.assigneeId === null && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setAutoTargets([toTarget(ticket)]);
-                                }}
-                              >
-                                自动分配
-                              </Button>
-                            )}
                           </div>
                         )}
                       </TableCell>
@@ -631,27 +596,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onOpenChange={setBatchOpen}
           targets={[...selected.values()]}
           onAssigned={() => setSelected(new Map())}
-        />
-      )}
-
-      {(canAssign || canBatchAssign) && autoTargets && (
-        <AutoAssignDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setAutoTargets(null);
-          }}
-          targets={autoTargets}
-          // Skipped (no on-duty) tickets keep their selection — one click away
-          // from the manual 批量分配 fallback the toast asks for
-          onAssigned={(assignedIds) =>
-            setSelected((prev) => {
-              const next = new Map(prev);
-              for (const id of assignedIds) {
-                next.delete(id);
-              }
-              return next;
-            })
-          }
         />
       )}
     </div>

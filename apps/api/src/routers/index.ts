@@ -5,7 +5,7 @@ import { dashboardRouter } from "./dashboard.router";
 import { demoRouter } from "./demo.router";
 import { notificationRouter } from "./notification.router";
 import { roleRouter } from "./role.router";
-import { scheduleRouter } from "./schedule.router";
+import { shiftTypeRouter } from "./shift-type.router";
 import { slaRouter } from "./sla.router";
 import { ticketRouter } from "./ticket.router";
 import { userRouter } from "./user.router";
@@ -42,10 +42,8 @@ export const appRouter = router({
    */
   dashboard: dashboardRouter,
 
-  /**
-   * 排班配置 - 排班日历 CRUD，喂给按排班自动分配
-   */
-  schedule: scheduleRouter,
+  /** 管理员配置班次名称、颜色、多时段与显示顺序。 */
+  shiftType: shiftTypeRouter,
 
   /**
    * 用户管理 - 新增/编辑/禁用启用/分配角色

@@ -1,6 +1,6 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
 import { COMPLAINT_LEVELS, DEFAULT_SLA_POLICIES, TicketStatus } from "@insuredesk/shared";
-import type { PrismaClient, Role, SlaPolicy, Ticket, User } from "@prisma/client";
+import type { PrismaClient, Role, ShiftType, SlaPolicy, Ticket, User } from "@prisma/client";
 import type { Clock } from "../src/clock";
 import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service";
 import { assignTicket } from "../src/services/ticket-assign.service";
@@ -18,6 +18,28 @@ import { computeSlaStamp, createTicket } from "../src/services/ticket.service";
 
 /** Password shared by every demo account. */
 export const DEMO_PASSWORD = "password123";
+
+export const DEFAULT_SHIFT_TYPES = [
+  {
+    name: "早班",
+    color: "#10b981",
+    segments: [{ start: "09:00", end: "13:00" }],
+    displayOrder: 1,
+  },
+  {
+    name: "晚班",
+    color: "#f59e0b",
+    segments: [{ start: "15:00", end: "21:00" }],
+    displayOrder: 2,
+  },
+  {
+    name: "全班",
+    color: "#3b82f6",
+    segments: [{ start: "09:00", end: "18:00" }],
+    displayOrder: 3,
+  },
+  { name: "休", color: "#9ca3af", segments: [], displayOrder: 99 },
+] as const;
 
 /**
  * 出厂角色: created once, only while the roles table is still empty. After
@@ -116,6 +138,7 @@ export async function bootstrapSystemData(
 ): Promise<{ adminCreated: boolean; rolesCreated: boolean }> {
   const factoryRoles = await createFactoryRoles(prisma);
   await seedSlaPolicies(prisma);
+  await seedShiftTypes(prisma);
 
   const existing = await prisma.user.findUnique({ where: { username: options.adminUsername } });
   if (existing) {
@@ -226,6 +249,28 @@ export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]
     );
   }
   return policies;
+}
+
+/**
+ * First initialization only: create the four standard shift definitions when
+ * the catalog is empty. Once any shift exists, the catalog belongs to the
+ * administrator — later renames and deletions must survive every startup.
+ */
+export async function seedShiftTypes(prisma: PrismaClient): Promise<ShiftType[]> {
+  return prisma.$transaction(async (tx) => {
+    if ((await tx.shiftType.count()) === 0) {
+      await tx.shiftType.createMany({
+        data: DEFAULT_SHIFT_TYPES.map((defaults) => ({
+          name: defaults.name,
+          color: defaults.color,
+          segments: [...defaults.segments],
+          displayOrder: defaults.displayOrder,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    return tx.shiftType.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] });
+  });
 }
 
 const HOUR_MS = 60 * 60 * 1000;

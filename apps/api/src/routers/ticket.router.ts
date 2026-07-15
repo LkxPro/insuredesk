@@ -1,7 +1,6 @@
 import {
   ticketAddCommentInputSchema,
   ticketAssignInputSchema,
-  ticketAutoAssignInputSchema,
   ticketBatchAssignInputSchema,
   ticketCreateInputSchema,
   ticketDeleteInputSchema,
@@ -18,7 +17,6 @@ import {
   TicketNotAssignableError,
   TicketNotFoundError,
   assignTicket,
-  autoAssignTicketsBySchedule,
   batchAssignTickets,
   listAssigneeOptions,
 } from "../services/ticket-assign.service";
@@ -37,7 +35,7 @@ import { requireAnyPermission, requirePermission, router } from "../trpc";
 
 /**
  * Ticket routes: manual creation, the detail page read, the filterable list,
- * assignment (manual, batch, and by-schedule), follow-ups, resolution,
+ * assignment (manual and batch), follow-ups, resolution,
  * editing, and soft deletion. Thin wrappers — validation via the shared Zod
  * schemas, RBAC via requirePermission, business logic in the ticket services.
  */
@@ -223,27 +221,6 @@ export const ticketRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         return await batchAssignTickets(deps, ctx.user, input);
-      } catch (error) {
-        mapAssignmentError(error);
-      }
-    }),
-
-  /**
-   * 按排班自动分配: the system picks per ticket, so the required
-   * authority mirrors the manual split — one ticket rides ticket.assign, a
-   * multi-ticket selection additionally needs ticket.batch_assign.
-   */
-  autoAssign: requireAnyPermission(["ticket.assign", "ticket.batch_assign"])
-    .input(ticketAutoAssignInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      if (input.ticketIds.length > 1 && !ctx.user.permissions.includes("ticket.batch_assign")) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Missing required permission: ticket.batch_assign",
-        });
-      }
-      try {
-        return await autoAssignTicketsBySchedule(deps, ctx.user, input);
       } catch (error) {
         mapAssignmentError(error);
       }
