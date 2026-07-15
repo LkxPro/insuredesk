@@ -4,7 +4,7 @@
 # See ADR 0007 for rationale.
 
 services:
-  db:
+  insuredesk-db-dev:
     image: postgres:17-alpine
     container_name: insuredesk-db
     environment:
