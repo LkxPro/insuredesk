@@ -80,6 +80,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
+      requiredTicketFields: [],
       },
       sessionToken: null,
     });
@@ -96,6 +97,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         roleId: user.roleId,
         roleName,
         permissions,
+        requiredTicketFields: [],
       },
       sessionToken: null,
     });
@@ -119,11 +121,11 @@ describe("role required ticket fields (Testcontainers)", () => {
 
   const validInput = {
     feedbackTime: "2026-07-15T10:00:00.000Z",
-    channel: "保司",
+    channel: "保司" as const,
     customerName: "张三",
     phone: "13900000000",
     hasContacted: true,
-    complaintLevel: "一般投诉",
+    complaintLevel: "一般投诉" as const,
   } satisfies TicketCreateInput;
 
   describe("role.updateRequiredFields", () => {
@@ -232,7 +234,7 @@ describe("role required ticket fields (Testcontainers)", () => {
       const input = {
         ...validInput,
         customerName: "李四",
-        channel: "保司",
+        channel: "保司" as const,
       };
       const result = await requiredUser().ticket.create(input);
       expect(result.workOrderNumber).toMatch(/^WO\d{6,}$/);

@@ -77,6 +77,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
         roleId: "role-under-test",
         roleName,
         permissions,
+        requiredTicketFields: [],
       },
       sessionToken: null,
     });

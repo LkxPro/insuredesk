@@ -76,6 +76,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
         roleId: "role-under-test",
         roleName,
         permissions,
+        requiredTicketFields: [],
       },
       sessionToken: null,
     });

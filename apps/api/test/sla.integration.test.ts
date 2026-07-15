@@ -73,6 +73,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       roleId: role.id,
       roleName: role.name,
       permissions: effectivePermissions(role),
+      requiredTicketFields: [],
     };
   }
 
@@ -157,6 +158,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
         user: {
           ...identityOf(seeded.users.observer, seeded.roles.readOnly),
           permissions: ["sla.view"],
+      requiredTicketFields: [],
         },
         sessionToken: null,
       });

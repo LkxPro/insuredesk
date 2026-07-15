@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
@@ -18,7 +19,7 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { TicketFormFields, type TicketFormValues, ticketFormSchema } from "./TicketFormFields";
+import { buildTicketFormSchema, TicketFormFields, type TicketFormValues } from "./TicketFormFields";
 
 /**
  * Blank defaults with feedbackTime prefilled to the current local minute —
@@ -48,9 +49,13 @@ export function TicketCreateDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const requiredFields = user?.requiredTicketFields ?? [];
+  const schema = buildTicketFormSchema(requiredFields);
 
   const form = useForm<TicketFormValues>({
-    resolver: zodResolver(ticketFormSchema),
+    resolver: zodResolver(schema),
     defaultValues: createDefaults(),
   });
 

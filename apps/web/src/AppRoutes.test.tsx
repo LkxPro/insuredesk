@@ -77,6 +77,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     roleId: "r1",
     roleName: role.name,
     permissions: [...role.permissions],
+    requiredTicketFields: [],
   };
 }
 

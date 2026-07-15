@@ -83,6 +83,7 @@ describe("user + role management (Testcontainers)", () => {
       roleId: "role-under-test",
       roleName,
       permissions,
+      requiredTicketFields: [],
     };
   }
 
@@ -334,6 +335,7 @@ describe("user + role management (Testcontainers)", () => {
         system: false,
         userCount: 0,
         permissions: ["ticket.view", "ticket.view_all", "dashboard.view"],
+        requiredTicketFields: [],
       });
 
       // 管理员 is the one and only system role; the factory roles are ordinary

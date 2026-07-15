@@ -68,6 +68,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       roleId: role.id,
       roleName: role.name,
       permissions: role.permissions as Permission[],
+      requiredTicketFields: [],
     };
   }
 

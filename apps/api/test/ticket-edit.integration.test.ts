@@ -80,6 +80,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         roleId: "role-under-test",
         roleName,
         permissions,
+        requiredTicketFields: [],
       },
       sessionToken: null,
     });

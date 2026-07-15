@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   CHANNELS,
   COMPLAINT_LEVELS,
@@ -24,6 +25,7 @@ import {
   PRIORITIES,
   PRIORITY_LABELS,
   TICKET_CATEGORIES,
+  type TicketCreateFieldKey,
   ticketCreateInputSchema,
 } from "@insuredesk/shared";
 import { Controller, type UseFormReturn } from "react-hook-form";
@@ -40,7 +42,50 @@ import { z } from "zod";
  * contract the API parses — with one form-side deviation: feedbackTime is
  * held as a local datetime string ("" = unfilled) until submit, when the
  * caller converts it to an absolute instant or null.
+ *
+ * 动态必填：建单表单据用户角色的必填集生成校验，编辑表单不受约束。必填字段标签后显示星号。
  */
+export function buildTicketFormSchema(requiredFields: readonly string[]) {
+  let schema = ticketCreateInputSchema.extend({
+    feedbackTime: z.string(),
+  });
+
+  const requiredFieldTransforms: Partial<Record<TicketCreateFieldKey, z.ZodTypeAny>> = {
+    feedbackTime: z.string().min(1, "反馈时间为必填项"),
+    channel: z.string().min(1, "业务渠道为必填项"),
+    project: z.string().trim().min(1, "项目名称为必填项").max(100),
+    brokerageEntity: z.string().trim().min(1, "经纪主体为必填项").max(100),
+    paymentChannel: z.string().trim().min(1, "支付渠道为必填项").max(100),
+    internalOrderNumber: z.string().trim().min(1, "内部工单号为必填项").max(200),
+    policyNumber: z.string().trim().min(1, "保单号为必填项").max(100),
+    userComplaintChannel: z.string().trim().min(1, "用户投诉渠道为必填项").max(100),
+    customerName: z.string().trim().min(1, "客户姓名为必填项").max(100),
+    phone: z.string().trim().min(1, "手机号为必填项").max(50),
+    contactPhone: z.string().trim().min(1, "联系电话为必填项").max(200),
+    customerRequest: z.string().trim().min(1, "客户诉求为必填项").max(2000),
+    nuclearBodyStatus: z.string().min(1, "保司侧是否核身为必填项"),
+    hasContacted: z.boolean({ required_error: "是否已联系为必填项" }),
+    contactId: z.string().trim().min(1, "联系人ID为必填项").max(200),
+    category: z.string().min(1, "分类为必填项"),
+    complaintLevel: z.string().min(1, "投诉等级为必填项"),
+    priority: z.string().min(1, "优先级为必填项"),
+  };
+
+  const requiredExtension: Record<string, z.ZodTypeAny> = {};
+  for (const field of requiredFields) {
+    const transform = requiredFieldTransforms[field as TicketCreateFieldKey];
+    if (transform) {
+      requiredExtension[field] = transform;
+    }
+  }
+
+  if (Object.keys(requiredExtension).length > 0) {
+    schema = schema.extend(requiredExtension) as typeof schema;
+  }
+
+  return schema;
+}
+
 export const ticketFormSchema = ticketCreateInputSchema.extend({
   feedbackTime: z.string(),
 });
@@ -63,13 +108,20 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
     formState: { errors },
   } = form;
 
+  const { user } = useAuth();
+  const requiredFields = new Set(user?.requiredTicketFields ?? []);
+
+  const isRequired = (field: TicketCreateFieldKey) => requiredFields.has(field);
+
   return (
     <>
       <FieldSet>
         <FieldLegend variant="label">来源与渠道</FieldLegend>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field data-invalid={!!errors.feedbackTime}>
-            <FieldLabel htmlFor="feedbackTime-date">反馈时间</FieldLabel>
+            <FieldLabel htmlFor="feedbackTime-date">
+              反馈时间{isRequired("feedbackTime") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Controller
               control={control}
               name="feedbackTime"
@@ -85,7 +137,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.feedbackTime]} />
           </Field>
           <Field data-invalid={!!errors.channel}>
-            <FieldLabel htmlFor="channel">反馈渠道</FieldLabel>
+            <FieldLabel htmlFor="channel">
+              反馈渠道{isRequired("channel") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Controller
               control={control}
               name="channel"
@@ -121,7 +175,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
         <FieldLegend variant="label">业务信息</FieldLegend>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field data-invalid={!!errors.project}>
-            <FieldLabel htmlFor="project">项目（保司）</FieldLabel>
+            <FieldLabel htmlFor="project">
+              项目（保司）{isRequired("project") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input
               id="project"
               placeholder="如：融盛、泰康"
@@ -131,7 +187,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.project]} />
           </Field>
           <Field data-invalid={!!errors.brokerageEntity}>
-            <FieldLabel htmlFor="brokerageEntity">经纪主体</FieldLabel>
+            <FieldLabel htmlFor="brokerageEntity">
+              经纪主体{isRequired("brokerageEntity") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input
               id="brokerageEntity"
               placeholder="如：东方大地"
@@ -141,7 +199,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.brokerageEntity]} />
           </Field>
           <Field data-invalid={!!errors.paymentChannel}>
-            <FieldLabel htmlFor="paymentChannel">支付渠道</FieldLabel>
+            <FieldLabel htmlFor="paymentChannel">
+              支付渠道{isRequired("paymentChannel") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input
               id="paymentChannel"
               placeholder="如：连连支付"
@@ -151,7 +211,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.paymentChannel]} />
           </Field>
           <Field data-invalid={!!errors.internalOrderNumber}>
-            <FieldLabel htmlFor="internalOrderNumber">内部订单号</FieldLabel>
+            <FieldLabel htmlFor="internalOrderNumber">
+              内部订单号{isRequired("internalOrderNumber") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input
               id="internalOrderNumber"
               aria-invalid={!!errors.internalOrderNumber}
@@ -160,7 +222,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.internalOrderNumber]} />
           </Field>
           <Field data-invalid={!!errors.policyNumber}>
-            <FieldLabel htmlFor="policyNumber">保单号</FieldLabel>
+            <FieldLabel htmlFor="policyNumber">
+              保单号{isRequired("policyNumber") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input
               id="policyNumber"
               aria-invalid={!!errors.policyNumber}
@@ -169,7 +233,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.policyNumber]} />
           </Field>
           <Field data-invalid={!!errors.userComplaintChannel}>
-            <FieldLabel htmlFor="userComplaintChannel">用户投诉渠道</FieldLabel>
+            <FieldLabel htmlFor="userComplaintChannel">
+              用户投诉渠道{isRequired("userComplaintChannel") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input
               id="userComplaintChannel"
               placeholder="如：飞书投诉、400热线"
@@ -187,7 +253,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
         <FieldLegend variant="label">客户信息</FieldLegend>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field data-invalid={!!errors.customerName}>
-            <FieldLabel htmlFor="customerName">客户姓名</FieldLabel>
+            <FieldLabel htmlFor="customerName">
+              客户姓名{isRequired("customerName") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input
               id="customerName"
               aria-invalid={!!errors.customerName}
@@ -196,12 +264,16 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.customerName]} />
           </Field>
           <Field data-invalid={!!errors.phone}>
-            <FieldLabel htmlFor="phone">客户电话（投保人）</FieldLabel>
+            <FieldLabel htmlFor="phone">
+              客户电话（投保人）{isRequired("phone") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input id="phone" type="tel" aria-invalid={!!errors.phone} {...register("phone")} />
             <FieldError errors={[errors.phone]} />
           </Field>
           <Field data-invalid={!!errors.contactPhone}>
-            <FieldLabel htmlFor="contactPhone">联系人电话</FieldLabel>
+            <FieldLabel htmlFor="contactPhone">
+              联系人电话{isRequired("contactPhone") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input
               id="contactPhone"
               type="tel"
@@ -211,7 +283,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.contactPhone]} />
           </Field>
           <Field data-invalid={!!errors.nuclearBodyStatus}>
-            <FieldLabel htmlFor="nuclearBodyStatus">保司侧是否核身</FieldLabel>
+            <FieldLabel htmlFor="nuclearBodyStatus">
+              保司侧是否核身{isRequired("nuclearBodyStatus") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Controller
               control={control}
               name="nuclearBodyStatus"
@@ -243,7 +317,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.nuclearBodyStatus]} />
           </Field>
           <Field data-invalid={!!errors.customerRequest} className="sm:col-span-2">
-            <FieldLabel htmlFor="customerRequest">客户诉求</FieldLabel>
+            <FieldLabel htmlFor="customerRequest">
+              客户诉求{isRequired("customerRequest") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Textarea
               id="customerRequest"
               rows={4}
@@ -253,7 +329,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.customerRequest]} />
           </Field>
           <Field data-invalid={!!errors.hasContacted}>
-            <FieldLabel htmlFor="hasContacted">客户曾进线</FieldLabel>
+            <FieldLabel htmlFor="hasContacted">
+              客户曾进线{isRequired("hasContacted") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Controller
               control={control}
               name="hasContacted"
@@ -287,7 +365,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.hasContacted]} />
           </Field>
           <Field data-invalid={!!errors.contactId}>
-            <FieldLabel htmlFor="contactId">进线ID</FieldLabel>
+            <FieldLabel htmlFor="contactId">
+              进线ID{isRequired("contactId") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Input id="contactId" aria-invalid={!!errors.contactId} {...register("contactId")} />
             <FieldError errors={[errors.contactId]} />
           </Field>
@@ -300,7 +380,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
         <FieldLegend variant="label">分类与等级</FieldLegend>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field data-invalid={!!errors.category}>
-            <FieldLabel htmlFor="category">客诉类别</FieldLabel>
+            <FieldLabel htmlFor="category">
+              客诉类别{isRequired("category") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Controller
               control={control}
               name="category"
@@ -328,7 +410,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.category]} />
           </Field>
           <Field data-invalid={!!errors.complaintLevel}>
-            <FieldLabel htmlFor="complaintLevel">投诉等级</FieldLabel>
+            <FieldLabel htmlFor="complaintLevel">
+              投诉等级{isRequired("complaintLevel") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Controller
               control={control}
               name="complaintLevel"
@@ -360,7 +444,9 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
             <FieldError errors={[errors.complaintLevel]} />
           </Field>
           <Field data-invalid={!!errors.priority}>
-            <FieldLabel htmlFor="priority">优先级</FieldLabel>
+            <FieldLabel htmlFor="priority">
+              优先级{isRequired("priority") && <span className="text-destructive">*</span>}
+            </FieldLabel>
             <Controller
               control={control}
               name="priority"

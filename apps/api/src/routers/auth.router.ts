@@ -14,6 +14,7 @@ const meOutputSchema = z.object({
   roleId: z.string(),
   roleName: z.string(),
   permissions: z.array(z.string()),
+  requiredTicketFields: z.array(z.string()),
 });
 
 export const authRouter = router({
@@ -24,6 +25,8 @@ export const authRouter = router({
    * Returns the authenticated user's profile and their full permission list
    * resolved from their role. Used by the frontend to determine what UI
    * elements to show and what actions are allowed.
+   *
+   * 包含当前用户角色的建单必填字段集，用于动态生成表单校验。
    */
   me: protectedProcedure.output(meOutputSchema).query(({ ctx }) => {
     return {
@@ -34,6 +37,7 @@ export const authRouter = router({
       roleId: ctx.user.roleId,
       roleName: ctx.user.roleName,
       permissions: ctx.user.permissions,
+      requiredTicketFields: ctx.user.requiredTicketFields,
     };
   }),
 });

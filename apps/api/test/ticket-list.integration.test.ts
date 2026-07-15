@@ -74,6 +74,7 @@ describe("ticket list (Testcontainers)", () => {
       roleId: role.id,
       roleName: role.name,
       permissions: role.permissions as Permission[],
+      requiredTicketFields: [],
     };
   }
 

@@ -76,6 +76,7 @@ describe("dashboard stats (Testcontainers)", () => {
       roleId: role.id,
       roleName: role.name,
       permissions: permissions ?? (role.permissions as Permission[]),
+      requiredTicketFields: [],
     };
   }
 

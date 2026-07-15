@@ -294,6 +294,7 @@ function authUser(user: User, role: Role): AuthenticatedUser {
     roleId: role.id,
     roleName: role.name,
     permissions: role.permissions as Permission[],
+    requiredTicketFields: role.requiredTicketFields,
   };
 }
 

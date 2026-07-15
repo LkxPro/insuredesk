@@ -84,6 +84,7 @@ describe("ticket assignment (Testcontainers)", () => {
         roleId: "role-under-test",
         roleName,
         permissions,
+        requiredTicketFields: [],
       },
       sessionToken: null,
     });
@@ -495,6 +496,7 @@ describe("ticket assignment (Testcontainers)", () => {
         roleId: "role-under-test",
         roleName: seeded.roles.csManager.name,
         permissions: seeded.roles.csManager.permissions as Permission[],
+      requiredTicketFields: [],
       };
 
       const autoResult = await autoAssignTicketsBySchedule(

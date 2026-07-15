@@ -76,6 +76,7 @@ describe("schedule + auto-assign (Testcontainers)", () => {
       roleId: "role-under-test",
       roleName,
       permissions,
+      requiredTicketFields: [],
     };
   }
 
