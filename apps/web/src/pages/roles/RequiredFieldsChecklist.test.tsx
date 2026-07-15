@@ -74,10 +74,7 @@ describe("RequiredFieldsChecklist", () => {
     const phoneCheckbox = screen.getByLabelText("手机号");
     await user.click(phoneCheckbox);
 
-    const call = onChange.mock.calls[0][0] as string[];
-    expect(call).toContain("customerName");
-    expect(call).toContain("channel");
-    expect(call).not.toContain("phone");
+    expect(onChange).toHaveBeenCalledWith(["customerName", "channel"]);
   });
 
   it("renders as disabled when disabled prop is true", () => {
