@@ -533,6 +533,24 @@ describe("dashboard stats (Testcontainers)", () => {
         );
       }
     });
+
+    it("我创建但他人处理/未指派的单不计入我的看板 — 看板口径按我名下，与列表有意不同", async () => {
+      await makeTicket({ customerName: "小张创建未指派" }, { creatorId: seeded.users.cs1.id });
+      await makeTicket(
+        { customerName: "小张创建主管处理" },
+        {
+          creatorId: seeded.users.cs1.id,
+          status: "assigned",
+          assigneeId: seeded.users.manager.id,
+          assignedAt: new Date(),
+        },
+      );
+
+      const own = await frontline().dashboard.stats();
+      expect(own.scope).toBe("own");
+      expect(own.metrics.total).toBe(0);
+      expect(own.assignees).toEqual([]);
+    });
   });
 
   describe("权限", () => {

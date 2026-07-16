@@ -20,9 +20,10 @@ import {
 /**
  * 导出工单: the viewer's *filtered list*, as a file. Reuses the list's
  * WHERE/ORDER builders verbatim, so filters, soft-delete exclusion, and the
- * RBAC data scope (个人档只能导出本人名下) can never drift from what the
- * list page shows. Read-only by design: an export writes no ProcessLog — it
- * is a list-level batch read, not a per-ticket timeline event.
+ * RBAC data scope (个人档只能导出指派给我或我创建的单) can never drift from
+ * what the list page shows. Read-only by design: an export writes no
+ * ProcessLog — it is a list-level batch read, not a per-ticket timeline
+ * event.
  */
 
 export interface TicketExportFile {

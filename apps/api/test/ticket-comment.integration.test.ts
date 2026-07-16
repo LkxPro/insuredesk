@@ -325,6 +325,29 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
+    it("lets the creator follow up on their own ticket after it was assigned to someone else", async () => {
+      const creator = () =>
+        callerWith(seeded.users.cs1, "受限创建人", [
+          "ticket.view",
+          "ticket.create",
+          "ticket.process",
+        ]);
+      const created = await creator().ticket.create(baseInput);
+      await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
+
+      const result = await creator().ticket.addComment({
+        ticketId: created.id,
+        remark: "创建人补充客户来电信息",
+      });
+      expect(result).toMatchObject({ status: "processing", contactCount: 1 });
+
+      const detail = await manager().ticket.detail({ id: created.id });
+      expect(detail.processLogs.at(-2)).toMatchObject({
+        action: "comment",
+        operatorId: seeded.users.cs1.id,
+      });
+    });
+
     it("lets ticket.process + ticket.view_all follow up on others' tickets (主管顶班)", async () => {
       const ticketId = await createAssignedTicket(seeded.users.cs1.id);
 

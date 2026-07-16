@@ -209,8 +209,9 @@ type TicketListFilters = Pick<
  * the paged list and the export so the two can never disagree. Applies:
  *
  * - soft-delete exclusion (deletedAt null)
- * - the RBAC data scope — no `ticket.view_all` → only own tickets, so the
- *   unassigned pool never reaches 一线客服
+ * - the RBAC data scope — no `ticket.view_all` → only tickets assigned to or
+ *   created by the viewer, so the rest of the unassigned pool never reaches
+ *   一线客服
  * - the filters, with computed statuses resolved through the single-truth
  *   predicate module rather than restated here
  */
@@ -339,9 +340,10 @@ type TicketWithDetail = Prisma.TicketGetPayload<{ include: typeof detailInclude 
 
 /**
  * Full ticket detail + timeline for the detail page. Applies the RBAC data
- * scope (no `ticket.view_all` → only own tickets) and excludes soft-deleted
- * rows; returns null when the ticket is invisible to the viewer, which the
- * router surfaces as NOT_FOUND (existence is not leaked).
+ * scope (no `ticket.view_all` → only tickets assigned to or created by the
+ * viewer) and excludes soft-deleted rows; returns null when the ticket is
+ * invisible to the viewer, which the router surfaces as NOT_FOUND (existence
+ * is not leaked).
  */
 export async function getTicketDetail(
   { prisma, clock }: TicketServiceDeps,

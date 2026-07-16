@@ -16,7 +16,7 @@ export const DASHBOARD_PERMISSIONS = [
 // Ticket management permissions
 export const TICKET_PERMISSIONS = [
   "ticket.view", // Access ticket list (page permission)
-  "ticket.view_all", // View all tickets (data permission) - without this, only see assigned tickets
+  "ticket.view_all", // View all tickets (data permission) - without this, only see tickets assigned to or created by oneself
   "ticket.create", // Create new ticket (operation permission)
   "ticket.edit", // Edit ticket basic info (operation permission)
   "ticket.process", // Process ticket - add comments/follow-ups (operation permission)

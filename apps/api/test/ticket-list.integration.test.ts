@@ -87,6 +87,15 @@ describe("ticket list (Testcontainers)", () => {
     });
   }
 
+  /** Caller with the given user identity and an explicit permission set. */
+  function callerWith(user: User, permissions: Permission[]) {
+    return appRouter.createCaller({
+      traceId: "ticket-list-test",
+      user: { ...authUserFor(user, seeded.roles.frontline), permissions },
+      sessionToken: null,
+    });
+  }
+
   const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
@@ -386,6 +395,36 @@ describe("ticket list (Testcontainers)", () => {
 
       const result = await frontline().ticket.list({ channel: "支付" });
       expect(result.items.map((t) => t.id)).toEqual([own.id]);
+    });
+
+    it("创建人无 view_all 也能看到自己手工创建的单 — 未指派与已指派他人均可见", async () => {
+      const creator = () => callerWith(seeded.users.cs1, ["ticket.view", "ticket.create"]);
+
+      const unassignedOwn = await creator().ticket.create({
+        ...baseInput,
+        customerName: "我创建未指派",
+      });
+      const handedOff = await creator().ticket.create({
+        ...baseInput,
+        customerName: "我创建主管处理",
+      });
+      await manager().ticket.assign({
+        ticketId: handedOff.id,
+        assigneeId: seeded.users.manager.id,
+      });
+      await makeTicket({ customerName: "别人创建的" }); // manager-created, unassigned
+
+      const result = await creator().ticket.list({});
+      expect(result.total).toBe(2);
+      expect(result.items.map((t) => t.id).sort()).toEqual([unassignedOwn.id, handedOff.id].sort());
+
+      // 处理人列 tells the two apart — no dedicated UI flag needed
+      const handedOffRow = result.items.find((t) => t.id === handedOff.id);
+      expect(handedOffRow?.assigneeName).toBe(seeded.users.manager.name);
+
+      // A viewer who is neither creator nor assignee, without view_all, sees none of them
+      const thirdParty = () => callerWith(seeded.users.observer, ["ticket.view"]);
+      expect((await thirdParty().ticket.list({})).total).toBe(0);
     });
   });
 

@@ -380,5 +380,39 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         scopedDeleter().ticket.delete({ ticketId: othersTicketId }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
+
+    it("lets the creator without ticket.view_all edit their own ticket — unassigned and after handoff", async () => {
+      const creatorEditor = () =>
+        callerWith(seeded.users.cs1, "受限创建人", ["ticket.view", "ticket.create", "ticket.edit"]);
+      const created = await creatorEditor().ticket.create(baseInput);
+
+      const whileUnassigned = await creatorEditor().ticket.edit(
+        editInput(created.id, { customerName: "创建人未指派时改" }),
+      );
+      expect(whileUnassigned.changedFields).toEqual(["customerName"]);
+
+      await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
+      const afterHandoff = await creatorEditor().ticket.edit(
+        editInput(created.id, { customerName: "创建人他人处理时改" }),
+      );
+      expect(afterHandoff.changedFields).toEqual(["customerName"]);
+    });
+
+    it("lets the creator without ticket.view_all delete their own ticket assigned to someone else", async () => {
+      const creatorDeleter = () =>
+        callerWith(seeded.users.cs1, "受限创建人", [
+          "ticket.view",
+          "ticket.create",
+          "ticket.delete",
+        ]);
+      const created = await creatorDeleter().ticket.create(baseInput);
+      await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
+
+      const result = await creatorDeleter().ticket.delete({ ticketId: created.id });
+      expect(result.id).toBe(created.id);
+
+      const row = await prisma.ticket.findUnique({ where: { id: created.id } });
+      expect(row?.deletedAt).not.toBeNull();
+    });
   });
 });

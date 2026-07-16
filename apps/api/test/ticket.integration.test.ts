@@ -60,6 +60,24 @@ describe("ticket creation + detail (Testcontainers)", () => {
     await container?.stop();
   });
 
+  /** Caller with the given user identity and an explicit permission set. */
+  function callerWith(user: User, roleName: string, permissions: Permission[]) {
+    return appRouter.createCaller({
+      traceId: "ticket-test",
+      user: {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
+        roleId: "role-under-test",
+        roleName,
+        permissions,
+        requiredTicketFields: [],
+      },
+      sessionToken: null,
+    });
+  }
+
   /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return appRouter.createCaller({
@@ -239,6 +257,29 @@ describe("ticket creation + detail (Testcontainers)", () => {
       // the read-only observer holds ticket.view_all → full detail visible
       const detail = await observer().ticket.detail({ id: created.id });
       expect(detail.workOrderNumber).toBe(created.workOrderNumber);
+    });
+
+    it("data scope keeps a creator without ticket.view_all on their manual ticket — unassigned and after handoff", async () => {
+      const creator = () =>
+        callerWith(seeded.users.cs1, "受限创建人", ["ticket.view", "ticket.create"]);
+      const created = await creator().ticket.create(baseInput);
+
+      // Visible to the creator the moment it exists, before any assignment
+      const fresh = await creator().ticket.detail({ id: created.id });
+      expect(fresh.workOrderNumber).toBe(created.workOrderNumber);
+      expect(fresh.assigneeId).toBeNull();
+
+      // Still visible after the ticket is assigned to someone else
+      await manager().ticket.assign({ ticketId: created.id, assigneeId: seeded.users.manager.id });
+      const handedOff = await creator().ticket.detail({ id: created.id });
+      expect(handedOff.assigneeId).toBe(seeded.users.manager.id);
+
+      // A user who is neither creator nor assignee, without ticket.view_all,
+      // still gets NOT_FOUND — the scope widened to the creator, no further
+      const thirdParty = () => callerWith(seeded.users.observer, "受限第三者", ["ticket.view"]);
+      await expect(thirdParty().ticket.detail({ id: created.id })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
     });
   });
 });

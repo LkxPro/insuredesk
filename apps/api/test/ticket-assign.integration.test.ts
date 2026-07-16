@@ -295,6 +295,25 @@ describe("ticket assignment (Testcontainers)", () => {
         scopedAssigner.ticket.assign({ ticketId, assigneeId: cs2.id }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
+
+    it("lets a creator without ticket.view_all assign their own freshly created ticket", async () => {
+      const creatorAssigner = callerWith(seeded.users.cs1, "受限创建人", [
+        "ticket.view",
+        "ticket.create",
+        "ticket.assign",
+      ]);
+      const created = await creatorAssigner.ticket.create(baseInput);
+
+      const result = await creatorAssigner.ticket.assign({
+        ticketId: created.id,
+        assigneeId: cs2.id,
+      });
+      expect(result).toMatchObject({
+        id: created.id,
+        status: "assigned",
+        assigneeName: cs2.name,
+      });
+    });
   });
 
   describe("batch assignment (批量分配)", () => {

@@ -319,6 +319,24 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
+    it("lets the creator resolve their own ticket after it was assigned to someone else", async () => {
+      const creator = () =>
+        callerWith(seeded.users.cs1, "受限创建人", [
+          "ticket.view",
+          "ticket.create",
+          "ticket.process",
+        ]);
+      const created = await creator().ticket.create(baseInput);
+      await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
+
+      const result = await creator().ticket.resolve({
+        ticketId: created.id,
+        completionStatus: "正常完结",
+        remark: "客户来电确认已解决，创建人代结",
+      });
+      expect(result).toMatchObject({ status: "completed", completionStatus: "正常完结" });
+    });
+
     it("lets ticket.process + ticket.view_all resolve others' tickets (主管顶班)", async () => {
       const ticketId = await createAssignedTicket(seeded.users.cs1.id);
 

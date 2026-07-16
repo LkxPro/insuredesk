@@ -90,7 +90,7 @@ export const ticketRouter = router({
 
   /**
    * Paged, filterable list for 工单管理. Data scope applies: without
-   * ticket.view_all the query is pinned to assigneeId = 本人.
+   * ticket.view_all the query is pinned to 指派给我 OR 我创建的.
    */
   list: requirePermission("ticket.view")
     .input(ticketListInputSchema)
@@ -98,7 +98,8 @@ export const ticketRouter = router({
 
   /**
    * Full detail + timeline for the detail page. Data scope applies: without
-   * ticket.view_all only own tickets resolve; anything else is NOT_FOUND.
+   * ticket.view_all only tickets assigned to or created by the viewer
+   * resolve; anything else is NOT_FOUND.
    */
   detail: requirePermission("ticket.view")
     .input(z.object({ id: z.string().min(1) }))

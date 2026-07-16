@@ -344,6 +344,36 @@ describe("ticket export (Testcontainers)", () => {
       const rows = parseCsv(res.body);
       expect(rows.slice(1).map((cells) => cells[0])).toEqual([own.workOrderNumber]);
     });
+
+    it("个人档导出包含本人创建的单 — 未指派与已指派他人均在列", async () => {
+      const createdUnassigned = await makeTicket(
+        { customerName: "档主创建未指派" },
+        { creatorId: scopedExporter.id },
+      );
+      const createdHandedOff = await makeTicket(
+        { customerName: "档主创建主管处理" },
+        {
+          creatorId: scopedExporter.id,
+          status: "assigned",
+          assigneeId: seeded.users.manager.id,
+          assignedAt: new Date(),
+        },
+      );
+      await makeTicket({ customerName: "别人的单" });
+
+      const session = await sessionFor("scoped-exporter");
+      const res = await exportRequest(session, { format: "csv" });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      expect(
+        rows
+          .slice(1)
+          .map((cells) => cells[0])
+          .sort(),
+      ).toEqual([createdUnassigned.workOrderNumber, createdHandedOff.workOrderNumber].sort());
+      expect(res.body).not.toContain("别人的单");
+    });
   });
 
   describe("Excel (xlsx)", () => {

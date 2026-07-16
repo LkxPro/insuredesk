@@ -9,7 +9,7 @@
 | 后端 | Node.js + TypeScript + Fastify + tRPC | 同构;内部端到端类型安全零 codegen |
 | 数据库 | PostgreSQL + Prisma | 读时时间谓词、timestamptz、JSONB 规则列、FILTER 聚合、SEQUENCE 工单号全是原生能力,ADR 0003/0004/0005 照抄落地;复杂读时查询走视图 + $queryRaw |
 | 认证 | Session + httpOnly Cookie(会话存 Postgres) | 改权限/禁用即时生效;`authenticate()` 可插拔,二期飞书 SSO 复用同一 Session 逻辑(users.feishuUserId 预留) |
-| 授权 | 权限点扁平字符串(PRD §5.1),角色 = 权限点集合存库 | Fastify preHandler 按路由校验;数据权限在查询层注入——无 view_all 则强制 WHERE assigneeId = 当前用户 |
+| 授权 | 权限点扁平字符串(PRD §5.1),角色 = 权限点集合存库 | Fastify preHandler 按路由校验;数据权限在查询层注入——工单无 view_all 则强制 WHERE assigneeId = 当前用户 OR creatorId = 当前用户;看板无 view_all 仍仅 assigneeId = 当前用户(考核口径按「我名下」) |
 | 前端 | React + TS + Vite; shadcn/ui;TanStack Query;react-hook-form + Zod | 组件源码入仓 AI 可改;refetchInterval 承载 30 秒轮询;Zod schema 前后端共享 |
 | 图表 / 排班 | shadcn chart(Recharts)/ kibo-ui Gantt | 暗色与主题走同一 CSS 变量 |
 | 仓库 | pnpm monorepo:`apps/api` / `apps/web` / `packages/shared` | 一处改两端受益 |

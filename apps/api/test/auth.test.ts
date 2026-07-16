@@ -243,7 +243,7 @@ describe("Authentication and RBAC (Testcontainers)", () => {
       expect(scope).toEqual({});
     });
 
-    it("ticket data scope: frontline CS only sees own tickets", async () => {
+    it("ticket data scope: frontline CS sees assigned-to-me OR created-by-me tickets", async () => {
       const cs = await prisma.user.findUnique({ where: { username: "cs1" } });
       expectPresent(cs);
       const csToken = await sessionService.createSession(cs.id);
@@ -252,8 +252,7 @@ describe("Authentication and RBAC (Testcontainers)", () => {
 
       const scope = applyTicketDataScope(csUser);
 
-      // Should filter to assigneeId = user.id
-      expect(scope).toEqual({ assigneeId: csUser.id });
+      expect(scope).toEqual({ OR: [{ assigneeId: csUser.id }, { creatorId: csUser.id }] });
     });
 
     it("ticket data scope: unauthenticated user sees nothing", async () => {

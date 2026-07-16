@@ -161,6 +161,8 @@ model Ticket {
   processLogs ProcessLog[]
 
   @@index([assigneeId])
+  /// The non-view_all data scope ORs assigneeId with creatorId (ADR 0006)
+  @@index([creatorId])
   @@index([status])
   @@index([createdAt])
   /// Computed-status predicates (pending_timeout/overdue) and 处理时限 sorting
