@@ -87,6 +87,56 @@ admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 
 
 旧镜像会残留,定期 `docker image prune -f` 清理。
 
+## 备份与恢复
+
+每日备份由宿主机 cron 调 `scripts/backup-db.sh` 完成:从 db 容器 `pg_dump`
+后 gzip 存到本机 `~/backups/insuredesk/`,保留 14 天。**已知风险:仅本机
+备份、无异地副本,机器级故障(磁盘损坏、入侵、机房事故)= 数据全失**
+(ADR 0009 明确接受,异地同步留作后续升级项)。
+
+### 配置每日备份(首次部署后一次性)
+
+脚本随仓库分发,服务器上的 clone 目录里即有。先手动跑一次验证(同时建出
+cron 日志要写入的备份目录):输出 `backup ok: …` 且备份目录出现
+`insuredesk-<时间戳>.sql.gz` 即正常。
+
+```bash
+~/insuredesk/scripts/backup-db.sh
+```
+
+然后 `crontab -e` 加一行(路径按实际 clone 位置调整):
+
+```cron
+10 3 * * * /home/deploy/insuredesk/scripts/backup-db.sh >> /home/deploy/backups/insuredesk/backup.log 2>&1
+```
+
+脚本可重复执行,升级前的固定手动备份(见 `docs/releasing.md`)也直接调它。
+
+### 从备份恢复
+
+适用于灾难性故障(ADR 0009"只前滚"策略的最后兜底)。**恢复会把数据库
+整体回退到备份时刻,备份之后的数据全部丢失。**
+
+```bash
+cd ~/insuredesk
+
+# 1. 停 API(保持 db 运行),避免恢复期间有写入
+docker compose -f docker-compose.prod.yml stop api
+
+# 2. 重建数据库后灌入备份(psql 遇错即停,避免半截恢复被误认成功)
+docker exec insuredesk-db-prod sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+gunzip -c ~/backups/insuredesk/insuredesk-<时间戳>.sql.gz \
+  | docker exec -i insuredesk-db-prod sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB"'
+
+# 3. 把 .env 的 IMAGE_TAG 钉到备份时刻对应的版本再拉起——新版镜像可能
+#    携带备份里没有的迁移,直接起新版会让迁移在恢复出的旧数据上重放
+sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=<备份时刻的 tag>/' .env
+docker compose -f docker-compose.prod.yml up -d
+```
+
+`curl -I http://127.0.0.1:3000` 验证存活,再登录抽查数据是否为备份时刻的
+状态。确认无误后按正常升级流程前滚回最新版本。
+
 ## 宿主机 nginx 反代
 
 API 只监听回环地址,公网流量全部经宿主机 nginx。`NODE_ENV=production` 下

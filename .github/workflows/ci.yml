@@ -61,3 +61,22 @@ jobs:
       # then point the integration test at DATABASE_URL instead of a container.
       - name: Test (incl. Testcontainers Postgres)
         run: pnpm test
+
+  # Build the production image with the same context/Dockerfile as the Release
+  # workflow, but never push: a broken image turns the PR red instead of
+  # surfacing at release time (ADR 0009).
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build production image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

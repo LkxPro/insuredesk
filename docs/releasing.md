@@ -25,8 +25,8 @@ CalVer:`v<年>.<月>.<序号>`,如 `v2026.07.0`;同月第二次发布为
 ## 升级服务器
 
 ```bash
-# 升级前固定动作:手动备份一次
-docker exec insuredesk-db-prod pg_dump -U insuredesk insuredesk | gzip > ~/backups/pre-$TAG.sql.gz
+# 升级前固定动作:手动备份一次(每日 cron 用的同一脚本)
+./scripts/backup-db.sh
 
 # 钉新版本并拉起
 sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=v2026.07.1/' .env
@@ -48,8 +48,9 @@ GHCR 拉不动(受限网络)时走退路:`git fetch --tags && git checkout <tag>
 
 ## 备份
 
-宿主机 cron 每日 `pg_dump` 到本机备份目录,保留 14 天。**已知风险:无异地
-副本,机器级故障 = 数据全失**(ADR 0009 明确接受)。
+宿主机 cron 每日调 `scripts/backup-db.sh`:`pg_dump` 到本机备份目录,保留
+14 天。cron 配置与恢复步骤见 `docs/deployment.md` → 备份与恢复。**已知
+风险:无异地副本,机器级故障 = 数据全失**(ADR 0009 明确接受)。
 
 ## 待实施清单
 
@@ -62,7 +63,9 @@ GHCR 拉不动(受限网络)时走退路:`git fetch --tags && git checkout <tag>
 - [x] `docker-compose.prod.yml` 改造:`image: …:${IMAGE_TAG}` + `build:`
       退路;`.env.example` 增补 `IMAGE_TAG`;同步更新 `docs/deployment.md`
       的更新/回滚章节与 GHCR 登录说明
-- [ ] 备份 cron 脚本与保留策略,写入部署文档
-- [ ] main 分支保护(禁直推、要求 CI 通过)
-- [ ] CI 增加生产 Dockerfile 构建校验(只构建不推送)
-- [ ] 启用 Dependabot(npm + GitHub Actions,按周分组)
+- [x] 备份 cron 脚本与保留策略,写入部署文档
+- [ ] main 分支保护(禁直推、要求 CI 通过)——配置脚本已就绪
+      (`scripts/setup-branch-protection.sh`),待全部改动合入 main 后由
+      维护者执行启用
+- [x] CI 增加生产 Dockerfile 构建校验(只构建不推送)
+- [x] 启用 Dependabot(npm + GitHub Actions,按周分组)
