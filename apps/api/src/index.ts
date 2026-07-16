@@ -1,13 +1,6 @@
-import { existsSync } from "node:fs";
+import "./load-env";
 import { type Env, parseEnv } from "./env";
 import { buildServer } from "./server";
-
-// Load apps/api/.env for local/dev before validating. In production the platform
-// injects real env vars, so an absent file is expected and fine. Scripts run with
-// cwd = apps/api, so the relative path resolves correctly.
-if (existsSync(".env")) {
-  process.loadEnvFile(".env");
-}
 
 async function main() {
   let env: Env;
