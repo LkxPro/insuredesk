@@ -115,9 +115,9 @@ describe("Channel catalog (Testcontainers)", () => {
       active: true,
     });
 
-    await expect(
-      manager().channel.create({ name: "   ", displayOrder: 91 }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(manager().channel.create({ name: "   ", displayOrder: 91 })).rejects.toMatchObject(
+      { code: "BAD_REQUEST" },
+    );
     await expect(
       manager().channel.create({ name: "测试新增渠道", displayOrder: 92 }),
     ).rejects.toMatchObject({ code: "CONFLICT", message: "渠道名称已存在" });
