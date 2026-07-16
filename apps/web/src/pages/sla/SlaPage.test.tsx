@@ -1,12 +1,12 @@
-import type { AuthUser } from "@/contexts/AuthContext";
-import { trpc } from "@/lib/trpc";
-import { TEST_ROLES } from "@/test/roles";
 import { COMPLAINT_LEVELS, DEFAULT_SLA_POLICIES, type Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthUser } from "@/contexts/AuthContext";
+import { trpc } from "@/lib/trpc";
+import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 

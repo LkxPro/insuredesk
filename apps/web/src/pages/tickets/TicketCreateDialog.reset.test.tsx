@@ -1,4 +1,3 @@
-import { trpc } from "@/lib/trpc";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
@@ -7,6 +6,7 @@ import { zhCN } from "date-fns/locale";
 import { useState } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { trpc } from "@/lib/trpc";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 
 /**

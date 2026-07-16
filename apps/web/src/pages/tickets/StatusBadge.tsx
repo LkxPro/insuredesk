@@ -1,5 +1,5 @@
-import { Badge } from "@/components/ui/badge";
 import { TICKET_STATUS_LABELS, type TicketDisplayStatus } from "@insuredesk/shared";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Status badge shared by the list and detail pages, keyed on the *display*

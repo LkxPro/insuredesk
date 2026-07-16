@@ -1,3 +1,5 @@
+import { AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,8 +13,6 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
-import { AlertCircle } from "lucide-react";
-import { toast } from "sonner";
 import type { RoleRow } from "./RolesPage";
 
 /**

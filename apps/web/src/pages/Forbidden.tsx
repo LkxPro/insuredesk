@@ -1,3 +1,5 @@
+import { ShieldX } from "lucide-react";
+import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -7,8 +9,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { ShieldX } from "lucide-react";
-import { Link } from "react-router";
 
 export function Forbidden() {
   return (

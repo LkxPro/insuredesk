@@ -1,3 +1,7 @@
+import { COMPLETION_STATUSES, type CompletionStatus } from "@insuredesk/shared";
+import { AlertCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,10 +24,6 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { COMPLETION_STATUSES, type CompletionStatus } from "@insuredesk/shared";
-import { AlertCircle } from "lucide-react";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 /**
  * 完结工单 dialog: the mandatory completion reason — one of the 12 封闭枚举 —

@@ -1,4 +1,5 @@
 import type { Permission } from "@insuredesk/shared";
+import type { LucideIcon } from "lucide-react";
 import {
   CalendarClock,
   CalendarDays,
@@ -9,7 +10,6 @@ import {
   Timer,
   Users,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 /**
  * Single source of truth for the app shell navigation. Each entry maps 1:1

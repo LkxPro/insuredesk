@@ -1,3 +1,9 @@
+import {
+  DASHBOARD_METRIC_KEYS,
+  DASHBOARD_METRIC_LABELS,
+  type DashboardMetricKey,
+} from "@insuredesk/shared";
+import { AlertCircle, Users } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,12 +26,6 @@ import {
 import { formatDurationMs } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import {
-  DASHBOARD_METRIC_KEYS,
-  DASHBOARD_METRIC_LABELS,
-  type DashboardMetricKey,
-} from "@insuredesk/shared";
-import { AlertCircle, Users } from "lucide-react";
 
 /**
  * 数据看板: 8 metric cards, the channel distribution, and the Top-10

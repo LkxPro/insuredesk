@@ -1,9 +1,9 @@
-import type { AuthUser } from "@/contexts/AuthContext";
-import { TEST_ROLES } from "@/test/roles";
 import type { Permission } from "@insuredesk/shared";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthUser } from "@/contexts/AuthContext";
+import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "./AppRoutes";
 import { ThemeProvider } from "./components/ThemeProvider";
 

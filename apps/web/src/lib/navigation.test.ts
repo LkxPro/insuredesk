@@ -1,6 +1,6 @@
-import { TEST_ROLES } from "@/test/roles";
 import type { Permission } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
+import { TEST_ROLES } from "@/test/roles";
 import { NAV_ITEMS, visibleNavItems } from "./navigation";
 
 /**

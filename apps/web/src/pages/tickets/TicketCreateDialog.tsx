@@ -1,3 +1,10 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { format } from "date-fns";
+import { AlertCircle } from "lucide-react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,14 +19,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { format } from "date-fns";
-import { AlertCircle } from "lucide-react";
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router";
-import { toast } from "sonner";
-import { TicketFormFields, type TicketFormValues, buildTicketFormSchema } from "./TicketFormFields";
+import { buildTicketFormSchema, TicketFormFields, type TicketFormValues } from "./TicketFormFields";
 
 /**
  * Blank defaults with feedbackTime prefilled to the current local minute —

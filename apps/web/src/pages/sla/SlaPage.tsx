@@ -1,3 +1,8 @@
+import type { AppRouter } from "@insuredesk/api";
+import { COMPLAINT_LEVELS, type ReminderRule } from "@insuredesk/shared";
+import type { inferRouterOutputs } from "@trpc/server";
+import { AlertCircle } from "lucide-react";
+import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -5,11 +10,6 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import type { AppRouter } from "@insuredesk/api";
-import { COMPLAINT_LEVELS, type ReminderRule } from "@insuredesk/shared";
-import type { inferRouterOutputs } from "@trpc/server";
-import { AlertCircle } from "lucide-react";
-import { useState } from "react";
 import { SlaPolicyEditDialog } from "./SlaPolicyEditDialog";
 
 /**
@@ -74,7 +74,7 @@ function PolicyCard({
             <ul className="flex flex-col gap-1">
               {policy.reminderRules.map((rule, index) => (
                 <li
-                  // Rules carry no id; position is their identity within a level
+                  // biome-ignore lint/suspicious/noArrayIndexKey: rules carry no id; position is their identity within a level
                   key={`${rule.type}-${index}`}
                   className="flex items-center gap-2"
                 >
