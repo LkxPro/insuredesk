@@ -1,13 +1,14 @@
 import { ALL_PERMISSIONS } from "@insuredesk/shared";
-import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedFactoryRolesAndDemoUsers } from "../prisma/seed-data";
+import { PrismaClient } from "../src/generated/prisma/client";
 import {
+  hashPassword,
+  hasPermission,
   PasswordAuthProvider,
   SessionService,
-  hasPermission,
-  hashPassword,
 } from "../src/services/auth.service";
 import { applyDashboardDataScope, applyTicketDataScope } from "../src/services/data-scope.service";
 
@@ -41,9 +42,7 @@ describe("Authentication and RBAC (Testcontainers)", () => {
     const connectionString = container.getConnectionUri();
 
     // Initialize Prisma client
-    prisma = new PrismaClient({
-      datasources: { db: { url: connectionString } },
-    });
+    prisma = new PrismaClient({ adapter: new PrismaPg(connectionString) });
 
     // Run migrations
     const { execSync } = await import("node:child_process");

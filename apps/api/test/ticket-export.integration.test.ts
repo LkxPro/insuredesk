@@ -2,11 +2,11 @@ import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
-import type { Prisma, PrismaClient, Role, User } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { Prisma, PrismaClient, Role, User } from "../src/generated/prisma/client";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

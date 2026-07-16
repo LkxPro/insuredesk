@@ -9,14 +9,14 @@ import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
 import {
-  DuplicateRoleNameError,
-  RoleInUseError,
-  RoleNotFoundError,
-  SystemRoleProtectedError,
   createRole,
+  DuplicateRoleNameError,
   deleteRole,
   listRoles,
+  RoleInUseError,
+  RoleNotFoundError,
   renameRole,
+  SystemRoleProtectedError,
   updateRolePermissions,
   updateRoleRequiredFields,
 } from "../services/role.service";

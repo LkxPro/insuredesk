@@ -15,26 +15,26 @@ import { systemClock } from "../clock";
 import { prisma } from "../db";
 import { ChannelUnavailableError } from "../services/channel.service";
 import {
+  createTicket,
+  getTicketDetail,
+  listTickets,
+  RequiredFieldsMissingError,
+  SlaPolicyNotConfiguredError,
+} from "../services/ticket.service";
+import {
   AssigneeNotAssignableError,
-  TicketNotAssignableError,
-  TicketNotFoundError,
   assignTicket,
   autoAssignTicketsBySchedule,
   batchAssignTickets,
   listAssigneeOptions,
+  TicketNotAssignableError,
+  TicketNotFoundError,
 } from "../services/ticket-assign.service";
 import { TicketCategoryUnavailableError } from "../services/ticket-category.service";
-import { TicketNotProcessableError, addTicketComment } from "../services/ticket-comment.service";
+import { addTicketComment, TicketNotProcessableError } from "../services/ticket-comment.service";
 import { deleteTicket } from "../services/ticket-delete.service";
 import { editTicket } from "../services/ticket-edit.service";
-import { TicketNotResolvableError, resolveTicket } from "../services/ticket-resolve.service";
-import {
-  RequiredFieldsMissingError,
-  SlaPolicyNotConfiguredError,
-  createTicket,
-  getTicketDetail,
-  listTickets,
-} from "../services/ticket.service";
+import { resolveTicket, TicketNotResolvableError } from "../services/ticket-resolve.service";
 import { requireAnyPermission, requirePermission, router } from "../trpc";
 
 /**

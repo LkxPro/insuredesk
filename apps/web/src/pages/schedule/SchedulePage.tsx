@@ -1,3 +1,19 @@
+import type { AppRouter } from "@insuredesk/api";
+import type { inferRouterOutputs } from "@trpc/server";
+import {
+  addMonths,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
+import { zhCN } from "date-fns/locale";
+import { AlertCircle, CalendarDays, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { DateRange } from "react-day-picker";
+import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -24,22 +40,6 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import type { AppRouter } from "@insuredesk/api";
-import type { inferRouterOutputs } from "@trpc/server";
-import {
-  addMonths,
-  eachDayOfInterval,
-  endOfMonth,
-  endOfWeek,
-  format,
-  startOfMonth,
-  startOfWeek,
-} from "date-fns";
-import { zhCN } from "date-fns/locale";
-import { AlertCircle, CalendarDays, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
-import type { DateRange } from "react-day-picker";
-import { toast } from "sonner";
 
 type ScheduleGrid = inferRouterOutputs<AppRouter>["schedule"]["list"];
 type ScheduleEntry = ScheduleGrid["entries"][number];
@@ -122,7 +122,7 @@ function ScheduleCell({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <div aria-label={`${user.name} ${date}：${entry?.shiftName ?? "未排班"}`}>
+          <div role="img" aria-label={`${user.name} ${date}：${entry?.shiftName ?? "未排班"}`}>
             <ShiftVisual entry={entry} />
           </div>
         </TooltipTrigger>

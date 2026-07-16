@@ -1,5 +1,6 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
 import { COMPLAINT_LEVELS, DEFAULT_SLA_POLICIES, TicketStatus } from "@insuredesk/shared";
+import type { Clock } from "../src/clock";
 import type {
   Channel,
   PrismaClient,
@@ -9,11 +10,10 @@ import type {
   Ticket,
   TicketCategory,
   User,
-} from "@prisma/client";
-import type { Clock } from "../src/clock";
+} from "../src/generated/prisma/client";
 import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service";
-import { assignTicket } from "../src/services/ticket-assign.service";
 import { computeSlaStamp, createTicket } from "../src/services/ticket.service";
+import { assignTicket } from "../src/services/ticket-assign.service";
 
 /**
  * Single source of truth for the factory roles and demo users. Consumed by

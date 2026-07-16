@@ -1,3 +1,9 @@
+import type { AppRouter } from "@insuredesk/api";
+import { type ShiftSegment, shiftTypeCreateInputSchema } from "@insuredesk/shared";
+import type { inferRouterOutputs } from "@trpc/server";
+import { AlertCircle, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,12 +30,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import type { AppRouter } from "@insuredesk/api";
-import { type ShiftSegment, shiftTypeCreateInputSchema } from "@insuredesk/shared";
-import type { inferRouterOutputs } from "@trpc/server";
-import { AlertCircle, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 type ShiftTypeRow = inferRouterOutputs<AppRouter>["shiftType"]["list"][number];
 
@@ -408,6 +408,7 @@ export function ShiftTypesPage() {
                     <TableCell>
                       <div className="flex items-center gap-2 font-medium">
                         <span
+                          role="img"
                           aria-label={`${shift.name}颜色`}
                           className="size-3 rounded-full border"
                           style={{ backgroundColor: shift.color }}

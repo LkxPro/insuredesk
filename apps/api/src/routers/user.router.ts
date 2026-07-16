@@ -8,17 +8,17 @@ import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
 import {
+  assignUserRole,
+  createUser,
   DuplicateEmailError,
   DuplicateUsernameError,
   LastAdminError,
-  RoleOptionNotFoundError,
-  SelfDisableError,
-  UserNotFoundError,
-  assignUserRole,
-  createUser,
   listRoleOptions,
   listUsers,
+  RoleOptionNotFoundError,
+  SelfDisableError,
   setUserActive,
+  UserNotFoundError,
   updateUser,
 } from "../services/user.service";
 import { requireAnyPermission, requirePermission, router } from "../trpc";

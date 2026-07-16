@@ -1,3 +1,5 @@
+import { LifeBuoy, LogOut } from "lucide-react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TodoBell } from "@/components/TodoBell";
@@ -20,8 +22,6 @@ import {
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { visibleNavItems } from "@/lib/navigation";
-import { LifeBuoy, LogOut } from "lucide-react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 /**
  * Authenticated app shell on the official shadcn Sidebar: collapsible to an

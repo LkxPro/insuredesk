@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PrismaClient } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DEMO_PASSWORD } from "../prisma/seed-data";
+import type { PrismaClient } from "../src/generated/prisma/client";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

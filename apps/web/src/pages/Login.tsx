@@ -1,3 +1,8 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { type LoginBody, loginBodySchema } from "@insuredesk/shared";
+import { AlertCircle, LifeBuoy } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { type Location, Navigate, useLocation, useNavigate } from "react-router";
 import { FullScreenLoading } from "@/components/FullScreenLoading";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -6,11 +11,6 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { type LoginBody, loginBodySchema } from "@insuredesk/shared";
-import { AlertCircle, LifeBuoy } from "lucide-react";
-import { useForm } from "react-hook-form";
-import { type Location, Navigate, useLocation, useNavigate } from "react-router";
 
 /** Where to go after login: back to the guarded page we bounced off, or home. */
 function fromPathname(location: Location): string {

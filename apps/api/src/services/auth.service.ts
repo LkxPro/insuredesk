@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { ALL_PERMISSIONS, type Permission } from "@insuredesk/shared";
-import type { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
+import type { PrismaClient } from "../generated/prisma/client";
 
 /**
  * bcrypt cost factor for all password hashing (seeding and future user
@@ -60,7 +60,7 @@ export class PasswordAuthProvider implements AuthProvider {
       select: { id: true, passwordHash: true },
     });
 
-    if (!user || !user.passwordHash) {
+    if (!user?.passwordHash) {
       return null;
     }
 

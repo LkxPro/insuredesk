@@ -1,3 +1,13 @@
+import {
+  COMPLAINT_LEVELS,
+  NUCLEAR_BODY_STATUSES,
+  PRIORITIES,
+  PRIORITY_LABELS,
+  type TicketCreateFieldKey,
+  ticketCreateInputSchema,
+} from "@insuredesk/shared";
+import { Controller, type UseFormReturn } from "react-hook-form";
+import { z } from "zod";
 import { DateTimePicker } from "@/components/DateTimePicker";
 import {
   Field,
@@ -19,16 +29,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import {
-  COMPLAINT_LEVELS,
-  NUCLEAR_BODY_STATUSES,
-  PRIORITIES,
-  PRIORITY_LABELS,
-  type TicketCreateFieldKey,
-  ticketCreateInputSchema,
-} from "@insuredesk/shared";
-import { Controller, type UseFormReturn } from "react-hook-form";
-import { z } from "zod";
 
 /**
  * The shared basic-info form body: one field set serving both 新建工单 and
@@ -63,7 +63,7 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
     contactPhone: z.string().trim().min(1, "联系电话为必填项").max(200),
     customerRequest: z.string().trim().min(1, "客户诉求为必填项").max(2000),
     nuclearBodyStatus: z.string().min(1, "保司侧是否核身为必填项"),
-    hasContacted: z.boolean({ required_error: "是否已联系为必填项" }),
+    hasContacted: z.boolean({ error: "是否已联系为必填项" }),
     contactId: z.string().trim().min(1, "联系人ID为必填项").max(200),
     categoryId: z.string().min(1, "分类为必填项"),
     complaintLevel: z.string().min(1, "投诉等级为必填项"),

@@ -1,3 +1,9 @@
+import type { AppRouter } from "@insuredesk/api";
+import { channelCreateInputSchema, ticketCategoryCreateInputSchema } from "@insuredesk/shared";
+import type { inferRouterOutputs } from "@trpc/server";
+import { AlertCircle, Ban, CircleCheck, Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,12 +30,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
-import type { AppRouter } from "@insuredesk/api";
-import { channelCreateInputSchema, ticketCategoryCreateInputSchema } from "@insuredesk/shared";
-import type { inferRouterOutputs } from "@trpc/server";
-import { AlertCircle, Ban, CircleCheck, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 /**
  * 渠道与类别: the catalog management page behind dictionary.manage. 反馈渠道

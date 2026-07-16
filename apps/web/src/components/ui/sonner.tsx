@@ -1,4 +1,3 @@
-import { useTheme } from "@/components/ThemeProvider";
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -8,6 +7,7 @@ import {
 } from "lucide-react";
 import type * as React from "react";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { useTheme } from "@/components/ThemeProvider";
 
 const Toaster = ({ ...props }: ToasterProps) => {
   // App-local ThemeProvider instead of next-themes: same "light" | "dark" values.

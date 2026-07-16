@@ -4,7 +4,7 @@ import type {
   UserSetActiveInput,
   UserUpdateData,
 } from "@insuredesk/shared";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { hashPassword } from "./auth.service";
 import type { TicketServiceDeps } from "./ticket.service";
@@ -84,12 +84,16 @@ async function assertEnabledAdminRemains(tx: Prisma.TransactionClient): Promise<
 }
 
 function isUniqueViolationOn(error: unknown, field: string): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002" &&
-    Array.isArray(error.meta?.target) &&
-    (error.meta.target as string[]).includes(field)
-  );
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+  // Driver adapters carry the violated fields at
+  // meta.driverAdapterError.cause.constraint.fields instead of meta.target.
+  const cause = (
+    error.meta?.driverAdapterError as { cause?: { constraint?: { fields?: unknown } } } | undefined
+  )?.cause;
+  const fields = cause?.constraint?.fields;
+  return Array.isArray(fields) && fields.includes(field);
 }
 
 function throwOnDuplicateIdentity(error: unknown): never {

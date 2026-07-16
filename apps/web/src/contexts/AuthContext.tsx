@@ -1,8 +1,8 @@
-import { trpc } from "@/lib/trpc";
 import type { AppRouter } from "@insuredesk/api";
 import type { Permission } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
-import { type ReactNode, createContext, useContext } from "react";
+import { createContext, type ReactNode, useContext } from "react";
+import { trpc } from "@/lib/trpc";
 
 /**
  * Global authentication state, driven by the `auth.me` query. The session

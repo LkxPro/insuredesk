@@ -4,11 +4,11 @@ import {
   type DashboardMetricKey,
   TicketStatus,
 } from "@insuredesk/shared";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyDashboardDataScope } from "./data-scope.service";
-import { overdueTicketWhere, pendingTimeoutTicketWhere } from "./ticket-display-status";
 import type { TicketServiceDeps } from "./ticket.service";
+import { overdueTicketWhere, pendingTimeoutTicketWhere } from "./ticket-display-status";
 
 /**
  * 数据看板 aggregation: the 8 metric cards, the channel distribution, and

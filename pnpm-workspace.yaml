@@ -12,6 +12,9 @@ allowBuilds:
   protobufjs: true
   ssh2: true
 
+minimumReleaseAgeExclude:
+  - '@fastify/cookie@11.1.2'
+
 # Allow post-install build scripts only for the tools that genuinely need their
 # native binaries / engines. Optional native extras (ssh2, cpu-features,
 # protobufjs) are left disabled — Testcontainers talks to the local Docker

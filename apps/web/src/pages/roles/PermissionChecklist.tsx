@@ -1,5 +1,5 @@
-import { Checkbox } from "@/components/ui/checkbox";
 import { PERMISSION_GROUPS, PERMISSION_LABELS, type Permission } from "@insuredesk/shared";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * The 权限点清单 as grouped checkboxes — the single configuration surface

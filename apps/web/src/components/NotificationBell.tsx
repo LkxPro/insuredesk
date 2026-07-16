@@ -1,8 +1,3 @@
-import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { formatDateTime } from "@/lib/datetime";
-import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
 import type { AppRouter } from "@insuredesk/api";
 import { NOTIFICATION_POLL_INTERVAL_MS } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
@@ -10,6 +5,11 @@ import { Bell } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { formatDateTime } from "@/lib/datetime";
+import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 
 /**
  * 轨 1 收件箱 bell: polls notification.list every 30 seconds — unread-count

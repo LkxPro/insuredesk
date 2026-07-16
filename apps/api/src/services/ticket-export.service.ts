@@ -1,20 +1,20 @@
 import {
+  deriveDisplayStatus,
   PRIORITY_LABELS,
+  prioritySchema,
   TICKET_SOURCE_LABELS,
   TICKET_STATUS_LABELS,
   type TicketExportQuery,
-  deriveDisplayStatus,
-  prioritySchema,
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
-import type { Prisma } from "@prisma/client";
 import ExcelJS from "exceljs";
+import type { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import {
-  type TicketServiceDeps,
   buildTicketListOrderBy,
   buildTicketListWhere,
+  type TicketServiceDeps,
 } from "./ticket.service";
 
 /**

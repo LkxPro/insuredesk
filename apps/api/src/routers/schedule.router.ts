@@ -6,12 +6,12 @@ import {
 import { TRPCError } from "@trpc/server";
 import { prisma } from "../db";
 import {
-  DutyUserNotSchedulableError,
-  ScheduleNotFoundError,
-  ScheduleShiftNotFoundError,
   createSchedule,
+  DutyUserNotSchedulableError,
   deleteSchedule,
   listSchedules,
+  ScheduleNotFoundError,
+  ScheduleShiftNotFoundError,
 } from "../services/schedule.service";
 import { requirePermission, router } from "../trpc";
 

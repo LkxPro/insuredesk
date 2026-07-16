@@ -1,3 +1,9 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { type UserUpdateInput, userUpdateInputSchema } from "@insuredesk/shared";
+import { AlertCircle } from "lucide-react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,12 +19,6 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { type UserUpdateInput, userUpdateInputSchema } from "@insuredesk/shared";
-import { AlertCircle } from "lucide-react";
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { toast } from "sonner";
 import type { UserRow } from "./UsersPage";
 
 /**

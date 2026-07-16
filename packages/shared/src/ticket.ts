@@ -220,8 +220,8 @@ export const ticketListInputSchema = z.object({
     .string()
     .trim()
     .max(100)
-    .optional()
-    .transform((value) => (value ? value : undefined)),
+    .transform((value) => (value ? value : undefined))
+    .optional(),
   sortBy: ticketSortFieldSchema.default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
   page: z.number().int().min(1).default(1),
@@ -253,8 +253,8 @@ export const ticketExportInputSchema = ticketListInputSchema
       .string()
       .trim()
       .max(64)
-      .optional()
-      .transform((value) => (value ? value : undefined)),
+      .transform((value) => (value ? value : undefined))
+      .optional(),
   });
 
 /** Client-side shape (before defaults/transforms). */

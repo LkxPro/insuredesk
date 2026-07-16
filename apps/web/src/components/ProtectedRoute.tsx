@@ -1,8 +1,8 @@
-import { FullScreenLoading } from "@/components/FullScreenLoading";
-import { useAuth } from "@/contexts/AuthContext";
 import type { Permission } from "@insuredesk/shared";
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
+import { FullScreenLoading } from "@/components/FullScreenLoading";
+import { useAuth } from "@/contexts/AuthContext";
 
 /**
  * Route guard: renders children only for authenticated users (optionally also

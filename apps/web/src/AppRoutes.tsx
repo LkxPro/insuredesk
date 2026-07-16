@@ -1,11 +1,13 @@
+import type { ReactElement } from "react";
+import { Navigate, Route, Routes } from "react-router";
 import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
-import { Forbidden } from "@/pages/Forbidden";
-import { Login } from "@/pages/Login";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
+import { Forbidden } from "@/pages/Forbidden";
+import { Login } from "@/pages/Login";
 import { RolesPage } from "@/pages/roles/RolesPage";
 import { SchedulePage } from "@/pages/schedule/SchedulePage";
 import { ShiftTypesPage } from "@/pages/shift-types/ShiftTypesPage";
@@ -13,8 +15,6 @@ import { SlaPage } from "@/pages/sla/SlaPage";
 import { TicketDetail } from "@/pages/tickets/TicketDetail";
 import { TicketsPage } from "@/pages/tickets/TicketsPage";
 import { UsersPage } from "@/pages/users/UsersPage";
-import type { ReactElement } from "react";
-import { Navigate, Route, Routes } from "react-router";
 
 /**
  * Route tree, kept separate from <App> so tests can mount it in a

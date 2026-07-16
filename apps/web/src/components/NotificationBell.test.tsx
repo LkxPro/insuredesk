@@ -1,12 +1,12 @@
-import { NotificationBell } from "@/components/NotificationBell";
-import { ThemeProvider } from "@/components/ThemeProvider";
-import { Toaster } from "@/components/ui/sonner";
-import { trpc } from "@/lib/trpc";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { beforeEach, describe, expect, it } from "vitest";
+import { NotificationBell } from "@/components/NotificationBell";
+import { ThemeProvider } from "@/components/ThemeProvider";
+import { Toaster } from "@/components/ui/sonner";
+import { trpc } from "@/lib/trpc";
 
 /**
  * Issue #25 收件箱 bell: unread-count badge, popover inbox, click-through to

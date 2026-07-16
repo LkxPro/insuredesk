@@ -1,5 +1,5 @@
-import { Checkbox } from "@/components/ui/checkbox";
 import type { TicketCreateFieldKey } from "@insuredesk/shared";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
   feedbackTime: "反馈时间",

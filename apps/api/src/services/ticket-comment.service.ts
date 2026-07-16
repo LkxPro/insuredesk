@@ -1,8 +1,8 @@
 import { type TicketAddCommentData, TicketStatus, ticketStatusSchema } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
-import { TicketNotFoundError } from "./ticket-assign.service";
 import type { TicketServiceDeps } from "./ticket.service";
+import { TicketNotFoundError } from "./ticket-assign.service";
 
 /**
  * Follow-up domain logic: 添加跟进备注 = one actual customer contact. Pure
