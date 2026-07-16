@@ -296,7 +296,7 @@ describe("ticket assignment (Testcontainers)", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
-    it("lets a creator without ticket.view_all assign their own freshly created ticket", async () => {
+    it("lets a creator without ticket.view_all assign and later reassign their own ticket", async () => {
       const creatorAssigner = callerWith(seeded.users.cs1, "受限创建人", [
         "ticket.view",
         "ticket.create",
@@ -312,6 +312,17 @@ describe("ticket assignment (Testcontainers)", () => {
         id: created.id,
         status: "assigned",
         assigneeName: cs2.name,
+      });
+
+      // The ticket now belongs to someone else — the creator can still 改派 it
+      const reassigned = await creatorAssigner.ticket.assign({
+        ticketId: created.id,
+        assigneeId: seeded.users.manager.id,
+      });
+      expect(reassigned).toMatchObject({
+        id: created.id,
+        status: "assigned",
+        assigneeName: seeded.users.manager.name,
       });
     });
   });
@@ -430,6 +441,26 @@ describe("ticket assignment (Testcontainers)", () => {
 
       const detail = await manager().ticket.detail({ id: okId });
       expect(detail.status).toBe("unassigned");
+    });
+
+    it("lets a creator without ticket.view_all batch-assign their own created tickets", async () => {
+      const creatorBatchAssigner = callerWith(seeded.users.cs1, "受限创建人", [
+        "ticket.view",
+        "ticket.create",
+        "ticket.batch_assign",
+      ]);
+      const first = await creatorBatchAssigner.ticket.create(baseInput);
+      const second = await creatorBatchAssigner.ticket.create(baseInput);
+
+      const result = await creatorBatchAssigner.ticket.batchAssign({
+        ticketIds: [first.id, second.id],
+        assigneeId: cs2.id,
+      });
+      expect(result).toMatchObject({
+        assignedCount: 2,
+        skippedCount: 0,
+        assigneeName: cs2.name,
+      });
     });
   });
 

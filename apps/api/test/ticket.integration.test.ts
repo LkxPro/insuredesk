@@ -275,7 +275,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(handedOff.assigneeId).toBe(seeded.users.manager.id);
 
       // A user who is neither creator nor assignee, without ticket.view_all,
-      // still gets NOT_FOUND — the scope widened to the creator, no further
+      // still gets NOT_FOUND — the scope covers assignee and creator only
       const thirdParty = () => callerWith(seeded.users.observer, "受限第三者", ["ticket.view"]);
       await expect(thirdParty().ticket.detail({ id: created.id })).rejects.toMatchObject({
         code: "NOT_FOUND",

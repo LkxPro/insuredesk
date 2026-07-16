@@ -161,7 +161,7 @@ model Ticket {
   processLogs ProcessLog[]
 
   @@index([assigneeId])
-  /// The non-view_all data scope ORs assigneeId with creatorId (ADR 0006)
+  /// The non-view_all data scope ORs assigneeId with creatorId
   @@index([creatorId])
   @@index([status])
   @@index([createdAt])
