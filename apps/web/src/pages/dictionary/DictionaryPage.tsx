@@ -32,8 +32,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 /**
- * 渠道与类别: the catalog management page behind dictionary.manage. 客诉类别
- * ships first (issue #68); 反馈渠道 joins as a sibling section (issue #69).
+ * 渠道与类别: the catalog management page behind dictionary.manage. Catalogs
+ * render as sibling sections — this phase only 客诉类别 (反馈渠道目录 is #69).
  * 建单/编辑 dropdowns, ticket detail, and exports read the catalog live, so
  * every change here shows through immediately.
  */

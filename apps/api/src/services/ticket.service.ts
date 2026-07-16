@@ -21,6 +21,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Clock } from "../clock";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
+import { resolveNewCategory } from "./ticket-category.service";
 import { displayStatusTicketWhere } from "./ticket-display-status";
 
 /**
@@ -48,36 +49,6 @@ export class RequiredFieldsMissingError extends Error {
     super(`以下字段为必填项：${missingFields.join("、")}`);
     this.name = "RequiredFieldsMissingError";
   }
-}
-
-/** 类别引用指向不存在或已停用的目录项（编辑保持原停用值除外）。 */
-export class TicketCategoryUnavailableError extends Error {
-  constructor(reason: "missing" | "disabled") {
-    super(reason === "missing" ? "所选客诉类别不存在" : "所选客诉类别已停用");
-    this.name = "TicketCategoryUnavailableError";
-  }
-}
-
-/**
- * Resolve a NEWLY chosen category reference: the row must exist and be
- * active. Callers skip this when an edit keeps the ticket's current value —
- * that is the one case a disabled reference may persist.
- */
-export async function resolveNewCategory(
-  db: Pick<PrismaClient, "ticketCategory">,
-  categoryId: string | null,
-) {
-  if (categoryId === null) {
-    return null;
-  }
-  const category = await db.ticketCategory.findUnique({ where: { id: categoryId } });
-  if (!category) {
-    throw new TicketCategoryUnavailableError("missing");
-  }
-  if (!category.active) {
-    throw new TicketCategoryUnavailableError("disabled");
-  }
-  return category;
 }
 
 const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
@@ -189,9 +160,11 @@ export async function createTicket(
 
   const now = clock.now();
   const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, now);
-  await resolveNewCategory(prisma, input.categoryId);
 
   return prisma.$transaction(async (tx) => {
+    // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
+    await resolveNewCategory(tx, input.categoryId);
+
     const ticket = await tx.ticket.create({
       data: {
         ...input,

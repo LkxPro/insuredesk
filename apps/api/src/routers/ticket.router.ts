@@ -22,6 +22,7 @@ import {
   batchAssignTickets,
   listAssigneeOptions,
 } from "../services/ticket-assign.service";
+import { TicketCategoryUnavailableError } from "../services/ticket-category.service";
 import { TicketNotProcessableError, addTicketComment } from "../services/ticket-comment.service";
 import { deleteTicket } from "../services/ticket-delete.service";
 import { editTicket } from "../services/ticket-edit.service";
@@ -29,7 +30,6 @@ import { TicketNotResolvableError, resolveTicket } from "../services/ticket-reso
 import {
   RequiredFieldsMissingError,
   SlaPolicyNotConfiguredError,
-  TicketCategoryUnavailableError,
   createTicket,
   getTicketDetail,
   listTickets,

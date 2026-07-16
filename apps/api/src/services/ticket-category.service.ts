@@ -22,10 +22,45 @@ export class TicketCategoryNotFoundError extends Error {
 }
 
 export class TicketCategoryInUseError extends Error {
-  constructor(ticketCount: number) {
-    super(`该类别已被 ${ticketCount} 张工单使用，无法删除，可改为停用`);
+  /** No count = the P2003 backstop caught a race; don't fabricate a number. */
+  constructor(ticketCount?: number) {
+    super(
+      ticketCount === undefined
+        ? "该类别已被工单使用，无法删除，可改为停用"
+        : `该类别已被 ${ticketCount} 张工单使用，无法删除，可改为停用`,
+    );
     this.name = "TicketCategoryInUseError";
   }
+}
+
+/** 类别引用指向不存在或已停用的目录项（编辑保持原停用值除外）。 */
+export class TicketCategoryUnavailableError extends Error {
+  constructor(reason: "missing" | "disabled") {
+    super(reason === "missing" ? "所选客诉类别不存在" : "所选客诉类别已停用");
+    this.name = "TicketCategoryUnavailableError";
+  }
+}
+
+/**
+ * Resolve a NEWLY chosen category reference: the row must exist and be
+ * active. Ticket create/edit call this; an edit keeping the ticket's current
+ * value skips it — that is the one case a disabled reference may persist.
+ */
+export async function resolveNewCategory(
+  db: Pick<PrismaClient, "ticketCategory">,
+  categoryId: string | null,
+) {
+  if (categoryId === null) {
+    return null;
+  }
+  const category = await db.ticketCategory.findUnique({ where: { id: categoryId } });
+  if (!category) {
+    throw new TicketCategoryUnavailableError("missing");
+  }
+  if (!category.active) {
+    throw new TicketCategoryUnavailableError("disabled");
+  }
+  return category;
 }
 
 function toDto(row: TicketCategory) {
@@ -114,7 +149,7 @@ export async function deleteTicketCategory(prisma: PrismaClient, id: string) {
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
       // FK backstop: a ticket grabbed the reference between count and delete.
-      throw new TicketCategoryInUseError(1);
+      throw new TicketCategoryInUseError();
     }
     translateWriteError(error);
   }
