@@ -64,8 +64,5 @@ GHCR 拉不动(受限网络)时走退路:`git fetch --tags && git checkout <tag>
       退路;`.env.example` 增补 `IMAGE_TAG`;同步更新 `docs/deployment.md`
       的更新/回滚章节与 GHCR 登录说明
 - [x] 备份 cron 脚本与保留策略,写入部署文档
-- [ ] main 分支保护(禁直推、要求 CI 通过)——配置脚本已就绪
-      (`scripts/setup-branch-protection.sh`),待全部改动合入 main 后由
-      维护者执行启用
 - [x] CI 增加生产 Dockerfile 构建校验(只构建不推送)
 - [x] 启用 Dependabot(npm + GitHub Actions,按周分组)
