@@ -1,9 +1,14 @@
-# InsureDesk single-machine production deployment (ADR 0007).
+# InsureDesk single-machine production deployment (ADR 0007, ADR 0009).
 #
 # Two services: postgres + api. The API serves both the tRPC API and the built
 # web SPA (@fastify/static), and binds only to 127.0.0.1:3000 — the host's
 # existing nginx reverse-proxies public traffic to it (HTTPS/domain live there,
 # not here). No nginx container.
+#
+# The api service runs the release image pinned by IMAGE_TAG in the server-side
+# .env (upgrade = edit IMAGE_TAG, `pull api`, `up -d`). The build: section is
+# the restricted-network fallback: checkout the same tag and `up -d --build`
+# produces the same artifact under the same image name.
 #
 # Config comes from a hand-created server-side .env (see .env.example), never
 # committed. Every api start runs `prisma migrate deploy` + the idempotent
@@ -11,7 +16,7 @@
 # deploy) before serving; a failed migration fails the container, so check
 # `docker logs insuredesk-api-prod`.
 #
-# See docs/deployment.md for the full deploy runbook.
+# Deploy runbook: docs/deployment.md. Release/upgrade runbook: docs/releasing.md.
 
 services:
   db:
@@ -36,7 +41,11 @@ services:
     # No host port published: only the api service (same compose network)
     # reaches Postgres. Nothing on the host or public network needs it.
 
-  insuredesk-api-prod:
+  api:
+    # Pinned release image (GHCR is private — `docker login ghcr.io` with a PAT
+    # before pulling). With both image: and build: present, Compose only builds
+    # when asked (`--build`); normal upgrades use `pull api` + `up -d`.
+    image: ghcr.io/lkxpro/insuredesk-api:${IMAGE_TAG:?set IMAGE_TAG in .env, see docs/releasing.md}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -46,7 +55,6 @@ services:
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
         PRISMA_ENGINES_MIRROR: ${PRISMA_ENGINES_MIRROR:-https://binaries.prisma.sh}
-    image: insuredesk-api:latest
     container_name: insuredesk-api-prod
     restart: unless-stopped
     # Runtime env (DATABASE_URL, SESSION_SECRET, etc.) from the server-side .env.

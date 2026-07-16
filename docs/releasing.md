@@ -1,8 +1,8 @@
 # 发版
 
-发布与部署策略见 ADR 0009。本文是操作手册:前半部分描述目标流程,末尾的
-待实施清单完成前,生产更新仍按 `docs/deployment.md` 现行的
-"git pull + 本地构建"流程执行。
+发布与部署策略见 ADR 0009。本文是操作手册:发版流水线(Release workflow +
+钉版本 compose)已实施,生产更新按本文执行;末尾待实施清单的剩余项为治理
+增强,不阻塞发版。
 
 ## 版本号
 
@@ -12,11 +12,13 @@ CalVer:`v<年>.<月>.<序号>`,如 `v2026.07.0`;同月第二次发布为
 ## 发一个版本
 
 1. 确认 main 上要发布的内容已全部合入且 CI 绿。
-2. GitHub → Actions → Release workflow → Run workflow。workflow 自动:
-   - 算出下一个 CalVer 号并打 tag;
-   - 创建 GitHub Release,notes 按 PR 自动生成(`.github/release.yml`
-     按 label 分组);
-   - 构建 api 生产镜像推送 `ghcr.io/lkxpro/insuredesk-api:<tag>`。
+2. GitHub → Actions → Release workflow → Run workflow(在 main 上)。workflow
+   自动:
+   - 算出下一个 CalVer 号;
+   - 构建 api 生产镜像推送 `ghcr.io/lkxpro/insuredesk-api:<tag>`(先推镜像
+     后打 tag,构建失败不会留下无镜像的版本号,修复后重跑即可);
+   - 打 tag 并创建 GitHub Release,notes 按 PR 自动生成
+     (`.github/release.yml` 按 label 分组)。
 3. 若本次升级需要新环境变量或含数据迁移,在 Release notes 顶部手动补一段
    部署注意事项。
 
@@ -51,13 +53,13 @@ GHCR 拉不动(受限网络)时走退路:`git fetch --tags && git checkout <tag>
 
 ## 待实施清单
 
-发版体系尚未搭建,逐项实施(每项可独立开 issue):
+发版体系逐项实施(每项可独立开 issue),剩余未勾项为治理增强:
 
 - [x] 迁移 squash 成基线——最后一次行使"可改写历史迁移"约定,此后
       append-only(ADR 0009)
-- [ ] Release workflow(`workflow_dispatch`:算号、打 tag、建 Release、
+- [x] Release workflow(`workflow_dispatch`:算号、打 tag、建 Release、
       构建推送镜像)+ `.github/release.yml` notes 分组
-- [ ] `docker-compose.prod.yml` 改造:`image: …:${IMAGE_TAG}` + `build:`
+- [x] `docker-compose.prod.yml` 改造:`image: …:${IMAGE_TAG}` + `build:`
       退路;`.env.example` 增补 `IMAGE_TAG`;同步更新 `docs/deployment.md`
       的更新/回滚章节与 GHCR 登录说明
 - [ ] 备份 cron 脚本与保留策略,写入部署文档

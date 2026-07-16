@@ -2,7 +2,8 @@
 
 单机部署（ADR 0007）:compose 起 Postgres + API 两个容器,API 同时托管构建好的
 前端 SPA(`@fastify/static`),只绑 `127.0.0.1:3000`,由宿主机既有 nginx 反代并
-负责 HTTPS 与域名。
+负责 HTTPS 与域名。API 跑 GHCR 上的发版镜像,版本由 `.env` 的 `IMAGE_TAG`
+钉定(ADR 0009,操作手册见 `docs/releasing.md`)。
 
 ## 开发环境
 
@@ -38,12 +39,33 @@ cp .env.example .env
   主机名必须是 compose 服务名 `db`,不是 localhost。
 - `SESSION_SECRET` 用 `openssl rand -hex 32` 生成。
 - `NODE_ENV` 保持 `production`(启用 SPA 静态托管与 Secure cookie)。
+- `IMAGE_TAG` 填要部署的版本号,取 GitHub Releases 页面上最新的 tag
+  (如 `v2026.07.0`)。
 
-构建并启动:
+### 登录 GHCR(拉取私有镜像)
+
+仓库与镜像均为私有,服务器拉镜像前需用 GitHub PAT 登录一次(凭据存入
+`~/.docker/config.json`,之后无需重复):
+
+1. GitHub → Settings → Developer settings → Personal access tokens →
+   Tokens (classic),新建仅含 `read:packages` 权限的 token。
+2. 在服务器上登录:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+echo "$GHCR_PAT" | docker login ghcr.io -u LkxPro --password-stdin
 ```
+
+### 拉取并启动
+
+```bash
+docker compose -f docker-compose.prod.yml pull api
+docker compose -f docker-compose.prod.yml up -d
+```
+
+GHCR 拉不动(受限网络)时走本地构建退路:
+`git fetch --tags && git checkout $IMAGE_TAG` 后
+`docker compose -f docker-compose.prod.yml up -d --build`,产物与发版镜像
+同源、镜像名相同(构建慢时先按下文取消注释 `.env` 中的镜像源配置)。
 
 API 容器的启动链为 `prisma migrate deploy` → bootstrap(幂等,创建初始账号
 admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 nginx 后
@@ -51,23 +73,19 @@ admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 
 
 ## 更新已部署的服务
 
-```bash
-git pull
-docker compose -f docker-compose.prod.yml up -d --build
-```
+升级、回滚的完整操作口径见 `docs/releasing.md`,要点:
 
-这两步就是完整流程:
-
-- `--build` 重建 api 镜像,前端 SPA 在构建阶段一并打进镜像,前后端更新都由这
-  一次重建覆盖。
+- 升级 = 升级前手动备份一次数据库 → 改 `.env` 里的 `IMAGE_TAG` 为新 tag →
+  `pull api` → `up -d`。**只前滚**:镜像回滚仅限新版起不来且迁移未执行的
+  场景,迁移已执行后发现问题一律发 hotfix 版本(ADR 0009)。
 - 数据库迁移随容器启动自动执行,无需手动操作。迁移失败会导致容器起不来
   (fail fast),用 `docker logs insuredesk-api-prod` 排查。
 - 数据不受影响:db 容器镜像未变不会重建,数据持久化在具名卷
   `insuredesk_postgres_data_prod` 中。
-- 新版本若引入新环境变量,先补进服务器上的 `.env` 再执行以上命令(对照
-  `.env.example` 的 diff)。
+- 新版本若引入新环境变量,先补进服务器上的 `.env` 再拉起(对照
+  `.env.example` 的 diff;Release notes 顶部会标注部署注意事项)。
 
-旧镜像会残留为 dangling image,定期 `docker image prune -f` 清理。
+旧镜像会残留,定期 `docker image prune -f` 清理。
 
 ## 宿主机 nginx 反代
 
@@ -101,9 +119,10 @@ server {
 
 ## Building behind a restricted network(受限网络下构建)
 
-npmjs.org / binaries.prisma.sh 不可达的网络(如中国大陆服务器)下构建镜像时,
-在 `.env` 中取消注释镜像源配置,compose 会在构建时作为 build args 注入
-Dockerfile(只影响构建,不影响运行时):
+正常升级只 pull 镜像、不在服务器上构建;本节仅适用于 GHCR 拉不动时的本地
+构建退路。npmjs.org / binaries.prisma.sh 不可达的网络(如中国大陆服务器)下
+构建镜像时,在 `.env` 中取消注释镜像源配置,compose 会在构建时作为 build
+args 注入 Dockerfile(只影响构建,不影响运行时):
 
 ```bash
 NPM_REGISTRY="https://registry.npmmirror.com"
@@ -116,4 +135,4 @@ PRISMA_ENGINES_MIRROR="https://registry.npmmirror.com/-/binary/prisma"
   `DATABASE_URL` 配错。
 - 看服务状态:`docker compose -f docker-compose.prod.yml ps`(db 带健康检查)。
 - 彻底重置(**丢弃全部数据**):`docker compose -f docker-compose.prod.yml down -v`
-  后重新 `up -d --build`。
+  后重新 `up -d`。
