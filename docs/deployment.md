@@ -5,24 +5,7 @@
 负责 HTTPS 与域名。API 跑 GHCR 上的发版镜像,版本由 `.env` 的 `IMAGE_TAG`
 钉定(ADR 0009,操作手册见 `docs/releasing.md`)。
 
-## 开发环境
-
-前置:Node ≥ 22(`corepack enable`,pnpm 版本由 `packageManager` 字段锁定)、
-Docker。
-
-```bash
-docker compose up -d                       # 只容器化 PostgreSQL
-cp apps/api/.env.example apps/api/.env     # 默认值即可直接用
-pnpm install
-pnpm dev
-```
-
-`pnpm dev` 会先跑 `prisma migrate deploy`(users 表为空时自动 seed),再并行起
-api(3000)与 web(5173,`/trpc` 和 `/api` 代理到 api)。浏览器访问
-<http://localhost:5173>。
-
-- 清库重来:`docker compose down -v` 后重新 `pnpm dev`。
-- 改 schema:`pnpm db:migrate`(生成并应用迁移文件)。
+开发环境见根目录 `README.md`。
 
 ## 生产部署(首次)
 

@@ -12,8 +12,8 @@ pnpm dev                # auto-runs migrate deploy (+ seed if DB is empty), then
 
 `docker compose down -v` drops the data volume for a clean database. Schema
 changes still go through `pnpm db:migrate` (generates + applies the migration
-file). Full dev setup, production deploy steps, and the host nginx
-reverse-proxy config are in `docs/deployment.md`.
+file). Full dev setup is in `README.md`; production deploy steps and the host
+nginx reverse-proxy config are in `docs/deployment.md`.
 
 ## Agent skills
 
