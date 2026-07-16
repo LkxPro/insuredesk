@@ -1,11 +1,11 @@
 import { PRIORITY_LABELS, type Priority, type TicketEditData } from "@insuredesk/shared";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { resolveNewChannel } from "./channel.service";
 import { applyTicketDataScope } from "./data-scope.service";
+import { computeSlaStamp, type TicketServiceDeps } from "./ticket.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
 import { resolveNewCategory } from "./ticket-category.service";
-import { type TicketServiceDeps, computeSlaStamp } from "./ticket.service";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结

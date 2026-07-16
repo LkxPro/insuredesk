@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "../src/generated/prisma/client";
 import {
   DEMO_PASSWORD,
   seedChannels,
@@ -14,7 +15,7 @@ if (existsSync(".env")) {
   process.loadEnvFile(".env");
 }
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: new PrismaPg(process.env.DATABASE_URL ?? "") });
 
 /**
  * Seed script for development and testing.

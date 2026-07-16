@@ -1,5 +1,5 @@
 import type { Permission } from "@insuredesk/shared";
-import { TRPCError, initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import type { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
 import { ZodError } from "zod";
 import type { AuthenticatedUser, SessionToken } from "./services/auth.service";

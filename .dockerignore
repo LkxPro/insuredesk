@@ -6,10 +6,12 @@
 # Dependencies — reinstalled inside the image from the lockfile.
 **/node_modules
 
-# Build artifacts — the web bundle is rebuilt in the build stage.
+# Build artifacts — the web bundle is rebuilt in the build stage; the Prisma
+# client is regenerated in each image stage.
 **/dist
 **/build
 **/*.tsbuildinfo
+apps/api/src/generated
 
 # Secrets — never bake env into the image; prod uses env_file at runtime.
 **/.env

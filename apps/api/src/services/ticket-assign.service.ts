@@ -5,7 +5,7 @@ import {
   TicketStatus,
   ticketStatusSchema,
 } from "@insuredesk/shared";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { writeAssignedNotification } from "./notification.service";

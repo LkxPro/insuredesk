@@ -1,5 +1,5 @@
 import type { ChannelCreateInput, ChannelUpdateInput } from "@insuredesk/shared";
-import { type Channel, Prisma, type PrismaClient } from "@prisma/client";
+import { type Channel, Prisma, type PrismaClient } from "../generated/prisma/client";
 
 /**
  * 反馈渠道目录 domain logic (issue #69). Tickets hold references into this

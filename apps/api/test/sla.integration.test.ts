@@ -7,9 +7,9 @@ import {
   DEFAULT_SLA_POLICIES,
   type TicketCreateInput,
 } from "@insuredesk/shared";
-import type { PrismaClient, Role, User } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
 import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");

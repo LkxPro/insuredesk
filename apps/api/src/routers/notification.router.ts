@@ -25,7 +25,7 @@ export const notificationRouter = router({
    * list computed for this instant — one request per 30s tick.
    */
   list: protectedProcedure
-    .input(notificationListInputSchema.default({}))
+    .input(notificationListInputSchema.prefault({}))
     .query(async ({ ctx, input }) => {
       const [inbox, todo] = await Promise.all([
         listNotifications(deps, ctx.user, input),

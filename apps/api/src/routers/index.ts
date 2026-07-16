@@ -9,8 +9,8 @@ import { roleRouter } from "./role.router";
 import { scheduleRouter } from "./schedule.router";
 import { shiftTypeRouter } from "./shift-type.router";
 import { slaRouter } from "./sla.router";
-import { ticketCategoryRouter } from "./ticket-category.router";
 import { ticketRouter } from "./ticket.router";
+import { ticketCategoryRouter } from "./ticket-category.router";
 import { userRouter } from "./user.router";
 
 export const appRouter = router({

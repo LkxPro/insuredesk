@@ -5,7 +5,7 @@ import type {
   RoleUpdatePermissionsData,
   RoleUpdateRequiredFieldsData,
 } from "@insuredesk/shared";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import { effectivePermissions } from "./auth.service";
 import type { TicketServiceDeps } from "./ticket.service";
 

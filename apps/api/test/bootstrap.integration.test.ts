@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import bcrypt from "bcryptjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bootstrapSystemData } from "../prisma/seed-data";
+import { PrismaClient } from "../src/generated/prisma/client";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -32,7 +33,7 @@ describe("bootstrapSystemData (Testcontainers)", () => {
       stdio: "pipe",
     });
 
-    prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    prisma = new PrismaClient({ adapter: new PrismaPg(databaseUrl) });
   }, 120_000);
 
   afterAll(async () => {

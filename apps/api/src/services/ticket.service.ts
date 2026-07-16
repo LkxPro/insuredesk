@@ -1,10 +1,4 @@
 import {
-  TICKET_CREATE_FIELD_KEYS,
-  TICKET_SOURCE_LABELS,
-  type TicketCreateData,
-  type TicketCreateFieldKey,
-  type TicketListQuery,
-  TicketStatus,
   complaintLevelSchema,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
@@ -13,11 +7,17 @@ import {
   prioritySchema,
   processLogActionSchema,
   reminderRulesSchema,
+  TICKET_CREATE_FIELD_KEYS,
+  TICKET_SOURCE_LABELS,
+  type TicketCreateData,
+  type TicketCreateFieldKey,
+  type TicketListQuery,
+  TicketStatus,
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
-import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Clock } from "../clock";
+import type { Prisma, PrismaClient } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { resolveNewChannel } from "./channel.service";
 import { applyTicketDataScope } from "./data-scope.service";

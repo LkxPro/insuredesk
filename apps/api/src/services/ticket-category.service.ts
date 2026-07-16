@@ -1,5 +1,5 @@
 import type { TicketCategoryCreateInput, TicketCategoryUpdateInput } from "@insuredesk/shared";
-import { Prisma, type PrismaClient, type TicketCategory } from "@prisma/client";
+import { Prisma, type PrismaClient, type TicketCategory } from "../generated/prisma/client";
 
 /**
  * 客诉类别目录 domain logic (issue #68). Tickets hold references into this

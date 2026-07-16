@@ -8,6 +8,7 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+apps/api/src/generated/
 
 # Env (only .env.example is committed)
 .env

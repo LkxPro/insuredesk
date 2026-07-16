@@ -1,8 +1,8 @@
 import { type TicketResolveInput, TicketStatus } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
-import { TicketNotFoundError } from "./ticket-assign.service";
 import type { TicketServiceDeps } from "./ticket.service";
+import { TicketNotFoundError } from "./ticket-assign.service";
 
 /**
  * Resolve domain logic: 完结工单 with a mandatory completionStatus

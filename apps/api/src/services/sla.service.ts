@@ -1,10 +1,10 @@
 import {
   COMPLAINT_LEVELS,
   type ComplaintLevel,
-  type SlaPolicyUpdateInput,
   reminderRulesSchema,
+  type SlaPolicyUpdateInput,
 } from "@insuredesk/shared";
-import type { SlaPolicy } from "@prisma/client";
+import type { SlaPolicy } from "../generated/prisma/client";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**

@@ -7,14 +7,14 @@ import {
 import { TRPCError } from "@trpc/server";
 import { prisma } from "../db";
 import {
-  TicketCategoryInUseError,
-  TicketCategoryNameConflictError,
-  TicketCategoryNotFoundError,
   createTicketCategory,
   deleteTicketCategory,
   listTicketCategories,
   listTicketCategoryOptions,
   setTicketCategoryActive,
+  TicketCategoryInUseError,
+  TicketCategoryNameConflictError,
+  TicketCategoryNotFoundError,
   updateTicketCategory,
 } from "../services/ticket-category.service";
 import { protectedProcedure, requirePermission, router } from "../trpc";

@@ -3,7 +3,7 @@ import {
   type TicketDisplayStatus,
   TicketStatus,
 } from "@insuredesk/shared";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "../generated/prisma/client";
 
 /**
  * The single source of truth for time-based ticket predicates in SQL:
