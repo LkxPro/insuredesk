@@ -3,7 +3,7 @@ import type { TicketCreateFieldKey } from "@insuredesk/shared";
 
 const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
   feedbackTime: "反馈时间",
-  channel: "业务渠道",
+  channelId: "业务渠道",
   project: "项目名称",
   brokerageEntity: "经纪主体",
   paymentChannel: "支付渠道",
@@ -55,7 +55,7 @@ export function RequiredFieldsChecklist({
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-sm font-medium">来源与渠道</legend>
         <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
-          {["feedbackTime", "channel"].map((field) => (
+          {["feedbackTime", "channelId"].map((field) => (
             <div key={field} className="flex items-start gap-2 text-sm">
               <Checkbox
                 id={`required-field-${field}`}

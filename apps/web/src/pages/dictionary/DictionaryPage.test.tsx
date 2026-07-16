@@ -11,10 +11,11 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 渠道与类别 page (issue #68): the 客诉类别 catalog behind dictionary.manage.
- * Same faked-fetch tRPC pipeline and useAuth-seam mock as the sibling page
- * tests; the reference-deletion refusal is a server invariant covered by the
- * API integration tests — here the page just surfaces the CONFLICT message.
+ * 渠道与类别 page (issues #68/#69): the 反馈渠道 and 客诉类别 catalogs behind
+ * dictionary.manage. Same faked-fetch tRPC pipeline and useAuth-seam mock as
+ * the sibling page tests; the reference-deletion refusal is a server
+ * invariant covered by the API integration tests — here the page just
+ * surfaces the CONFLICT message.
  */
 
 const auth = vi.hoisted(() => ({ user: null as AuthUser | null, isLoading: false }));
@@ -43,6 +44,26 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
 }
 
 const canned = {
+  channels: [
+    {
+      id: "ch-baosi",
+      name: "保司",
+      active: true,
+      regulatory: false,
+      displayOrder: 1,
+      createdAt: "2026-07-16T00:00:00.000Z",
+      updatedAt: "2026-07-16T00:00:00.000Z",
+    },
+    {
+      id: "ch-regulator",
+      name: "监管",
+      active: true,
+      regulatory: true,
+      displayOrder: 2,
+      createdAt: "2026-07-16T00:00:00.000Z",
+      updatedAt: "2026-07-16T00:00:00.000Z",
+    },
+  ],
   categories: [
     {
       id: "cat-claims",
@@ -80,6 +101,26 @@ function respond(path: string, input: unknown): unknown {
     return { id: "cat-visit", name: "回访问题", displayOrder: 2, ...(input as object) };
   }
   if (path === "ticketCategory.delete") {
+    if (deleteError) throw new Error(deleteError);
+    return input;
+  }
+  if (path === "channel.list") return canned.channels;
+  if (path === "channel.create") {
+    return { id: "new", active: true, ...(input as object), createdAt: "", updatedAt: "" };
+  }
+  if (path === "channel.update") {
+    return { active: true, ...(input as object), createdAt: "", updatedAt: "" };
+  }
+  if (path === "channel.setActive") {
+    return {
+      id: "ch-baosi",
+      name: "保司",
+      regulatory: false,
+      displayOrder: 1,
+      ...(input as object),
+    };
+  }
+  if (path === "channel.delete") {
     if (deleteError) throw new Error(deleteError);
     return input;
   }
@@ -138,7 +179,7 @@ describe("渠道与类别 page", () => {
     renderPage();
     expect(await screen.findByText("理赔投诉")).toBeInTheDocument();
     expect(screen.getByText("已停用")).toBeInTheDocument();
-    expect(screen.getByText("启用")).toBeInTheDocument();
+    expect(screen.getAllByText("启用").length).toBeGreaterThan(0);
 
     auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderPage();
@@ -204,6 +245,70 @@ describe("渠道与类别 page", () => {
         id: "cat-visit",
       }),
     );
+  });
+
+  it("creates a channel with the 计入监管单数 flag", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "新增渠道" }));
+    const dialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("渠道名称"), {
+      target: { value: "监管转办" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("显示顺序"), { target: { value: "5" } });
+    fireEvent.click(within(dialog).getByLabelText("计入监管单数"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "channel.create")?.input).toEqual({
+        name: "监管转办",
+        displayOrder: 5,
+        regulatory: true,
+      }),
+    );
+  });
+
+  it("renders the 监管标记 badge and edits a channel keeping/toggling the flag", async () => {
+    renderPage();
+    await screen.findByText("监管");
+    // 监管 row carries the flag badge; 保司 does not
+    expect(screen.getByText("计入")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑 监管" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("计入监管单数")).toBeChecked();
+    fireEvent.click(within(dialog).getByLabelText("计入监管单数"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "channel.update")?.input).toEqual({
+        id: "ch-regulator",
+        name: "监管",
+        displayOrder: 2,
+        regulatory: false,
+      }),
+    );
+  });
+
+  it("toggles 停用/启用 and deletes a channel; the server refusal surfaces in the dialog", async () => {
+    renderPage();
+    await screen.findByText("保司");
+
+    fireEvent.click(screen.getByRole("button", { name: "停用 保司" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "channel.setActive")?.input).toEqual({
+        id: "ch-baosi",
+        active: false,
+      }),
+    );
+
+    deleteError = "该渠道已被 2 张工单使用，无法删除，可改为停用";
+    fireEvent.click(screen.getByRole("button", { name: "删除 保司" }));
+    const deleteDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(deleteDialog).getByRole("button", { name: "确认删除" }));
+    expect(
+      await within(deleteDialog).findByText("该渠道已被 2 张工单使用，无法删除，可改为停用"),
+    ).toBeInTheDocument();
   });
 
   it("surfaces the server's reference-count refusal on delete", async () => {

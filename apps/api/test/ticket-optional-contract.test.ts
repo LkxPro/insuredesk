@@ -12,7 +12,7 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
     const data = ticketCreateInputSchema.parse({});
     expect(data).toEqual({
       feedbackTime: null,
-      channel: null,
+      channelId: null,
       project: null,
       brokerageEntity: null,
       paymentChannel: null,
@@ -35,7 +35,7 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
   it('normalizes "" and whitespace to null across text, enum and datetime fields', () => {
     const data = ticketCreateInputSchema.parse({
       feedbackTime: "",
-      channel: "",
+      channelId: "",
       project: "   ",
       customerName: "",
       nuclearBodyStatus: "",
@@ -44,7 +44,7 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
       priority: "",
     });
     expect(data.feedbackTime).toBeNull();
-    expect(data.channel).toBeNull();
+    expect(data.channelId).toBeNull();
     expect(data.project).toBeNull();
     expect(data.customerName).toBeNull();
     expect(data.nuclearBodyStatus).toBeNull();
@@ -61,7 +61,6 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
   });
 
   it("still validates filled values: bad enum members and malformed datetimes reject", () => {
-    expect(ticketCreateInputSchema.safeParse({ channel: "微信" }).success).toBe(false);
     expect(ticketCreateInputSchema.safeParse({ complaintLevel: "特大投诉" }).success).toBe(false);
     expect(ticketCreateInputSchema.safeParse({ feedbackTime: "not-a-date" }).success).toBe(false);
     expect(
@@ -74,6 +73,6 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
     expect(ticketEditInputSchema.safeParse({}).success).toBe(false);
     const data = ticketEditInputSchema.parse({ ticketId: "t1", customerName: " 张三 " });
     expect(data.customerName).toBe("张三");
-    expect(data.channel).toBeNull();
+    expect(data.channelId).toBeNull();
   });
 });

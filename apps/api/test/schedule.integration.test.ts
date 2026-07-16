@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Channel, Permission, TicketCreateInput } from "@insuredesk/shared";
+import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import type { PrismaClient, Role, User } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -18,6 +18,7 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  */
 describe("schedule workflow and schedule-based auto assignment (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;
+  let regulatoryChannelId: string | null;
   let prisma: PrismaClient;
   let appRouter: typeof import("../src/routers/index").appRouter;
   let findOnDutyUserIds: typeof ScheduleService.findOnDutyUserIds;
@@ -53,6 +54,9 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
     seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
     await seedData.seedShiftTypes(prisma);
+    // 渠道只是分类维度：造一张带渠道的单，证明路由对它视而不见
+    regulatoryChannelId =
+      (await seedData.seedChannels(prisma)).find((channel) => channel.regulatory)?.id ?? null;
   }, 180_000);
 
   afterAll(async () => {
@@ -109,7 +113,6 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
 
   const baseTicketInput = {
     feedbackTime: "2026-07-09T02:00:00.000Z",
-    channel: "保司",
     customerName: "赵排班",
     phone: "13800000001",
     customerRequest: "请尽快处理",
@@ -118,8 +121,8 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 
-  async function createTicket(channel: Channel | null = "保司") {
-    return (await manager().ticket.create({ ...baseTicketInput, channel })).id;
+  async function createTicket(channelId: string | null = null) {
+    return (await manager().ticket.create({ ...baseTicketInput, channelId })).id;
   }
 
   function localInstant(date: string, hour: number, minute = 0) {
@@ -306,7 +309,7 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
       await manager().schedule.create({ date, userId: userB.id, shiftId: full.id });
       await manager().schedule.create({ date, userId: resting.id, shiftId: rest.id });
 
-      const morningTickets = [await createTicket("保司"), await createTicket("监管")];
+      const morningTickets = [await createTicket(regulatoryChannelId), await createTicket()];
       const morning = await autoAssignAt(localInstant(date, 11), morningTickets);
       expect(morning.skipped).toEqual([]);
       expect(morning.assigned).toHaveLength(2);
@@ -329,13 +332,13 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
       await manager().schedule.create({ date, userId: busy.id, shiftId: full.id });
       await manager().schedule.create({ date, userId: idle.id, shiftId: full.id });
 
-      const existing = await createTicket("支付");
+      const existing = await createTicket();
       await prisma.ticket.update({
         where: { id: existing },
         data: { assigneeId: busy.id, status: "assigned", assignedAt: new Date() },
       });
 
-      const target = await createTicket("经纪");
+      const target = await createTicket();
       const assigned = await autoAssignAt(localInstant(date, 11), [target]);
       expect(assigned.assigned).toEqual([
         expect.objectContaining({ ticketId: target, assigneeName: idle.name }),
@@ -395,7 +398,7 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
         "ticket.view",
         "ticket.view_all",
       ]);
-      const another = await createTicket("保司");
+      const another = await createTicket();
       await expect(unauthorized.ticket.autoAssign({ ticketIds: [another] })).rejects.toMatchObject({
         code: "FORBIDDEN",
       });

@@ -1,6 +1,7 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
 import { COMPLAINT_LEVELS, DEFAULT_SLA_POLICIES, TicketStatus } from "@insuredesk/shared";
 import type {
+  Channel,
   PrismaClient,
   Role,
   ShiftType,
@@ -68,6 +69,14 @@ export const DEFAULT_TICKET_CATEGORIES = [
   "产品咨询",
   "回访问题",
   "其他",
+] as const;
+
+/** 首次初始化播种的反馈渠道目录；「监管」出厂即带计入监管单数标记。 */
+export const DEFAULT_CHANNELS = [
+  { name: "保司", regulatory: false, displayOrder: 1 },
+  { name: "经纪", regulatory: false, displayOrder: 2 },
+  { name: "支付", regulatory: false, displayOrder: 3 },
+  { name: "监管", regulatory: true, displayOrder: 4 },
 ] as const;
 
 /**
@@ -169,6 +178,7 @@ export async function bootstrapSystemData(
   await seedSlaPolicies(prisma);
   await seedShiftTypes(prisma);
   await seedTicketCategories(prisma);
+  await seedChannels(prisma);
 
   const existing = await prisma.user.findUnique({ where: { username: options.adminUsername } });
   if (existing) {
@@ -323,6 +333,24 @@ export async function seedTicketCategories(prisma: PrismaClient): Promise<Ticket
   });
 }
 
+/**
+ * First initialization only: seed the four factory channels while the catalog
+ * is empty. Once any channel exists it belongs to the administrator — later
+ * deletions, renames, 停用 and regulatory-flag changes must survive every
+ * startup.
+ */
+export async function seedChannels(prisma: PrismaClient): Promise<Channel[]> {
+  return prisma.$transaction(async (tx) => {
+    if ((await tx.channel.count()) === 0) {
+      await tx.channel.createMany({
+        data: DEFAULT_CHANNELS.map((defaults) => ({ ...defaults })),
+        skipDuplicates: true,
+      });
+    }
+    return tx.channel.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] });
+  });
+}
+
 const HOUR_MS = 60 * 60 * 1000;
 
 const DEMO_TICKET_POLICY_NUMBERS = [
@@ -351,6 +379,8 @@ interface DemoTicketSpec {
   input: TicketCreateData;
   /** 目录项按名称引用，播种时解析为 categoryId；改名/删除后的库回退为未填写。 */
   categoryName?: string;
+  /** 同 categoryName：按名称解析为 channelId，解析不到回退为未填写。 */
+  channelName?: string;
   source?: "manual" | "feishu_form" | "community";
   creator?: keyof SeededUsersAndRoles["users"];
   assignee?: keyof SeededUsersAndRoles["users"];
@@ -401,7 +431,7 @@ function demoInput(
 ): TicketCreateData {
   return {
     feedbackTime: hoursAgo(1, new Date()).toISOString(),
-    channel: "保司",
+    channelId: null,
     project: "融盛百万医疗",
     brokerageEntity: "东方大地经纪",
     paymentChannel: "连连支付",
@@ -427,6 +457,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     policyNumber: "DEMO-POL-1001",
     title: "未分配的新投诉",
     createdHoursAgo: 3,
+    channelName: "保司",
     input: demoInput("DEMO-POL-1001", {
       customerName: "陈晓雨",
       phone: "13810001001",
@@ -438,10 +469,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     policyNumber: "DEMO-POL-1002",
     title: "待超时未分配",
     createdHoursAgo: 47,
+    channelName: "监管",
     input: demoInput("DEMO-POL-1002", {
       customerName: "周明轩",
       phone: "13810001002",
-      channel: "监管",
       complaintLevel: "高级投诉",
       priority: "high",
       customerRequest: "客户已向监管渠道反馈销售说明不清，要求主管介入处理。",
@@ -452,10 +483,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     policyNumber: "DEMO-POL-1003",
     title: "已超时未分配",
     createdHoursAgo: 56,
+    channelName: "支付",
     input: demoInput("DEMO-POL-1003", {
       customerName: "林思远",
       phone: "13810001003",
-      channel: "支付",
       complaintLevel: "一般投诉",
       priority: "urgent",
       customerRequest: "客户称收到疑似营销电话，要求确认信息来源并给出书面回复。",
@@ -467,10 +498,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     title: "已分配给一线客服",
     createdHoursAgo: 8,
     assignee: "cs1",
+    channelName: "保司",
     input: demoInput("DEMO-POL-1004", {
       customerName: "何佳怡",
       phone: "13810001004",
-      channel: "保司",
       customerRequest: "客户咨询住院理赔材料清单，要求电话回访说明。",
     }),
     categoryName: "理赔咨询",
@@ -480,10 +511,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     title: "待超时且已分配",
     createdHoursAgo: 47,
     assignee: "manager",
+    channelName: "经纪",
     input: demoInput("DEMO-POL-1005", {
       customerName: "吴承泽",
       phone: "13810001005",
-      channel: "经纪",
       complaintLevel: "高级投诉",
       priority: "medium",
       customerRequest: "客户对退保金额有异议，要求重新测算现金价值。",
@@ -499,6 +530,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     contactCount: 2,
     processingResult: "已与客户确认补充材料，等待保司反馈。",
     nextContactHoursFromNow: 6,
+    channelName: "保司",
     input: demoInput("DEMO-POL-1006", {
       customerName: "郑沐辰",
       phone: "13810001006",
@@ -541,10 +573,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     contactCount: 1,
     processingResult: "已升级主管处理，等待支付渠道核查回执。",
     nextContactHoursFromNow: -2,
+    channelName: "支付",
     input: demoInput("DEMO-POL-1007", {
       customerName: "王亦凡",
       phone: "13810001007",
-      channel: "支付",
       complaintLevel: "高级投诉",
       priority: "urgent",
       hasContacted: true,
@@ -578,6 +610,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     processingResult: "客户认可解释，工单正常完结。",
     completionStatus: "正常完结",
     completionHoursAgo: 10,
+    channelName: "保司",
     input: demoInput("DEMO-POL-1008", {
       customerName: "赵一诺",
       phone: "13810001008",
@@ -610,10 +643,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     processingResult: "经多轮沟通后协商解决。",
     completionStatus: "已协商解决",
     completionHoursAgo: 6,
+    channelName: "监管",
     input: demoInput("DEMO-POL-1009", {
       customerName: "孙若溪",
       phone: "13810001009",
-      channel: "监管",
       complaintLevel: "高级投诉",
       customerRequest: "客户对销售告知流程提出监管投诉，要求补偿方案。",
       hasContacted: true,
@@ -643,10 +676,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     contactCount: 1,
     processingResult: "特急件已电话首响，持续滚动跟进。",
     nextContactHoursFromNow: 2,
+    channelName: "监管",
     input: demoInput("DEMO-POL-1010", {
       customerName: "刘安宁",
       phone: "13810001010",
-      channel: "监管",
       complaintLevel: "特急投诉",
       priority: "urgent",
       hasContacted: true,
@@ -675,10 +708,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     title: "飞书表单导入",
     createdHoursAgo: 12,
     source: "feishu_form",
+    channelName: "经纪",
     input: demoInput("DEMO-POL-1011", {
       customerName: "杨可欣",
       phone: "13810001011",
-      channel: "经纪",
       customerRequest: "飞书表单转入：客户咨询保障责任和等待期。",
       userComplaintChannel: "飞书表单",
     }),
@@ -690,10 +723,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     createdHoursAgo: 24,
     source: "community",
     assignee: "cs1",
+    channelName: "保司",
     input: demoInput("DEMO-POL-1012", {
       customerName: "马梓涵",
       phone: "13810001012",
-      channel: "保司",
       customerRequest: "社区反馈：客户称回访时间不便，希望改约晚间联系。",
       userComplaintChannel: "社区",
     }),
@@ -825,12 +858,19 @@ export async function seedDemoTickets(
   const now = new Date();
   const created: Ticket[] = [];
 
-  // Specs reference categories by name; an operator-modified catalog (renamed
-  // or deleted entries) degrades those references to 未填写 instead of failing.
+  // Specs reference catalog rows by name; an operator-modified catalog
+  // (renamed or deleted entries) degrades those references to 未填写 instead
+  // of failing.
   const categoryIdByName = new Map(
     (await prisma.ticketCategory.findMany({ where: { active: true } })).map((category) => [
       category.name,
       category.id,
+    ]),
+  );
+  const channelIdByName = new Map(
+    (await prisma.channel.findMany({ where: { active: true } })).map((channel) => [
+      channel.name,
+      channel.id,
     ]),
   );
 
@@ -840,6 +880,7 @@ export async function seedDemoTickets(
       ...spec.input,
       feedbackTime: hoursAgo(spec.createdHoursAgo + 1, now).toISOString(),
       categoryId: spec.categoryName ? (categoryIdByName.get(spec.categoryName) ?? null) : null,
+      channelId: spec.channelName ? (channelIdByName.get(spec.channelName) ?? null) : null,
     };
     const ticket =
       spec.source === undefined || spec.source === "manual"

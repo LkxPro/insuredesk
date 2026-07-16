@@ -66,6 +66,9 @@ function fakeTrpcFetch(input: RequestInfo | URL): Promise<Response> {
     if (path === "notification.list") {
       return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
     }
+    if (path === "channel.filterOptions") {
+      return { result: { data: [{ id: "ch-pay", name: "支付", active: true }] } };
+    }
     return { result: { data: { items: [], total: 0, page: 1, pageSize: 20 } } };
   });
   return Promise.resolve(
@@ -146,7 +149,7 @@ describe("按列表当前筛选条件导出", () => {
     exportFetch.mockResolvedValue(
       new Response("csv", { status: 200, headers: { "content-type": "text/csv" } }),
     );
-    renderAt("/tickets?status=overdue&channel=支付&q=三丰&sortBy=dueAt&sortOrder=asc&page=3");
+    renderAt("/tickets?status=overdue&channel=ch-pay&q=三丰&sortBy=dueAt&sortOrder=asc&page=3");
 
     await pickExport(/CSV/);
 
@@ -155,7 +158,7 @@ describe("按列表当前筛选条件导出", () => {
     expect(url.pathname).toBe("/api/tickets/export");
     expect(url.searchParams.get("format")).toBe("csv");
     expect(url.searchParams.get("status")).toBe("overdue");
-    expect(url.searchParams.get("channel")).toBe("支付");
+    expect(url.searchParams.get("channelId")).toBe("ch-pay");
     expect(url.searchParams.get("search")).toBe("三丰");
     expect(url.searchParams.get("sortBy")).toBe("dueAt");
     expect(url.searchParams.get("sortOrder")).toBe("asc");
@@ -197,7 +200,7 @@ describe("buildTicketExportUrl", () => {
     const url = buildTicketExportUrl(
       {
         status: "processing",
-        channel: undefined,
+        channelId: undefined,
         complaintLevel: "特急投诉",
         source: undefined,
         search: undefined,
@@ -212,7 +215,7 @@ describe("buildTicketExportUrl", () => {
     const params = new URL(url, "http://localhost").searchParams;
     expect(params.get("status")).toBe("processing");
     expect(params.get("complaintLevel")).toBe("特急投诉");
-    expect(params.get("channel")).toBeNull();
+    expect(params.get("channelId")).toBeNull();
     expect(params.get("source")).toBeNull();
     expect(params.get("search")).toBeNull();
     expect(params.get("timeZone")).toBe("Asia/Shanghai");

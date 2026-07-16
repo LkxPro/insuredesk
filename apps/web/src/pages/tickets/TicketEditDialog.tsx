@@ -12,14 +12,14 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { Channel, ComplaintLevel, NuclearBodyStatus, Priority } from "@insuredesk/shared";
+import type { ComplaintLevel, NuclearBodyStatus, Priority } from "@insuredesk/shared";
 import { format } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import {
-  type CurrentCategoryOption,
+  type CurrentCatalogOption,
   TicketFormFields,
   type TicketFormValues,
   ticketFormSchema,
@@ -38,7 +38,7 @@ export interface EditableTicket {
   id: string;
   workOrderNumber: string;
   feedbackTime: string | null;
-  channel: Channel | null;
+  channel: CurrentCatalogOption | null;
   project: string | null;
   brokerageEntity: string | null;
   paymentChannel: string | null;
@@ -52,7 +52,7 @@ export interface EditableTicket {
   nuclearBodyStatus: NuclearBodyStatus | null;
   hasContacted: boolean | null;
   contactId: string | null;
-  category: CurrentCategoryOption | null;
+  category: CurrentCatalogOption | null;
   complaintLevel: ComplaintLevel | null;
   priority: Priority | null;
 }
@@ -63,7 +63,7 @@ function formDefaults(ticket: EditableTicket): TicketFormValues {
     feedbackTime: ticket.feedbackTime
       ? format(new Date(ticket.feedbackTime), "yyyy-MM-dd'T'HH:mm")
       : "",
-    channel: ticket.channel ?? "",
+    channelId: ticket.channel?.id ?? "",
     project: ticket.project ?? "",
     brokerageEntity: ticket.brokerageEntity ?? "",
     paymentChannel: ticket.paymentChannel ?? "",
@@ -149,7 +149,11 @@ export function TicketEditDialog({
 
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col" noValidate>
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
-            <TicketFormFields form={form} currentCategory={ticket.category} />
+            <TicketFormFields
+              form={form}
+              currentCategory={ticket.category}
+              currentChannel={ticket.channel}
+            />
           </div>
 
           <div className="flex flex-col gap-3 border-t px-6 py-4">

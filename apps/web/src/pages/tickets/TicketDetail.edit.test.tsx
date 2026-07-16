@@ -68,7 +68,7 @@ function detailPayload(overrides: Record<string, unknown> = {}) {
     feedbackTime: "2026-07-09T01:00:00.000Z",
     source: "manual",
     createdBy: "测试用户",
-    channel: "保司",
+    channel: { id: "ch-baosi", name: "保司", active: true },
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
@@ -139,7 +139,11 @@ function respond(path: string, input: unknown): unknown {
   if (path === "ticket.list") {
     return { items: [], total: 0, page: 1, pageSize: 20 };
   }
-  if (path === "ticket.assigneeOptions" || path === "ticketCategory.options") {
+  if (
+    path === "ticket.assigneeOptions" ||
+    path === "ticketCategory.options" ||
+    path === "channel.options"
+  ) {
     return [];
   }
   throw new Error(`Unexpected tRPC path: ${path}`);
@@ -232,7 +236,7 @@ describe("editing from the dialog", () => {
       ticketId: "t1",
       customerName: "王大明",
       // Untouched fields ride along unchanged — the server diffs them out
-      channel: "保司",
+      channelId: "ch-baosi",
       complaintLevel: "一般投诉",
       policyNumber: "P2026070900123",
       feedbackTime: "2026-07-09T01:00:00.000Z",
@@ -269,6 +273,27 @@ describe("editing from the dialog", () => {
     });
   });
 
+  it("keeps a since-停用 channel selectable as the labelled current value (保持原值)", async () => {
+    detail = detailPayload({ channel: { id: "ch-baosi", name: "保司", active: false } });
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+
+    const trigger = await screen.findByRole("combobox", { name: /反馈渠道/ });
+    expect(trigger).toHaveTextContent("保司（已停用）");
+
+    fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === "ticket.edit")).toBe(true);
+    });
+    expect(calls.find((call) => call.path === "ticket.edit")?.input).toMatchObject({
+      channelId: "ch-baosi",
+      customerName: "王大明",
+    });
+  });
+
   it("clears a filled 反馈时间 back to 未填写: submits feedbackTime as null (issue #62)", async () => {
     renderDetail();
 
@@ -288,7 +313,7 @@ describe("editing from the dialog", () => {
       feedbackTime: null,
       // Other prefilled fields ride along unchanged
       customerName: "王小明",
-      channel: "保司",
+      channelId: "ch-baosi",
     });
   });
 });

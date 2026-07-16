@@ -5,7 +5,6 @@ import {
   type TicketCreateFieldKey,
   type TicketListQuery,
   TicketStatus,
-  channelSchema,
   complaintLevelSchema,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
@@ -20,6 +19,7 @@ import {
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Clock } from "../clock";
 import type { AuthenticatedUser } from "./auth.service";
+import { resolveNewChannel } from "./channel.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { resolveNewCategory } from "./ticket-category.service";
 import { displayStatusTicketWhere } from "./ticket-display-status";
@@ -53,7 +53,7 @@ export class RequiredFieldsMissingError extends Error {
 
 const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
   feedbackTime: "反馈时间",
-  channel: "业务渠道",
+  channelId: "业务渠道",
   project: "项目名称",
   brokerageEntity: "经纪主体",
   paymentChannel: "支付渠道",
@@ -164,6 +164,7 @@ export async function createTicket(
   return prisma.$transaction(async (tx) => {
     // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
     await resolveNewCategory(tx, input.categoryId);
+    await resolveNewChannel(tx, input.channelId);
 
     const ticket = await tx.ticket.create({
       data: {
@@ -197,8 +198,9 @@ export async function createTicket(
 const listInclude = {
   // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
-  // Category renders its CURRENT catalog name — a rename shows through
+  // Catalog references render their CURRENT names — a rename shows through
   category: { select: { name: true } },
+  channel: { select: { name: true } },
 } satisfies Prisma.TicketInclude;
 
 type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
@@ -206,7 +208,7 @@ type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
 /** The list's filter/sort subset — shared verbatim by the export. */
 type TicketListFilters = Pick<
   TicketListQuery,
-  "status" | "channel" | "complaintLevel" | "source" | "search" | "sortBy" | "sortOrder"
+  "status" | "channelId" | "complaintLevel" | "source" | "search" | "sortBy" | "sortOrder"
 >;
 
 /**
@@ -231,8 +233,8 @@ export function buildTicketListWhere(
   if (query.status) {
     filters.push(displayStatusTicketWhere(query.status, now));
   }
-  if (query.channel) {
-    filters.push({ channel: query.channel });
+  if (query.channelId) {
+    filters.push({ channelId: query.channelId });
   }
   if (query.complaintLevel) {
     filters.push({ complaintLevel: query.complaintLevel });
@@ -322,7 +324,7 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
     workOrderNumber: ticket.workOrderNumber,
     createdAt: ticket.createdAt.toISOString(),
     source,
-    channel: parseNullable(channelSchema, ticket.channel),
+    channel: ticket.channel?.name ?? null,
     category: ticket.category?.name ?? null,
     complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     customerName: ticket.customerName,
@@ -341,6 +343,7 @@ const detailInclude = {
   // id/active ride along for the edit form: a disabled current value stays
   // selectable (labelled 已停用) while other disabled options never appear
   category: { select: { id: true, name: true, active: true } },
+  channel: { select: { id: true, name: true, active: true } },
   processLogs: { orderBy: [{ at: "asc" }, { id: "asc" }] },
 } satisfies Prisma.TicketInclude;
 
@@ -389,7 +392,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     // internal tickets show the creator's *current* name, external ones the
     // source label.
     createdBy: source === "manual" ? (ticket.creator?.name ?? null) : TICKET_SOURCE_LABELS[source],
-    channel: parseNullable(channelSchema, ticket.channel),
+    channel: ticket.channel,
     project: ticket.project,
     brokerageEntity: ticket.brokerageEntity,
     paymentChannel: ticket.paymentChannel,

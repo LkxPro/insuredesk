@@ -36,7 +36,6 @@ import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import {
   BATCH_ASSIGN_LIMIT,
-  CHANNELS,
   COMPLAINT_LEVELS,
   TICKET_DISPLAY_STATUSES,
   TICKET_SOURCES,
@@ -96,7 +95,7 @@ const BASE_COLUMN_COUNT = 10;
 function parseListQuery(params: URLSearchParams): TicketListQuery {
   const candidate = {
     status: params.get("status") ?? undefined,
-    channel: params.get("channel") ?? undefined,
+    channelId: params.get("channel") ?? undefined,
     complaintLevel: params.get("level") ?? undefined,
     source: params.get("source") ?? undefined,
     search: params.get("q") ?? undefined,
@@ -211,6 +210,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [exporting, setExporting] = useState(false);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
+  // 渠道筛选全列目录项（停用项标注），选停用渠道仍能查到其存量工单
+  const channelOptions = trpc.channel.filterOptions.useQuery().data ?? [];
 
   /** Set/clear one URL param; filter changes restart from page 1. */
   function setParam(key: string, value: string | null, { resetPage = true } = {}) {
@@ -353,8 +354,11 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         />
         <FilterSelect
           label="渠道"
-          value={query.channel}
-          options={CHANNELS.map((channel) => ({ value: channel, label: channel }))}
+          value={query.channelId}
+          options={channelOptions.map((channel) => ({
+            value: channel.id,
+            label: channel.active ? channel.name : `${channel.name}（已停用）`,
+          }))}
           onChange={(value) => setParam("channel", value)}
         />
         <FilterSelect

@@ -36,8 +36,9 @@ export interface TicketExportFile {
 const exportInclude = {
   // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
-  // Category renders its CURRENT catalog name — a rename shows through
+  // Catalog references render their CURRENT names — a rename shows through
   category: { select: { name: true } },
+  channel: { select: { name: true } },
 } satisfies Prisma.TicketInclude;
 
 type TicketExportRow = Prisma.TicketGetPayload<{ include: typeof exportInclude }>;
@@ -94,7 +95,7 @@ const EXPORT_COLUMNS: ReadonlyArray<{
   { header: "客户电话", value: (t) => t.phone ?? "" },
   { header: "联系电话", value: (t) => t.contactPhone ?? "" },
   { header: "保单号", value: (t) => t.policyNumber ?? "" },
-  { header: "渠道", value: (t) => t.channel ?? "" },
+  { header: "渠道", value: (t) => t.channel?.name ?? "" },
   { header: "投诉等级", value: (t) => t.complaintLevel ?? "" },
   { header: "分类", value: (t) => t.category?.name ?? "" },
   {

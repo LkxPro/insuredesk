@@ -122,7 +122,12 @@ function respond(path: string): unknown {
   if (path === "ticket.detail") {
     return blankDetailPayload();
   }
-  if (path === "ticket.assigneeOptions" || path === "ticketCategory.options") {
+  if (
+    path === "ticket.assigneeOptions" ||
+    path === "ticketCategory.options" ||
+    path === "channel.options" ||
+    path === "channel.filterOptions"
+  ) {
     return [];
   }
   throw new Error(`Unexpected tRPC path: ${path}`);
@@ -193,7 +198,7 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
     // feedbackTime defaults to the open instant, minute precision (秒归零)
     expect(mutation?.input).toMatchObject({
       feedbackTime: NOW.toISOString(),
-      channel: null,
+      channelId: null,
       project: null,
       customerName: null,
       phone: null,
@@ -223,7 +228,7 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
     const mutation = calls.find((call) => call.path === "ticket.create");
     expect(mutation?.input).toMatchObject({
       feedbackTime: null,
-      channel: null,
+      channelId: null,
       customerName: null,
       hasContacted: null,
       complaintLevel: null,

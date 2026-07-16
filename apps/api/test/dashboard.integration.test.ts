@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
-import { CHANNELS, DASHBOARD_METRIC_KEYS } from "@insuredesk/shared";
+import { DASHBOARD_METRIC_KEYS } from "@insuredesk/shared";
 import type { Prisma, PrismaClient, Role, User } from "@prisma/client";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -15,7 +15,8 @@ const HOUR_MS = 60 * 60 * 1000;
  * Acceptance tests for 数据看板 against a real Postgres: the 9 metric cards
  * (with the time cards reusing the single-truth predicates), the deliberate
  * difference between the two overdue 口径, soft-delete exclusion, the
- * 4-channel table, the Top-10 跟进人考核表, the dashboard.view_all data
+ * channel table (regulatory 标记口径 included), the Top-10 跟进人考核表, the
+ * dashboard.view_all data
  * scope, and the <2s compute target. Runs through appRouter.createCaller;
  * clock-sensitive 口径 cases use the service directly with a fixed clock,
  * like the list tests.
@@ -29,6 +30,8 @@ describe("dashboard stats (Testcontainers)", () => {
     roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
     users: { admin: User; manager: User; cs1: User; observer: User };
   };
+  let channelRows: { id: string; name: string }[];
+  let channelIds: Map<string, string>;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -53,6 +56,8 @@ describe("dashboard stats (Testcontainers)", () => {
 
     seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
+    channelRows = await seedData.seedChannels(prisma);
+    channelIds = new Map(channelRows.map((channel) => [channel.name, channel.id]));
   }, 180_000);
 
   afterAll(async () => {
@@ -101,9 +106,14 @@ describe("dashboard stats (Testcontainers)", () => {
     );
   }
 
+  const channelId = (name: string) => {
+    const id = channelIds.get(name);
+    if (!id) throw new Error(`渠道「${name}」未播种`);
+    return id;
+  };
+
   const baseInput = {
     feedbackTime: "2026-07-09T02:00:00.000Z",
-    channel: "保司",
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
@@ -125,7 +135,11 @@ describe("dashboard stats (Testcontainers)", () => {
     input: Partial<TicketCreateInput> = {},
     row: Prisma.TicketUncheckedUpdateInput = {},
   ) {
-    const created = await manager().ticket.create({ ...baseInput, ...input });
+    const created = await manager().ticket.create({
+      ...baseInput,
+      channelId: channelId("保司"),
+      ...input,
+    });
     if (Object.keys(row).length > 0) {
       await prisma.ticket.update({ where: { id: created.id }, data: row });
     }
@@ -139,7 +153,7 @@ describe("dashboard stats (Testcontainers)", () => {
     return {
       feedbackTime: new Date("2026-07-09T02:00:00.000Z"),
       source: "manual",
-      channel: "保司",
+      channelId: channelId("保司"),
       project: "融盛",
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
@@ -193,7 +207,7 @@ describe("dashboard stats (Testcontainers)", () => {
         { customerName: "特急", complaintLevel: "特急投诉" },
         { createdAt: at(-100) }, // dueAt stays null however old it gets
       );
-      await makeTicket({ customerName: "监管件", channel: "监管" });
+      await makeTicket({ customerName: "监管件", channelId: channelId("监管") });
 
       const { metrics } = await statsAt(now);
 
@@ -231,6 +245,37 @@ describe("dashboard stats (Testcontainers)", () => {
       // (the dueAt instant is still pending) — same edges as the list filter.
       expect(metrics.pendingTimeout).toBe(1); // 恰在时限 only
       expect(metrics.overdue).toBe(1); // 刚过时限 only
+    });
+
+    it("监管单数按「计入监管单数」标记计数，勾选/取消即改口径", async () => {
+      await makeTicket({ customerName: "监管件", channelId: channelId("监管") });
+      await makeTicket({ customerName: "保司件", channelId: channelId("保司") });
+
+      expect((await manager().dashboard.stats()).metrics.regulatory).toBe(1);
+
+      try {
+        // 摘掉监管的标记、给保司打上 —— 卡片立即换边，不认渠道名
+        await prisma.channel.update({
+          where: { id: channelId("监管") },
+          data: { regulatory: false },
+        });
+        expect((await manager().dashboard.stats()).metrics.regulatory).toBe(0);
+
+        await prisma.channel.update({
+          where: { id: channelId("保司") },
+          data: { regulatory: true },
+        });
+        expect((await manager().dashboard.stats()).metrics.regulatory).toBe(1);
+      } finally {
+        await prisma.channel.update({
+          where: { id: channelId("监管") },
+          data: { regulatory: true },
+        });
+        await prisma.channel.update({
+          where: { id: channelId("保司") },
+          data: { regulatory: false },
+        });
+      }
     });
 
     it("完结即移出 — 已超时卡是实时运营视角，不含超时完结", async () => {
@@ -344,7 +389,7 @@ describe("dashboard stats (Testcontainers)", () => {
       const kept = await makeTicket({ customerName: "存活" });
       // One deleted ticket per 口径 it could have influenced:
       await makeTicket(
-        { customerName: "删·超时", channel: "监管", complaintLevel: "特急投诉" },
+        { customerName: "删·超时", channelId: channelId("监管"), complaintLevel: "特急投诉" },
         { deletedAt: now },
       );
       await makeTicket(
@@ -359,7 +404,7 @@ describe("dashboard stats (Testcontainers)", () => {
         },
       );
       await makeTicket(
-        { customerName: "删·在途超时", channel: "支付" },
+        { customerName: "删·在途超时", channelId: channelId("支付") },
         {
           status: "processing",
           assigneeId: seeded.users.cs1.id,
@@ -378,10 +423,10 @@ describe("dashboard stats (Testcontainers)", () => {
       expect(stats.metrics.regulatory).toBe(0);
 
       expect(stats.channels).toEqual([
-        { channel: "保司", count: 1 },
-        { channel: "经纪", count: 0 },
-        { channel: "支付", count: 0 },
-        { channel: "监管", count: 0 },
+        { channelId: channelId("保司"), name: "保司", count: 1 },
+        { channelId: channelId("经纪"), name: "经纪", count: 0 },
+        { channelId: channelId("支付"), name: "支付", count: 0 },
+        { channelId: channelId("监管"), name: "监管", count: 0 },
       ]);
 
       // cs1 held only deleted tickets — the 考核表 must not know them.
@@ -393,21 +438,35 @@ describe("dashboard stats (Testcontainers)", () => {
   });
 
   describe("渠道统计表", () => {
-    it("returns all 4 channels zero-filled, in the fixed CHANNELS order", async () => {
-      await makeTicket({ channel: "保司" });
-      await makeTicket({ channel: "保司" });
-      await makeTicket({ channel: "支付" });
-      await makeTicket({ channel: "监管" });
+    it("returns the whole catalog zero-filled, in display order, names from the catalog", async () => {
+      await makeTicket({ channelId: channelId("保司") });
+      await makeTicket({ channelId: channelId("保司") });
+      await makeTicket({ channelId: channelId("支付") });
+      await makeTicket({ channelId: channelId("监管") });
 
       const stats = await manager().dashboard.stats();
 
-      expect(stats.channels.map((row) => row.channel)).toEqual([...CHANNELS]);
-      expect(stats.channels).toEqual([
-        { channel: "保司", count: 2 },
-        { channel: "经纪", count: 0 },
-        { channel: "支付", count: 1 },
-        { channel: "监管", count: 1 },
-      ]);
+      expect(stats.channels.map((row) => row.name)).toEqual(["保司", "经纪", "支付", "监管"]);
+      expect(stats.channels.map((row) => row.count)).toEqual([2, 0, 1, 1]);
+    });
+
+    it("改名立即显穿渠道统计 — 行名来自目录，不是快照", async () => {
+      await makeTicket({ channelId: channelId("支付") });
+      await prisma.channel.update({
+        where: { id: channelId("支付") },
+        data: { name: "第三方支付" },
+      });
+      try {
+        const stats = await manager().dashboard.stats();
+        expect(stats.channels.find((row) => row.channelId === channelId("支付"))?.name).toBe(
+          "第三方支付",
+        );
+      } finally {
+        await prisma.channel.update({
+          where: { id: channelId("支付") },
+          data: { name: "支付" },
+        });
+      }
     });
   });
 
@@ -481,7 +540,7 @@ describe("dashboard stats (Testcontainers)", () => {
   describe("数据范围: 无 dashboard.view_all 收窄为本人名下 (PRD §5.2)", () => {
     it("frontline sees own-only numbers and scope=own; view_all roles see everything", async () => {
       const now = new Date();
-      await makeTicket({ customerName: "无主单", channel: "监管" }); // unassigned pool
+      await makeTicket({ customerName: "无主单", channelId: channelId("监管") }); // unassigned pool
       await makeTicket(
         { customerName: "主管的超时单" },
         {
@@ -500,7 +559,7 @@ describe("dashboard stats (Testcontainers)", () => {
         },
       );
       await makeTicket(
-        { customerName: "小张的在途单", channel: "支付" },
+        { customerName: "小张的在途单", channelId: channelId("支付") },
         {
           status: "assigned",
           assigneeId: seeded.users.cs1.id,
@@ -516,7 +575,7 @@ describe("dashboard stats (Testcontainers)", () => {
       expect(own.metrics.assigned).toBe(1);
       expect(own.metrics.overdue).toBe(0); // 主管's overdue ticket is out of scope
       expect(own.metrics.regulatory).toBe(0);
-      expect(own.channels.find((row) => row.channel === "支付")?.count).toBe(1);
+      expect(own.channels.find((row) => row.name === "支付")?.count).toBe(1);
       expect(own.assignees.map((row) => row.assigneeId)).toEqual([seeded.users.cs1.id]);
 
       for (const caller of [manager(), observer()]) {
@@ -575,7 +634,7 @@ describe("dashboard stats (Testcontainers)", () => {
           const assigneeId = status === "unassigned" ? null : (assignees[i % 4] ?? null);
           const completed = status === "completed";
           return bulkRow({
-            channel: CHANNELS[i % CHANNELS.length],
+            channelId: channelRows[i % channelRows.length]?.id,
             complaintLevel: i % 11 === 0 ? "特急投诉" : "一般投诉",
             status,
             assigneeId,

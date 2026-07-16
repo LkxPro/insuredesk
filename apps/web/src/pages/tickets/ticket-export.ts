@@ -23,7 +23,7 @@ export function buildTicketExportUrl(
     sortOrder: query.sortOrder,
     timeZone,
   });
-  for (const key of ["status", "channel", "complaintLevel", "source", "search"] as const) {
+  for (const key of ["status", "channelId", "complaintLevel", "source", "search"] as const) {
     const value = query[key];
     if (value) {
       params.set(key, value);

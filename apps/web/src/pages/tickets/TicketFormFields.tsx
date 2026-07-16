@@ -20,7 +20,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 import {
-  CHANNELS,
   COMPLAINT_LEVELS,
   NUCLEAR_BODY_STATUSES,
   PRIORITIES,
@@ -52,7 +51,7 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
 
   const requiredFieldTransforms: Partial<Record<TicketCreateFieldKey, z.ZodTypeAny>> = {
     feedbackTime: z.string().min(1, "反馈时间为必填项"),
-    channel: z.string().min(1, "业务渠道为必填项"),
+    channelId: z.string().min(1, "业务渠道为必填项"),
     project: z.string().trim().min(1, "项目名称为必填项").max(100),
     brokerageEntity: z.string().trim().min(1, "经纪主体为必填项").max(100),
     paymentChannel: z.string().trim().min(1, "支付渠道为必填项").max(100),
@@ -101,20 +100,41 @@ const HAS_CONTACTED_OPTIONS = [
   { value: "no", label: "否" },
 ] as const;
 
-/** The edit form's current category — kept selectable even after 停用. */
-export interface CurrentCategoryOption {
+/** The edit form's current catalog value — kept selectable even after 停用. */
+export interface CurrentCatalogOption {
   id: string;
   name: string;
   active: boolean;
 }
 
+/**
+ * The dropdown feed lists ACTIVE catalog rows only; a ticket already holding a
+ * since-停用 value keeps it as an extra labelled option, so "保持原值" works
+ * while other disabled rows stay unselectable.
+ */
+function withCurrentOption(
+  options: ReadonlyArray<{ id: string; name: string }>,
+  current: CurrentCatalogOption | null | undefined,
+) {
+  if (!current || options.some((option) => option.id === current.id)) {
+    return options;
+  }
+  return [
+    ...options,
+    { id: current.id, name: current.active ? current.name : `${current.name}（已停用）` },
+  ];
+}
+
 export function TicketFormFields({
   form,
   currentCategory,
+  currentChannel,
 }: {
   form: UseFormReturn<TicketFormValues>;
   /** 编辑表单传入工单当前类别；停用值以“（已停用）”入列，保持原值合法。 */
-  currentCategory?: CurrentCategoryOption | null;
+  currentCategory?: CurrentCatalogOption | null;
+  /** 同 currentCategory，作用于反馈渠道。 */
+  currentChannel?: CurrentCatalogOption | null;
 }) {
   const {
     register,
@@ -127,22 +147,14 @@ export function TicketFormFields({
 
   const isRequired = (field: TicketCreateFieldKey) => requiredFields.has(field);
 
-  // The dropdown feed lists ACTIVE categories only; a ticket already holding a
-  // since-停用 value keeps it as an extra labelled option, so "保持原值" works
-  // while other disabled categories stay unselectable.
-  const categoryOptions = trpc.ticketCategory.options.useQuery().data ?? [];
-  const selectableCategories =
-    currentCategory && !categoryOptions.some((option) => option.id === currentCategory.id)
-      ? [
-          ...categoryOptions,
-          {
-            id: currentCategory.id,
-            name: currentCategory.active
-              ? currentCategory.name
-              : `${currentCategory.name}（已停用）`,
-          },
-        ]
-      : categoryOptions;
+  const selectableCategories = withCurrentOption(
+    trpc.ticketCategory.options.useQuery().data ?? [],
+    currentCategory,
+  );
+  const selectableChannels = withCurrentOption(
+    trpc.channel.options.useQuery().data ?? [],
+    currentChannel,
+  );
 
   return (
     <>
@@ -167,27 +179,31 @@ export function TicketFormFields({
             />
             <FieldError errors={[errors.feedbackTime]} />
           </Field>
-          <Field data-invalid={!!errors.channel}>
-            <FieldLabel htmlFor="channel">
-              反馈渠道{isRequired("channel") && <span className="text-destructive">*</span>}
+          <Field data-invalid={!!errors.channelId}>
+            <FieldLabel htmlFor="channelId">
+              反馈渠道{isRequired("channelId") && <span className="text-destructive">*</span>}
             </FieldLabel>
             <Controller
               control={control}
-              name="channel"
+              name="channelId"
               render={({ field }) => (
                 <Select
                   value={field.value ? field.value : UNSET}
                   onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
                 >
-                  <SelectTrigger id="channel" className="w-full" aria-invalid={!!errors.channel}>
+                  <SelectTrigger
+                    id="channelId"
+                    className="w-full"
+                    aria-invalid={!!errors.channelId}
+                  >
                     <SelectValue placeholder="请选择" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value={UNSET}>未设置</SelectItem>
-                      {CHANNELS.map((channel) => (
-                        <SelectItem key={channel} value={channel}>
-                          {channel}
+                      {selectableChannels.map((channel) => (
+                        <SelectItem key={channel.id} value={channel.id}>
+                          {channel.name}
                         </SelectItem>
                       ))}
                     </SelectGroup>
@@ -195,7 +211,7 @@ export function TicketFormFields({
                 </Select>
               )}
             />
-            <FieldError errors={[errors.channel]} />
+            <FieldError errors={[errors.channelId]} />
           </Field>
         </div>
       </FieldSet>

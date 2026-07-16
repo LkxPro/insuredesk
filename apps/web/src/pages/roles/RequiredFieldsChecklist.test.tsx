@@ -38,7 +38,7 @@ describe("RequiredFieldsChecklist", () => {
   });
 
   it("reflects selected fields as checked", () => {
-    render(<RequiredFieldsChecklist value={["customerName", "phone", "channel"]} />);
+    render(<RequiredFieldsChecklist value={["customerName", "phone", "channelId"]} />);
 
     const customerNameCheckbox = screen.getByLabelText("客户姓名");
     const phoneCheckbox = screen.getByLabelText("手机号");
@@ -68,13 +68,16 @@ describe("RequiredFieldsChecklist", () => {
     const onChange = vi.fn();
 
     render(
-      <RequiredFieldsChecklist value={["customerName", "phone", "channel"]} onChange={onChange} />,
+      <RequiredFieldsChecklist
+        value={["customerName", "phone", "channelId"]}
+        onChange={onChange}
+      />,
     );
 
     const phoneCheckbox = screen.getByLabelText("手机号");
     await user.click(phoneCheckbox);
 
-    expect(onChange).toHaveBeenCalledWith(["customerName", "channel"]);
+    expect(onChange).toHaveBeenCalledWith(["customerName", "channelId"]);
   });
 
   it("renders as disabled when disabled prop is true", () => {

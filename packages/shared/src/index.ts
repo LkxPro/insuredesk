@@ -1,4 +1,5 @@
 export * from "./auth";
+export * from "./channel";
 export * from "./dashboard";
 export * from "./enums";
 export * from "./health";

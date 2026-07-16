@@ -1,6 +1,4 @@
 import {
-  CHANNELS,
-  type Channel,
   type ComplaintLevel,
   DASHBOARD_TOP_ASSIGNEE_LIMIT,
   type DashboardMetricKey,
@@ -13,7 +11,7 @@ import { overdueTicketWhere, pendingTimeoutTicketWhere } from "./ticket-display-
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * 数据看板 aggregation: the 9 metric cards, the 4-channel distribution, and
+ * 数据看板 aggregation: the 9 metric cards, the channel distribution, and
  * the Top-10 跟进人考核表, all in one read.
  *
  * Every count shares one WHERE base: soft-delete exclusion plus the
@@ -31,8 +29,6 @@ import type { TicketServiceDeps } from "./ticket.service";
 
 /** 特急投诉 — the level with no dueAt, surfaced as its own card. */
 const URGENT_LEVEL = "特急投诉" satisfies ComplaintLevel;
-/** 监管 — the channel regulators route through, surfaced as its own card. */
-const REGULATORY_CHANNEL = "监管" satisfies Channel;
 
 export interface DashboardAssigneeStats {
   assigneeId: string;
@@ -54,8 +50,8 @@ export interface DashboardStats {
   /** "own" when the viewer lacks dashboard.view_all and sees only their tickets. */
   scope: "all" | "own";
   metrics: Record<DashboardMetricKey, number>;
-  /** All 4 channels in CHANNELS order, zero-filled — the table shape is fixed. */
-  channels: Array<{ channel: Channel; count: number }>;
+  /** The whole catalog in display order, zero-filled; 未填写 tickets stay out. */
+  channels: Array<{ channelId: string; name: string; count: number }>;
   /** Top 10 by 完单数 (the leading 考核 dimension), 名下工单数 then id as tiebreaks. */
   assignees: DashboardAssigneeStats[];
 }
@@ -81,6 +77,7 @@ export async function getDashboardStats(
     overdue,
     urgent,
     regulatory,
+    channelCatalog,
     channelGroups,
     assigneeTotals,
     assigneeCompleted,
@@ -101,12 +98,15 @@ export async function getDashboardStats(
     prisma.ticket.count({ where: and(pendingTimeoutTicketWhere(now)) }),
     prisma.ticket.count({ where: and(overdueTicketWhere(now)) }),
     prisma.ticket.count({ where: and({ complaintLevel: URGENT_LEVEL }) }),
-    prisma.ticket.count({ where: and({ channel: REGULATORY_CHANNEL }) }),
+    // 监管单数 counts by the catalog's regulatory flag, so (un)ticking the
+    // 计入监管单数 box moves this card with no code change.
+    prisma.ticket.count({ where: and({ channel: { is: { regulatory: true } } }) }),
+    prisma.channel.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }),
     prisma.ticket.groupBy({
-      by: ["channel"],
+      by: ["channelId"],
       where: base,
       _count: { _all: true },
-      orderBy: { channel: "asc" },
+      orderBy: { channelId: "asc" },
     }),
     prisma.ticket.groupBy({
       by: ["assigneeId"],
@@ -157,9 +157,10 @@ export async function getDashboardStats(
     regulatory,
   };
 
-  const channels = CHANNELS.map((channel) => ({
-    channel,
-    count: channelGroups.find((group) => group.channel === channel)?._count._all ?? 0,
+  const channels = channelCatalog.map((channel) => ({
+    channelId: channel.id,
+    name: channel.name,
+    count: channelGroups.find((group) => group.channelId === channel.id)?._count._all ?? 0,
   }));
 
   // Merge the per-assignee rollups. The two overdue buckets are disjoint by

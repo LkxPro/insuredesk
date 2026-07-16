@@ -67,7 +67,7 @@ function detailPayload(overrides: Record<string, unknown> = {}) {
     feedbackTime: "2026-07-09T01:00:00.000Z",
     source: "manual",
     createdBy: "测试用户",
-    channel: "保司",
+    channel: { id: "ch-baosi", name: "保司", active: true },
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",

@@ -39,12 +39,14 @@ execFileSync("pnpm", ["exec", "prisma", "generate"], { stdio: "inherit" });
 // Imported only after `prisma generate` — a static top-level import would
 // load the stub that throws on instantiation.
 const { PrismaClient } = await import("@prisma/client");
-const { seedShiftTypes, seedTicketCategories } = await import("./seed-data");
+const { seedChannels, seedShiftTypes, seedTicketCategories } = await import("./seed-data");
 const prisma = new PrismaClient();
 await seedShiftTypes(prisma);
 console.log("✓ Shift types: 4 (created if missing)");
 await seedTicketCategories(prisma);
 console.log("✓ Ticket categories: 17 (first initialization only)");
+await seedChannels(prisma);
+console.log("✓ Channels: 4 (first initialization only)");
 const userCount = await prisma.user.count();
 await prisma.$disconnect();
 

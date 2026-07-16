@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  channelSchema,
   complaintLevelSchema,
   completionStatusSchema,
   nuclearBodyStatusSchema,
@@ -43,7 +42,7 @@ const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
  */
 export const TICKET_CREATE_FIELD_KEYS = [
   "feedbackTime",
-  "channel",
+  "channelId",
   "project",
   "brokerageEntity",
   "paymentChannel",
@@ -67,7 +66,8 @@ export type TicketCreateFieldKey = (typeof TICKET_CREATE_FIELD_KEYS)[number];
 export const ticketCreateInputSchema = z.object({
   /** 客户实际反馈时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。 */
   feedbackTime: optionalEnum(z.string().datetime({ offset: true, message: "反馈时间格式不正确" })),
-  channel: optionalEnum(channelSchema),
+  /** 反馈渠道目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
+  channelId: optionalText(100),
   project: optionalText(100),
   brokerageEntity: optionalText(100),
   paymentChannel: optionalText(100),
@@ -211,7 +211,8 @@ export type TicketSortField = (typeof TICKET_SORT_FIELDS)[number];
  */
 export const ticketListInputSchema = z.object({
   status: ticketDisplayStatusSchema.optional(),
-  channel: channelSchema.optional(),
+  /** 渠道目录引用筛选；停用渠道也可选，仍能查到其存量工单。 */
+  channelId: z.string().min(1).optional(),
   complaintLevel: complaintLevelSchema.optional(),
   source: ticketSourceSchema.optional(),
   /** 工单号 / 客户姓名 / 保单号；空白输入等同未搜索。 */

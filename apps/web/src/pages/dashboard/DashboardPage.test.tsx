@@ -50,7 +50,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
 type StatsPayload = {
   scope: "all" | "own";
   metrics: Record<string, number>;
-  channels: Array<{ channel: string; count: number }>;
+  channels: Array<{ channelId: string; name: string; count: number }>;
   assignees: Array<{
     assigneeId: string;
     assigneeName: string;
@@ -77,10 +77,10 @@ function statsPayload(overrides: Partial<StatsPayload> = {}): StatsPayload {
       regulatory: 6,
     },
     channels: [
-      { channel: "保司", count: 20 },
-      { channel: "经纪", count: 10 },
-      { channel: "支付", count: 6 },
-      { channel: "监管", count: 6 },
+      { channelId: "ch-1", name: "保司", count: 20 },
+      { channelId: "ch-2", name: "经纪", count: 10 },
+      { channelId: "ch-3", name: "支付", count: 6 },
+      { channelId: "ch-4", name: "监管", count: 6 },
     ],
     assignees: [
       {
@@ -180,7 +180,7 @@ describe("指标卡", () => {
 });
 
 describe("渠道统计表", () => {
-  it("renders the 4-channel distribution with counts", async () => {
+  it("renders the channel distribution with catalog names and counts", async () => {
     renderDashboard();
 
     // Await a data row, not the card title — the title renders while loading.

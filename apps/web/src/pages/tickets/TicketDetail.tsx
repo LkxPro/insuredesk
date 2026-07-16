@@ -172,7 +172,7 @@ export function TicketDetail() {
       </Section>
 
       <Section title="业务信息">
-        <Item label="反馈渠道">{ticket.channel}</Item>
+        <Item label="反馈渠道">{ticket.channel?.name}</Item>
         <Item label="项目（保司）">{ticket.project}</Item>
         <Item label="经纪主体">{ticket.brokerageEntity}</Item>
         <Item label="支付渠道">{ticket.paymentChannel}</Item>

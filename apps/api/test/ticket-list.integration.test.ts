@@ -28,6 +28,7 @@ describe("ticket list (Testcontainers)", () => {
     roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
     users: { admin: User; manager: User; cs1: User; observer: User };
   };
+  let channelIds: Map<string, string>;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -52,6 +53,7 @@ describe("ticket list (Testcontainers)", () => {
 
     seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
+    channelIds = new Map((await seedData.seedChannels(prisma)).map((c) => [c.name, c.id]));
   }, 180_000);
 
   afterAll(async () => {
@@ -100,9 +102,14 @@ describe("ticket list (Testcontainers)", () => {
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
 
+  const channelId = (name: string) => {
+    const id = channelIds.get(name);
+    if (!id) throw new Error(`渠道「${name}」未播种`);
+    return id;
+  };
+
   const baseInput = {
     feedbackTime: "2026-07-09T02:00:00.000Z",
-    channel: "保司",
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
@@ -124,7 +131,11 @@ describe("ticket list (Testcontainers)", () => {
     input: Partial<TicketCreateInput> = {},
     row: Prisma.TicketUncheckedUpdateInput = {},
   ) {
-    const created = await manager().ticket.create({ ...baseInput, ...input });
+    const created = await manager().ticket.create({
+      ...baseInput,
+      channelId: channelId("保司"),
+      ...input,
+    });
     if (Object.keys(row).length > 0) {
       await prisma.ticket.update({ where: { id: created.id }, data: row });
     }
@@ -325,18 +336,27 @@ describe("ticket list (Testcontainers)", () => {
 
   describe("channel / complaintLevel / source filters", () => {
     it("filters by each dimension and combines them", async () => {
-      const payment = await makeTicket({ channel: "支付", complaintLevel: "高级投诉" });
-      const regulator = await makeTicket({ channel: "监管", complaintLevel: "高级投诉" });
-      await makeTicket({ channel: "保司", complaintLevel: "一般投诉" });
+      const payment = await makeTicket({
+        channelId: channelId("支付"),
+        complaintLevel: "高级投诉",
+      });
+      const regulator = await makeTicket({
+        channelId: channelId("监管"),
+        complaintLevel: "高级投诉",
+      });
+      await makeTicket({ channelId: channelId("保司"), complaintLevel: "一般投诉" });
 
-      expect((await manager().ticket.list({ channel: "支付" })).items.map((t) => t.id)).toEqual([
-        payment.id,
-      ]);
+      expect(
+        (await manager().ticket.list({ channelId: channelId("支付") })).items.map((t) => t.id),
+      ).toEqual([payment.id]);
 
       const highLevel = await manager().ticket.list({ complaintLevel: "高级投诉" });
       expect(highLevel.items.map((t) => t.id).sort()).toEqual([payment.id, regulator.id].sort());
 
-      const combined = await manager().ticket.list({ channel: "监管", complaintLevel: "高级投诉" });
+      const combined = await manager().ticket.list({
+        channelId: channelId("监管"),
+        complaintLevel: "高级投诉",
+      });
       expect(combined.items.map((t) => t.id)).toEqual([regulator.id]);
     });
 
@@ -383,16 +403,16 @@ describe("ticket list (Testcontainers)", () => {
     });
 
     it("filters stay inside the viewer's scope, never widen it", async () => {
-      await makeTicket({ channel: "支付", customerName: "别人的支付单" });
+      await makeTicket({ channelId: channelId("支付"), customerName: "别人的支付单" });
       const own = await makeTicket(
-        { channel: "支付", customerName: "自己的支付单" },
+        { channelId: channelId("支付"), customerName: "自己的支付单" },
         {
           status: "assigned",
           assigneeId: seeded.users.cs1.id,
         },
       );
 
-      const result = await frontline().ticket.list({ channel: "支付" });
+      const result = await frontline().ticket.list({ channelId: channelId("支付") });
       expect(result.items.map((t) => t.id)).toEqual([own.id]);
     });
 
@@ -510,7 +530,7 @@ describe("ticket list (Testcontainers)", () => {
         data: Array.from({ length: 120 }, (_, i) => ({
           feedbackTime: new Date(now - i * 60_000),
           source: "manual",
-          channel: "保司",
+          channelId: channelId("保司"),
           project: "融盛",
           brokerageEntity: "东方大地",
           paymentChannel: "连连支付",

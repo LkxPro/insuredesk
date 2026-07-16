@@ -81,7 +81,7 @@ describe("optional business fields (Testcontainers)", () => {
   /** The nullable business columns a blank submission must persist as NULL. */
   const NULLABLE_COLUMNS = [
     "feedbackTime",
-    "channel",
+    "channelId",
     "project",
     "brokerageEntity",
     "paymentChannel",
@@ -132,7 +132,7 @@ describe("optional business fields (Testcontainers)", () => {
     it('empty strings and whitespace normalize to NULL, never persist as ""', async () => {
       const created = await manager().ticket.create({
         feedbackTime: "",
-        channel: "",
+        channelId: "",
         project: "   ",
         customerName: "",
         priority: "",
@@ -140,7 +140,7 @@ describe("optional business fields (Testcontainers)", () => {
 
       const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
       expect(row.feedbackTime).toBeNull();
-      expect(row.channel).toBeNull();
+      expect(row.channelId).toBeNull();
       expect(row.project).toBeNull();
       expect(row.customerName).toBeNull();
       expect(row.priority).toBeNull();

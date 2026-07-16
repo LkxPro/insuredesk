@@ -94,7 +94,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
   const baseInput = {
     feedbackTime: "2026-07-09T02:00:00.000Z",
-    channel: "保司",
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",

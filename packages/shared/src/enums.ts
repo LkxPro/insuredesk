@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Domain enum constants, single-sourced here and imported by both apps so the
  * database, API, and UI can never drift apart on the allowed values. Enums the
- * PRD defines with Chinese literals (channel, category, complaint level, …)
+ * PRD defines with Chinese literals (complaint level, completion status, …)
  * keep those literals as the canonical stored values — inventing English codes
  * here would be exactly the drift this file exists to prevent.
  */
@@ -68,12 +68,6 @@ export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   manual: "手工录入",
   community: "社区",
 };
-
-// Feedback channels — the 4 fixed business channels. Not to be confused with
-// source (entry method) or userComplaintChannel (free text).
-export const CHANNELS = ["保司", "经纪", "支付", "监管"] as const;
-export const channelSchema = z.enum(CHANNELS);
-export type Channel = (typeof CHANNELS)[number];
 
 // Complaint levels — the ONLY SLA driver. Each level has exactly one
 // SLAPolicy row keyed by these literals.

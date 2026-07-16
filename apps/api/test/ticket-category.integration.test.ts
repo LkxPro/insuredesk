@@ -316,7 +316,7 @@ describe("TicketCategory catalog (Testcontainers)", () => {
   function blankTicketInput() {
     return {
       feedbackTime: null,
-      channel: null,
+      channelId: null,
       project: null,
       brokerageEntity: null,
       paymentChannel: null,

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import {
   DEMO_PASSWORD,
+  seedChannels,
   seedDemoTickets,
   seedFactoryRolesAndDemoUsers,
   seedShiftTypes,
@@ -50,6 +51,9 @@ async function main() {
 
   const categories = await seedTicketCategories(prisma);
   console.log(`✓ Ticket categories: ${categories.length}`);
+
+  const channels = await seedChannels(prisma);
+  console.log(`✓ Channels: ${channels.length}`);
 
   const tickets = await seedDemoTickets(prisma, { roles, users });
   if (tickets.replacedCount > 0) {

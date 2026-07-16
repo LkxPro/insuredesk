@@ -13,6 +13,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
+import { ChannelUnavailableError } from "../services/channel.service";
 import {
   AssigneeNotAssignableError,
   TicketNotAssignableError,
@@ -85,7 +86,10 @@ export const ticketRouter = router({
             cause: error,
           });
         }
-        if (error instanceof TicketCategoryUnavailableError) {
+        if (
+          error instanceof TicketCategoryUnavailableError ||
+          error instanceof ChannelUnavailableError
+        ) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         throw error;
@@ -199,7 +203,10 @@ export const ticketRouter = router({
             cause: error,
           });
         }
-        if (error instanceof TicketCategoryUnavailableError) {
+        if (
+          error instanceof TicketCategoryUnavailableError ||
+          error instanceof ChannelUnavailableError
+        ) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         throw error;

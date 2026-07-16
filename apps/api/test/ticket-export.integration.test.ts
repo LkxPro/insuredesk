@@ -33,6 +33,7 @@ describe("ticket export (Testcontainers)", () => {
     roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
     users: { admin: User; manager: User; cs1: User; observer: User };
   };
+  let channelIds: Map<string, string>;
   /** ticket.export WITHOUT ticket.view_all — the 个人档 exporter. */
   let scopedExporter: User;
   let demoPassword: string;
@@ -63,6 +64,7 @@ describe("ticket export (Testcontainers)", () => {
 
     seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
+    channelIds = new Map((await seedData.seedChannels(prisma)).map((c) => [c.name, c.id]));
 
     // No factory role holds ticket.export without ticket.view_all, so the
     // data-scope criterion needs a custom role: sees/export own tickets only.
@@ -141,9 +143,14 @@ describe("ticket export (Testcontainers)", () => {
 
   const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
 
+  const channelId = (name: string) => {
+    const id = channelIds.get(name);
+    if (!id) throw new Error(`渠道「${name}」未播种`);
+    return id;
+  };
+
   const baseInput = {
     feedbackTime: "2026-07-09T02:00:00.000Z",
-    channel: "保司",
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
@@ -161,7 +168,11 @@ describe("ticket export (Testcontainers)", () => {
     input: Partial<TicketCreateInput> = {},
     row: Prisma.TicketUncheckedUpdateInput = {},
   ) {
-    const created = await manager().ticket.create({ ...baseInput, ...input });
+    const created = await manager().ticket.create({
+      ...baseInput,
+      channelId: channelId("保司"),
+      ...input,
+    });
     if (Object.keys(row).length > 0) {
       await prisma.ticket.update({ where: { id: created.id }, data: row });
     }
@@ -226,15 +237,24 @@ describe("ticket export (Testcontainers)", () => {
 
   describe("按列表当前筛选条件导出 (CSV)", () => {
     it("exports exactly the rows ticket.list returns for the same filters, soft-deletes excluded", async () => {
-      const payment1 = await makeTicket({ channel: "支付", customerName: "支付客户一" });
-      const payment2 = await makeTicket({ channel: "支付", customerName: "支付客户二" });
-      await makeTicket({ channel: "保司", customerName: "保司客户" });
-      await makeTicket({ channel: "支付", customerName: "已删除客户" }, { deletedAt: new Date() });
+      const payment1 = await makeTicket({
+        channelId: channelId("支付"),
+        customerName: "支付客户一",
+      });
+      const payment2 = await makeTicket({
+        channelId: channelId("支付"),
+        customerName: "支付客户二",
+      });
+      await makeTicket({ channelId: channelId("保司"), customerName: "保司客户" });
+      await makeTicket(
+        { channelId: channelId("支付"), customerName: "已删除客户" },
+        { deletedAt: new Date() },
+      );
 
-      const listed = await manager().ticket.list({ channel: "支付" });
+      const listed = await manager().ticket.list({ channelId: channelId("支付") });
 
       const session = await sessionFor("manager");
-      const res = await exportRequest(session, { format: "csv", channel: "支付" });
+      const res = await exportRequest(session, { format: "csv", channelId: channelId("支付") });
       expect(res.statusCode).toBe(200);
       expect(res.headers["content-type"]).toContain("text/csv");
       expect(res.headers["content-disposition"]).toMatch(/attachment; filename="tickets-.*\.csv"/);
@@ -331,14 +351,14 @@ describe("ticket export (Testcontainers)", () => {
     });
 
     it("filters stay inside the exporter's scope, never widen it", async () => {
-      await makeTicket({ channel: "支付", customerName: "别人的支付单" });
+      await makeTicket({ channelId: channelId("支付"), customerName: "别人的支付单" });
       const own = await makeTicket(
-        { channel: "支付", customerName: "自己的支付单" },
+        { channelId: channelId("支付"), customerName: "自己的支付单" },
         { status: "assigned", assigneeId: scopedExporter.id },
       );
 
       const session = await sessionFor("scoped-exporter");
-      const res = await exportRequest(session, { format: "csv", channel: "支付" });
+      const res = await exportRequest(session, { format: "csv", channelId: channelId("支付") });
 
       const rows = parseCsv(res.body);
       expect(rows.slice(1).map((cells) => cells[0])).toEqual([own.workOrderNumber]);

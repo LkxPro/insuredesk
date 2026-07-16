@@ -1,6 +1,7 @@
 import { PRIORITY_LABELS, type Priority, type TicketEditData } from "@insuredesk/shared";
 import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
+import { resolveNewChannel } from "./channel.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
 import { resolveNewCategory } from "./ticket-category.service";
@@ -37,7 +38,7 @@ type EditableFieldKey = keyof EditableFields;
 /** Timeline labels for the edit remark, matching the form wording. */
 const FIELD_LABELS: Record<EditableFieldKey, string> = {
   feedbackTime: "反馈时间",
-  channel: "反馈渠道",
+  channelId: "反馈渠道",
   project: "项目（保司）",
   brokerageEntity: "经纪主体",
   paymentChannel: "支付渠道",
@@ -106,9 +107,9 @@ export async function editTicket(
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
       where: { id: ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
-      // The category name snapshot for the remark: the value as it reads NOW,
-      // before this edit — the log keeps the literal wording of the moment
-      include: { category: { select: { name: true } } },
+      // The catalog name snapshots for the remark: the values as they read
+      // NOW, before this edit — the log keeps the literal wording of the moment
+      include: { category: { select: { name: true } }, channel: { select: { name: true } } },
     });
     if (!ticket) {
       throw new TicketNotFoundError();
@@ -121,15 +122,22 @@ export async function editTicket(
       return { id: ticket.id, workOrderNumber: ticket.workOrderNumber, changedFields };
     }
 
-    // Only a NEWLY chosen category must exist and be active — keeping the
-    // current value (even a since-停用 one) never re-validates, so a ticket
-    // holding a disabled category survives unrelated edits untouched.
-    const nextCategory = changedFields.includes("categoryId")
-      ? await resolveNewCategory(tx, next.categoryId)
-      : null;
-    const categoryNames: Record<"from" | "to", string | null> = {
-      from: ticket.category?.name ?? null,
-      to: changedFields.includes("categoryId") ? (nextCategory?.name ?? null) : null,
+    // Only a NEWLY chosen catalog reference must exist and be active —
+    // keeping the current value (even a since-停用 one) never re-validates, so
+    // a ticket holding a disabled reference survives unrelated edits untouched.
+    const catalogNames: Partial<Record<EditableFieldKey, Record<"from" | "to", string | null>>> = {
+      categoryId: {
+        from: ticket.category?.name ?? null,
+        to: changedFields.includes("categoryId")
+          ? ((await resolveNewCategory(tx, next.categoryId))?.name ?? null)
+          : null,
+      },
+      channelId: {
+        from: ticket.channel?.name ?? null,
+        to: changedFields.includes("channelId")
+          ? ((await resolveNewChannel(tx, next.channelId))?.name ?? null)
+          : null,
+      },
     };
 
     // 改 complaintLevel = 改 SLA: everything the level stamped at creation
@@ -147,10 +155,15 @@ export async function editTicket(
       data: { ...next, ...slaFields },
     });
 
-    // 多字段改动记在 remark 里，from/to 留空。类别按当时名称留痕（快照），
+    // 多字段改动记在 remark 里，from/to 留空。目录引用按当时名称留痕（快照），
     // 不随后续改名回写。
-    const sideValue = (key: EditableFieldKey, side: "from" | "to") =>
-      key === "categoryId" ? categoryNames[side] : side === "from" ? ticket[key] : next[key];
+    const sideValue = (key: EditableFieldKey, side: "from" | "to") => {
+      const catalog = catalogNames[key];
+      if (catalog) {
+        return catalog[side];
+      }
+      return side === "from" ? ticket[key] : next[key];
+    };
     await tx.processLog.create({
       data: {
         ticketId: ticket.id,

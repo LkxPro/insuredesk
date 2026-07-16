@@ -23,6 +23,7 @@ describe("role required ticket fields (Testcontainers)", () => {
   };
   let roleWithRequired: Role;
   let userWithRequired: User;
+  let channelBaosi: { id: string };
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -45,12 +46,16 @@ describe("role required ticket fields (Testcontainers)", () => {
 
     seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
+    const channels = await seedData.seedChannels(prisma);
+    const baosi = channels.find((channel) => channel.name === "保司");
+    if (!baosi) throw new Error("渠道「保司」未播种");
+    channelBaosi = baosi;
 
     roleWithRequired = await prisma.role.create({
       data: {
         name: "必填测试角色",
         permissions: ["ticket.create", "ticket.view", "ticket.view_all", "ticket.edit"],
-        requiredTicketFields: ["customerName", "phone", "channel", "hasContacted"],
+        requiredTicketFields: ["customerName", "phone", "channelId", "hasContacted"],
       },
     });
 
@@ -121,28 +126,28 @@ describe("role required ticket fields (Testcontainers)", () => {
     return callerFor(userWithRequired, roleWithRequired);
   }
 
-  const validInput = {
+  const validInput = (): TicketCreateInput => ({
     feedbackTime: "2026-07-15T10:00:00.000Z",
-    channel: "保司" as const,
+    channelId: channelBaosi.id,
     customerName: "张三",
     phone: "13900000000",
     hasContacted: true,
     complaintLevel: "一般投诉" as const,
-  } satisfies TicketCreateInput;
+  });
 
   describe("role.updateRequiredFields", () => {
     it("updates requiredTicketFields for a non-admin role", async () => {
       const result = await admin().role.updateRequiredFields({
         id: seeded.roles.frontline.id,
-        requiredTicketFields: ["customerName", "channel"],
+        requiredTicketFields: ["customerName", "channelId"],
       });
-      expect(result.requiredTicketFields).toEqual(["customerName", "channel"]);
+      expect(result.requiredTicketFields).toEqual(["customerName", "channelId"]);
 
       const updated = await prisma.role.findUnique({
         where: { id: seeded.roles.frontline.id },
         select: { requiredTicketFields: true },
       });
-      expect(updated?.requiredTicketFields).toEqual(["customerName", "channel"]);
+      expect(updated?.requiredTicketFields).toEqual(["customerName", "channelId"]);
     });
 
     it("rejects updating admin role (system role protected)", async () => {
@@ -157,9 +162,9 @@ describe("role required ticket fields (Testcontainers)", () => {
     it("deduplicates requiredTicketFields", async () => {
       const result = await admin().role.updateRequiredFields({
         id: seeded.roles.frontline.id,
-        requiredTicketFields: ["customerName", "channel", "customerName"],
+        requiredTicketFields: ["customerName", "channelId", "customerName"],
       });
-      expect(result.requiredTicketFields).toEqual(["customerName", "channel"]);
+      expect(result.requiredTicketFields).toEqual(["customerName", "channelId"]);
     });
 
     it("accepts empty array (全非必填)", async () => {
@@ -173,18 +178,18 @@ describe("role required ticket fields (Testcontainers)", () => {
 
   describe("ticket.create with required fields", () => {
     it("accepts ticket when all required fields are provided", async () => {
-      const result = await requiredUser().ticket.create(validInput);
+      const result = await requiredUser().ticket.create(validInput());
       expect(result.workOrderNumber).toMatch(/^WO\d{6,}$/);
 
       const detail = await requiredUser().ticket.detail({ id: result.id });
       expect(detail.customerName).toBe("张三");
       expect(detail.phone).toBe("13900000000");
-      expect(detail.channel).toBe("保司");
+      expect(detail.channel?.name).toBe("保司");
       expect(detail.hasContacted).toBe(true);
     });
 
     it("rejects when missing one required field", async () => {
-      const input = { ...validInput, customerName: null };
+      const input = { ...validInput(), customerName: null };
       await expect(requiredUser().ticket.create(input)).rejects.toThrow(
         /以下字段为必填项：客户姓名/,
       );
@@ -208,14 +213,14 @@ describe("role required ticket fields (Testcontainers)", () => {
     });
 
     it("rejects tri-state field when left as null (hasContacted)", async () => {
-      const input = { ...validInput, hasContacted: null };
+      const input = { ...validInput(), hasContacted: null };
       await expect(requiredUser().ticket.create(input)).rejects.toThrow(
         /以下字段为必填项：是否已联系/,
       );
     });
 
     it("accepts tri-state field when explicitly set to false", async () => {
-      const input = { ...validInput, hasContacted: false };
+      const input = { ...validInput(), hasContacted: false };
       const result = await requiredUser().ticket.create(input);
       const detail = await requiredUser().ticket.detail({ id: result.id });
       expect(detail.hasContacted).toBe(false);
@@ -225,19 +230,25 @@ describe("role required ticket fields (Testcontainers)", () => {
       await prisma.role.update({
         where: { id: roleWithRequired.id },
         data: {
-          requiredTicketFields: ["customerName", "phone", "channel", "hasContacted", "categoryId"],
+          requiredTicketFields: [
+            "customerName",
+            "phone",
+            "channelId",
+            "hasContacted",
+            "categoryId",
+          ],
         },
       });
       const category = await prisma.ticketCategory.create({
         data: { name: "必填用类别", displayOrder: 1 },
       });
 
-      await expect(requiredUser().ticket.create(validInput)).rejects.toThrow(
+      await expect(requiredUser().ticket.create(validInput())).rejects.toThrow(
         /以下字段为必填项：分类/,
       );
 
       const result = await requiredUser().ticket.create({
-        ...validInput,
+        ...validInput(),
         categoryId: category.id,
       });
       const detail = await requiredUser().ticket.detail({ id: result.id });
@@ -245,7 +256,7 @@ describe("role required ticket fields (Testcontainers)", () => {
 
       await prisma.role.update({
         where: { id: roleWithRequired.id },
-        data: { requiredTicketFields: ["customerName", "phone", "channel", "hasContacted"] },
+        data: { requiredTicketFields: ["customerName", "phone", "channelId", "hasContacted"] },
       });
     });
 
@@ -260,13 +271,12 @@ describe("role required ticket fields (Testcontainers)", () => {
     it("ignores unknown keys in requiredTicketFields (defensive against field rename)", async () => {
       await prisma.role.update({
         where: { id: roleWithRequired.id },
-        data: { requiredTicketFields: ["customerName", "unknownField", "channel"] },
+        data: { requiredTicketFields: ["customerName", "unknownField", "channelId"] },
       });
 
       const input = {
-        ...validInput,
+        ...validInput(),
         customerName: "李四",
-        channel: "保司" as const,
       };
       const result = await requiredUser().ticket.create(input);
       expect(result.workOrderNumber).toMatch(/^WO\d{6,}$/);
@@ -275,7 +285,7 @@ describe("role required ticket fields (Testcontainers)", () => {
 
   describe("ticket.edit (不受必填约束)", () => {
     it("allows editing to clear a required field", async () => {
-      const created = await requiredUser().ticket.create(validInput);
+      const created = await requiredUser().ticket.create(validInput());
 
       const edited = await requiredUser().ticket.edit({
         ticketId: created.id,
@@ -290,12 +300,12 @@ describe("role required ticket fields (Testcontainers)", () => {
     });
 
     it("allows editing with all fields null", async () => {
-      const created = await requiredUser().ticket.create(validInput);
+      const created = await requiredUser().ticket.create(validInput());
 
       const allNull = {
         ticketId: created.id,
         feedbackTime: null,
-        channel: null,
+        channelId: null,
         project: null,
         brokerageEntity: null,
         paymentChannel: null,
@@ -324,14 +334,14 @@ describe("role required ticket fields (Testcontainers)", () => {
       // Reset the role to original state after previous tests modified it
       await prisma.role.update({
         where: { id: roleWithRequired.id },
-        data: { requiredTicketFields: ["customerName", "phone", "channel", "hasContacted"] },
+        data: { requiredTicketFields: ["customerName", "phone", "channelId", "hasContacted"] },
       });
 
       const roles = await admin().role.list();
       const testRole = roles.find((r) => r.id === roleWithRequired.id);
       expect(testRole?.requiredTicketFields).toContain("customerName");
       expect(testRole?.requiredTicketFields).toContain("phone");
-      expect(testRole?.requiredTicketFields).toContain("channel");
+      expect(testRole?.requiredTicketFields).toContain("channelId");
       expect(testRole?.requiredTicketFields).toContain("hasContacted");
     });
 

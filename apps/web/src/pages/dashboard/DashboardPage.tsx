@@ -28,7 +28,7 @@ import {
 import { AlertCircle, Users } from "lucide-react";
 
 /**
- * 数据看板: 9 metric cards, the 4-channel distribution, and the Top-10
+ * 数据看板: 9 metric cards, the channel distribution, and the Top-10
  * 跟进人考核表 — one query, one screen. All 口径 live server-side
  * (dashboard.service.ts); this page renders the payload as-is. Data scope
  * is server-enforced too: without dashboard.view_all the numbers cover only
@@ -46,7 +46,7 @@ const METRIC_HINTS: Partial<Record<DashboardMetricKey, string>> = {
   pendingTimeout: "距时限不足 2 小时",
   overdue: "在途已过时限，完结即移出",
   urgent: "特急投诉，不设时限",
-  regulatory: "渠道 = 监管",
+  regulatory: "渠道带「计入监管单数」标记",
 };
 
 function MetricCard({ metric, value }: { metric: DashboardMetricKey; value: number }) {
@@ -141,8 +141,8 @@ export function DashboardPage() {
                   <TableBody>
                     {stats
                       ? stats.channels.map((row) => (
-                          <TableRow key={row.channel}>
-                            <TableCell>{row.channel}</TableCell>
+                          <TableRow key={row.channelId}>
+                            <TableCell>{row.name}</TableCell>
                             <TableCell className="text-right tabular-nums">{row.count}</TableCell>
                             <TableCell className="text-right tabular-nums">
                               {channelTotal === 0

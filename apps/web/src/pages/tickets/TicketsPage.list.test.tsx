@@ -97,6 +97,17 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
     if (path === "notification.list") {
       return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
     }
+    if (path === "channel.filterOptions") {
+      return {
+        result: {
+          data: [
+            { id: "ch-baosi", name: "保司", active: true },
+            { id: "ch-pay", name: "支付", active: true },
+            { id: "ch-legacy", name: "旧渠道", active: false },
+          ],
+        },
+      };
+    }
     const procedureInput = batch[String(index)] ?? {};
     listInputs.push(procedureInput);
     const page = (procedureInput.page as number | undefined) ?? 1;
@@ -174,10 +185,20 @@ describe("list rendering", () => {
 
 describe("URL-driven filters (deep-linkable)", () => {
   it("passes status/channel from the query string into ticket.list", async () => {
-    renderAt("/tickets?status=overdue&channel=支付");
+    renderAt("/tickets?status=overdue&channel=ch-pay");
 
     await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]).toMatchObject({ status: "overdue", channel: "支付" });
+    expect(listInputs[0]).toMatchObject({ status: "overdue", channelId: "ch-pay" });
+  });
+
+  it("按停用渠道筛选：查询带其 id，触发器显示（已停用）标注", async () => {
+    renderAt("/tickets?channel=ch-legacy");
+
+    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
+    expect(listInputs[0]).toMatchObject({ channelId: "ch-legacy" });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "渠道" })).toHaveTextContent("旧渠道（已停用）"),
+    );
   });
 
   it("ignores an invalid query string and lists with defaults", async () => {
