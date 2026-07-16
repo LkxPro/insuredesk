@@ -53,7 +53,7 @@ GHCR 拉不动(受限网络)时走退路:`git fetch --tags && git checkout <tag>
 
 发版体系尚未搭建,逐项实施(每项可独立开 issue):
 
-- [ ] 迁移 squash 成基线——最后一次行使"可改写历史迁移"约定,此后
+- [x] 迁移 squash 成基线——最后一次行使"可改写历史迁移"约定,此后
       append-only(ADR 0009)
 - [ ] Release workflow(`workflow_dispatch`:算号、打 tag、建 Release、
       构建推送镜像)+ `.github/release.yml` notes 分组
