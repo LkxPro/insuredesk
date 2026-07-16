@@ -11,7 +11,7 @@ import { overdueTicketWhere, pendingTimeoutTicketWhere } from "./ticket-display-
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
- * 数据看板 aggregation: the 9 metric cards, the channel distribution, and
+ * 数据看板 aggregation: the 8 metric cards, the channel distribution, and
  * the Top-10 跟进人考核表, all in one read.
  *
  * Every count shares one WHERE base: soft-delete exclusion plus the
@@ -76,7 +76,6 @@ export async function getDashboardStats(
     pendingTimeout,
     overdue,
     urgent,
-    regulatory,
     channelCatalog,
     channelGroups,
     assigneeTotals,
@@ -98,9 +97,6 @@ export async function getDashboardStats(
     prisma.ticket.count({ where: and(pendingTimeoutTicketWhere(now)) }),
     prisma.ticket.count({ where: and(overdueTicketWhere(now)) }),
     prisma.ticket.count({ where: and({ complaintLevel: URGENT_LEVEL }) }),
-    // 监管单数 counts by the catalog's regulatory flag, so (un)ticking the
-    // 计入监管单数 box moves this card with no code change.
-    prisma.ticket.count({ where: and({ channel: { is: { regulatory: true } } }) }),
     prisma.channel.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }),
     prisma.ticket.groupBy({
       by: ["channelId"],
@@ -154,7 +150,6 @@ export async function getDashboardStats(
     pendingTimeout,
     overdue,
     urgent,
-    regulatory,
   };
 
   const channels = channelCatalog.map((channel) => ({

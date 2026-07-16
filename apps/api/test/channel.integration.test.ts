@@ -11,9 +11,9 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * 反馈渠道目录 acceptance tests at the public tRPC seam (issue #69). The
- * lifecycle mirrors the 客诉类别 catalog; on top of it the channel rows carry
- * the 计入监管单数 flag, the ticket list filters by catalog reference
- * (disabled rows included), and the filter feed lists the whole catalog.
+ * lifecycle mirrors the 客诉类别 catalog; on top of it the ticket list filters
+ * by catalog reference (disabled rows included), and the filter feed lists
+ * the whole catalog.
  */
 describe("Channel catalog (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;
@@ -83,10 +83,9 @@ describe("Channel catalog (Testcontainers)", () => {
     ] as Permission[]);
   const frontline = () => callerWith(seeded.users.cs1, ["ticket.view"] as Permission[]);
 
-  it("seeds the 4 factory channels once (监管 flagged) and never restores later deletions or edits", async () => {
+  it("seeds the 4 factory channels once and never restores later deletions or edits", async () => {
     const channels = await manager().channel.list();
     expect(channels.map((channel) => channel.name)).toEqual(["保司", "经纪", "支付", "监管"]);
-    expect(channels.filter((channel) => channel.regulatory).map((c) => c.name)).toEqual(["监管"]);
 
     // Operator deletes one and renames another; a startup re-seed must keep hands off.
     const victim = await prisma.channel.findUniqueOrThrow({ where: { name: "经纪" } });
@@ -96,7 +95,6 @@ describe("Channel catalog (Testcontainers)", () => {
       id: renamed.id,
       name: "第三方支付",
       displayOrder: renamed.displayOrder,
-      regulatory: renamed.regulatory,
     });
 
     await seedData.seedChannels(prisma);
@@ -110,56 +108,35 @@ describe("Channel catalog (Testcontainers)", () => {
     const created = await manager().channel.create({
       name: "  测试新增渠道  ",
       displayOrder: 90,
-      regulatory: false,
     });
     expect(created).toMatchObject({
       name: "测试新增渠道",
       displayOrder: 90,
       active: true,
-      regulatory: false,
     });
 
     await expect(
-      manager().channel.create({ name: "   ", displayOrder: 91, regulatory: false }),
+      manager().channel.create({ name: "   ", displayOrder: 91 }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(
-      manager().channel.create({ name: "测试新增渠道", displayOrder: 92, regulatory: false }),
+      manager().channel.create({ name: "测试新增渠道", displayOrder: 92 }),
     ).rejects.toMatchObject({ code: "CONFLICT", message: "渠道名称已存在" });
     await expect(
-      manager().channel.create({ name: "渠".repeat(51), displayOrder: 93, regulatory: false }),
+      manager().channel.create({ name: "渠".repeat(51), displayOrder: 93 }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-  });
-
-  it("toggles the 计入监管单数 flag through create and update", async () => {
-    const created = await manager().channel.create({
-      name: "监管转办",
-      displayOrder: 95,
-      regulatory: true,
-    });
-    expect(created?.regulatory).toBe(true);
-
-    const cleared = await manager().channel.update({
-      id: created.id,
-      name: "监管转办",
-      displayOrder: 95,
-      regulatory: false,
-    });
-    expect(cleared?.regulatory).toBe(false);
   });
 
   it("renames and reorders; the options feed lists active channels in display order", async () => {
     const created = await manager().channel.create({
       name: "排序甲",
       displayOrder: 201,
-      regulatory: false,
     });
-    await manager().channel.create({ name: "排序乙", displayOrder: 202, regulatory: false });
+    await manager().channel.create({ name: "排序乙", displayOrder: 202 });
 
     await manager().channel.update({
       id: created.id,
       name: "排序丙",
       displayOrder: 203,
-      regulatory: false,
     });
 
     const options = await frontline().channel.options();
@@ -172,7 +149,6 @@ describe("Channel catalog (Testcontainers)", () => {
         id: existing.id,
         name: "排序丙",
         displayOrder: 202,
-        regulatory: false,
       }),
     ).rejects.toMatchObject({ code: "CONFLICT", message: "渠道名称已存在" });
   });
@@ -181,7 +157,6 @@ describe("Channel catalog (Testcontainers)", () => {
     const created = await manager().channel.create({
       name: "将停用",
       displayOrder: 210,
-      regulatory: false,
     });
     await manager().channel.setActive({ id: created.id, active: false });
 
@@ -205,14 +180,12 @@ describe("Channel catalog (Testcontainers)", () => {
     const unused = await manager().channel.create({
       name: "零引用",
       displayOrder: 220,
-      regulatory: false,
     });
     await expect(manager().channel.delete({ id: unused.id })).resolves.toEqual({ id: unused.id });
 
     const referenced = await manager().channel.create({
       name: "被引用",
       displayOrder: 221,
-      regulatory: false,
     });
     const first = await manager().ticket.create({
       ...blankTicketInput(),
@@ -237,7 +210,6 @@ describe("Channel catalog (Testcontainers)", () => {
     const channel = await manager().channel.create({
       name: "创建用",
       displayOrder: 230,
-      regulatory: false,
     });
 
     await expect(
@@ -247,7 +219,6 @@ describe("Channel catalog (Testcontainers)", () => {
     const disabled = await manager().channel.create({
       name: "停用中",
       displayOrder: 231,
-      regulatory: false,
     });
     await manager().channel.setActive({ id: disabled.id, active: false });
     await expect(
@@ -263,7 +234,6 @@ describe("Channel catalog (Testcontainers)", () => {
       id: channel.id,
       name: "创建用（新名）",
       displayOrder: 230,
-      regulatory: false,
     });
     const detail = await manager().ticket.detail({ id: ticket.id });
     expect(detail.channel).toMatchObject({
@@ -296,7 +266,6 @@ describe("Channel catalog (Testcontainers)", () => {
     const channel = await manager().channel.create({
       name: "停用后筛选",
       displayOrder: 235,
-      regulatory: false,
     });
     const ticket = await manager().ticket.create({
       ...blankTicketInput(),
@@ -313,12 +282,10 @@ describe("Channel catalog (Testcontainers)", () => {
     const oldChannel = await manager().channel.create({
       name: "旧渠道",
       displayOrder: 240,
-      regulatory: false,
     });
     const newChannel = await manager().channel.create({
       name: "新渠道",
       displayOrder: 241,
-      regulatory: false,
     });
     const ticket = await manager().ticket.create({
       ...blankTicketInput(),
@@ -339,7 +306,6 @@ describe("Channel catalog (Testcontainers)", () => {
     const otherDisabled = await manager().channel.create({
       name: "另一停用",
       displayOrder: 242,
-      regulatory: false,
     });
     await manager().channel.setActive({ id: otherDisabled.id, active: false });
     await expect(
@@ -361,7 +327,6 @@ describe("Channel catalog (Testcontainers)", () => {
       id: newChannel.id,
       name: "新渠道改名",
       displayOrder: 241,
-      regulatory: false,
     });
     const detail = await manager().ticket.detail({ id: ticket.id });
     const editLogs = detail.processLogs.filter((log) => log.action === "edit");
@@ -381,14 +346,13 @@ describe("Channel catalog (Testcontainers)", () => {
   it("gates every catalog mutation and the manager list behind dictionary.manage", async () => {
     await expect(frontline().channel.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
-      frontline().channel.create({ name: "越权", displayOrder: 0, regulatory: false }),
+      frontline().channel.create({ name: "越权", displayOrder: 0 }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       frontline().channel.update({
         id: "unknown",
         name: "越权",
         displayOrder: 0,
-        regulatory: false,
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(

@@ -92,16 +92,16 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     expect(categories[0]).toMatchObject({ name: "监管投诉-引导性", displayOrder: 1, active: true });
     expect(categories[16]).toMatchObject({ name: "其他", displayOrder: 17, active: true });
 
-    // 四渠道播种，「监管」出厂即带计入监管单数标记
+    // 四渠道播种
     const channels = await prisma.channel.findMany({
       orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
-      select: { name: true, regulatory: true, active: true, displayOrder: true },
+      select: { name: true, active: true, displayOrder: true },
     });
     expect(channels).toEqual([
-      { name: "保司", regulatory: false, active: true, displayOrder: 1 },
-      { name: "经纪", regulatory: false, active: true, displayOrder: 2 },
-      { name: "支付", regulatory: false, active: true, displayOrder: 3 },
-      { name: "监管", regulatory: true, active: true, displayOrder: 4 },
+      { name: "保司", active: true, displayOrder: 1 },
+      { name: "经纪", active: true, displayOrder: 2 },
+      { name: "支付", active: true, displayOrder: 3 },
+      { name: "监管", active: true, displayOrder: 4 },
     ]);
 
     const admin = await prisma.user.findUnique({

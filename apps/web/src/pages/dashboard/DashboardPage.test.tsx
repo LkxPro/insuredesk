@@ -11,7 +11,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 数据看板 page: the 9 metric cards, the channel table, the Top-10 考核表,
+ * 数据看板 page: the 8 metric cards, the channel table, the Top-10 考核表,
  * and the own-scope hint all render from dashboard.stats. The tRPC link gets
  * a faked `fetch` (same seam as TicketsPage.list.test.tsx), so the page runs
  * against the real procedure pipeline shape without a server. All 口径 are
@@ -74,7 +74,6 @@ function statsPayload(overrides: Partial<StatsPayload> = {}): StatsPayload {
       pendingTimeout: 3,
       overdue: 2,
       urgent: 1,
-      regulatory: 6,
     },
     channels: [
       { channelId: "ch-1", name: "保司", count: 20 },
@@ -157,7 +156,7 @@ beforeEach(() => {
 });
 
 describe("指标卡", () => {
-  it("renders all 9 cards with their labels and values", async () => {
+  it("renders all 8 cards with their labels and values", async () => {
     renderDashboard();
 
     expect(await screen.findByText("工单总数")).toBeInTheDocument();
@@ -169,7 +168,6 @@ describe("指标卡", () => {
       "2小时超时预警",
       "已超时",
       "特急工单",
-      "监管单",
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }

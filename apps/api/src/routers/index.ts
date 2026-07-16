@@ -38,7 +38,7 @@ export const appRouter = router({
   /** 渠道与类别目录 - 客诉类别的增删改名/排序/停用，限 dictionary.manage */
   ticketCategory: ticketCategoryRouter,
 
-  /** 渠道与类别目录 - 反馈渠道，同上另带「计入监管单数」标记 */
+  /** 渠道与类别目录 - 反馈渠道，同上 */
   channel: channelRouter,
 
   /**

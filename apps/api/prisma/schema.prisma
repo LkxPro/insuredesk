@@ -249,12 +249,11 @@ model TicketCategory {
 // ============================================================================
 
 /// 管理员（dictionary.manage）维护的反馈渠道目录，生命周期语义与
-/// TicketCategory 一致。regulatory 标记该渠道的工单计入看板监管单数。
+/// TicketCategory 一致。
 model Channel {
   id           String   @id @default(cuid())
   name         String   @unique
   active       Boolean  @default(true)
-  regulatory   Boolean  @default(false)
   displayOrder Int      @default(0)
   createdAt    DateTime @default(now()) @db.Timestamptz
   updatedAt    DateTime @updatedAt @db.Timestamptz

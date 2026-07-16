@@ -49,7 +49,6 @@ const canned = {
       id: "ch-baosi",
       name: "保司",
       active: true,
-      regulatory: false,
       displayOrder: 1,
       createdAt: "2026-07-16T00:00:00.000Z",
       updatedAt: "2026-07-16T00:00:00.000Z",
@@ -58,7 +57,6 @@ const canned = {
       id: "ch-regulator",
       name: "监管",
       active: true,
-      regulatory: true,
       displayOrder: 2,
       createdAt: "2026-07-16T00:00:00.000Z",
       updatedAt: "2026-07-16T00:00:00.000Z",
@@ -115,7 +113,6 @@ function respond(path: string, input: unknown): unknown {
     return {
       id: "ch-baosi",
       name: "保司",
-      regulatory: false,
       displayOrder: 1,
       ...(input as object),
     };
@@ -247,7 +244,7 @@ describe("渠道与类别 page", () => {
     );
   });
 
-  it("creates a channel with the 计入监管单数 flag", async () => {
+  it("creates a channel with name and display order", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "新增渠道" }));
     const dialog = await screen.findByRole("dialog");
@@ -256,36 +253,32 @@ describe("渠道与类别 page", () => {
       target: { value: "监管转办" },
     });
     fireEvent.change(within(dialog).getByLabelText("显示顺序"), { target: { value: "5" } });
-    fireEvent.click(within(dialog).getByLabelText("计入监管单数"));
     fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
 
     await waitFor(() =>
       expect(calls.find((call) => call.path === "channel.create")?.input).toEqual({
         name: "监管转办",
         displayOrder: 5,
-        regulatory: true,
       }),
     );
   });
 
-  it("renders the 监管标记 badge and edits a channel keeping/toggling the flag", async () => {
+  it("renames a channel through the edit dialog", async () => {
     renderPage();
     await screen.findByText("监管");
-    // 监管 row carries the flag badge; 保司 does not
-    expect(screen.getByText("计入")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "编辑 监管" }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByLabelText("计入监管单数")).toBeChecked();
-    fireEvent.click(within(dialog).getByLabelText("计入监管单数"));
+    fireEvent.change(within(dialog).getByLabelText("渠道名称"), {
+      target: { value: "监管转办" },
+    });
     fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
 
     await waitFor(() =>
       expect(calls.find((call) => call.path === "channel.update")?.input).toEqual({
         id: "ch-regulator",
-        name: "监管",
+        name: "监管转办",
         displayOrder: 2,
-        regulatory: false,
       }),
     );
   });

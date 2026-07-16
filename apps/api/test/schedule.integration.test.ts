@@ -18,7 +18,7 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  */
 describe("schedule workflow and schedule-based auto assignment (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;
-  let regulatoryChannelId: string | null;
+  let seededChannelId: string | null;
   let prisma: PrismaClient;
   let appRouter: typeof import("../src/routers/index").appRouter;
   let findOnDutyUserIds: typeof ScheduleService.findOnDutyUserIds;
@@ -55,8 +55,7 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
     await seedData.seedSlaPolicies(prisma);
     await seedData.seedShiftTypes(prisma);
     // 渠道只是分类维度：造一张带渠道的单，证明路由对它视而不见
-    regulatoryChannelId =
-      (await seedData.seedChannels(prisma)).find((channel) => channel.regulatory)?.id ?? null;
+    seededChannelId = (await seedData.seedChannels(prisma)).at(0)?.id ?? null;
   }, 180_000);
 
   afterAll(async () => {
@@ -309,7 +308,7 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
       await manager().schedule.create({ date, userId: userB.id, shiftId: full.id });
       await manager().schedule.create({ date, userId: resting.id, shiftId: rest.id });
 
-      const morningTickets = [await createTicket(regulatoryChannelId), await createTicket()];
+      const morningTickets = [await createTicket(seededChannelId), await createTicket()];
       const morning = await autoAssignAt(localInstant(date, 11), morningTickets);
       expect(morning.skipped).toEqual([]);
       expect(morning.assigned).toHaveLength(2);

@@ -12,11 +12,10 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * Acceptance tests for 数据看板 against a real Postgres: the 9 metric cards
+ * Acceptance tests for 数据看板 against a real Postgres: the 8 metric cards
  * (with the time cards reusing the single-truth predicates), the deliberate
  * difference between the two overdue 口径, soft-delete exclusion, the
- * channel table (regulatory 标记口径 included), the Top-10 跟进人考核表, the
- * dashboard.view_all data
+ * channel table, the Top-10 跟进人考核表, the dashboard.view_all data
  * scope, and the <2s compute target. Runs through appRouter.createCaller;
  * clock-sensitive 口径 cases use the service directly with a fixed clock,
  * like the list tests.
@@ -171,8 +170,8 @@ describe("dashboard stats (Testcontainers)", () => {
     };
   }
 
-  describe("9 张指标卡 (PRD §2.2)", () => {
-    it("counts stored statuses, time overlays, 特急 and 监管 — one ticket can sit on several cards", async () => {
+  describe("8 张指标卡 (PRD §2.2)", () => {
+    it("counts stored statuses, time overlays and 特急 — one ticket can sit on several cards", async () => {
       const now = new Date();
       const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
 
@@ -220,8 +219,7 @@ describe("dashboard stats (Testcontainers)", () => {
       expect(metrics.pendingTimeout).toBe(1); // 预警中 only
       expect(metrics.overdue).toBe(1); // 已超时 only — 特急 (dueAt null) never computes
       expect(metrics.urgent).toBe(1);
-      expect(metrics.regulatory).toBe(1);
-      // The 4 status cards partition the set; the 5 other cards are overlays.
+      // The 4 status cards partition the set; the 4 other cards are overlays.
       expect(metrics.unassigned + metrics.assigned + metrics.processing + metrics.completed).toBe(
         metrics.total,
       );
@@ -245,37 +243,6 @@ describe("dashboard stats (Testcontainers)", () => {
       // (the dueAt instant is still pending) — same edges as the list filter.
       expect(metrics.pendingTimeout).toBe(1); // 恰在时限 only
       expect(metrics.overdue).toBe(1); // 刚过时限 only
-    });
-
-    it("监管单数按「计入监管单数」标记计数，勾选/取消即改口径", async () => {
-      await makeTicket({ customerName: "监管件", channelId: channelId("监管") });
-      await makeTicket({ customerName: "保司件", channelId: channelId("保司") });
-
-      expect((await manager().dashboard.stats()).metrics.regulatory).toBe(1);
-
-      try {
-        // 摘掉监管的标记、给保司打上 —— 卡片立即换边，不认渠道名
-        await prisma.channel.update({
-          where: { id: channelId("监管") },
-          data: { regulatory: false },
-        });
-        expect((await manager().dashboard.stats()).metrics.regulatory).toBe(0);
-
-        await prisma.channel.update({
-          where: { id: channelId("保司") },
-          data: { regulatory: true },
-        });
-        expect((await manager().dashboard.stats()).metrics.regulatory).toBe(1);
-      } finally {
-        await prisma.channel.update({
-          where: { id: channelId("监管") },
-          data: { regulatory: true },
-        });
-        await prisma.channel.update({
-          where: { id: channelId("保司") },
-          data: { regulatory: false },
-        });
-      }
     });
 
     it("完结即移出 — 已超时卡是实时运营视角，不含超时完结", async () => {
@@ -420,7 +387,6 @@ describe("dashboard stats (Testcontainers)", () => {
       expect(stats.metrics.completed).toBe(0);
       expect(stats.metrics.overdue).toBe(0);
       expect(stats.metrics.urgent).toBe(0);
-      expect(stats.metrics.regulatory).toBe(0);
 
       expect(stats.channels).toEqual([
         { channelId: channelId("保司"), name: "保司", count: 1 },
@@ -574,7 +540,6 @@ describe("dashboard stats (Testcontainers)", () => {
       expect(own.metrics.completed).toBe(1);
       expect(own.metrics.assigned).toBe(1);
       expect(own.metrics.overdue).toBe(0); // 主管's overdue ticket is out of scope
-      expect(own.metrics.regulatory).toBe(0);
       expect(own.channels.find((row) => row.name === "支付")?.count).toBe(1);
       expect(own.assignees.map((row) => row.assigneeId)).toEqual([seeded.users.cs1.id]);
 
@@ -584,7 +549,6 @@ describe("dashboard stats (Testcontainers)", () => {
         expect(all.metrics.total).toBe(4);
         expect(all.metrics.unassigned).toBe(1);
         expect(all.metrics.overdue).toBe(1);
-        expect(all.metrics.regulatory).toBe(1);
         expect(all.assignees.map((row) => row.assigneeId).sort()).toEqual(
           [seeded.users.manager.id, seeded.users.cs1.id].sort(),
         );

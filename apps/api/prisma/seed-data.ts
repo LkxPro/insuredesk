@@ -71,12 +71,12 @@ export const DEFAULT_TICKET_CATEGORIES = [
   "其他",
 ] as const;
 
-/** 首次初始化播种的反馈渠道目录；「监管」出厂即带计入监管单数标记。 */
+/** 首次初始化播种的反馈渠道目录。 */
 export const DEFAULT_CHANNELS = [
-  { name: "保司", regulatory: false, displayOrder: 1 },
-  { name: "经纪", regulatory: false, displayOrder: 2 },
-  { name: "支付", regulatory: false, displayOrder: 3 },
-  { name: "监管", regulatory: true, displayOrder: 4 },
+  { name: "保司", displayOrder: 1 },
+  { name: "经纪", displayOrder: 2 },
+  { name: "支付", displayOrder: 3 },
+  { name: "监管", displayOrder: 4 },
 ] as const;
 
 /**
@@ -336,8 +336,7 @@ export async function seedTicketCategories(prisma: PrismaClient): Promise<Ticket
 /**
  * First initialization only: seed the four factory channels while the catalog
  * is empty. Once any channel exists it belongs to the administrator — later
- * deletions, renames, 停用 and regulatory-flag changes must survive every
- * startup.
+ * deletions, renames and 停用 must survive every startup.
  */
 export async function seedChannels(prisma: PrismaClient): Promise<Channel[]> {
   return prisma.$transaction(async (tx) => {

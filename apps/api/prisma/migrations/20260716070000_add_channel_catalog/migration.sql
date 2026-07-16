@@ -7,7 +7,6 @@ CREATE TABLE "channels" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "active" BOOLEAN NOT NULL DEFAULT true,
-    "regulatory" BOOLEAN NOT NULL DEFAULT false,
     "displayOrder" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ NOT NULL,

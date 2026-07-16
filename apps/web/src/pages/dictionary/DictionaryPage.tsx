@@ -1,7 +1,6 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogClose,
@@ -14,7 +13,6 @@ import {
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
   FieldGroup,
@@ -41,10 +39,9 @@ import { toast } from "sonner";
 
 /**
  * 渠道与类别: the catalog management page behind dictionary.manage. 反馈渠道
- * and 客诉类别 render as sibling sections with the same lifecycle; the channel
- * rows additionally carry the 计入监管单数 flag driving the dashboard's
- * 监管单数 card. 建单/编辑 dropdowns, ticket detail, and exports read the
- * catalogs live, so every change here shows through immediately.
+ * and 客诉类别 render as sibling sections with the same lifecycle. 建单/编辑
+ * dropdowns, ticket detail, and exports read the catalogs live, so every
+ * change here shows through immediately.
  */
 
 type CategoryRow = inferRouterOutputs<AppRouter>["ticketCategory"]["list"][number];
@@ -379,10 +376,6 @@ function CategorySection() {
   );
 }
 
-type ChannelDraft = { name: string; displayOrder: string; regulatory: boolean };
-
-const EMPTY_CHANNEL_DRAFT: ChannelDraft = { name: "", displayOrder: "0", regulatory: false };
-
 function ChannelDialog({
   open,
   channel,
@@ -393,19 +386,13 @@ function ChannelDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const utils = trpc.useUtils();
-  const [draft, setDraft] = useState<ChannelDraft>(EMPTY_CHANNEL_DRAFT);
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
     setDraft(
-      channel
-        ? {
-            name: channel.name,
-            displayOrder: String(channel.displayOrder),
-            regulatory: channel.regulatory,
-          }
-        : EMPTY_CHANNEL_DRAFT,
+      channel ? { name: channel.name, displayOrder: String(channel.displayOrder) } : EMPTY_DRAFT,
     );
     setErrors({});
   }, [open, channel]);
@@ -424,7 +411,6 @@ function ChannelDialog({
     const parsed = channelCreateInputSchema.safeParse({
       name: draft.name,
       displayOrder: Number(draft.displayOrder),
-      regulatory: draft.regulatory,
     });
     if (!parsed.success) {
       const nextErrors: Record<string, string> = {};
@@ -480,22 +466,6 @@ function ChannelDialog({
             />
             <FieldDescription>数字越小越靠前。</FieldDescription>
             <FieldError>{errors.displayOrder}</FieldError>
-          </Field>
-
-          <Field orientation="horizontal">
-            <Checkbox
-              id="channel-regulatory"
-              checked={draft.regulatory}
-              onCheckedChange={(checked) =>
-                setDraft((current) => ({ ...current, regulatory: checked === true }))
-              }
-            />
-            <FieldContent>
-              <FieldLabel htmlFor="channel-regulatory" className="font-normal">
-                计入监管单数
-              </FieldLabel>
-              <FieldDescription>勾选后，该渠道的工单计入看板「监管单」卡片。</FieldDescription>
-            </FieldContent>
           </Field>
         </FieldGroup>
 
@@ -604,7 +574,7 @@ function ChannelSection() {
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold">反馈渠道</h2>
           <p className="text-sm text-muted-foreground">
-            建单与编辑表单只列启用项；「计入监管单数」的渠道驱动看板监管单卡片。
+            建单与编辑表单只列启用项；停用不影响存量工单的显示。
           </p>
         </div>
         <Button onClick={openCreate}>
@@ -626,7 +596,6 @@ function ChannelSection() {
               <TableRow>
                 <TableHead>名称</TableHead>
                 <TableHead>显示顺序</TableHead>
-                <TableHead>计入监管单数</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="w-36">操作</TableHead>
               </TableRow>
@@ -645,16 +614,13 @@ function ChannelSection() {
                       <Skeleton className="h-5 w-14" />
                     </TableCell>
                     <TableCell>
-                      <Skeleton className="h-5 w-14" />
-                    </TableCell>
-                    <TableCell>
                       <Skeleton className="h-8 w-28" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : (list.data ?? []).length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="p-0">
+                  <TableCell colSpan={4} className="p-0">
                     <Empty className="border-0">
                       <EmptyHeader>
                         <EmptyTitle>暂无反馈渠道</EmptyTitle>
@@ -668,9 +634,6 @@ function ChannelSection() {
                   <TableRow key={channel.id}>
                     <TableCell className="font-medium">{channel.name}</TableCell>
                     <TableCell>{channel.displayOrder}</TableCell>
-                    <TableCell>
-                      {channel.regulatory && <Badge variant="secondary">计入</Badge>}
-                    </TableCell>
                     <TableCell>
                       {channel.active ? (
                         <Badge variant="secondary">启用</Badge>

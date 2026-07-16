@@ -68,7 +68,6 @@ function toDto(row: Channel) {
     id: row.id,
     name: row.name,
     active: row.active,
-    regulatory: row.regulatory,
     displayOrder: row.displayOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -126,7 +125,7 @@ export async function updateChannel(prisma: PrismaClient, input: ChannelUpdateIn
     return toDto(
       await prisma.channel.update({
         where: { id: input.id },
-        data: { name: input.name, displayOrder: input.displayOrder, regulatory: input.regulatory },
+        data: { name: input.name, displayOrder: input.displayOrder },
       }),
     );
   } catch (error) {
