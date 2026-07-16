@@ -99,7 +99,6 @@ describe("assigned notifications (Testcontainers)", () => {
     customerRequest: "希望尽快跟进理赔",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    category: "理赔投诉",
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 

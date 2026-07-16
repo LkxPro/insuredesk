@@ -120,7 +120,9 @@ model Ticket {
   contactId         String?
 
   // 分类与等级 (PRD §3.1.5)
-  category       String?
+  /// 客诉类别目录引用; null = 未填写. Referenced rows can only be 停用, never
+  /// deleted — Restrict is the DB backstop behind the service's refusal.
+  categoryId     String?
   /// The ONLY SLA driver — determines dueAt, 首响 and 跟进 requirements.
   /// null = 未定级: no dueAt, no 首响/跟进 requirements, no SLA time alerts
   /// until a later edit sets it (SLA then counts from the original createdAt).
@@ -156,13 +158,15 @@ model Ticket {
   /// null and "由谁创建" derives from source at read time (PRD §3.1.8)
   creatorId String?
 
-  assignee    User?        @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  creator     User?        @relation("TicketCreator", fields: [creatorId], references: [id])
+  assignee    User?           @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  creator     User?           @relation("TicketCreator", fields: [creatorId], references: [id])
+  category    TicketCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   processLogs ProcessLog[]
 
   @@index([assigneeId])
   /// The non-view_all data scope ORs assigneeId with creatorId
   @@index([creatorId])
+  @@index([categoryId])
   @@index([status])
   @@index([createdAt])
   /// Computed-status predicates (pending_timeout/overdue) and 处理时限 sorting
@@ -216,6 +220,25 @@ model SlaPolicy {
   updatedAt            DateTime @updatedAt @db.Timestamptz
 
   @@map("sla_policies")
+}
+
+// ============================================================================
+// Ticket category catalog (Issue #68)
+// ============================================================================
+
+/// 管理员（dictionary.manage）维护的客诉类别目录。停用项退出新建/编辑下拉但
+/// 保留存量引用；被引用的行不可物理删除。
+model TicketCategory {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  active       Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  tickets Ticket[]
+
+  @@map("ticket_categories")
 }
 
 // ============================================================================

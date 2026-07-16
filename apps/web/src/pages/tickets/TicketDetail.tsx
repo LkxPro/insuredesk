@@ -198,7 +198,7 @@ export function TicketDetail() {
       </Section>
 
       <Section title="分类与等级">
-        <Item label="客诉类别">{ticket.category}</Item>
+        <Item label="客诉类别">{ticket.category?.name}</Item>
         <Item label="投诉等级">{ticket.complaintLevel}</Item>
         <Item label="优先级">{ticket.priority ? PRIORITY_LABELS[ticket.priority] : null}</Item>
         <Item label="跟进频次要求">{ticket.followUpFrequency}</Item>

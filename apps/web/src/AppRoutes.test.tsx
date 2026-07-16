@@ -105,7 +105,7 @@ beforeEach(() => {
 });
 
 describe("menu visibility per role persona", () => {
-  it("管理员 sees all seven entries", () => {
+  it("管理员 sees all eight entries", () => {
     auth.user = userWith(TEST_ROLES.ADMIN);
     renderAt("/dashboard");
     expect(menuLabels()).toEqual([
@@ -116,6 +116,7 @@ describe("menu visibility per role persona", () => {
       "排班表",
       "班次管理",
       "SLA 策略",
+      "渠道与类别",
     ]);
   });
 

@@ -14,7 +14,6 @@ import {
   prioritySchema,
   processLogActionSchema,
   reminderRulesSchema,
-  ticketCategorySchema,
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
@@ -51,6 +50,36 @@ export class RequiredFieldsMissingError extends Error {
   }
 }
 
+/** 类别引用指向不存在或已停用的目录项（编辑保持原停用值除外）。 */
+export class TicketCategoryUnavailableError extends Error {
+  constructor(reason: "missing" | "disabled") {
+    super(reason === "missing" ? "所选客诉类别不存在" : "所选客诉类别已停用");
+    this.name = "TicketCategoryUnavailableError";
+  }
+}
+
+/**
+ * Resolve a NEWLY chosen category reference: the row must exist and be
+ * active. Callers skip this when an edit keeps the ticket's current value —
+ * that is the one case a disabled reference may persist.
+ */
+export async function resolveNewCategory(
+  db: Pick<PrismaClient, "ticketCategory">,
+  categoryId: string | null,
+) {
+  if (categoryId === null) {
+    return null;
+  }
+  const category = await db.ticketCategory.findUnique({ where: { id: categoryId } });
+  if (!category) {
+    throw new TicketCategoryUnavailableError("missing");
+  }
+  if (!category.active) {
+    throw new TicketCategoryUnavailableError("disabled");
+  }
+  return category;
+}
+
 const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
   feedbackTime: "反馈时间",
   channel: "业务渠道",
@@ -67,7 +96,7 @@ const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
   nuclearBodyStatus: "保司侧是否核身",
   hasContacted: "是否已联系",
   contactId: "联系人ID",
-  category: "分类",
+  categoryId: "分类",
   complaintLevel: "投诉等级",
   priority: "优先级",
 };
@@ -160,6 +189,7 @@ export async function createTicket(
 
   const now = clock.now();
   const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, now);
+  await resolveNewCategory(prisma, input.categoryId);
 
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.create({
@@ -194,6 +224,8 @@ export async function createTicket(
 const listInclude = {
   // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
+  // Category renders its CURRENT catalog name — a rename shows through
+  category: { select: { name: true } },
 } satisfies Prisma.TicketInclude;
 
 type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
@@ -318,7 +350,7 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
     createdAt: ticket.createdAt.toISOString(),
     source,
     channel: parseNullable(channelSchema, ticket.channel),
-    category: parseNullable(ticketCategorySchema, ticket.category),
+    category: ticket.category?.name ?? null,
     complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     customerName: ticket.customerName,
     policyNumber: ticket.policyNumber,
@@ -333,6 +365,9 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
 const detailInclude = {
   creator: { select: { name: true } },
   assignee: { select: { name: true } },
+  // id/active ride along for the edit form: a disabled current value stays
+  // selectable (labelled 已停用) while other disabled options never appear
+  category: { select: { id: true, name: true, active: true } },
   processLogs: { orderBy: [{ at: "asc" }, { id: "asc" }] },
 } satisfies Prisma.TicketInclude;
 
@@ -395,7 +430,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     nuclearBodyStatus: parseNullable(nuclearBodyStatusSchema, ticket.nuclearBodyStatus),
     hasContacted: ticket.hasContacted,
     contactId: ticket.contactId,
-    category: parseNullable(ticketCategorySchema, ticket.category),
+    category: ticket.category,
     complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     priority,
     followUpFrequency: ticket.followUpFrequency,

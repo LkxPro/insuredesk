@@ -115,7 +115,6 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
     customerRequest: "请尽快处理",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    category: "理赔投诉",
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 

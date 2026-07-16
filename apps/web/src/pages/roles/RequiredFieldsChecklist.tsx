@@ -17,7 +17,7 @@ const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
   nuclearBodyStatus: "保司侧是否核身",
   hasContacted: "是否已联系",
   contactId: "联系人ID",
-  category: "分类",
+  categoryId: "分类",
   complaintLevel: "投诉等级",
   priority: "优先级",
 };
@@ -130,7 +130,7 @@ export function RequiredFieldsChecklist({
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-sm font-medium">分类与等级</legend>
         <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
-          {["category", "complaintLevel", "priority"].map((field) => (
+          {["categoryId", "complaintLevel", "priority"].map((field) => (
             <div key={field} className="flex items-start gap-2 text-sm">
               <Checkbox
                 id={`required-field-${field}`}

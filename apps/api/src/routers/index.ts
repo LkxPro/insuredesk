@@ -8,6 +8,7 @@ import { roleRouter } from "./role.router";
 import { scheduleRouter } from "./schedule.router";
 import { shiftTypeRouter } from "./shift-type.router";
 import { slaRouter } from "./sla.router";
+import { ticketCategoryRouter } from "./ticket-category.router";
 import { ticketRouter } from "./ticket.router";
 import { userRouter } from "./user.router";
 
@@ -32,6 +33,9 @@ export const appRouter = router({
   demo: demoRouter,
 
   ticket: ticketRouter,
+
+  /** 渠道与类别目录 - 客诉类别的增删改名/排序/停用，限 dictionary.manage */
+  ticketCategory: ticketCategoryRouter,
 
   /**
    * The 30s poll — 轨 1 收件箱 + 轨 2 我的待办 in one request

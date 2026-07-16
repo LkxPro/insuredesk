@@ -81,7 +81,7 @@ function detailPayload(overrides: Record<string, unknown> = {}) {
     nuclearBodyStatus: "待核实",
     hasContacted: false,
     contactId: null,
-    category: "理赔投诉",
+    category: { id: "cat-claims", name: "理赔投诉", active: true },
     complaintLevel: "一般投诉",
     priority: null,
     followUpFrequency: "每天跟进",

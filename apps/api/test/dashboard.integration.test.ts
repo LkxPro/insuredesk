@@ -114,7 +114,6 @@ describe("dashboard stats (Testcontainers)", () => {
     customerRequest: "对保费收取金额有异议，要求核实并回复",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    category: "投诉-保费收取问题",
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 
@@ -151,7 +150,6 @@ describe("dashboard stats (Testcontainers)", () => {
       customerRequest: "批量数据",
       nuclearBodyStatus: "待核实",
       hasContacted: false,
-      category: "投诉-保费收取问题",
       complaintLevel: "一般投诉",
       followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
       firstResponseRequirement: "120分钟内完成首次响应",

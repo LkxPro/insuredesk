@@ -5,6 +5,7 @@ import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
+import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
 import { RolesPage } from "@/pages/roles/RolesPage";
 import { SchedulePage } from "@/pages/schedule/SchedulePage";
 import { ShiftTypesPage } from "@/pages/shift-types/ShiftTypesPage";
@@ -31,6 +32,7 @@ const PAGES: Record<NavPath, ReactElement> = {
   "/schedule": <SchedulePage />,
   "/shift-types": <ShiftTypesPage />,
   "/sla": <SlaPage />,
+  "/dictionary": <DictionaryPage />,
 };
 
 /** `/` lands on the first menu page the user may see; no page permissions → 403. */

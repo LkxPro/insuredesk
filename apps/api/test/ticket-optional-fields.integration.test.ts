@@ -95,7 +95,7 @@ describe("optional business fields (Testcontainers)", () => {
     "nuclearBodyStatus",
     "hasContacted",
     "contactId",
-    "category",
+    "categoryId",
     "complaintLevel",
     "priority",
   ] as const;

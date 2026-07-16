@@ -5,7 +5,6 @@ import {
   completionStatusSchema,
   nuclearBodyStatusSchema,
   prioritySchema,
-  ticketCategorySchema,
   ticketSourceSchema,
 } from "./enums";
 import { ticketDisplayStatusSchema } from "./ticket-status";
@@ -58,7 +57,7 @@ export const TICKET_CREATE_FIELD_KEYS = [
   "nuclearBodyStatus",
   "hasContacted",
   "contactId",
-  "category",
+  "categoryId",
   "complaintLevel",
   "priority",
 ] as const;
@@ -86,7 +85,8 @@ export const ticketCreateInputSchema = z.object({
     .nullish()
     .transform((value) => value ?? null),
   contactId: optionalText(200),
-  category: optionalEnum(ticketCategorySchema),
+  /** 客诉类别目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
+  categoryId: optionalText(100),
   complaintLevel: optionalEnum(complaintLevelSchema),
   /** 独立自由标签，默认空；"" 来自未选择的下拉框。 */
   priority: optionalEnum(prioritySchema),

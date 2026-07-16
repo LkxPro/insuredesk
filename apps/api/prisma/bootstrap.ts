@@ -30,6 +30,7 @@ async function main() {
   );
   console.log("✓ SLA policies: 4 (created if missing)");
   console.log("✓ Shift types: 4 (created if missing)");
+  console.log("✓ Ticket categories: 17 (first initialization only)");
   console.log(
     adminCreated
       ? '✓ Admin account "admin" created with the default password — change it in 用户管理 immediately'

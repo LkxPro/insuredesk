@@ -45,15 +45,17 @@ export const ROLE_PERMISSIONS = [
 ] as const;
 
 // System configuration permissions
-// sla.view / sla.edit are absent from the PRD permission matrix; they exist
-// because SLA policies need their own page + operation point. Out of the
-// factory only 管理员 holds them.
+// sla.view / sla.edit / dictionary.manage are absent from the PRD permission
+// matrix; they exist because SLA policies and the channel/category catalogs
+// need their own pages + operation points. Out of the factory only 管理员
+// holds them.
 export const SYSTEM_PERMISSIONS = [
   "schedule.view", // Access schedule configuration (page permission)
   "schedule.edit", // Edit schedule (operation permission)
   "schedule.manage_shifts", // Manage shift definitions (admin configuration)
   "sla.view", // Access SLA policy configuration (page permission)
   "sla.edit", // Edit SLA policies (operation permission)
+  "dictionary.manage", // Manage the channel/category catalogs (admin configuration)
 ] as const;
 
 // All permissions combined
@@ -103,6 +105,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "schedule.manage_shifts": "管理班次定义",
   "sla.view": "访问 SLA 策略",
   "sla.edit": "编辑 SLA 策略",
+  "dictionary.manage": "管理反馈渠道与客诉类别",
 };
 
 /** 权限点清单 checklist grouping, in PRD document order. */

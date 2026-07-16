@@ -18,13 +18,13 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
+import { trpc } from "@/lib/trpc";
 import {
   CHANNELS,
   COMPLAINT_LEVELS,
   NUCLEAR_BODY_STATUSES,
   PRIORITIES,
   PRIORITY_LABELS,
-  TICKET_CATEGORIES,
   type TicketCreateFieldKey,
   ticketCreateInputSchema,
 } from "@insuredesk/shared";
@@ -66,7 +66,7 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
     nuclearBodyStatus: z.string().min(1, "保司侧是否核身为必填项"),
     hasContacted: z.boolean({ required_error: "是否已联系为必填项" }),
     contactId: z.string().trim().min(1, "联系人ID为必填项").max(200),
-    category: z.string().min(1, "分类为必填项"),
+    categoryId: z.string().min(1, "分类为必填项"),
     complaintLevel: z.string().min(1, "投诉等级为必填项"),
     priority: z.string().min(1, "优先级为必填项"),
   };
@@ -101,7 +101,21 @@ const HAS_CONTACTED_OPTIONS = [
   { value: "no", label: "否" },
 ] as const;
 
-export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValues> }) {
+/** The edit form's current category — kept selectable even after 停用. */
+export interface CurrentCategoryOption {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+export function TicketFormFields({
+  form,
+  currentCategory,
+}: {
+  form: UseFormReturn<TicketFormValues>;
+  /** 编辑表单传入工单当前类别；停用值以“（已停用）”入列，保持原值合法。 */
+  currentCategory?: CurrentCategoryOption | null;
+}) {
   const {
     register,
     control,
@@ -112,6 +126,23 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
   const requiredFields = new Set(user?.requiredTicketFields ?? []);
 
   const isRequired = (field: TicketCreateFieldKey) => requiredFields.has(field);
+
+  // The dropdown feed lists ACTIVE categories only; a ticket already holding a
+  // since-停用 value keeps it as an extra labelled option, so "保持原值" works
+  // while other disabled categories stay unselectable.
+  const categoryOptions = trpc.ticketCategory.options.useQuery().data ?? [];
+  const selectableCategories =
+    currentCategory && !categoryOptions.some((option) => option.id === currentCategory.id)
+      ? [
+          ...categoryOptions,
+          {
+            id: currentCategory.id,
+            name: currentCategory.active
+              ? currentCategory.name
+              : `${currentCategory.name}（已停用）`,
+          },
+        ]
+      : categoryOptions;
 
   return (
     <>
@@ -382,27 +413,31 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
       <FieldSet>
         <FieldLegend variant="label">分类与等级</FieldLegend>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field data-invalid={!!errors.category}>
-            <FieldLabel htmlFor="category">
-              客诉类别{isRequired("category") && <span className="text-destructive">*</span>}
+          <Field data-invalid={!!errors.categoryId}>
+            <FieldLabel htmlFor="categoryId">
+              客诉类别{isRequired("categoryId") && <span className="text-destructive">*</span>}
             </FieldLabel>
             <Controller
               control={control}
-              name="category"
+              name="categoryId"
               render={({ field }) => (
                 <Select
                   value={field.value ? field.value : UNSET}
                   onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
                 >
-                  <SelectTrigger id="category" className="w-full" aria-invalid={!!errors.category}>
+                  <SelectTrigger
+                    id="categoryId"
+                    className="w-full"
+                    aria-invalid={!!errors.categoryId}
+                  >
                     <SelectValue placeholder="请选择" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value={UNSET}>未设置</SelectItem>
-                      {TICKET_CATEGORIES.map((category) => (
-                        <SelectItem key={category} value={category}>
-                          {category}
+                      {selectableCategories.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
                         </SelectItem>
                       ))}
                     </SelectGroup>
@@ -410,7 +445,7 @@ export function TicketFormFields({ form }: { form: UseFormReturn<TicketFormValue
                 </Select>
               )}
             />
-            <FieldError errors={[errors.category]} />
+            <FieldError errors={[errors.categoryId]} />
           </Field>
           <Field data-invalid={!!errors.complaintLevel}>
             <FieldLabel htmlFor="complaintLevel">

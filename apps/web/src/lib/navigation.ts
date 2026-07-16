@@ -4,6 +4,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   ShieldCheck,
+  Tags,
   Ticket,
   Timer,
   Users,
@@ -37,6 +38,7 @@ export const NAV_ITEMS = [
     icon: CalendarClock,
   },
   { path: "/sla", label: "SLA 策略", permission: "sla.view", icon: Timer },
+  { path: "/dictionary", label: "渠道与类别", permission: "dictionary.manage", icon: Tags },
 ] as const satisfies readonly NavItem[];
 
 /** Literal union of shell page paths — keeps the path→page map compile-time complete. */

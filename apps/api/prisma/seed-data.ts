@@ -1,6 +1,14 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
 import { COMPLAINT_LEVELS, DEFAULT_SLA_POLICIES, TicketStatus } from "@insuredesk/shared";
-import type { PrismaClient, Role, ShiftType, SlaPolicy, Ticket, User } from "@prisma/client";
+import type {
+  PrismaClient,
+  Role,
+  ShiftType,
+  SlaPolicy,
+  Ticket,
+  TicketCategory,
+  User,
+} from "@prisma/client";
 import type { Clock } from "../src/clock";
 import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service";
 import { assignTicket } from "../src/services/ticket-assign.service";
@@ -39,6 +47,27 @@ export const DEFAULT_SHIFT_TYPES = [
     displayOrder: 3,
   },
   { name: "休", color: "#9ca3af", segments: [], displayOrder: 99 },
+] as const;
+
+/** 首次初始化播种的客诉类别目录，displayOrder 按列表顺序 1..17。 */
+export const DEFAULT_TICKET_CATEGORIES = [
+  "监管投诉-引导性",
+  "监管投诉-非引导性",
+  "投诉-服务态度",
+  "投诉-未履行告知义务",
+  "投诉-信息泄露",
+  "投诉-保费收取问题",
+  "理赔咨询",
+  "理赔投诉",
+  "退保申请",
+  "退保投诉",
+  "保单变更",
+  "保单查询",
+  "续保咨询",
+  "核保咨询",
+  "产品咨询",
+  "回访问题",
+  "其他",
 ] as const;
 
 /**
@@ -139,6 +168,7 @@ export async function bootstrapSystemData(
   const factoryRoles = await createFactoryRoles(prisma);
   await seedSlaPolicies(prisma);
   await seedShiftTypes(prisma);
+  await seedTicketCategories(prisma);
 
   const existing = await prisma.user.findUnique({ where: { username: options.adminUsername } });
   if (existing) {
@@ -273,6 +303,26 @@ export async function seedShiftTypes(prisma: PrismaClient): Promise<ShiftType[]>
   });
 }
 
+/**
+ * First initialization only: seed the 17 factory categories while the catalog
+ * is empty. Once any category exists it belongs to the administrator — later
+ * deletions, renames, and 停用 must survive every startup.
+ */
+export async function seedTicketCategories(prisma: PrismaClient): Promise<TicketCategory[]> {
+  return prisma.$transaction(async (tx) => {
+    if ((await tx.ticketCategory.count()) === 0) {
+      await tx.ticketCategory.createMany({
+        data: DEFAULT_TICKET_CATEGORIES.map((name, index) => ({
+          name,
+          displayOrder: index + 1,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    return tx.ticketCategory.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] });
+  });
+}
+
 const HOUR_MS = 60 * 60 * 1000;
 
 const DEMO_TICKET_POLICY_NUMBERS = [
@@ -299,6 +349,8 @@ interface DemoTicketSpec {
   title: string;
   createdHoursAgo: number;
   input: TicketCreateData;
+  /** 目录项按名称引用，播种时解析为 categoryId；改名/删除后的库回退为未填写。 */
+  categoryName?: string;
   source?: "manual" | "feishu_form" | "community";
   creator?: keyof SeededUsersAndRoles["users"];
   assignee?: keyof SeededUsersAndRoles["users"];
@@ -363,7 +415,7 @@ function demoInput(
     nuclearBodyStatus: "待核实",
     hasContacted: false,
     contactId: null,
-    category: "投诉-服务态度",
+    categoryId: null,
     complaintLevel: "一般投诉",
     priority: null,
     ...overrides,
@@ -378,9 +430,9 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     input: demoInput("DEMO-POL-1001", {
       customerName: "陈晓雨",
       phone: "13810001001",
-      category: "投诉-保费收取问题",
       customerRequest: "客户认为本期扣费金额与页面展示不一致，要求核实扣费明细。",
     }),
+    categoryName: "投诉-保费收取问题",
   },
   {
     policyNumber: "DEMO-POL-1002",
@@ -390,11 +442,11 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "周明轩",
       phone: "13810001002",
       channel: "监管",
-      category: "监管投诉-引导性",
       complaintLevel: "高级投诉",
       priority: "high",
       customerRequest: "客户已向监管渠道反馈销售说明不清，要求主管介入处理。",
     }),
+    categoryName: "监管投诉-引导性",
   },
   {
     policyNumber: "DEMO-POL-1003",
@@ -404,11 +456,11 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "林思远",
       phone: "13810001003",
       channel: "支付",
-      category: "投诉-信息泄露",
       complaintLevel: "一般投诉",
       priority: "urgent",
       customerRequest: "客户称收到疑似营销电话，要求确认信息来源并给出书面回复。",
     }),
+    categoryName: "投诉-信息泄露",
   },
   {
     policyNumber: "DEMO-POL-1004",
@@ -419,9 +471,9 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "何佳怡",
       phone: "13810001004",
       channel: "保司",
-      category: "理赔咨询",
       customerRequest: "客户咨询住院理赔材料清单，要求电话回访说明。",
     }),
+    categoryName: "理赔咨询",
   },
   {
     policyNumber: "DEMO-POL-1005",
@@ -432,11 +484,11 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "吴承泽",
       phone: "13810001005",
       channel: "经纪",
-      category: "退保投诉",
       complaintLevel: "高级投诉",
       priority: "medium",
       customerRequest: "客户对退保金额有异议，要求重新测算现金价值。",
     }),
+    categoryName: "退保投诉",
   },
   {
     policyNumber: "DEMO-POL-1006",
@@ -450,13 +502,13 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     input: demoInput("DEMO-POL-1006", {
       customerName: "郑沐辰",
       phone: "13810001006",
-      category: "理赔投诉",
       complaintLevel: "加急投诉",
       priority: "high",
       hasContacted: true,
       contactId: "CALL-DEMO-1006",
       customerRequest: "客户认为理赔审核时间过长，要求说明当前节点并加急处理。",
     }),
+    categoryName: "理赔投诉",
     logs: [
       {
         action: "status_change",
@@ -493,12 +545,12 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "王亦凡",
       phone: "13810001007",
       channel: "支付",
-      category: "投诉-保费收取问题",
       complaintLevel: "高级投诉",
       priority: "urgent",
       hasContacted: true,
       customerRequest: "客户反馈重复扣费且未收到退款，要求当天给出处理方案。",
     }),
+    categoryName: "投诉-保费收取问题",
     logs: [
       {
         action: "status_change",
@@ -529,10 +581,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     input: demoInput("DEMO-POL-1008", {
       customerName: "赵一诺",
       phone: "13810001008",
-      category: "保单查询",
       customerRequest: "客户查询电子保单下载路径。",
       hasContacted: true,
     }),
+    categoryName: "保单查询",
     logs: [
       {
         action: "comment",
@@ -562,11 +614,11 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "孙若溪",
       phone: "13810001009",
       channel: "监管",
-      category: "监管投诉-非引导性",
       complaintLevel: "高级投诉",
       customerRequest: "客户对销售告知流程提出监管投诉，要求补偿方案。",
       hasContacted: true,
     }),
+    categoryName: "监管投诉-非引导性",
     logs: [
       {
         action: "comment",
@@ -595,12 +647,12 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "刘安宁",
       phone: "13810001010",
       channel: "监管",
-      category: "监管投诉-引导性",
       complaintLevel: "特急投诉",
       priority: "urgent",
       hasContacted: true,
       customerRequest: "监管转办特急投诉，客户要求立即联系并说明处理负责人。",
     }),
+    categoryName: "监管投诉-引导性",
     logs: [
       {
         action: "status_change",
@@ -627,10 +679,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "杨可欣",
       phone: "13810001011",
       channel: "经纪",
-      category: "产品咨询",
       customerRequest: "飞书表单转入：客户咨询保障责任和等待期。",
       userComplaintChannel: "飞书表单",
     }),
+    categoryName: "产品咨询",
   },
   {
     policyNumber: "DEMO-POL-1012",
@@ -642,10 +694,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "马梓涵",
       phone: "13810001012",
       channel: "保司",
-      category: "回访问题",
       customerRequest: "社区反馈：客户称回访时间不便，希望改约晚间联系。",
       userComplaintChannel: "社区",
     }),
+    categoryName: "回访问题",
   },
 ];
 
@@ -773,11 +825,21 @@ export async function seedDemoTickets(
   const now = new Date();
   const created: Ticket[] = [];
 
+  // Specs reference categories by name; an operator-modified catalog (renamed
+  // or deleted entries) degrades those references to 未填写 instead of failing.
+  const categoryIdByName = new Map(
+    (await prisma.ticketCategory.findMany({ where: { active: true } })).map((category) => [
+      category.name,
+      category.id,
+    ]),
+  );
+
   for (const spec of demoTicketSpecs) {
     const createdAt = hoursAgo(spec.createdHoursAgo, now);
     const input = {
       ...spec.input,
       feedbackTime: hoursAgo(spec.createdHoursAgo + 1, now).toISOString(),
+      categoryId: spec.categoryName ? (categoryIdByName.get(spec.categoryName) ?? null) : null,
     };
     const ticket =
       spec.source === undefined || spec.source === "manual"

@@ -12,19 +12,18 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type {
-  Channel,
-  ComplaintLevel,
-  NuclearBodyStatus,
-  Priority,
-  TicketCategory,
-} from "@insuredesk/shared";
+import type { Channel, ComplaintLevel, NuclearBodyStatus, Priority } from "@insuredesk/shared";
 import { format } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { TicketFormFields, type TicketFormValues, ticketFormSchema } from "./TicketFormFields";
+import {
+  type CurrentCategoryOption,
+  TicketFormFields,
+  type TicketFormValues,
+  ticketFormSchema,
+} from "./TicketFormFields";
 
 /**
  * 编辑工单 dialog: the same basic-info field set as creation — shared
@@ -53,7 +52,7 @@ export interface EditableTicket {
   nuclearBodyStatus: NuclearBodyStatus | null;
   hasContacted: boolean | null;
   contactId: string | null;
-  category: TicketCategory | null;
+  category: CurrentCategoryOption | null;
   complaintLevel: ComplaintLevel | null;
   priority: Priority | null;
 }
@@ -78,7 +77,7 @@ function formDefaults(ticket: EditableTicket): TicketFormValues {
     nuclearBodyStatus: ticket.nuclearBodyStatus ?? "",
     hasContacted: ticket.hasContacted,
     contactId: ticket.contactId ?? "",
-    category: ticket.category ?? "",
+    categoryId: ticket.category?.id ?? "",
     complaintLevel: ticket.complaintLevel ?? "",
     priority: ticket.priority ?? "",
   };
@@ -150,7 +149,7 @@ export function TicketEditDialog({
 
         <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col" noValidate>
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
-            <TicketFormFields form={form} />
+            <TicketFormFields form={form} currentCategory={ticket.category} />
           </div>
 
           <div className="flex flex-col gap-3 border-t px-6 py-4">

@@ -6,6 +6,7 @@ import {
   seedFactoryRolesAndDemoUsers,
   seedShiftTypes,
   seedSlaPolicies,
+  seedTicketCategories,
 } from "./seed-data";
 
 if (existsSync(".env")) {
@@ -46,6 +47,9 @@ async function main() {
   for (const shift of shifts) {
     console.log(`✓ ShiftType: ${shift.name}`);
   }
+
+  const categories = await seedTicketCategories(prisma);
+  console.log(`✓ Ticket categories: ${categories.length}`);
 
   const tickets = await seedDemoTickets(prisma, { roles, users });
   if (tickets.replacedCount > 0) {

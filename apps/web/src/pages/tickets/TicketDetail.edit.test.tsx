@@ -82,7 +82,7 @@ function detailPayload(overrides: Record<string, unknown> = {}) {
     nuclearBodyStatus: "待核实",
     hasContacted: false,
     contactId: null,
-    category: "理赔投诉",
+    category: { id: "cat-claims", name: "理赔投诉", active: true },
     complaintLevel: "一般投诉",
     priority: null,
     followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
@@ -139,7 +139,7 @@ function respond(path: string, input: unknown): unknown {
   if (path === "ticket.list") {
     return { items: [], total: 0, page: 1, pageSize: 20 };
   }
-  if (path === "ticket.assigneeOptions") {
+  if (path === "ticket.assigneeOptions" || path === "ticketCategory.options") {
     return [];
   }
   throw new Error(`Unexpected tRPC path: ${path}`);
@@ -243,6 +243,29 @@ describe("editing from the dialog", () => {
     // Fields, SLA derivations and the timeline all change server-side → refetch
     await waitFor(() => {
       expect(calls.filter((call) => call.path === "ticket.detail").length).toBeGreaterThan(1);
+    });
+  });
+
+  it("keeps a since-停用 category selectable as the labelled current value (保持原值)", async () => {
+    detail = detailPayload({ category: { id: "cat-claims", name: "理赔投诉", active: false } });
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+
+    // The options feed lists active categories only; the ticket's own disabled
+    // value rides along labelled, so an unrelated edit keeps it untouched.
+    const trigger = await screen.findByRole("combobox", { name: /客诉类别/ });
+    expect(trigger).toHaveTextContent("理赔投诉（已停用）");
+
+    fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === "ticket.edit")).toBe(true);
+    });
+    expect(calls.find((call) => call.path === "ticket.edit")?.input).toMatchObject({
+      categoryId: "cat-claims",
+      customerName: "王大明",
     });
   });
 

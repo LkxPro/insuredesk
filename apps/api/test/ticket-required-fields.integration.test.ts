@@ -221,6 +221,34 @@ describe("role required ticket fields (Testcontainers)", () => {
       expect(detail.hasContacted).toBe(false);
     });
 
+    it("enforces categoryId as a required field against the catalog shape", async () => {
+      await prisma.role.update({
+        where: { id: roleWithRequired.id },
+        data: {
+          requiredTicketFields: ["customerName", "phone", "channel", "hasContacted", "categoryId"],
+        },
+      });
+      const category = await prisma.ticketCategory.create({
+        data: { name: "必填用类别", displayOrder: 1 },
+      });
+
+      await expect(requiredUser().ticket.create(validInput)).rejects.toThrow(
+        /以下字段为必填项：分类/,
+      );
+
+      const result = await requiredUser().ticket.create({
+        ...validInput,
+        categoryId: category.id,
+      });
+      const detail = await requiredUser().ticket.detail({ id: result.id });
+      expect(detail.category?.name).toBe("必填用类别");
+
+      await prisma.role.update({
+        where: { id: roleWithRequired.id },
+        data: { requiredTicketFields: ["customerName", "phone", "channel", "hasContacted"] },
+      });
+    });
+
     it("allows ticket creation when role has empty requiredTicketFields", async () => {
       const input = {
         complaintLevel: "一般投诉",
@@ -281,7 +309,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         nuclearBodyStatus: null,
         hasContacted: null,
         contactId: null,
-        category: null,
+        categoryId: null,
         complaintLevel: null,
         priority: null,
       };

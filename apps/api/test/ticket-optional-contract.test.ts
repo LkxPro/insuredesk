@@ -26,7 +26,7 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
       nuclearBodyStatus: null,
       hasContacted: null,
       contactId: null,
-      category: null,
+      categoryId: null,
       complaintLevel: null,
       priority: null,
     });
@@ -39,7 +39,7 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
       project: "   ",
       customerName: "",
       nuclearBodyStatus: "",
-      category: "",
+      categoryId: "",
       complaintLevel: "",
       priority: "",
     });
@@ -48,7 +48,7 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
     expect(data.project).toBeNull();
     expect(data.customerName).toBeNull();
     expect(data.nuclearBodyStatus).toBeNull();
-    expect(data.category).toBeNull();
+    expect(data.categoryId).toBeNull();
     expect(data.complaintLevel).toBeNull();
     expect(data.priority).toBeNull();
   });

@@ -85,6 +85,13 @@ describe("bootstrapSystemData (Testcontainers)", () => {
       { name: "休", color: "#9ca3af", segments: [], displayOrder: 99 },
     ]);
 
+    const categories = await prisma.ticketCategory.findMany({
+      orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+    });
+    expect(categories).toHaveLength(17);
+    expect(categories[0]).toMatchObject({ name: "监管投诉-引导性", displayOrder: 1, active: true });
+    expect(categories[16]).toMatchObject({ name: "其他", displayOrder: 17, active: true });
+
     const admin = await prisma.user.findUnique({
       where: { username: "sysadmin" },
       include: { role: true },

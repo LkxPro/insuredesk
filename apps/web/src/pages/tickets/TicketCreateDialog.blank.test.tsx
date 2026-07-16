@@ -122,7 +122,7 @@ function respond(path: string): unknown {
   if (path === "ticket.detail") {
     return blankDetailPayload();
   }
-  if (path === "ticket.assigneeOptions") {
+  if (path === "ticket.assigneeOptions" || path === "ticketCategory.options") {
     return [];
   }
   throw new Error(`Unexpected tRPC path: ${path}`);
@@ -200,7 +200,7 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       customerRequest: null,
       nuclearBodyStatus: null,
       hasContacted: null,
-      category: null,
+      categoryId: null,
       complaintLevel: null,
       priority: null,
     });

@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
-import { type TicketServiceDeps, computeSlaStamp } from "./ticket.service";
+import { type TicketServiceDeps, computeSlaStamp, resolveNewCategory } from "./ticket.service";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结
@@ -50,7 +50,7 @@ const FIELD_LABELS: Record<EditableFieldKey, string> = {
   nuclearBodyStatus: "保司侧是否核身",
   hasContacted: "客户曾进线",
   contactId: "进线ID",
-  category: "客诉类别",
+  categoryId: "客诉类别",
   complaintLevel: "投诉等级",
   priority: "优先级",
 };
@@ -105,6 +105,9 @@ export async function editTicket(
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
       where: { id: ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
+      // The category name snapshot for the remark: the value as it reads NOW,
+      // before this edit — the log keeps the literal wording of the moment
+      include: { category: { select: { name: true } } },
     });
     if (!ticket) {
       throw new TicketNotFoundError();
@@ -117,12 +120,23 @@ export async function editTicket(
       return { id: ticket.id, workOrderNumber: ticket.workOrderNumber, changedFields };
     }
 
+    // Only a NEWLY chosen category must exist and be active — keeping the
+    // current value (even a since-停用 one) never re-validates, so a ticket
+    // holding a disabled category survives unrelated edits untouched.
+    const nextCategory = changedFields.includes("categoryId")
+      ? await resolveNewCategory(tx, next.categoryId)
+      : null;
+    const categoryNames: Record<"from" | "to", string | null> = {
+      from: ticket.category?.name ?? null,
+      to: changedFields.includes("categoryId") ? (nextCategory?.name ?? null) : null,
+    };
+
     // 改 complaintLevel = 改 SLA: everything the level stamped at creation
     // re-derives from the new level's policy, off the unchanged createdAt —
     // the SLA clock stays anchored to the ORIGINAL 录入时刻 even when the
     // level is only supplied by a later edit. Clearing the level
     // clears all three stamps (未定级 = no SLA clock).
-    let slaFields: Prisma.TicketUpdateInput = {};
+    let slaFields: Prisma.TicketUncheckedUpdateInput = {};
     if (changedFields.includes("complaintLevel")) {
       slaFields = await computeSlaStamp(tx, next.complaintLevel, ticket.createdAt);
     }
@@ -132,7 +146,10 @@ export async function editTicket(
       data: { ...next, ...slaFields },
     });
 
-    // 多字段改动记在 remark 里，from/to 留空
+    // 多字段改动记在 remark 里，from/to 留空。类别按当时名称留痕（快照），
+    // 不随后续改名回写。
+    const sideValue = (key: EditableFieldKey, side: "from" | "to") =>
+      key === "categoryId" ? categoryNames[side] : side === "from" ? ticket[key] : next[key];
     await tx.processLog.create({
       data: {
         ticketId: ticket.id,
@@ -142,7 +159,7 @@ export async function editTicket(
         remark: changedFields
           .map(
             (key) =>
-              `${FIELD_LABELS[key]}: ${formatValue(key, ticket[key])}→${formatValue(key, next[key])}`,
+              `${FIELD_LABELS[key]}: ${formatValue(key, sideValue(key, "from"))}→${formatValue(key, sideValue(key, "to"))}`,
           )
           .join("；"),
         at: now,

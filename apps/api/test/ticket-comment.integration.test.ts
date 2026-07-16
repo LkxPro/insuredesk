@@ -104,7 +104,6 @@ describe("ticket follow-up comments (Testcontainers)", () => {
     customerRequest: "对退保金额有异议，要求重新核算",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    category: "退保投诉",
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 

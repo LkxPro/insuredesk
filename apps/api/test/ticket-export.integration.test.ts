@@ -154,7 +154,6 @@ describe("ticket export (Testcontainers)", () => {
     customerRequest: "对保费收取金额有异议，要求核实并回复",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    category: "投诉-保费收取问题",
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 

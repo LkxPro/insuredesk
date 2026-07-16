@@ -75,29 +75,6 @@ export const CHANNELS = ["保司", "经纪", "支付", "监管"] as const;
 export const channelSchema = z.enum(CHANNELS);
 export type Channel = (typeof CHANNELS)[number];
 
-// Complaint categories — the closed set of 17.
-export const TICKET_CATEGORIES = [
-  "监管投诉-引导性",
-  "监管投诉-非引导性",
-  "投诉-服务态度",
-  "投诉-未履行告知义务",
-  "投诉-信息泄露",
-  "投诉-保费收取问题",
-  "理赔咨询",
-  "理赔投诉",
-  "退保申请",
-  "退保投诉",
-  "保单变更",
-  "保单查询",
-  "续保咨询",
-  "核保咨询",
-  "产品咨询",
-  "回访问题",
-  "其他",
-] as const;
-export const ticketCategorySchema = z.enum(TICKET_CATEGORIES);
-export type TicketCategory = (typeof TICKET_CATEGORIES)[number];
-
 // Complaint levels — the ONLY SLA driver. Each level has exactly one
 // SLAPolicy row keyed by these literals.
 export const COMPLAINT_LEVELS = ["一般投诉", "高级投诉", "加急投诉", "特急投诉"] as const;

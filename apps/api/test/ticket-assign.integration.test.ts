@@ -112,7 +112,6 @@ describe("ticket assignment (Testcontainers)", () => {
     customerRequest: "对理赔进度有异议，要求尽快处理",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    category: "理赔投诉",
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 

@@ -29,6 +29,7 @@ import { TicketNotResolvableError, resolveTicket } from "../services/ticket-reso
 import {
   RequiredFieldsMissingError,
   SlaPolicyNotConfiguredError,
+  TicketCategoryUnavailableError,
   createTicket,
   getTicketDetail,
   listTickets,
@@ -83,6 +84,9 @@ export const ticketRouter = router({
             message: error.message,
             cause: error,
           });
+        }
+        if (error instanceof TicketCategoryUnavailableError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         throw error;
       }
@@ -194,6 +198,9 @@ export const ticketRouter = router({
             message: error.message,
             cause: error,
           });
+        }
+        if (error instanceof TicketCategoryUnavailableError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         throw error;
       }

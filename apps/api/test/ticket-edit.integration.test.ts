@@ -109,7 +109,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     customerRequest: "对理赔金额有异议，要求复核",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    category: "理赔投诉",
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 
