@@ -29,6 +29,24 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((value) => (value ? value : null));
 
+/**
+ * 建单自由文本字段的长度上限，建单/编辑 schema 与批量导入逐行校验共用 ——
+ * 导入的每列长度检查引用这里，不另抄一份。
+ */
+export const TICKET_TEXT_LIMITS = {
+  project: 100,
+  brokerageEntity: 100,
+  paymentChannel: 100,
+  internalOrderNumber: 200,
+  policyNumber: 100,
+  userComplaintChannel: 100,
+  customerName: 100,
+  phone: 50,
+  contactPhone: 200,
+  customerRequest: 2000,
+  contactId: 200,
+} as const;
+
 /** Optional enum select: "" (nothing chosen) and absence both become NULL. */
 const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
   schema
@@ -68,23 +86,23 @@ export const ticketCreateInputSchema = z.object({
   feedbackTime: optionalEnum(z.string().datetime({ offset: true, message: "反馈时间格式不正确" })),
   /** 反馈渠道目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
   channelId: optionalText(100),
-  project: optionalText(100),
-  brokerageEntity: optionalText(100),
-  paymentChannel: optionalText(100),
-  internalOrderNumber: optionalText(200),
-  policyNumber: optionalText(100),
-  userComplaintChannel: optionalText(100),
-  customerName: optionalText(100),
-  phone: optionalText(50),
-  contactPhone: optionalText(200),
-  customerRequest: optionalText(2000),
+  project: optionalText(TICKET_TEXT_LIMITS.project),
+  brokerageEntity: optionalText(TICKET_TEXT_LIMITS.brokerageEntity),
+  paymentChannel: optionalText(TICKET_TEXT_LIMITS.paymentChannel),
+  internalOrderNumber: optionalText(TICKET_TEXT_LIMITS.internalOrderNumber),
+  policyNumber: optionalText(TICKET_TEXT_LIMITS.policyNumber),
+  userComplaintChannel: optionalText(TICKET_TEXT_LIMITS.userComplaintChannel),
+  customerName: optionalText(TICKET_TEXT_LIMITS.customerName),
+  phone: optionalText(TICKET_TEXT_LIMITS.phone),
+  contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
+  customerRequest: optionalText(TICKET_TEXT_LIMITS.customerRequest),
   nuclearBodyStatus: optionalEnum(nuclearBodyStatusSchema),
   /** 三态：true/false/未知（null）。 */
   hasContacted: z
     .boolean()
     .nullish()
     .transform((value) => value ?? null),
-  contactId: optionalText(200),
+  contactId: optionalText(TICKET_TEXT_LIMITS.contactId),
   /** 客诉类别目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
   categoryId: optionalText(100),
   complaintLevel: optionalEnum(complaintLevelSchema),
@@ -138,6 +156,68 @@ export type TicketAssignInput = z.infer<typeof ticketAssignInputSchema>;
 
 /** 批量分配单次上限（即列表单页上限）；列表多选与 API 校验共用这一个数。 */
 export const BATCH_ASSIGN_LIMIT = 100;
+
+/** 批量导入单次行数上限（不含表头）；模板填写说明与上传校验共用这一个数。 */
+export const TICKET_IMPORT_ROW_LIMIT = 2000;
+
+/** 批量导入文件大小上限；前端提示与服务端 multipart 限制共用这一个数。 */
+export const TICKET_IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 批量导入 REST 响应契约（/api/tickets/import）。全或无：任一行有错则整批
+ * 零入库，携带逐行错误清单；行号为文件内 Excel 行号（表头是第 1 行），
+ * 文件级错误（表头不符、超行数上限等）row/column 为 null。
+ */
+export interface TicketImportRowError {
+  row: number | null;
+  /** 模板中文列名；不属于某一列的错误为 null。 */
+  column: string | null;
+  message: string;
+}
+
+export interface TicketImportSuccess {
+  imported: number;
+}
+
+export interface TicketImportFailure {
+  error: string;
+  rowErrors: TicketImportRowError[];
+}
+
+/**
+ * 导入历史批次状态，读取时派生、从不存储：
+ * - revocable 可撤销：批内每单都只有 create 处理记录且未被单独删除
+ * - locked 已锁定：任一单已有处理（分配/跟进/编辑/完结/上传）或已被单独
+ *   删除 —— 干净判定本身即撤销窗口，无时间窗
+ * - revoked 已撤销：整批已软删除，终态（本期无恢复，不可再次撤销）
+ */
+export const TICKET_IMPORT_BATCH_STATUSES = ["revocable", "locked", "revoked"] as const;
+export const ticketImportBatchStatusSchema = z.enum(TICKET_IMPORT_BATCH_STATUSES);
+export type TicketImportBatchStatus = (typeof TICKET_IMPORT_BATCH_STATUSES)[number];
+
+export const TICKET_IMPORT_BATCH_STATUS_LABELS: Record<TicketImportBatchStatus, string> = {
+  revocable: "可撤销",
+  locked: "已锁定",
+  revoked: "已撤销",
+};
+
+/** 导入历史 list contract; scope is server-side (own batches unless ticket.view_all). */
+export const ticketImportBatchListInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(50),
+});
+export type TicketImportBatchListInput = z.input<typeof ticketImportBatchListInputSchema>;
+export type TicketImportBatchListQuery = z.output<typeof ticketImportBatchListInputSchema>;
+
+/**
+ * 整批撤销 contract: all-or-nothing soft delete of one clean batch — the
+ * server re-checks cleanliness inside the same transaction and rejects the
+ * whole batch if any ticket has been processed or individually deleted.
+ */
+export const ticketImportRevokeInputSchema = z.object({
+  batchId: z.string().min(1),
+});
+export type TicketImportRevokeInput = z.infer<typeof ticketImportRevokeInputSchema>;
 
 const ticketIdsSchema = z
   .array(z.string().min(1))

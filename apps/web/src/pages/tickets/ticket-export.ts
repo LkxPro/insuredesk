@@ -1,5 +1,6 @@
 import type { TicketExportFormat, TicketListQuery } from "@insuredesk/shared";
 import { format as formatDate } from "date-fns";
+import { downloadFile } from "@/lib/download";
 
 /**
  * 导出工单 client: turns the list page's current query into the
@@ -32,42 +33,12 @@ export function buildTicketExportUrl(
   return `/api/tickets/export?${params.toString()}`;
 }
 
-/** Server rejections carry `{ error }` JSON; anything else gets a generic line. */
-async function extractError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: string };
-    if (body.error) {
-      return body.error;
-    }
-  } catch {
-    // non-JSON body (proxy error page, say) — fall through
-  }
-  return `导出失败（${response.status}）`;
-}
-
-/**
- * Fetch the export and hand it to the browser as a file download. Session
- * cookies ride along automatically (same-origin). Throws with a displayable
- * message on any non-2xx, so the caller owns the toast.
- */
 export async function downloadTicketExport(
   query: TicketListQuery,
   format: TicketExportFormat,
 ): Promise<void> {
-  const response = await fetch(buildTicketExportUrl(query, format));
-  if (!response.ok) {
-    throw new Error(await extractError(response));
-  }
-
-  const url = URL.createObjectURL(await response.blob());
-  try {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `工单导出-${formatDate(new Date(), "yyyyMMdd-HHmm")}.${format}`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  await downloadFile(
+    buildTicketExportUrl(query, format),
+    `工单导出-${formatDate(new Date(), "yyyyMMdd-HHmm")}.${format}`,
+  );
 }

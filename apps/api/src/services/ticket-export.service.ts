@@ -16,6 +16,7 @@ import {
   buildTicketListWhere,
   type TicketServiceDeps,
 } from "./ticket.service";
+import { resolveTimeZone } from "./time-zone";
 
 /**
  * 导出工单: the viewer's *filtered list*, as a file. Reuses the list's
@@ -45,19 +46,8 @@ type TicketExportRow = Prisma.TicketGetPayload<{ include: typeof exportInclude }
 
 /** "yyyy-MM-dd HH:mm" in the requested zone; empty cell for null dates. */
 function makeDateFormatter(timeZone: string | undefined) {
-  // An unknown zone (hand-edited query string) degrades to UTC instead of
-  // failing the download — the dates stay correct instants either way.
-  let resolvedZone = "UTC";
-  if (timeZone) {
-    try {
-      new Intl.DateTimeFormat("en-US", { timeZone });
-      resolvedZone = timeZone;
-    } catch {
-      // keep UTC
-    }
-  }
   const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: resolvedZone,
+    timeZone: resolveTimeZone(timeZone),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

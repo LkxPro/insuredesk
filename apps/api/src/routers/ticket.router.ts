@@ -6,6 +6,8 @@ import {
   ticketCreateInputSchema,
   ticketDeleteInputSchema,
   ticketEditInputSchema,
+  ticketImportBatchListInputSchema,
+  ticketImportRevokeInputSchema,
   ticketListInputSchema,
   ticketResolveInputSchema,
 } from "@insuredesk/shared";
@@ -34,6 +36,13 @@ import { TicketCategoryUnavailableError } from "../services/ticket-category.serv
 import { addTicketComment, TicketNotProcessableError } from "../services/ticket-comment.service";
 import { deleteTicket } from "../services/ticket-delete.service";
 import { editTicket } from "../services/ticket-edit.service";
+import {
+  ImportBatchAlreadyRevokedError,
+  ImportBatchLockedError,
+  ImportBatchNotFoundError,
+  listImportBatches,
+  revokeImportBatch,
+} from "../services/ticket-import-batch.service";
 import { resolveTicket, TicketNotResolvableError } from "../services/ticket-resolve.service";
 import { requireAnyPermission, requirePermission, router } from "../trpc";
 
@@ -225,6 +234,44 @@ export const ticketRouter = router({
       } catch (error) {
         if (error instanceof TicketNotFoundError) {
           throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        throw error;
+      }
+    }),
+
+  /**
+   * 导入历史: the viewer's batches, or every batch with ticket.view_all.
+   * Guarded by ticket.import — the history lives inside the import dialog,
+   * behind the same entry point as uploading.
+   */
+  importBatches: requirePermission("ticket.import")
+    .input(ticketImportBatchListInputSchema)
+    .query(({ ctx, input }) => listImportBatches(deps, ctx.user, input)),
+
+  /**
+   * 整批撤销导入: all-or-nothing soft delete of one clean batch — dangerous,
+   * double-confirmed in the UI, guarded by ticket.delete like single deletes.
+   * A batch with any processed ticket rejects with the count; a revoked batch
+   * is final.
+   */
+  revokeImportBatch: requirePermission("ticket.delete")
+    .input(ticketImportRevokeInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await revokeImportBatch(deps, ctx.user, input);
+      } catch (error) {
+        if (error instanceof ImportBatchNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        if (
+          error instanceof ImportBatchAlreadyRevokedError ||
+          error instanceof ImportBatchLockedError
+        ) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error.message,
+            cause: error,
+          });
         }
         throw error;
       }

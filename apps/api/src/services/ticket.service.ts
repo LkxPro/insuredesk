@@ -3,6 +3,7 @@ import {
   deriveDisplayStatus,
   formatFirstResponseRequirement,
   formatFollowUpFrequency,
+  isCreatorBackedSource,
   nuclearBodyStatusSchema,
   prioritySchema,
   processLogActionSchema,
@@ -389,9 +390,11 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     feedbackTime: ticket.feedbackTime?.toISOString() ?? null,
     source,
     // 由谁创建 is derived at read time, never snapshotted onto the ticket:
-    // internal tickets show the creator's *current* name, external ones the
-    // source label.
-    createdBy: source === "manual" ? (ticket.creator?.name ?? null) : TICKET_SOURCE_LABELS[source],
+    // creator-backed tickets show the creator's *current* name, external ones
+    // the source label.
+    createdBy: isCreatorBackedSource(source)
+      ? (ticket.creator?.name ?? null)
+      : TICKET_SOURCE_LABELS[source],
     channel: ticket.channel,
     project: ticket.project,
     brokerageEntity: ticket.brokerageEntity,

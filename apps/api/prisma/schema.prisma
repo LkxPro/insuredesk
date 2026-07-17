@@ -39,8 +39,13 @@ model User {
 
   /// Tickets currently assigned to this user (tickets.assigneeId)
   assignedTickets Ticket[] @relation("TicketAssignee")
-  /// Tickets this user created manually (tickets.creatorId, source=manual only)
+  /// Tickets this user created (tickets.creatorId, creator-backed sources:
+  /// manual 建单人 / file_import 导入者)
   createdTickets  Ticket[] @relation("TicketCreator")
+  /// Import batches this user uploaded (ticket_import_batches.importerId)
+  importBatches   TicketImportBatch[] @relation("TicketImportBatchImporter")
+  /// Import batches this user revoked (ticket_import_batches.revokedById)
+  revokedImportBatches TicketImportBatch[] @relation("TicketImportBatchRevoker")
   /// 轨 1 inbox notifications addressed to this user (issue #25)
   notifications   AppNotification[]
   schedules       Schedule[]
@@ -95,7 +100,8 @@ model Ticket {
   /// 客户实际反馈时间; null = 未填写 (issue #43)
   feedbackTime DateTime? @db.Timestamptz
 
-  /// Entry method + "who created it" discriminator: feishu_form/manual/community
+  /// Entry method + "who created it" discriminator:
+  /// feishu_form/manual/community/file_import
   source  String
   /// 反馈渠道目录引用; null = 未填写. Referenced rows can only be 停用, never
   /// deleted — Restrict is the DB backstop behind the service's refusal.
@@ -155,14 +161,20 @@ model Ticket {
   /// Soft delete: non-null rows are excluded from default lists and statistics
   deletedAt        DateTime? @db.Timestamptz
 
-  /// Creator (FK→User), set ONLY when source=manual; external sources leave it
-  /// null and "由谁创建" derives from source at read time (PRD §3.1.8)
+  /// Creator (FK→User), set for creator-backed sources (manual 建单人 /
+  /// file_import 导入者); external sources leave it null and "由谁创建"
+  /// derives from source at read time (PRD §3.1.8)
   creatorId String?
 
-  assignee    User?           @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  creator     User?           @relation("TicketCreator", fields: [creatorId], references: [id])
-  category    TicketCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  channel     Channel?        @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  /// 所属导入批次; null for every non-file_import ticket. The unit of 整批
+  /// 撤销 — revoking a batch soft-deletes every ticket carrying its id.
+  importBatchId String?
+
+  assignee    User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  creator     User?              @relation("TicketCreator", fields: [creatorId], references: [id])
+  category    TicketCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  channel     Channel?           @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  importBatch TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
   processLogs ProcessLog[]
 
   @@index([assigneeId])
@@ -176,7 +188,32 @@ model Ticket {
   /// both range over dueAt (ADR 0001)
   @@index([dueAt])
   @@index([deletedAt])
+  @@index([importBatchId])
   @@map("tickets")
+}
+
+/// One row per 批量导入上传 that reached the database — who imported, when,
+/// how many rows, from which file. Doubles as the 撤销 unit: a clean batch
+/// (no ticket processed or individually deleted) can be revoked whole —
+/// every ticket soft-deleted and revokedAt/revokedById stamped here.
+model TicketImportBatch {
+  id         String   @id @default(cuid())
+  importerId String
+  importedAt DateTime @db.Timestamptz
+  rowCount   Int
+  /// Uploaded filename as the client sent it, for human recognition only.
+  filename   String
+  /// 整批撤销时刻; null = 未撤销. Set once — a revoked batch is final (no
+  /// restore this phase) and can never be revoked again.
+  revokedAt   DateTime? @db.Timestamptz
+  revokedById String?
+
+  importer  User     @relation("TicketImportBatchImporter", fields: [importerId], references: [id])
+  revokedBy User?    @relation("TicketImportBatchRevoker", fields: [revokedById], references: [id])
+  tickets   Ticket[]
+
+  @@index([importerId])
+  @@map("ticket_import_batches")
 }
 
 /// Audit log of every ticket operation; renders as the detail-page timeline
