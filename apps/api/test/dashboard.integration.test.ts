@@ -191,7 +191,6 @@ describe("dashboard stats (Testcontainers)", () => {
           assigneeId: seeded.users.cs1.id,
           dueAt: at(10),
           completionTime: at(-1),
-          completionStatus: "正常完结",
         },
       );
       await makeTicket(
@@ -254,7 +253,6 @@ describe("dashboard stats (Testcontainers)", () => {
           assigneeId: seeded.users.cs1.id,
           dueAt: new Date(now.getTime() - 10 * HOUR_MS),
           completionTime: new Date(now.getTime() - HOUR_MS),
-          completionStatus: "已协商解决",
         },
       );
 
@@ -280,7 +278,6 @@ describe("dashboard stats (Testcontainers)", () => {
           createdAt: at(-50),
           dueAt: at(-20),
           completionTime: at(-1),
-          completionStatus: "已协商解决",
         },
       );
       // B: 在途超时
@@ -297,7 +294,6 @@ describe("dashboard stats (Testcontainers)", () => {
           createdAt: at(-10),
           dueAt: at(38),
           completionTime: at(-2),
-          completionStatus: "正常完结",
         },
       );
 
@@ -335,7 +331,6 @@ describe("dashboard stats (Testcontainers)", () => {
           assigneeId: seeded.users.cs1.id,
           createdAt: new Date(now.getTime() - 500 * HOUR_MS),
           completionTime: new Date(now.getTime() - HOUR_MS),
-          completionStatus: "已达成一致",
         },
       );
 
@@ -366,7 +361,6 @@ describe("dashboard stats (Testcontainers)", () => {
           assigneeId: seeded.users.cs1.id,
           dueAt: new Date(now.getTime() - 10 * HOUR_MS),
           completionTime: new Date(now.getTime() - HOUR_MS),
-          completionStatus: "正常完结",
           deletedAt: now,
         },
       );
@@ -462,7 +456,6 @@ describe("dashboard stats (Testcontainers)", () => {
               status: "completed",
               dueAt: new Date(now + 40 * HOUR_MS),
               completionTime: new Date(now - i * HOUR_MS),
-              completionStatus: "正常完结",
             }),
           );
         }
@@ -521,7 +514,6 @@ describe("dashboard stats (Testcontainers)", () => {
           status: "completed",
           assigneeId: seeded.users.cs1.id,
           completionTime: new Date(now.getTime() - HOUR_MS),
-          completionStatus: "正常完结",
         },
       );
       await makeTicket(
@@ -605,7 +597,6 @@ describe("dashboard stats (Testcontainers)", () => {
             createdAt: new Date(now - (i % 96) * HOUR_MS),
             dueAt: i % 11 === 0 ? null : new Date(now + ((i % 96) - 48) * HOUR_MS),
             completionTime: completed ? new Date(now - (i % 24) * HOUR_MS) : null,
-            completionStatus: completed ? "正常完结" : null,
           });
         }),
       });

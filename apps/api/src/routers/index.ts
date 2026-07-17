@@ -2,6 +2,7 @@ import { healthStatusSchema } from "@insuredesk/shared";
 import { publicProcedure, router } from "../trpc";
 import { authRouter } from "./auth.router";
 import { channelRouter } from "./channel.router";
+import { completionStatusRouter } from "./completion-status.router";
 import { dashboardRouter } from "./dashboard.router";
 import { demoRouter } from "./demo.router";
 import { notificationRouter } from "./notification.router";
@@ -35,11 +36,14 @@ export const appRouter = router({
 
   ticket: ticketRouter,
 
-  /** 渠道与类别目录 - 客诉类别的增删改名/排序/停用，限 dictionary.manage */
+  /** 字典目录 - 客诉类别的增删改名/排序/停用，限 dictionary.manage */
   ticketCategory: ticketCategoryRouter,
 
-  /** 渠道与类别目录 - 反馈渠道，同上 */
+  /** 字典目录 - 反馈渠道，同上 */
   channel: channelRouter,
+
+  /** 字典目录 - 完结状态，同上 */
+  completionStatus: completionStatusRouter,
 
   /**
    * The 30s poll — 轨 1 收件箱 + 轨 2 我的待办 in one request

@@ -97,7 +97,7 @@ function fakeTrpcFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Re
     if (path === "notification.list") {
       return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
     }
-    if (path === "channel.filterOptions") {
+    if (path === "channel.filterOptions" || path === "completionStatus.filterOptions") {
       return { result: { data: [] } };
     }
     if (path === "ticket.importBatches") {

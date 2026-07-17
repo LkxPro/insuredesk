@@ -1,5 +1,9 @@
 import type { AppRouter } from "@insuredesk/api";
-import { channelCreateInputSchema, ticketCategoryCreateInputSchema } from "@insuredesk/shared";
+import {
+  channelCreateInputSchema,
+  completionStatusCreateInputSchema,
+  ticketCategoryCreateInputSchema,
+} from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
 import { AlertCircle, Ban, CircleCheck, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -32,14 +36,15 @@ import {
 import { trpc } from "@/lib/trpc";
 
 /**
- * 渠道与类别: the catalog management page behind dictionary.manage. 反馈渠道
- * and 客诉类别 render as sibling sections with the same lifecycle. 建单/编辑
- * dropdowns, ticket detail, and exports read the catalogs live, so every
- * change here shows through immediately.
+ * 字典管理: the catalog management page behind dictionary.manage. 反馈渠道,
+ * 客诉类别 and 完结状态 render as sibling sections with the same lifecycle.
+ * 建单/编辑/完结 dropdowns, ticket detail, and exports read the catalogs
+ * live, so every change here shows through immediately.
  */
 
 type CategoryRow = inferRouterOutputs<AppRouter>["ticketCategory"]["list"][number];
 type ChannelRow = inferRouterOutputs<AppRouter>["channel"]["list"][number];
+type CompletionStatusRow = inferRouterOutputs<AppRouter>["completionStatus"]["list"][number];
 
 type Draft = { name: string; displayOrder: string };
 
@@ -695,17 +700,340 @@ function ChannelSection() {
   );
 }
 
+function CompletionStatusDialog({
+  open,
+  status,
+  onOpenChange,
+}: {
+  open: boolean;
+  status: CompletionStatusRow | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const utils = trpc.useUtils();
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    setDraft(
+      status ? { name: status.name, displayOrder: String(status.displayOrder) } : EMPTY_DRAFT,
+    );
+    setErrors({});
+  }, [open, status]);
+
+  const closeAfterSave = () => {
+    toast.success(status ? "完结状态已更新" : "完结状态已创建");
+    utils.completionStatus.invalidate();
+    onOpenChange(false);
+  };
+  const create = trpc.completionStatus.create.useMutation({ onSuccess: closeAfterSave });
+  const update = trpc.completionStatus.update.useMutation({ onSuccess: closeAfterSave });
+  const pending = create.isPending || update.isPending;
+  const mutationError = create.error ?? update.error;
+
+  function save() {
+    const parsed = completionStatusCreateInputSchema.safeParse({
+      name: draft.name,
+      displayOrder: Number(draft.displayOrder),
+    });
+    if (!parsed.success) {
+      const nextErrors: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        const key = issue.path.join(".");
+        if (!(key in nextErrors)) nextErrors[key] = issue.message;
+      }
+      setErrors(nextErrors);
+      return;
+    }
+    setErrors({});
+    if (status) {
+      update.mutate({ id: status.id, ...parsed.data });
+    } else {
+      create.mutate(parsed.data);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{status ? "编辑完结状态" : "新增完结状态"}</DialogTitle>
+          <DialogDescription>
+            改名对存量工单全局生效；调整顺序即调整完结弹窗下拉的呈现顺序。
+          </DialogDescription>
+        </DialogHeader>
+
+        <FieldGroup>
+          <Field data-invalid={Boolean(errors.name)}>
+            <FieldLabel htmlFor="completion-status-name">状态名称</FieldLabel>
+            <Input
+              id="completion-status-name"
+              value={draft.name}
+              aria-invalid={Boolean(errors.name)}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, name: event.target.value }))
+              }
+            />
+            <FieldError>{errors.name}</FieldError>
+          </Field>
+
+          <Field data-invalid={Boolean(errors.displayOrder)}>
+            <FieldLabel htmlFor="completion-status-order">显示顺序</FieldLabel>
+            <Input
+              id="completion-status-order"
+              type="number"
+              value={draft.displayOrder}
+              aria-invalid={Boolean(errors.displayOrder)}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, displayOrder: event.target.value }))
+              }
+            />
+            <FieldDescription>数字越小越靠前。</FieldDescription>
+            <FieldError>{errors.displayOrder}</FieldError>
+          </Field>
+        </FieldGroup>
+
+        {mutationError && (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>保存失败</AlertTitle>
+            <AlertDescription>{mutationError.message}</AlertDescription>
+          </Alert>
+        )}
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline" disabled={pending}>
+              取消
+            </Button>
+          </DialogClose>
+          <Button type="button" onClick={save} disabled={pending}>
+            {pending && <Spinner data-icon="inline-start" />}
+            {pending ? "保存中…" : "保存"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteCompletionStatusDialog({
+  status,
+  onOpenChange,
+}: {
+  status: CompletionStatusRow | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const utils = trpc.useUtils();
+  const remove = trpc.completionStatus.delete.useMutation({
+    onSuccess: () => {
+      toast.success("完结状态已删除");
+      utils.completionStatus.invalidate();
+      onOpenChange(false);
+    },
+  });
+  return (
+    <Dialog open={status !== null} onOpenChange={(next) => !remove.isPending && onOpenChange(next)}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>删除完结状态</DialogTitle>
+          <DialogDescription>
+            确定删除“{status?.name}”吗？已被工单使用的完结状态不能删除，只能停用。
+          </DialogDescription>
+        </DialogHeader>
+        {remove.error && (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>删除失败</AlertTitle>
+            <AlertDescription>{remove.error.message}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline" disabled={remove.isPending}>
+              取消
+            </Button>
+          </DialogClose>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={remove.isPending || !status}
+            onClick={() => status && remove.mutate({ id: status.id })}
+          >
+            {remove.isPending && <Spinner data-icon="inline-start" />}
+            {remove.isPending ? "删除中…" : "确认删除"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CompletionStatusSection() {
+  const utils = trpc.useUtils();
+  const list = trpc.completionStatus.list.useQuery();
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<CompletionStatusRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CompletionStatusRow | null>(null);
+
+  const setActive = trpc.completionStatus.setActive.useMutation({
+    onSuccess: (status) => {
+      toast.success(status?.active ? "完结状态已启用" : "完结状态已停用");
+      utils.completionStatus.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  function openCreate() {
+    setEditTarget(null);
+    setEditorOpen(true);
+  }
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold">完结状态</h2>
+          <p className="text-sm text-muted-foreground">
+            完结弹窗只列启用项；停用不影响存量工单的显示。
+          </p>
+        </div>
+        <Button onClick={openCreate}>
+          <Plus data-icon="inline-start" />
+          新增完结状态
+        </Button>
+      </div>
+
+      {list.error ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>完结状态加载失败</AlertTitle>
+          <AlertDescription>{list.error.message}</AlertDescription>
+        </Alert>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>名称</TableHead>
+                <TableHead>显示顺序</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead className="w-36">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.isLoading ? (
+                [0, 1, 2, 3].map((row) => (
+                  <TableRow key={row}>
+                    <TableCell>
+                      <Skeleton className="h-5 w-40" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-12" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-14" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-8 w-28" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (list.data ?? []).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="p-0">
+                    <Empty className="border-0">
+                      <EmptyHeader>
+                        <EmptyTitle>暂无完结状态</EmptyTitle>
+                        <EmptyDescription>新增一个状态后即可在完结弹窗中选择。</EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                (list.data ?? []).map((status) => (
+                  <TableRow key={status.id}>
+                    <TableCell className="font-medium">{status.name}</TableCell>
+                    <TableCell>{status.displayOrder}</TableCell>
+                    <TableCell>
+                      {status.active ? (
+                        <Badge variant="secondary">启用</Badge>
+                      ) : (
+                        <Badge variant="outline">已停用</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`编辑 ${status.name}`}
+                          onClick={() => {
+                            setEditTarget(status);
+                            setEditorOpen(true);
+                          }}
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`${status.active ? "停用" : "启用"} ${status.name}`}
+                          disabled={setActive.isPending}
+                          onClick={() =>
+                            setActive.mutate({ id: status.id, active: !status.active })
+                          }
+                        >
+                          {status.active ? <Ban /> : <CircleCheck />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`删除 ${status.name}`}
+                          onClick={() => setDeleteTarget(status)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <CompletionStatusDialog
+        open={editorOpen}
+        status={editTarget}
+        onOpenChange={(open) => {
+          setEditorOpen(open);
+          if (!open) setEditTarget(null);
+        }}
+      />
+      <DeleteCompletionStatusDialog
+        status={deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      />
+    </section>
+  );
+}
+
 export function DictionaryPage() {
   return (
     <div className="flex flex-1 flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">渠道与类别</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">字典管理</h1>
         <p className="text-sm text-muted-foreground">
           维护工单可选的目录项；改名全局生效，被工单使用中的目录项只能停用。
         </p>
       </div>
       <ChannelSection />
       <CategorySection />
+      <CompletionStatusSection />
     </div>
   );
 }

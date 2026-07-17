@@ -14,9 +14,17 @@ import { ThemeProvider } from "../../components/ThemeProvider";
  * 完结工单 entry point on the detail page: the button exists only for
  * holders of ticket.process on an in-flight (assigned/processing) ticket —
  * mirroring the API guards — and confirming fires ticket.resolve with the
- * mandatory completionStatus (12 种封闭枚举) plus the 完结备注. Same
- * faked-fetch tRPC pipeline and useAuth-seam mock as the follow-up tests.
+ * mandatory 完结状态目录引用 (options from completionStatus.options, 启用项
+ * only) plus the 完结备注. Same faked-fetch tRPC pipeline and useAuth-seam
+ * mock as the follow-up tests.
  */
+
+/** The catalog options feed (启用项 only) the dialog pulls. */
+const completionStatusOptions = [
+  { id: "cs-negotiated", name: "已协商解决" },
+  { id: "cs-normal", name: "正常完结" },
+  { id: "cs-invalid", name: "无效工单" },
+];
 
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
@@ -126,9 +134,20 @@ function respond(path: string, input: unknown): unknown {
   if (path === "ticket.detail") {
     return detail;
   }
+  if (path === "completionStatus.options") {
+    return completionStatusOptions;
+  }
   if (path === "ticket.resolve") {
-    const { ticketId, completionStatus } = input as { ticketId: string; completionStatus: string };
-    return { id: ticketId, workOrderNumber: "WO100001", status: "completed", completionStatus };
+    const { ticketId, completionStatusId } = input as {
+      ticketId: string;
+      completionStatusId: string;
+    };
+    return {
+      id: ticketId,
+      workOrderNumber: "WO100001",
+      status: "completed",
+      completionStatus: completionStatusOptions.find((o) => o.id === completionStatusId)?.name,
+    };
   }
   throw new Error(`Unexpected tRPC path: ${path}`);
 }
@@ -218,7 +237,7 @@ describe("resolving from the dialog", () => {
     const confirm = await screen.findByRole("button", { name: "确认完结" });
     expect(confirm).toBeDisabled(); // nothing picked, nothing written yet
 
-    // Pick one of the 12 封闭枚举 completion statuses
+    // Pick a catalog option — the select holds the reference id
     const trigger = screen.getByRole("combobox", { name: "完结状态" });
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
     fireEvent.click(trigger);
@@ -236,7 +255,7 @@ describe("resolving from the dialog", () => {
     const mutation = calls.find((call) => call.path === "ticket.resolve");
     expect(mutation?.input).toEqual({
       ticketId: "t1",
-      completionStatus: "已协商解决",
+      completionStatusId: "cs-negotiated",
       remark: "客户认可处理方案，双方达成一致",
     });
 
@@ -246,7 +265,7 @@ describe("resolving from the dialog", () => {
     });
   });
 
-  it("offers exactly the 12 封闭枚举 options — no 其他", async () => {
+  it("offers exactly the catalog's 启用项 as options", async () => {
     renderDetail();
 
     fireEvent.click(await screen.findByRole("button", { name: "完结工单" }));
@@ -255,7 +274,8 @@ describe("resolving from the dialog", () => {
     fireEvent.click(trigger);
 
     await screen.findByRole("option", { name: "正常完结" });
-    expect(screen.getAllByRole("option")).toHaveLength(12);
-    expect(screen.queryByRole("option", { name: "其他" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(
+      completionStatusOptions.map((option) => option.name),
+    );
   });
 });

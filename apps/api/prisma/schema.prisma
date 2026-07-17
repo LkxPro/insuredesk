@@ -157,7 +157,9 @@ model Ticket {
 
   // 完结信息 (PRD §3.1.7)
   completionTime   DateTime? @db.Timestamptz
-  completionStatus String?
+  /// 完结状态目录引用; null = 未完结. Referenced rows can only be 停用, never
+  /// deleted — Restrict is the DB backstop behind the service's refusal.
+  completionStatusId String?
   /// Soft delete: non-null rows are excluded from default lists and statistics
   deletedAt        DateTime? @db.Timestamptz
 
@@ -170,18 +172,20 @@ model Ticket {
   /// 撤销 — revoking a batch soft-deletes every ticket carrying its id.
   importBatchId String?
 
-  assignee    User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  creator     User?              @relation("TicketCreator", fields: [creatorId], references: [id])
-  category    TicketCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  channel     Channel?           @relation(fields: [channelId], references: [id], onDelete: Restrict)
-  importBatch TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
-  processLogs ProcessLog[]
+  assignee         User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  creator          User?              @relation("TicketCreator", fields: [creatorId], references: [id])
+  category         TicketCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  channel          Channel?           @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  completionStatus CompletionStatus?  @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
+  importBatch      TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  processLogs      ProcessLog[]
 
   @@index([assigneeId])
   /// The non-view_all data scope ORs assigneeId with creatorId
   @@index([creatorId])
   @@index([categoryId])
   @@index([channelId])
+  @@index([completionStatusId])
   @@index([status])
   @@index([createdAt])
   /// Computed-status predicates (pending_timeout/overdue) and 处理时限 sorting
@@ -298,6 +302,26 @@ model Channel {
   tickets Ticket[]
 
   @@map("channels")
+}
+
+// ============================================================================
+// Completion status catalog (Issue #86)
+// ============================================================================
+
+/// 管理员（dictionary.manage）维护的完结状态目录，生命周期语义与
+/// TicketCategory 一致。目录行由迁移插入（历史 12 项 + 存量脏值兜底），
+/// 无应用层种子 —— 迁移即目录真相源。
+model CompletionStatus {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  active       Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  tickets Ticket[]
+
+  @@map("completion_statuses")
 }
 
 // ============================================================================

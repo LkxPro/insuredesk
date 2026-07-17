@@ -198,9 +198,12 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const wayPastDue = plus(ticket.createdAt, 100 * HOUR);
       expect((await todosAt(owner, seeded.roles.frontline, wayPastDue)).count).toBe(1);
 
+      const status = await prisma.completionStatus.findUniqueOrThrow({
+        where: { name: "正常完结" },
+      });
       await callerFor(owner, seeded.roles.frontline).ticket.resolve({
         ticketId: ticket.id,
-        completionStatus: "正常完结",
+        completionStatusId: status.id,
         remark: "已与客户达成一致",
       });
 

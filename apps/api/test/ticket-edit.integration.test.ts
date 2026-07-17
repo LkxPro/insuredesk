@@ -126,9 +126,12 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
   async function createCompletedTicket() {
     const ticketId = await createTicket();
     await manager().ticket.assign({ ticketId, assigneeId: seeded.users.cs1.id });
+    const status = await prisma.completionStatus.findUniqueOrThrow({
+      where: { name: "已协商解决" },
+    });
     await frontline().ticket.resolve({
       ticketId,
-      completionStatus: "已协商解决",
+      completionStatusId: status.id,
       remark: "双方达成一致",
     });
     return ticketId;
