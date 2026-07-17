@@ -146,12 +146,13 @@ describe("permission gating (无权限 UI 无入口)", () => {
 });
 
 describe("导入弹窗", () => {
-  it("opens with 下载模板 and the upload placeholder", async () => {
+  it("opens with 下载模板 and the file picker", async () => {
     renderTickets();
     const dialog = await openImportDialog();
 
     expect(dialog).toHaveTextContent("下载模板");
-    expect(dialog).toHaveTextContent("上传功能即将上线");
+    expect(dialog).toHaveTextContent("点击选择填写好的模板文件");
+    expect(screen.getByRole("button", { name: "上传并导入" })).toBeDisabled();
   });
 
   it("下载模板 fetches the dynamic template endpoint", async () => {
@@ -189,5 +190,77 @@ describe("导入弹窗", () => {
     await waitFor(() =>
       expect(toastSpies.error).toHaveBeenCalledWith("Missing required permission: ticket.import"),
     );
+  });
+});
+
+describe("上传导入", () => {
+  function selectFile(name = "填好的模板.xlsx") {
+    const file = new File(["xlsx-bytes"], name, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    fireEvent.change(screen.getByLabelText("选择导入文件"), { target: { files: [file] } });
+    return file;
+  }
+
+  it("posts the file and zone as multipart and reports 成功导入 N 条", async () => {
+    downloadFetch.mockResolvedValue(
+      new Response(JSON.stringify({ imported: 42 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    renderTickets();
+    const dialog = await openImportDialog();
+    selectFile();
+
+    fireEvent.click(screen.getByRole("button", { name: "上传并导入" }));
+
+    await waitFor(() => expect(dialog).toHaveTextContent("成功导入 42 条"));
+    const [url, init] = downloadFetch.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("/api/tickets/import");
+    expect(init.method).toBe("POST");
+    const formData = init.body as FormData;
+    expect(formData.get("timeZone")).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    expect((formData.get("file") as File).name).toBe("填好的模板.xlsx");
+  });
+
+  it("renders the 行号/列名/原因 list on an all-or-nothing rejection", async () => {
+    downloadFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "导入校验未通过，共 2 个错误",
+          rowErrors: [
+            { row: 3, column: "反馈渠道", message: "「不存在的渠道」不存在" },
+            { row: 5, column: null, message: "与第 4 行完全重复（18 个字段全部相同）" },
+          ],
+        }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      ),
+    );
+    renderTickets();
+    const dialog = await openImportDialog();
+    selectFile();
+
+    fireEvent.click(screen.getByRole("button", { name: "上传并导入" }));
+
+    await waitFor(() => expect(dialog).toHaveTextContent("导入校验未通过，共 2 个错误"));
+    expect(dialog).toHaveTextContent("第 3 行");
+    expect(dialog).toHaveTextContent("反馈渠道");
+    expect(dialog).toHaveTextContent("「不存在的渠道」不存在");
+    expect(dialog).toHaveTextContent("第 5 行");
+    expect(dialog).toHaveTextContent("完全重复");
+  });
+
+  it("rejects an oversized file locally without a request", async () => {
+    renderTickets();
+    const dialog = await openImportDialog();
+    const oversized = new File([new Uint8Array(1024)], "big.xlsx");
+    Object.defineProperty(oversized, "size", { value: 2 * 1024 * 1024 + 1 });
+    fireEvent.change(screen.getByLabelText("选择导入文件"), { target: { files: [oversized] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "上传并导入" }));
+
+    await waitFor(() => expect(dialog).toHaveTextContent("文件大小超过 2MB 上限"));
+    expect(downloadFetch).not.toHaveBeenCalled();
   });
 });

@@ -53,21 +53,32 @@ export const reminderRuleTypeSchema = z.enum(REMINDER_RULE_TYPES);
 export type ReminderRuleType = (typeof REMINDER_RULE_TYPES)[number];
 
 // Ticket source — how the ticket entered the system; doubles as the "who
-// created it" discriminator. Only `manual` is live this phase; the external
+// created it" discriminator. `manual` and `file_import` are live; the external
 // sources ship with the Feishu/community integrations.
-export const TICKET_SOURCES = ["feishu_form", "manual", "community"] as const;
+export const TICKET_SOURCES = ["feishu_form", "manual", "community", "file_import"] as const;
 export const ticketSourceSchema = z.enum(TICKET_SOURCES);
 export type TicketSource = (typeof TICKET_SOURCES)[number];
 
 /**
  * Display labels per source. For external sources this label IS the derived
- * "由谁创建"; for `manual` the creator's current name wins.
+ * "由谁创建"; for creator-backed sources the creator's current name wins.
  */
 export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   feishu_form: "飞书",
   manual: "手工录入",
   community: "社区",
+  file_import: "文件导入",
 };
+
+/**
+ * Sources whose tickets carry a creatorId (手工录入的建单人 / 文件导入的导入者).
+ * Their "由谁创建" derives from the creator's current name, and the
+ * non-view_all data scope reaches them through creatorId.
+ */
+export const CREATOR_BACKED_SOURCES: readonly TicketSource[] = ["manual", "file_import"];
+export function isCreatorBackedSource(source: TicketSource): boolean {
+  return CREATOR_BACKED_SOURCES.includes(source);
+}
 
 // Complaint levels — the ONLY SLA driver. Each level has exactly one
 // SLAPolicy row keyed by these literals.

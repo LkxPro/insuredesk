@@ -88,6 +88,14 @@ const TICKET_IMPORT_COLUMNS: readonly ImportColumn[] = [
 ];
 
 /**
+ * The header contract in column order — upload parsing must resolve columns
+ * by exactly these names (ticket-import.service.ts asserts alignment).
+ */
+export const TICKET_IMPORT_TEMPLATE_HEADERS: readonly string[] = TICKET_IMPORT_COLUMNS.map(
+  (column) => column.header,
+);
+
+/**
  * exceljs implements worksheet.dataValidations (range-level validations,
  * written as one sqref) at runtime but omits it from its typings — the
  * per-cell `cell.dataValidation` alternative would materialize 2000 cells

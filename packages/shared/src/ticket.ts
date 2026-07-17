@@ -29,6 +29,24 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((value) => (value ? value : null));
 
+/**
+ * 建单自由文本字段的长度上限，建单/编辑 schema 与批量导入逐行校验共用 ——
+ * 导入的每列长度检查引用这里，不另抄一份。
+ */
+export const TICKET_TEXT_LIMITS = {
+  project: 100,
+  brokerageEntity: 100,
+  paymentChannel: 100,
+  internalOrderNumber: 200,
+  policyNumber: 100,
+  userComplaintChannel: 100,
+  customerName: 100,
+  phone: 50,
+  contactPhone: 200,
+  customerRequest: 2000,
+  contactId: 200,
+} as const;
+
 /** Optional enum select: "" (nothing chosen) and absence both become NULL. */
 const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
   schema
@@ -68,23 +86,23 @@ export const ticketCreateInputSchema = z.object({
   feedbackTime: optionalEnum(z.string().datetime({ offset: true, message: "反馈时间格式不正确" })),
   /** 反馈渠道目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
   channelId: optionalText(100),
-  project: optionalText(100),
-  brokerageEntity: optionalText(100),
-  paymentChannel: optionalText(100),
-  internalOrderNumber: optionalText(200),
-  policyNumber: optionalText(100),
-  userComplaintChannel: optionalText(100),
-  customerName: optionalText(100),
-  phone: optionalText(50),
-  contactPhone: optionalText(200),
-  customerRequest: optionalText(2000),
+  project: optionalText(TICKET_TEXT_LIMITS.project),
+  brokerageEntity: optionalText(TICKET_TEXT_LIMITS.brokerageEntity),
+  paymentChannel: optionalText(TICKET_TEXT_LIMITS.paymentChannel),
+  internalOrderNumber: optionalText(TICKET_TEXT_LIMITS.internalOrderNumber),
+  policyNumber: optionalText(TICKET_TEXT_LIMITS.policyNumber),
+  userComplaintChannel: optionalText(TICKET_TEXT_LIMITS.userComplaintChannel),
+  customerName: optionalText(TICKET_TEXT_LIMITS.customerName),
+  phone: optionalText(TICKET_TEXT_LIMITS.phone),
+  contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
+  customerRequest: optionalText(TICKET_TEXT_LIMITS.customerRequest),
   nuclearBodyStatus: optionalEnum(nuclearBodyStatusSchema),
   /** 三态：true/false/未知（null）。 */
   hasContacted: z
     .boolean()
     .nullish()
     .transform((value) => value ?? null),
-  contactId: optionalText(200),
+  contactId: optionalText(TICKET_TEXT_LIMITS.contactId),
   /** 客诉类别目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
   categoryId: optionalText(100),
   complaintLevel: optionalEnum(complaintLevelSchema),
@@ -141,6 +159,30 @@ export const BATCH_ASSIGN_LIMIT = 100;
 
 /** 批量导入单次行数上限（不含表头）；模板填写说明与上传校验共用这一个数。 */
 export const TICKET_IMPORT_ROW_LIMIT = 2000;
+
+/** 批量导入文件大小上限；前端提示与服务端 multipart 限制共用这一个数。 */
+export const TICKET_IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 批量导入 REST 响应契约（/api/tickets/import）。全或无：任一行有错则整批
+ * 零入库，携带逐行错误清单；行号为文件内 Excel 行号（表头是第 1 行），
+ * 文件级错误（表头不符、超行数上限等）row/column 为 null。
+ */
+export interface TicketImportRowError {
+  row: number | null;
+  /** 模板中文列名；不属于某一列的错误为 null。 */
+  column: string | null;
+  message: string;
+}
+
+export interface TicketImportSuccess {
+  imported: number;
+}
+
+export interface TicketImportFailure {
+  error: string;
+  rowErrors: TicketImportRowError[];
+}
 
 const ticketIdsSchema = z
   .array(z.string().min(1))

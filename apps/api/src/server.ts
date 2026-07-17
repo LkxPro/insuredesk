@@ -10,6 +10,7 @@ import { prisma } from "./db";
 import type { Env } from "./env";
 import { type AppRouter, appRouter } from "./routers";
 import { registerTicketExportRoute } from "./routes/ticket-export.route";
+import { registerTicketImportRoute } from "./routes/ticket-import.route";
 import { registerTicketImportTemplateRoute } from "./routes/ticket-import-template.route";
 import { PasswordAuthProvider, SessionService, toSessionToken } from "./services/auth.service";
 import { createContext } from "./trpc";
@@ -121,9 +122,11 @@ export function buildServer(env: Env) {
     return { success: true };
   });
 
-  // File downloads for 导出工单 / 导入模板 — REST like the auth endpoints.
+  // File downloads/uploads for 导出工单 / 导入模板 / 批量导入 — REST like the
+  // auth endpoints.
   registerTicketExportRoute(app);
   registerTicketImportTemplateRoute(app);
+  registerTicketImportRoute(app);
 
   // No CORS plugin: the web app talks to the API same-origin — via the Vite
   // proxy in dev (see apps/web/vite.config.ts) and behind a shared reverse
