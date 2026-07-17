@@ -58,6 +58,8 @@ jobs:
           file: apps/api/Dockerfile
           push: true
           tags: ghcr.io/lkxpro/insuredesk-api:${{ steps.version.outputs.tag }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
