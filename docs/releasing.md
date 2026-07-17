@@ -30,7 +30,7 @@ CalVer:`v<年>.<月>.<序号>`,如 `v2026.07.0`;同月第二次发布为
 
 # 钉新版本并拉起
 sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=v2026.07.1/' .env
-docker compose -f docker-compose.prod.yml pull api   # 私有镜像,需先 docker login ghcr.io
+docker compose -f docker-compose.prod.yml pull insuredesk-api-prod   # 私有镜像,需先 docker login ghcr.io
 docker compose -f docker-compose.prod.yml up -d
 ```
 

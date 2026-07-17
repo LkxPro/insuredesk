@@ -6,7 +6,8 @@
 # not here). No nginx container.
 #
 # The api service runs the release image pinned by IMAGE_TAG in the server-side
-# .env (upgrade = edit IMAGE_TAG, `pull api`, `up -d`). The build: section is
+# .env (upgrade = edit IMAGE_TAG, `pull insuredesk-api-prod`, `up -d`). The
+# build: section is
 # the restricted-network fallback: checkout the same tag and `up -d --build`
 # produces the same artifact under the same image name.
 #
@@ -44,7 +45,8 @@ services:
   insuredesk-api-prod:
     # Pinned release image (GHCR is private — `docker login ghcr.io` with a PAT
     # before pulling). With both image: and build: present, Compose only builds
-    # when asked (`--build`); normal upgrades use `pull api` + `up -d`.
+    # when asked (`--build`); normal upgrades use `pull insuredesk-api-prod` +
+    # `up -d`.
     image: ghcr.io/lkxpro/insuredesk-api:${IMAGE_TAG:?set IMAGE_TAG in .env, see docs/releasing.md}
     build:
       context: .
@@ -61,7 +63,8 @@ services:
     container_name: insuredesk-api-prod
     restart: unless-stopped
     # Runtime env (DATABASE_URL, SESSION_SECRET, etc.) from the server-side .env.
-    # DATABASE_URL must point at the compose service name `db`, not localhost.
+    # DATABASE_URL must point at the compose service name `insuredesk-db-prod`,
+    # not localhost.
     env_file:
       - .env
     ports:

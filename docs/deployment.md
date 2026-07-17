@@ -19,7 +19,7 @@ cp .env.example .env
 编辑 `.env` 填入真实值(该文件不进版本库):
 
 - `POSTGRES_PASSWORD` 换成强密码,且 `DATABASE_URL` 中的账号密码与之一致——
-  主机名必须是 compose 服务名 `db`,不是 localhost。
+  主机名必须是 compose 服务名 `insuredesk-db-prod`,不是 localhost。
 - `SESSION_SECRET` 用 `openssl rand -hex 32` 生成。
 - `NODE_ENV` 保持 `production`(启用 SPA 静态托管与 Secure cookie)。
 - `IMAGE_TAG` 填要部署的版本号,取 GitHub Releases 页面上最新的 tag
@@ -41,7 +41,7 @@ echo "$GHCR_PAT" | docker login ghcr.io -u LkxPro --password-stdin
 ### 拉取并启动
 
 ```bash
-docker compose -f docker-compose.prod.yml pull api
+docker compose -f docker-compose.prod.yml pull insuredesk-api-prod
 docker compose -f docker-compose.prod.yml up -d
 ```
 
@@ -59,7 +59,7 @@ admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 
 升级、回滚的完整操作口径见 `docs/releasing.md`,要点:
 
 - 升级 = 升级前手动备份一次数据库 → 改 `.env` 里的 `IMAGE_TAG` 为新 tag →
-  `pull api` → `up -d`。**只前滚**:镜像回滚仅限新版起不来且迁移未执行的
+  `pull insuredesk-api-prod` → `up -d`。**只前滚**:镜像回滚仅限新版起不来且迁移未执行的
   场景,迁移已执行后发现问题一律发 hotfix 版本(ADR 0009)。
 - 数据库迁移随容器启动自动执行,无需手动操作。迁移失败会导致容器起不来
   (fail fast),用 `docker logs insuredesk-api-prod` 排查。
@@ -104,7 +104,7 @@ cron 日志要写入的备份目录):输出 `backup ok: …` 且备份目录出�
 cd ~/insuredesk
 
 # 1. 停 API(保持 db 运行),避免恢复期间有写入
-docker compose -f docker-compose.prod.yml stop api
+docker compose -f docker-compose.prod.yml stop insuredesk-api-prod
 
 # 2. 重建数据库后灌入备份(psql 遇错即停,避免半截恢复被误认成功)
 docker exec insuredesk-db-prod sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
