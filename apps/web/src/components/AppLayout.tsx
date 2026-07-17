@@ -30,6 +30,10 @@ import { visibleNavItems } from "@/lib/navigation";
  * feature pages render into the SidebarInset outlet.
  */
 
+// Baked into the bundle at build time (Docker build-arg → Vite env); "dev"
+// marks an un-injected build.
+const appVersion = import.meta.env.VITE_APP_VERSION || "dev";
+
 function AppSidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -116,6 +120,9 @@ function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <span className="px-2 text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
+          {appVersion}
+        </span>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

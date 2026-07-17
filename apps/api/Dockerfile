@@ -60,7 +60,11 @@ COPY packages/shared ./packages/shared
 
 # Generate the Prisma client (validates the schema early) and build the SPA.
 RUN retry pnpm --filter @insuredesk/api run db:generate
-RUN pnpm --filter @insuredesk/web run build
+
+# Release tag baked into both surfaces (web bundle + api env). Declared this
+# late so a tag change only re-runs the build/tail layers, never the installs.
+ARG APP_VERSION=dev
+RUN VITE_APP_VERSION=$APP_VERSION pnpm --filter @insuredesk/web run build
 
 # ---- Runtime stage: production deps + source + built SPA -------------------
 FROM base AS runtime
@@ -93,6 +97,8 @@ COPY --from=build /app/apps/web/dist ./apps/web/dist
 ENV HOST=0.0.0.0
 ENV PORT=3000
 ENV WEB_DIST_PATH=/app/apps/web/dist
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 EXPOSE 3000
 
 # Scripts assume cwd = apps/api (relative .env load, Prisma schema path).

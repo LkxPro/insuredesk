@@ -53,6 +53,9 @@ services:
       # network (mainland China), set NPM_REGISTRY / PRISMA_ENGINES_MIRROR in
       # .env — Compose interpolates them here at build time. See docs/deployment.md.
       args:
+        # Restricted-network fallback for version injection: same IMAGE_TAG as
+        # image:, so a --build artifact claims the same version as the release image.
+        APP_VERSION: ${IMAGE_TAG}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
         PRISMA_ENGINES_MIRROR: ${PRISMA_ENGINES_MIRROR:-https://binaries.prisma.sh}
     container_name: insuredesk-api-prod

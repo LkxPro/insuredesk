@@ -16,6 +16,7 @@ async function main() {
 
   try {
     await app.listen({ host: env.HOST, port: env.PORT });
+    app.log.info({ version: env.APP_VERSION }, "Server started");
   } catch (error) {
     app.log.error(error, "Failed to start server");
     process.exit(1);
