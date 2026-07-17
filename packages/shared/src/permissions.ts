@@ -23,6 +23,7 @@ export const TICKET_PERMISSIONS = [
   "ticket.assign", // Assign ticket to user (operation permission)
   "ticket.batch_assign", // Batch assign tickets (operation permission)
   "ticket.export", // Export tickets (operation permission)
+  "ticket.import", // Batch import tickets (operation permission)
   "ticket.delete", // Delete ticket - dangerous (operation permission)
 ] as const;
 
@@ -89,6 +90,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "ticket.assign": "分配工单",
   "ticket.batch_assign": "批量分配",
   "ticket.export": "导出工单",
+  "ticket.import": "导入工单",
   "ticket.delete": "删除工单",
   "user.view": "访问用户管理",
   "user.create": "新增用户",

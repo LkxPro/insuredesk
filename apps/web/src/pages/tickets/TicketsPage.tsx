@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   Ticket,
+  Upload,
   UserPlus,
   Zap,
 } from "lucide-react";
@@ -66,6 +67,7 @@ import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
+import { TicketImportDialog } from "./TicketImportDialog";
 import { downloadTicketExport } from "./ticket-export";
 
 /**
@@ -196,6 +198,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const canAssign = hasPermission("ticket.assign");
   const canBatchAssign = hasPermission("ticket.batch_assign");
   const canExport = hasPermission("ticket.export");
+  const canImport = hasPermission("ticket.import");
 
   const [searchParams, setSearchParams] = useSearchParams();
   const query = parseListQuery(searchParams);
@@ -208,6 +211,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [batchOpen, setBatchOpen] = useState(false);
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
   // 渠道筛选全列目录项（停用项标注），选停用渠道仍能查到其存量工单
@@ -330,6 +334,12 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+          {canImport && (
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload data-icon="inline-start" />
+              导入
+            </Button>
           )}
           {canCreate && (
             <Button asChild>
@@ -609,6 +619,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           }}
         />
       )}
+
+      {canImport && <TicketImportDialog open={importOpen} onOpenChange={setImportOpen} />}
 
       {canAssign && singleTarget && (
         <AssignTicketDialog

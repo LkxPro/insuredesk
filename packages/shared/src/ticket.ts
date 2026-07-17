@@ -139,6 +139,9 @@ export type TicketAssignInput = z.infer<typeof ticketAssignInputSchema>;
 /** 批量分配单次上限（即列表单页上限）；列表多选与 API 校验共用这一个数。 */
 export const BATCH_ASSIGN_LIMIT = 100;
 
+/** 批量导入单次行数上限（不含表头）；模板填写说明与上传校验共用这一个数。 */
+export const TICKET_IMPORT_ROW_LIMIT = 2000;
+
 const ticketIdsSchema = z
   .array(z.string().min(1))
   .min(1, "请选择工单")
