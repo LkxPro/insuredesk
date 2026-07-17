@@ -19,7 +19,7 @@
 # Deploy runbook: docs/deployment.md. Release/upgrade runbook: docs/releasing.md.
 
 services:
-  db:
+  insuredesk-db-prod:
     image: postgres:17-alpine
     container_name: insuredesk-db-prod
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
     # No host port published: only the api service (same compose network)
     # reaches Postgres. Nothing on the host or public network needs it.
 
-  api:
+  insuredesk-api-prod:
     # Pinned release image (GHCR is private — `docker login ghcr.io` with a PAT
     # before pulling). With both image: and build: present, Compose only builds
     # when asked (`--build`); normal upgrades use `pull api` + `up -d`.
@@ -68,7 +68,7 @@ services:
       # Bind to loopback only — host nginx reverse-proxies to this. Never 0.0.0.0.
       - "127.0.0.1:3000:3000"
     depends_on:
-      db:
+      insuredesk-db-prod:
         condition: service_healthy
 
 volumes:
