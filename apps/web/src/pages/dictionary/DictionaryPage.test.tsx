@@ -11,11 +11,11 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 渠道与类别 page (issues #68/#69): the 反馈渠道 and 客诉类别 catalogs behind
- * dictionary.manage. Same faked-fetch tRPC pipeline and useAuth-seam mock as
- * the sibling page tests; the reference-deletion refusal is a server
- * invariant covered by the API integration tests — here the page just
- * surfaces the CONFLICT message.
+ * 字典管理 page (issues #68/#69/#86): the 反馈渠道, 客诉类别 and 完结状态
+ * catalogs behind dictionary.manage. Same faked-fetch tRPC pipeline and
+ * useAuth-seam mock as the sibling page tests; the reference-deletion refusal
+ * is a server invariant covered by the API integration tests — here the page
+ * just surfaces the CONFLICT message.
  */
 
 const auth = vi.hoisted(() => ({ user: null as AuthUser | null, isLoading: false }));
@@ -80,6 +80,24 @@ const canned = {
       updatedAt: "2026-07-16T00:00:00.000Z",
     },
   ],
+  completionStatuses: [
+    {
+      id: "cs-normal",
+      name: "正常完结",
+      active: true,
+      displayOrder: 1,
+      createdAt: "2026-07-16T00:00:00.000Z",
+      updatedAt: "2026-07-16T00:00:00.000Z",
+    },
+    {
+      id: "cs-cold",
+      name: "冷处理",
+      active: false,
+      displayOrder: 2,
+      createdAt: "2026-07-16T00:00:00.000Z",
+      updatedAt: "2026-07-16T00:00:00.000Z",
+    },
+  ],
 };
 let calls: Array<{ path: string; input: unknown }>;
 let deleteError: string | null;
@@ -118,6 +136,20 @@ function respond(path: string, input: unknown): unknown {
     };
   }
   if (path === "channel.delete") {
+    if (deleteError) throw new Error(deleteError);
+    return input;
+  }
+  if (path === "completionStatus.list") return canned.completionStatuses;
+  if (path === "completionStatus.create") {
+    return { id: "new", active: true, ...(input as object), createdAt: "", updatedAt: "" };
+  }
+  if (path === "completionStatus.update") {
+    return { active: true, ...(input as object), createdAt: "", updatedAt: "" };
+  }
+  if (path === "completionStatus.setActive") {
+    return { id: "cs-normal", name: "正常完结", displayOrder: 1, ...(input as object) };
+  }
+  if (path === "completionStatus.delete") {
     if (deleteError) throw new Error(deleteError);
     return input;
   }
@@ -171,11 +203,11 @@ beforeEach(() => {
   deleteError = null;
 });
 
-describe("渠道与类别 page", () => {
+describe("字典管理 page", () => {
   it("requires dictionary.manage: holders see the catalog, others land on 403", async () => {
     renderPage();
     expect(await screen.findByText("理赔投诉")).toBeInTheDocument();
-    expect(screen.getByText("已停用")).toBeInTheDocument();
+    expect(screen.getAllByText("已停用").length).toBeGreaterThan(0);
     expect(screen.getAllByText("启用").length).toBeGreaterThan(0);
 
     auth.user = userWith(TEST_ROLES.CS_MANAGER);
@@ -315,6 +347,60 @@ describe("渠道与类别 page", () => {
 
     expect(
       await within(deleteDialog).findByText("该类别已被 3 张工单使用，无法删除，可改为停用"),
+    ).toBeInTheDocument();
+  });
+
+  it("creates a completion status with name and display order", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "新增完结状态" }));
+    const dialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("状态名称"), {
+      target: { value: "已升级处理" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("显示顺序"), { target: { value: "13" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "completionStatus.create")?.input).toEqual({
+        name: "已升级处理",
+        displayOrder: 13,
+      }),
+    );
+  });
+
+  it("renames, toggles 停用/启用, and deletes a completion status; the refusal surfaces", async () => {
+    renderPage();
+    await screen.findByText("正常完结");
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑 正常完结" }));
+    const editDialog = await screen.findByRole("dialog");
+    fireEvent.change(within(editDialog).getByLabelText("状态名称"), {
+      target: { value: "正常关闭" },
+    });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "completionStatus.update")?.input).toEqual({
+        id: "cs-normal",
+        name: "正常关闭",
+        displayOrder: 1,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "启用 冷处理" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "completionStatus.setActive")?.input).toEqual({
+        id: "cs-cold",
+        active: true,
+      }),
+    );
+
+    deleteError = "该完结状态已被 2 张工单使用，无法删除，可改为停用";
+    fireEvent.click(screen.getByRole("button", { name: "删除 正常完结" }));
+    const deleteDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(deleteDialog).getByRole("button", { name: "确认删除" }));
+    expect(
+      await within(deleteDialog).findByText("该完结状态已被 2 张工单使用，无法删除，可改为停用"),
     ).toBeInTheDocument();
   });
 });

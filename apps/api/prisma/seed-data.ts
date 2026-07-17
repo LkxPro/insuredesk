@@ -387,7 +387,8 @@ interface DemoTicketSpec {
   contactCount?: number;
   processingResult?: string;
   nextContactHoursFromNow?: number;
-  completionStatus?: string;
+  /** 同 categoryName：按名称解析为 completionStatusId，解析不到回退为未填写。 */
+  completionStatusName?: string;
   completionHoursAgo?: number;
   logs?: Array<{
     action: "comment" | "resolve" | "status_change";
@@ -607,7 +608,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     status: "completed",
     contactCount: 2,
     processingResult: "客户认可解释，工单正常完结。",
-    completionStatus: "正常完结",
+    completionStatusName: "正常完结",
     completionHoursAgo: 10,
     channelName: "保司",
     input: demoInput("DEMO-POL-1008", {
@@ -640,7 +641,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     status: "completed",
     contactCount: 3,
     processingResult: "经多轮沟通后协商解决。",
-    completionStatus: "已协商解决",
+    completionStatusName: "已协商解决",
     completionHoursAgo: 6,
     channelName: "监管",
     input: demoInput("DEMO-POL-1009", {
@@ -795,6 +796,7 @@ async function applyDemoState(
   spec: DemoTicketSpec,
   ticket: Ticket,
   now: Date,
+  completionStatusIdByName: Map<string, string>,
 ) {
   const manager = authUser(rolesAndUsers.users.manager, rolesAndUsers.roles.csManager);
   if (spec.assignee) {
@@ -817,7 +819,9 @@ async function applyDemoState(
           spec.nextContactHoursFromNow === undefined
             ? null
             : hoursFromNow(spec.nextContactHoursFromNow, now),
-        completionStatus: spec.completionStatus ?? null,
+        completionStatusId: spec.completionStatusName
+          ? (completionStatusIdByName.get(spec.completionStatusName) ?? null)
+          : null,
         completionTime:
           spec.completionHoursAgo === undefined ? null : hoursAgo(spec.completionHoursAgo, now),
       },
@@ -872,6 +876,12 @@ export async function seedDemoTickets(
       channel.id,
     ]),
   );
+  const completionStatusIdByName = new Map(
+    (await prisma.completionStatus.findMany({ where: { active: true } })).map((status) => [
+      status.name,
+      status.id,
+    ]),
+  );
 
   for (const spec of demoTicketSpecs) {
     const createdAt = hoursAgo(spec.createdHoursAgo, now);
@@ -890,7 +900,7 @@ export async function seedDemoTickets(
           )
         : await createExternalTicket(prisma, spec, input, createdAt);
 
-    await applyDemoState(prisma, rolesAndUsers, spec, ticket, now);
+    await applyDemoState(prisma, rolesAndUsers, spec, ticket, now, completionStatusIdByName);
     created.push(ticket);
   }
 

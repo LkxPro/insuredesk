@@ -3,8 +3,8 @@ import { z } from "zod";
 /**
  * Domain enum constants, single-sourced here and imported by both apps so the
  * database, API, and UI can never drift apart on the allowed values. Enums the
- * PRD defines with Chinese literals (complaint level, completion status, …)
- * keep those literals as the canonical stored values — inventing English codes
+ * PRD defines with Chinese literals (complaint level, 核身 status, …) keep
+ * those literals as the canonical stored values — inventing English codes
  * here would be exactly the drift this file exists to prevent.
  */
 
@@ -102,21 +102,3 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
 export const NUCLEAR_BODY_STATUSES = ["是", "否", "待核实"] as const;
 export const nuclearBodyStatusSchema = z.enum(NUCLEAR_BODY_STATUSES);
 export type NuclearBodyStatus = (typeof NUCLEAR_BODY_STATUSES)[number];
-
-// Completion statuses — the closed set of 12, no "其他".
-export const COMPLETION_STATUSES = [
-  "未取得有效联系",
-  "已达成一致",
-  "诉求过高，无法达成一致",
-  "客户自行撤诉",
-  "已协商解决",
-  "已赔付",
-  "已退保",
-  "转其他部门处理",
-  "无效工单",
-  "正常完结",
-  "冷处理",
-  "联系不上",
-] as const;
-export const completionStatusSchema = z.enum(COMPLETION_STATUSES);
-export type CompletionStatus = (typeof COMPLETION_STATUSES)[number];

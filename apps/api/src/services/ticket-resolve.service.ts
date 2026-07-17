@@ -1,19 +1,20 @@
 import { type TicketResolveInput, TicketStatus } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service";
+import { resolveNewCompletionStatus } from "./completion-status.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import type { TicketServiceDeps } from "./ticket.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
 
 /**
- * Resolve domain logic: 完结工单 with a mandatory completionStatus
- * (12 种封闭枚举) and a 完结备注. Pure service layer — the router maps the
- * domain errors to transport codes.
+ * Resolve domain logic: 完结工单 with a mandatory 完结状态目录 reference
+ * (must exist and be 启用) and a 完结备注. Pure service layer — the router
+ * maps the domain errors to transport codes.
  *
  * Invariants enforced here:
  * - only assigned / processing tickets can resolve; completed is a 终态 —
  *   no reopen path exists anywhere (状态只能经生命周期动作流转)
- * - completionTime / completionStatus are written ONLY by this action, in the
- *   same instant as the resolve + status_change ProcessLog pair
+ * - completionTime / completionStatusId are written ONLY by this action, in
+ *   the same instant as the resolve + status_change ProcessLog pair
  * - the resolved ticket leaves the pending_timeout / overdue 实时运营口径 by
  *   construction: those predicates exclude status = completed, and
  *   the read-time 我的待办 alarms stop with them — nothing else to
@@ -65,6 +66,9 @@ export async function resolveTicket(
       throw TicketNotResolvableError.completed(ticket.workOrderNumber);
     }
 
+    // 校验与写入同事务；并发删除由 FK Restrict 兜底
+    const completionStatus = await resolveNewCompletionStatus(tx, input.completionStatusId);
+
     // Claim the 终态 with a conditional write on the EXACT status we read, so
     // the status_change log's `from` is the true prior state. Statuses only
     // move forward (assigned → processing → completed), so losing the claim
@@ -76,7 +80,7 @@ export async function resolveTicket(
         data: {
           status: TicketStatus.Completed,
           completionTime: now,
-          completionStatus: input.completionStatus,
+          completionStatusId: completionStatus.id,
         },
       });
 
@@ -116,7 +120,7 @@ export async function resolveTicket(
       id: ticket.id,
       workOrderNumber: ticket.workOrderNumber,
       status: TicketStatus.Completed,
-      completionStatus: input.completionStatus,
+      completionStatus: completionStatus.name,
     };
   });
 }

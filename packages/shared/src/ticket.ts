@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   complaintLevelSchema,
-  completionStatusSchema,
   nuclearBodyStatusSchema,
   prioritySchema,
   ticketSourceSchema,
@@ -266,14 +265,14 @@ export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
 export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
 
 /**
- * 完结工单 contract: the mandatory completion reason — one of the 12 封闭枚举,
- * no "其他" — plus the 完结备注 that becomes the resolve log's remark.
- * completionTime / the → completed transition and its ProcessLog pair are
- * derived server-side; completed is a 终态.
+ * 完结工单 contract: the mandatory completion reason — a 完结状态目录 reference,
+ * which must exist and be 启用 — plus the 完结备注 that becomes the resolve
+ * log's remark. completionTime / the → completed transition and its ProcessLog
+ * pair are derived server-side; completed is a 终态.
  */
 export const ticketResolveInputSchema = z.object({
   ticketId: z.string().min(1),
-  completionStatus: completionStatusSchema,
+  completionStatusId: z.string().min(1, "请选择完结状态"),
   remark: z.string().trim().min(1, "请填写完结备注").max(2000),
 });
 export type TicketResolveInput = z.infer<typeof ticketResolveInputSchema>;
@@ -293,6 +292,8 @@ export const ticketListInputSchema = z.object({
   status: ticketDisplayStatusSchema.optional(),
   /** 渠道目录引用筛选；停用渠道也可选，仍能查到其存量工单。 */
   channelId: z.string().min(1).optional(),
+  /** 完结状态目录引用筛选；停用状态也可选，仍能查到其存量工单。 */
+  completionStatusId: z.string().min(1).optional(),
   complaintLevel: complaintLevelSchema.optional(),
   source: ticketSourceSchema.optional(),
   /** 工单号 / 客户姓名 / 保单号；空白输入等同未搜索。 */

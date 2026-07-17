@@ -16,6 +16,7 @@ import { z } from "zod";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
 import { ChannelUnavailableError } from "../services/channel.service";
+import { CompletionStatusUnavailableError } from "../services/completion-status.service";
 import {
   createTicket,
   getTicketDetail,
@@ -186,6 +187,9 @@ export const ticketRouter = router({
             message: error.message,
             cause: error,
           });
+        }
+        if (error instanceof CompletionStatusUnavailableError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         throw error;
       }

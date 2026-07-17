@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CompletionStatus, Permission, TicketCreateInput } from "@insuredesk/shared";
+import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
@@ -11,7 +11,7 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /**
  * Acceptance tests against a real Postgres: resolving (完结) moves an
  * in-flight ticket to the completed 终态 with completionTime + the mandatory
- * completionStatus (12 种封闭枚举), writing the resolve + status_change
+ * 完结状态目录引用, writing the resolve + status_change
  * ProcessLog pair. completed is terminal — no reopen, no further follow-ups —
  * and a resolved ticket immediately leaves the pending_timeout / overdue
  * 实时运营口径. Runs through
@@ -88,6 +88,12 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
     return callerWith(user, role.name, role.permissions as Permission[]);
   }
 
+  /** 目录 id by name — the migration populated the 12 historical values. */
+  async function statusId(name: string) {
+    const row = await prisma.completionStatus.findUniqueOrThrow({ where: { name } });
+    return row.id;
+  }
+
   const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
@@ -136,7 +142,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
       const result = await frontline().ticket.resolve({
         ticketId,
-        completionStatus: "已协商解决",
+        completionStatusId: await statusId("已协商解决"),
         remark: "复核完成，客户认可金额，双方达成一致",
       });
       expect(result).toMatchObject({
@@ -187,7 +193,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
       const result = await frontline().ticket.resolve({
         ticketId,
-        completionStatus: "无效工单",
+        completionStatusId: await statusId("无效工单"),
         remark: "重复录入，按无效工单完结",
       });
       expect(result).toMatchObject({ status: "completed", completionStatus: "无效工单" });
@@ -217,7 +223,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       await expect(
         manager().ticket.resolve({
           ticketId,
-          completionStatus: "正常完结",
+          completionStatusId: await statusId("正常完结"),
           remark: "还没分配就想完结",
         }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
@@ -233,14 +239,14 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       const ticketId = await createProcessingTicket();
       await frontline().ticket.resolve({
         ticketId,
-        completionStatus: "已达成一致",
+        completionStatusId: await statusId("已达成一致"),
         remark: "客户认可处理方案",
       });
 
       await expect(
         frontline().ticket.resolve({
           ticketId,
-          completionStatus: "正常完结",
+          completionStatusId: await statusId("正常完结"),
           remark: "重复完结",
         }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
@@ -267,7 +273,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       await expect(
         manager().ticket.resolve({
           ticketId: "no-such-ticket",
-          completionStatus: "正常完结",
+          completionStatusId: await statusId("正常完结"),
           remark: "无中生有",
         }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -277,29 +283,33 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       await expect(
         manager().ticket.resolve({
           ticketId,
-          completionStatus: "正常完结",
+          completionStatusId: await statusId("正常完结"),
           remark: "已删除还想完结",
         }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
-    it('rejects a completionStatus outside the 12 封闭枚举 (无"其他")', async () => {
+    it("rejects a reference to a nonexistent 完结状态目录项", async () => {
       const ticketId = await createAssignedTicket();
 
       await expect(
         manager().ticket.resolve({
           ticketId,
-          completionStatus: "其他" as CompletionStatus,
-          remark: "枚举之外",
+          completionStatusId: "no-such-status",
+          remark: "目录之外",
         }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "所选完结状态不存在" });
     });
 
     it("rejects a blank 完结备注", async () => {
       const ticketId = await createAssignedTicket();
 
       await expect(
-        manager().ticket.resolve({ ticketId, completionStatus: "正常完结", remark: "   " }),
+        manager().ticket.resolve({
+          ticketId,
+          completionStatusId: await statusId("正常完结"),
+          remark: "   ",
+        }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
   });
@@ -311,7 +321,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       await expect(
         frontline().ticket.resolve({
           ticketId,
-          completionStatus: "正常完结",
+          completionStatusId: await statusId("正常完结"),
           remark: "不是我的工单",
         }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -329,7 +339,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
       const result = await creator().ticket.resolve({
         ticketId: created.id,
-        completionStatus: "正常完结",
+        completionStatusId: await statusId("正常完结"),
         remark: "客户来电确认已解决，创建人代结",
       });
       expect(result).toMatchObject({ status: "completed", completionStatus: "正常完结" });
@@ -340,7 +350,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
       const result = await manager().ticket.resolve({
         ticketId,
-        completionStatus: "转其他部门处理",
+        completionStatusId: await statusId("转其他部门处理"),
         remark: "属理赔核算范围，移交理赔部",
       });
       expect(result).toMatchObject({ status: "completed", completionStatus: "转其他部门处理" });
@@ -359,7 +369,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       await expect(
         observer().ticket.resolve({
           ticketId,
-          completionStatus: "正常完结",
+          completionStatusId: await statusId("正常完结"),
           remark: "只读也想完结",
         }),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -388,7 +398,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
       await frontline().ticket.resolve({
         ticketId,
-        completionStatus: "冷处理",
+        completionStatusId: await statusId("冷处理"),
         remark: "多次沟通无进展，转冷处理",
       });
 
@@ -412,7 +422,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
       await frontline().ticket.resolve({
         ticketId,
-        completionStatus: "联系不上",
+        completionStatusId: await statusId("联系不上"),
         remark: "多渠道均联系不上客户，先行完结",
       });
 

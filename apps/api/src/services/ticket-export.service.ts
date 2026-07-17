@@ -40,6 +40,7 @@ const exportInclude = {
   // Catalog references render their CURRENT names — a rename shows through
   category: { select: { name: true } },
   channel: { select: { name: true } },
+  completionStatus: { select: { name: true } },
 } satisfies Prisma.TicketInclude;
 
 type TicketExportRow = Prisma.TicketGetPayload<{ include: typeof exportInclude }>;
@@ -116,7 +117,7 @@ const EXPORT_COLUMNS: ReadonlyArray<{
   { header: "首响要求", value: (t) => t.firstResponseRequirement ?? "" },
   { header: "处理结果", value: (t) => t.processingResult ?? "" },
   { header: "完结时间", value: (t, { formatDate }) => formatDate(t.completionTime) },
-  { header: "完结状态", value: (t) => t.completionStatus ?? "" },
+  { header: "完结状态", value: (t) => t.completionStatus?.name ?? "" },
 ];
 
 /** RFC 4180 field escaping: quote when the value contains , " or a newline. */

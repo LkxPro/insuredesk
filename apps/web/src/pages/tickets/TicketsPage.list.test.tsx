@@ -108,6 +108,16 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
         },
       };
     }
+    if (path === "completionStatus.filterOptions") {
+      return {
+        result: {
+          data: [
+            { id: "cs-normal", name: "正常完结", active: true },
+            { id: "cs-legacy", name: "旧完结状态", active: false },
+          ],
+        },
+      };
+    }
     const procedureInput = batch[String(index)] ?? {};
     listInputs.push(procedureInput);
     const page = (procedureInput.page as number | undefined) ?? 1;
@@ -198,6 +208,18 @@ describe("URL-driven filters (deep-linkable)", () => {
     expect(listInputs[0]).toMatchObject({ channelId: "ch-legacy" });
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "渠道" })).toHaveTextContent("旧渠道（已停用）"),
+    );
+  });
+
+  it("按停用完结状态筛选：查询带其 id，触发器显示（已停用）标注", async () => {
+    renderAt("/tickets?completionStatus=cs-legacy");
+
+    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
+    expect(listInputs[0]).toMatchObject({ completionStatusId: "cs-legacy" });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "完结状态" })).toHaveTextContent(
+        "旧完结状态（已停用）",
+      ),
     );
   });
 

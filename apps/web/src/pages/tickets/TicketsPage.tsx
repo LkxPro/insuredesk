@@ -71,8 +71,8 @@ import { TicketImportDialog } from "./TicketImportDialog";
 import { downloadTicketExport } from "./ticket-export";
 
 /**
- * 工单管理 list: filters (状态 incl. the computed statuses, 渠道, 投诉等级,
- * 来源), 工单号/客户姓名/保单号 search, 创建时间/处理时限 sort, and
+ * 工单管理 list: filters (状态 incl. the computed statuses, 渠道, 完结状态,
+ * 投诉等级, 来源), 工单号/客户姓名/保单号 search, 创建时间/处理时限 sort, and
  * pagination. All list state lives in the URL — same deep-link treatment as
  * /tickets/new — and is parsed through the shared ticketListInputSchema, so an
  * edited query string degrades to defaults instead of crashing. Data scope is
@@ -98,6 +98,7 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
   const candidate = {
     status: params.get("status") ?? undefined,
     channelId: params.get("channel") ?? undefined,
+    completionStatusId: params.get("completionStatus") ?? undefined,
     complaintLevel: params.get("level") ?? undefined,
     source: params.get("source") ?? undefined,
     search: params.get("q") ?? undefined,
@@ -214,8 +215,9 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [importOpen, setImportOpen] = useState(false);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
-  // 渠道筛选全列目录项（停用项标注），选停用渠道仍能查到其存量工单
+  // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
   const channelOptions = trpc.channel.filterOptions.useQuery().data ?? [];
+  const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
 
   /** Set/clear one URL param; filter changes restart from page 1. */
   function setParam(key: string, value: string | null, { resetPage = true } = {}) {
@@ -370,6 +372,15 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             label: channel.active ? channel.name : `${channel.name}（已停用）`,
           }))}
           onChange={(value) => setParam("channel", value)}
+        />
+        <FilterSelect
+          label="完结状态"
+          value={query.completionStatusId}
+          options={completionStatusOptions.map((status) => ({
+            value: status.id,
+            label: status.active ? status.name : `${status.name}（已停用）`,
+          }))}
+          onChange={(value) => setParam("completionStatus", value)}
         />
         <FilterSelect
           label="投诉等级"

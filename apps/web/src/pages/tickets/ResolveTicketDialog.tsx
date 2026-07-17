@@ -1,4 +1,3 @@
-import { COMPLETION_STATUSES, type CompletionStatus } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -26,11 +25,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 
 /**
- * 完结工单 dialog: the mandatory completion reason — one of the 12 封闭枚举 —
- * plus the 完结备注. The caller gates the entry point on ticket.process and
- * an in-flight status; completionTime, the → completed transition and its
- * ProcessLog pair are derived server-side in ticket.resolve. completed is a
- * 终态, hence the warning copy.
+ * 完结工单 dialog: the mandatory completion reason — a 完结状态目录 reference,
+ * options from the catalog (启用项 only) — plus the 完结备注. The caller gates
+ * the entry point on ticket.process and an in-flight status; completionTime,
+ * the → completed transition and its ProcessLog pair are derived server-side
+ * in ticket.resolve. completed is a 终态, hence the warning copy.
  */
 export function ResolveTicketDialog({
   open,
@@ -42,14 +41,16 @@ export function ResolveTicketDialog({
   ticket: { id: string; workOrderNumber: string };
 }) {
   const utils = trpc.useUtils();
-  const [completionStatus, setCompletionStatus] = useState<CompletionStatus | "">("");
+  const [completionStatusId, setCompletionStatusId] = useState("");
   const [remark, setRemark] = useState("");
+
+  const options = trpc.completionStatus.options.useQuery(undefined, { enabled: open });
 
   // A fresh dialog starts blank — a terminal action must never be one click
   // away from confirming with a leftover pick.
   useEffect(() => {
     if (open) {
-      setCompletionStatus("");
+      setCompletionStatusId("");
       setRemark("");
     }
   }, [open]);
@@ -65,10 +66,10 @@ export function ResolveTicketDialog({
   });
 
   function confirm() {
-    if (!completionStatus || !remark.trim()) {
+    if (!completionStatusId || !remark.trim()) {
       return;
     }
-    resolve.mutate({ ticketId: ticket.id, completionStatus, remark });
+    resolve.mutate({ ticketId: ticket.id, completionStatusId, remark });
   }
 
   return (
@@ -83,17 +84,14 @@ export function ResolveTicketDialog({
 
         <Field>
           <FieldLabel htmlFor="completion-status">完结状态</FieldLabel>
-          <Select
-            value={completionStatus}
-            onValueChange={(value) => setCompletionStatus(value as CompletionStatus)}
-          >
+          <Select value={completionStatusId} onValueChange={setCompletionStatusId}>
             <SelectTrigger id="completion-status" className="w-full">
               <SelectValue placeholder="请选择完结状态" />
             </SelectTrigger>
             <SelectContent>
-              {COMPLETION_STATUSES.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
+              {(options.data ?? []).map((status) => (
+                <SelectItem key={status.id} value={status.id}>
+                  {status.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -112,11 +110,11 @@ export function ResolveTicketDialog({
           />
         </Field>
 
-        {resolve.error && (
+        {(resolve.error ?? options.error) && (
           <Alert variant="destructive">
             <AlertCircle />
-            <AlertTitle>完结失败</AlertTitle>
-            <AlertDescription>{resolve.error.message}</AlertDescription>
+            <AlertTitle>{options.error ? "完结状态加载失败" : "完结失败"}</AlertTitle>
+            <AlertDescription>{(resolve.error ?? options.error)?.message}</AlertDescription>
           </Alert>
         )}
 
@@ -129,7 +127,7 @@ export function ResolveTicketDialog({
           <Button
             type="button"
             onClick={confirm}
-            disabled={resolve.isPending || !completionStatus || !remark.trim()}
+            disabled={resolve.isPending || !completionStatusId || !remark.trim()}
           >
             {resolve.isPending && <Spinner data-icon="inline-start" />}
             {resolve.isPending ? "提交中…" : "确认完结"}

@@ -116,7 +116,7 @@ describe("menu visibility per role persona", () => {
       "排班表",
       "班次管理",
       "SLA 策略",
-      "渠道与类别",
+      "字典管理",
     ]);
   });
 

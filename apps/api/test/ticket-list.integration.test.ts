@@ -248,7 +248,6 @@ describe("ticket list (Testcontainers)", () => {
           status: "completed",
           dueAt: new Date(now - HOUR_MS),
           completionTime: new Date(now - HOUR_MS / 2),
-          completionStatus: "正常完结",
         },
       );
 

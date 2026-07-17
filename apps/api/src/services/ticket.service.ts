@@ -209,7 +209,14 @@ type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
 /** The list's filter/sort subset — shared verbatim by the export. */
 type TicketListFilters = Pick<
   TicketListQuery,
-  "status" | "channelId" | "complaintLevel" | "source" | "search" | "sortBy" | "sortOrder"
+  | "status"
+  | "channelId"
+  | "completionStatusId"
+  | "complaintLevel"
+  | "source"
+  | "search"
+  | "sortBy"
+  | "sortOrder"
 >;
 
 /**
@@ -236,6 +243,9 @@ export function buildTicketListWhere(
   }
   if (query.channelId) {
     filters.push({ channelId: query.channelId });
+  }
+  if (query.completionStatusId) {
+    filters.push({ completionStatusId: query.completionStatusId });
   }
   if (query.complaintLevel) {
     filters.push({ complaintLevel: query.complaintLevel });
@@ -345,6 +355,8 @@ const detailInclude = {
   // selectable (labelled 已停用) while other disabled options never appear
   category: { select: { id: true, name: true, active: true } },
   channel: { select: { id: true, name: true, active: true } },
+  // 完结状态 is display-only on the detail page — the CURRENT name suffices
+  completionStatus: { select: { name: true } },
   processLogs: { orderBy: [{ at: "asc" }, { id: "asc" }] },
 } satisfies Prisma.TicketInclude;
 
@@ -425,7 +437,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     contactCount: ticket.contactCount,
     processingResult: ticket.processingResult,
     completionTime: ticket.completionTime?.toISOString() ?? null,
-    completionStatus: ticket.completionStatus,
+    completionStatus: ticket.completionStatus?.name ?? null,
     processLogs: ticket.processLogs.map((log) => ({
       id: log.id,
       operatorId: log.operatorId,
