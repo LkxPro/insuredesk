@@ -62,16 +62,55 @@ const IMPORTER = {
   permissions: [...TEST_ROLES.CS_MANAGER.permissions, "ticket.import"] as Permission[],
 };
 
+/** IMPORTER plus ticket.delete — the 撤销 button's permission gate. */
+const REVOKER = {
+  name: "客服主管",
+  permissions: [...IMPORTER.permissions, "ticket.delete"] as Permission[],
+};
+
+/** Mutable per-test fixture behind ticket.importBatches. */
+const importBatches: {
+  items: Array<{
+    id: string;
+    importedAt: string;
+    importerName: string;
+    rowCount: number;
+    filename: string;
+    status: "revocable" | "locked" | "revoked";
+    revokedAt: string | null;
+    revokedByName: string | null;
+  }>;
+} = { items: [] };
+
+/** tRPC mutations arrive as POST with the input as the JSON body. */
+const trpcMutations: Array<{ path: string; input: unknown }> = [];
+
 /** tRPC batched queries arrive as GET with `input={"0":…}` in the URL. */
-function fakeTrpcFetch(input: RequestInfo | URL): Promise<Response> {
+function fakeTrpcFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(String(input));
   const paths = (url.pathname.split("/api/trpc/")[1] ?? "").split(",");
   const body = paths.map((path) => {
+    if (init?.method === "POST") {
+      trpcMutations.push({ path, input: JSON.parse(String(init.body))["0"] });
+      return { result: { data: { revoked: importBatches.items[0]?.rowCount ?? 0 } } };
+    }
     if (path === "notification.list") {
       return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
     }
     if (path === "channel.filterOptions") {
       return { result: { data: [] } };
+    }
+    if (path === "ticket.importBatches") {
+      return {
+        result: {
+          data: {
+            items: importBatches.items,
+            total: importBatches.items.length,
+            page: 1,
+            pageSize: 50,
+          },
+        },
+      };
     }
     return { result: { data: { items: [], total: 0, page: 1, pageSize: 20 } } };
   });
@@ -108,8 +147,11 @@ function renderTickets() {
 beforeEach(() => {
   auth.user = userWith(IMPORTER);
   auth.isLoading = false;
+  importBatches.items = [];
+  trpcMutations.length = 0;
   downloadFetch.mockReset();
   toastSpies.error.mockReset();
+  toastSpies.success.mockReset();
   vi.stubGlobal("fetch", downloadFetch);
   // jsdom has no object-URL implementation; the download path needs both ends
   vi.stubGlobal(
@@ -262,5 +304,95 @@ describe("上传导入", () => {
 
     await waitFor(() => expect(dialog).toHaveTextContent("文件大小超过 2MB 上限"));
     expect(downloadFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("导入历史", () => {
+  function batchItem(
+    overrides: Partial<(typeof importBatches.items)[number]> = {},
+  ): (typeof importBatches.items)[number] {
+    return {
+      id: "batch-1",
+      importedAt: "2026-07-17T02:00:00.000Z",
+      importerName: "导入员一号",
+      rowCount: 42,
+      filename: "七月批次.xlsx",
+      status: "revocable",
+      revokedAt: null,
+      revokedByName: null,
+      ...overrides,
+    };
+  }
+
+  it("lists batches with time, importer, count, filename and status", async () => {
+    importBatches.items = [
+      batchItem(),
+      batchItem({ id: "batch-2", filename: "锁定批次.xlsx", status: "locked" }),
+      batchItem({
+        id: "batch-3",
+        filename: "已撤批次.xlsx",
+        status: "revoked",
+        revokedAt: "2026-07-17T03:00:00.000Z",
+        revokedByName: "管理员",
+      }),
+    ];
+    renderTickets();
+    await openImportDialog();
+
+    const history = await screen.findByRole("list", { name: "导入历史" });
+    expect(history).toHaveTextContent("导入员一号");
+    expect(history).toHaveTextContent("42 条");
+    expect(history).toHaveTextContent("七月批次.xlsx");
+    expect(history).toHaveTextContent("可撤销");
+    expect(history).toHaveTextContent("已锁定");
+    expect(history).toHaveTextContent("已撤销");
+    // 已撤销批次显示撤销人与撤销时刻
+    expect(history).toHaveTextContent(/由 管理员 于 .+ 撤销/);
+  });
+
+  it("hides 撤销 without ticket.delete — even on revocable batches", async () => {
+    importBatches.items = [batchItem()];
+    renderTickets();
+    await openImportDialog();
+
+    await screen.findByRole("list", { name: "导入历史" });
+    expect(screen.queryByRole("button", { name: "撤销" })).not.toBeInTheDocument();
+  });
+
+  it("shows 撤销 only on revocable batches for ticket.delete holders", async () => {
+    auth.user = userWith(REVOKER);
+    importBatches.items = [
+      batchItem(),
+      batchItem({ id: "batch-2", status: "locked" }),
+      batchItem({ id: "batch-3", status: "revoked" }),
+    ];
+    renderTickets();
+    await openImportDialog();
+
+    await screen.findByRole("list", { name: "导入历史" });
+    expect(screen.getAllByRole("button", { name: "撤销" })).toHaveLength(1);
+  });
+
+  it("double-confirms and posts the revocation, then reports the removed count", async () => {
+    auth.user = userWith(REVOKER);
+    importBatches.items = [batchItem()];
+    renderTickets();
+    await openImportDialog();
+
+    fireEvent.click(await screen.findByRole("button", { name: "撤销" }));
+    const confirm = await screen.findByRole("dialog", { name: "撤销导入" });
+    expect(confirm).toHaveTextContent("七月批次.xlsx");
+    expect(trpcMutations).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "确认撤销" }));
+
+    await waitFor(() => expect(trpcMutations).toHaveLength(1));
+    expect(trpcMutations[0]).toEqual({
+      path: "ticket.revokeImportBatch",
+      input: { batchId: "batch-1" },
+    });
+    await waitFor(() =>
+      expect(toastSpies.success).toHaveBeenCalledWith("已撤销导入，42 条工单已删除"),
+    );
   });
 });

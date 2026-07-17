@@ -184,6 +184,41 @@ export interface TicketImportFailure {
   rowErrors: TicketImportRowError[];
 }
 
+/**
+ * 导入历史批次状态，读取时派生、从不存储：
+ * - revocable 可撤销：批内每单都只有 create 处理记录且未被单独删除
+ * - locked 已锁定：任一单已有处理（分配/跟进/编辑/完结/上传）或已被单独
+ *   删除 —— 干净判定本身即撤销窗口，无时间窗
+ * - revoked 已撤销：整批已软删除，终态（本期无恢复，不可再次撤销）
+ */
+export const TICKET_IMPORT_BATCH_STATUSES = ["revocable", "locked", "revoked"] as const;
+export const ticketImportBatchStatusSchema = z.enum(TICKET_IMPORT_BATCH_STATUSES);
+export type TicketImportBatchStatus = (typeof TICKET_IMPORT_BATCH_STATUSES)[number];
+
+export const TICKET_IMPORT_BATCH_STATUS_LABELS: Record<TicketImportBatchStatus, string> = {
+  revocable: "可撤销",
+  locked: "已锁定",
+  revoked: "已撤销",
+};
+
+/** 导入历史 list contract; scope is server-side (own batches unless ticket.view_all). */
+export const ticketImportBatchListInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(100).default(50),
+});
+export type TicketImportBatchListInput = z.input<typeof ticketImportBatchListInputSchema>;
+export type TicketImportBatchListQuery = z.output<typeof ticketImportBatchListInputSchema>;
+
+/**
+ * 整批撤销 contract: all-or-nothing soft delete of one clean batch — the
+ * server re-checks cleanliness inside the same transaction and rejects the
+ * whole batch if any ticket has been processed or individually deleted.
+ */
+export const ticketImportRevokeInputSchema = z.object({
+  batchId: z.string().min(1),
+});
+export type TicketImportRevokeInput = z.infer<typeof ticketImportRevokeInputSchema>;
+
 const ticketIdsSchema = z
   .array(z.string().min(1))
   .min(1, "请选择工单")

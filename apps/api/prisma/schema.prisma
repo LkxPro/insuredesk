@@ -43,7 +43,9 @@ model User {
   /// manual 建单人 / file_import 导入者)
   createdTickets  Ticket[] @relation("TicketCreator")
   /// Import batches this user uploaded (ticket_import_batches.importerId)
-  importBatches   TicketImportBatch[]
+  importBatches   TicketImportBatch[] @relation("TicketImportBatchImporter")
+  /// Import batches this user revoked (ticket_import_batches.revokedById)
+  revokedImportBatches TicketImportBatch[] @relation("TicketImportBatchRevoker")
   /// 轨 1 inbox notifications addressed to this user (issue #25)
   notifications   AppNotification[]
   schedules       Schedule[]
@@ -164,8 +166,8 @@ model Ticket {
   /// derives from source at read time (PRD §3.1.8)
   creatorId String?
 
-  /// 所属导入批次; null for every non-file_import ticket. Write-only
-  /// bookkeeping this phase — the paper trail for undoing an import later.
+  /// 所属导入批次; null for every non-file_import ticket. The unit of 整批
+  /// 撤销 — revoking a batch soft-deletes every ticket carrying its id.
   importBatchId String?
 
   assignee    User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
@@ -191,9 +193,9 @@ model Ticket {
 }
 
 /// One row per 批量导入上传 that reached the database — who imported, when,
-/// how many rows, from which file. Write-only this phase: created inside the
-/// import transaction, never listed or mutated — the paper trail 撤销导入
-/// will need.
+/// how many rows, from which file. Doubles as the 撤销 unit: a clean batch
+/// (no ticket processed or individually deleted) can be revoked whole —
+/// every ticket soft-deleted and revokedAt/revokedById stamped here.
 model TicketImportBatch {
   id         String   @id @default(cuid())
   importerId String
@@ -201,9 +203,14 @@ model TicketImportBatch {
   rowCount   Int
   /// Uploaded filename as the client sent it, for human recognition only.
   filename   String
+  /// 整批撤销时刻; null = 未撤销. Set once — a revoked batch is final (no
+  /// restore this phase) and can never be revoked again.
+  revokedAt   DateTime? @db.Timestamptz
+  revokedById String?
 
-  importer User     @relation(fields: [importerId], references: [id])
-  tickets  Ticket[]
+  importer  User     @relation("TicketImportBatchImporter", fields: [importerId], references: [id])
+  revokedBy User?    @relation("TicketImportBatchRevoker", fields: [revokedById], references: [id])
+  tickets   Ticket[]
 
   @@index([importerId])
   @@map("ticket_import_batches")
