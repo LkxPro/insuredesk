@@ -185,9 +185,10 @@ export interface TicketImportFailure {
 
 /**
  * 导入历史批次状态，读取时派生、从不存储：
- * - revocable 可撤销：批内每单都只有 create 处理记录且未被单独删除
- * - locked 已锁定：任一单已有处理（分配/跟进/编辑/完结/上传）或已被单独
- *   删除 —— 干净判定本身即撤销窗口，无时间窗
+ * - revocable 可撤销：批内没有晚于导入瞬间的处理记录且无单被单独删除；与
+ *   导入同瞬间的日志属于导入本身，不算处理
+ * - locked 已锁定：任一单存在晚于导入瞬间的处理（分配/跟进/编辑/完结/上传）
+ *   或已被单独删除 —— 干净判定本身即撤销窗口，无时间窗
  * - revoked 已撤销：整批已软删除，终态（本期无恢复，不可再次撤销）
  */
 export const TICKET_IMPORT_BATCH_STATUSES = ["revocable", "locked", "revoked"] as const;

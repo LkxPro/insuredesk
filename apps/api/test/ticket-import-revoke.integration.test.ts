@@ -18,9 +18,10 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * - clean revoke: all-or-nothing soft delete — tickets leave the list, the
  *   dashboard, and the export; the batch stays in history as 已撤销 with
  *   revoker + instant
- * - locked: any ticket processed (assign/edit/…) or individually deleted →
- *   the whole revoke is rejected with the processed count, nothing deleted,
- *   and the batch lists as locked
+ * - locked: any log later than the batch's import instant (assign/edit/…)
+ *   or any ticket individually deleted → the whole revoke is rejected with
+ *   the processed count, nothing deleted, and the batch lists as locked;
+ *   same-instant logs are the import's own and never lock
  * - guards: no ticket.delete → FORBIDDEN; out-of-scope batch → NOT_FOUND;
  *   a revoked batch can never be revoked again
  */
@@ -267,6 +268,56 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
         code: "PRECONDITION_FAILED",
       });
       expect((await supervisorCaller().ticket.importBatches({})).items[0]?.status).toBe("locked");
+    });
+
+    // 「已有处理」以批次导入瞬间为界：同瞬间的日志属于导入本身（导入即完结
+    // 会在同瞬间写 resolve），任何晚于该瞬间的日志才锁批。
+    it("keeps a batch revocable when a log shares the import instant", async () => {
+      const batchId = await importBatchOf(importer, IMPORTER_PERMISSIONS, ["张三"]);
+      const batch = await prisma.ticketImportBatch.findUniqueOrThrow({ where: { id: batchId } });
+      const ticket = await prisma.ticket.findFirstOrThrow();
+
+      await prisma.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          operatorId: importer.id,
+          operatorName: importer.name,
+          action: "resolve",
+          remark: "导入即完结",
+          at: batch.importedAt,
+        },
+      });
+
+      expect((await supervisorCaller().ticket.importBatches({})).items[0]?.status).toBe(
+        "revocable",
+      );
+      await expect(supervisorCaller().ticket.revokeImportBatch({ batchId })).resolves.toEqual({
+        revoked: 1,
+      });
+    });
+
+    it("locks a batch on any log later than the import instant, whatever its action", async () => {
+      const batchId = await importBatchOf(importer, IMPORTER_PERMISSIONS, ["张三"]);
+      const batch = await prisma.ticketImportBatch.findUniqueOrThrow({ where: { id: batchId } });
+      const ticket = await prisma.ticket.findFirstOrThrow();
+
+      await prisma.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          operatorId: importer.id,
+          operatorName: importer.name,
+          action: "create",
+          remark: "晚于导入瞬间的日志",
+          at: new Date(batch.importedAt.getTime() + 1),
+        },
+      });
+
+      expect((await supervisorCaller().ticket.importBatches({})).items[0]?.status).toBe("locked");
+      await expect(supervisorCaller().ticket.revokeImportBatch({ batchId })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("批内 1 单已有处理"),
+      });
+      expect(await prisma.ticket.count({ where: { deletedAt: null } })).toBe(1);
     });
 
     it("rejects revoking without ticket.delete (API-side 403)", async () => {

@@ -10,8 +10,8 @@ import type { TicketServiceDeps } from "./ticket.service";
 /**
  * 导入历史 + 整批撤销 domain logic. A batch is the undo unit: revocation is
  * an all-or-nothing soft delete of every ticket it created — allowed only
- * while the batch is "clean" (no ticket has any processing beyond its create
- * log, none individually deleted). The clean check IS the revocation window;
+ * while the batch is "clean" (no log later than the batch's import instant,
+ * none individually deleted). The clean check IS the revocation window;
  * there is no time limit and no restore this phase.
  */
 
@@ -47,10 +47,16 @@ function importBatchScope(viewer: AuthenticatedUser): Prisma.TicketImportBatchWh
   return viewer.permissions.includes("ticket.view_all") ? {} : { importerId: viewer.id };
 }
 
-/** 「已有处理」= create 之外的处理记录，或已被单独软删除。 */
-const PROCESSED_TICKET_WHERE = {
-  OR: [{ deletedAt: { not: null } }, { processLogs: { some: { action: { not: "create" } } } }],
-} satisfies Prisma.TicketWhereInput;
+/**
+ * 「已有处理」= 存在晚于批次导入瞬间的处理记录，或已被单独软删除。与导入同
+ * 瞬间的日志属于导入本身（导入即完结时同瞬间写 resolve），不论 action 都不
+ * 锁批。
+ */
+function processedTicketWhere(importedAt: Date) {
+  return {
+    OR: [{ deletedAt: { not: null } }, { processLogs: { some: { at: { gt: importedAt } } } }],
+  } satisfies Prisma.TicketWhereInput;
+}
 
 /**
  * 导入历史 list, newest first. Status is derived per read — a batch shows
@@ -78,14 +84,20 @@ export async function listImportBatches(
     prisma.ticketImportBatch.count({ where }),
   ]);
 
-  // One grouped query answers "which of this page's live batches are locked"
-  const liveBatchIds = batches.filter((batch) => batch.revokedAt === null).map((batch) => batch.id);
+  // One grouped query answers "which of this page's live batches are locked";
+  // each branch carries its own batch's import instant as the cutoff
+  const liveBatches = batches.filter((batch) => batch.revokedAt === null);
   const lockedGroups =
-    liveBatchIds.length === 0
+    liveBatches.length === 0
       ? []
       : await prisma.ticket.groupBy({
           by: ["importBatchId"],
-          where: { importBatchId: { in: liveBatchIds }, ...PROCESSED_TICKET_WHERE },
+          where: {
+            OR: liveBatches.map((batch) => ({
+              importBatchId: batch.id,
+              ...processedTicketWhere(batch.importedAt),
+            })),
+          },
         });
   const lockedIds = new Set(lockedGroups.map((group) => group.importBatchId));
 
@@ -122,9 +134,10 @@ export async function listImportBatches(
  *    ticket row, so an in-flight action either committed before this
  *    statement (its log then fails the check below and the whole revoke
  *    rolls back) or blocks until this transaction ends.
- * 3. Clean check AFTER the locks: any ticket with processing beyond create,
- *    or individually deleted before this revoke (deletedAt ≠ this revoke's
- *    stamp), rejects the batch with the processed count.
+ * 3. Clean check AFTER the locks: any ticket with a log later than the
+ *    batch's import instant, or individually deleted before this revoke
+ *    (deletedAt ≠ this revoke's stamp), rejects the batch with the processed
+ *    count.
  *
  * 与既有删除口径一致: no ProcessLog is written — the logs and materials stay
  * behind the tombstones; deletedAt alone removes the tickets from every
@@ -140,7 +153,7 @@ export async function revokeImportBatch(
     async (tx) => {
       const batch = await tx.ticketImportBatch.findFirst({
         where: { id: input.batchId, ...importBatchScope(actor) },
-        select: { id: true, revokedAt: true },
+        select: { id: true, revokedAt: true, importedAt: true },
       });
       if (!batch) {
         throw new ImportBatchNotFoundError();
@@ -168,7 +181,7 @@ export async function revokeImportBatch(
           OR: [
             // deletedAt ≠ 本次盖章 ⇒ 在本次撤销前已被单独删除
             { deletedAt: { not: now } },
-            { processLogs: { some: { action: { not: "create" } } } },
+            { processLogs: { some: { at: { gt: batch.importedAt } } } },
           ],
         },
       });
