@@ -185,7 +185,7 @@ describe("the role table", () => {
     expect(box).toBeChecked();
     expect(box).toBeDisabled();
 
-    // 管理员全量展开只含正向权限,限制类勾选框必须保持未勾选
+    // 管理员全量展开只含正向权限
     const forbid = within(dialog).getByRole("checkbox", { name: /禁止修改自己的密码/ });
     expect(forbid).not.toBeChecked();
   });

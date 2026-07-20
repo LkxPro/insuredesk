@@ -63,7 +63,7 @@ export const SYSTEM_PERMISSIONS = [
 // point. Kept in their own list so positive-permission consumers (admin
 // expansion, menu gating) can exclude them wholesale.
 export const RESTRICTIVE_PERMISSIONS = [
-  "user.forbid_change_own_password", // Forbid changing one's own password (restrictive)
+  "user.forbid_change_own_password", // Forbid changing one's own password
 ] as const;
 
 // All positive (grant-type) permissions — what the 管理员 system role expands
@@ -76,7 +76,6 @@ export const POSITIVE_PERMISSIONS = [
   ...SYSTEM_PERMISSIONS,
 ] as const;
 
-// All permissions combined
 export const ALL_PERMISSIONS = [...POSITIVE_PERMISSIONS, ...RESTRICTIVE_PERMISSIONS] as const;
 
 export const permissionSchema = z.enum(ALL_PERMISSIONS);
