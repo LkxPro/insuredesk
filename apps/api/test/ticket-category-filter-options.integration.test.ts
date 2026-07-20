@@ -10,10 +10,9 @@ import type { AuthenticatedUser } from "../src/services/auth.service";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * ticketCategory.filterOptions acceptance tests (issue #91). The procedure
- * completes the 渠道/完结状态 symmetry: the whole catalog rides along with
- * the active flag so filtering by a disabled category still reaches its
- * 存量工单. Frontend consumption lands in a later ticket.
+ * ticketCategory.filterOptions acceptance tests. The procedure completes the
+ * 渠道/完结状态 symmetry: the whole catalog rides along with the active flag
+ * so filtering by a disabled category still reaches its 存量工单.
  */
 describe("TicketCategory filter options (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;

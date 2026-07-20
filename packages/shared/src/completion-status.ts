@@ -1,22 +1,18 @@
 import type { z } from "zod";
 import { createCatalogSchemas } from "./dictionary-catalog";
 
-/**
- * 完结状态目录 contracts. Tickets reference catalog rows by id, so a rename
- * propagates everywhere at read time; only the ProcessLog remark keeps the
- * literal name snapshot of the moment.
- */
+/** 完结状态目录 contracts；共同形状与措辞见 dictionary-catalog. */
+export const completionStatusCatalogSchemas = createCatalogSchemas("状态");
 
-const schemas = createCatalogSchemas("状态");
-
-export const completionStatusCreateInputSchema = schemas.createInputSchema;
+export const completionStatusCreateInputSchema = completionStatusCatalogSchemas.createInputSchema;
 export type CompletionStatusCreateInput = z.infer<typeof completionStatusCreateInputSchema>;
 
-export const completionStatusUpdateInputSchema = schemas.updateInputSchema;
+export const completionStatusUpdateInputSchema = completionStatusCatalogSchemas.updateInputSchema;
 export type CompletionStatusUpdateInput = z.infer<typeof completionStatusUpdateInputSchema>;
 
-export const completionStatusSetActiveInputSchema = schemas.setActiveInputSchema;
+export const completionStatusSetActiveInputSchema =
+  completionStatusCatalogSchemas.setActiveInputSchema;
 export type CompletionStatusSetActiveInput = z.infer<typeof completionStatusSetActiveInputSchema>;
 
-export const completionStatusDeleteInputSchema = schemas.deleteInputSchema;
+export const completionStatusDeleteInputSchema = completionStatusCatalogSchemas.deleteInputSchema;
 export type CompletionStatusDeleteInput = z.infer<typeof completionStatusDeleteInputSchema>;
