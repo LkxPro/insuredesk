@@ -186,6 +186,7 @@ describe("user + role management (Testcontainers)", () => {
 
       await admin().user.update({
         id: member.id,
+        username: member.username,
         name: "改名后",
         email: "renamed@insuredesk.local",
         team: "客服二组",
@@ -203,6 +204,7 @@ describe("user + role management (Testcontainers)", () => {
 
       await admin().user.update({
         id: member.id,
+        username: member.username,
         name: "改名后",
         email: "renamed@insuredesk.local",
         team: "客服二组",
@@ -210,6 +212,50 @@ describe("user + role management (Testcontainers)", () => {
       });
       expect((await login(member.username, member.password)).statusCode).toBe(401);
       expect((await login(member.username, "rotated-456")).statusCode).toBe(200);
+    });
+
+    it("renames the username: live sessions survive, only the next login needs the new handle", async () => {
+      const member = await makeUser();
+      const token = await loginToken(member.username, member.password);
+      const renamed = `${member.username}-renamed`;
+
+      await admin().user.update({
+        id: member.id,
+        username: renamed,
+        name: "改登录名",
+        email: null,
+        team: null,
+        password: null,
+      });
+
+      const listed = (await admin().user.list()).find((user) => user.id === member.id);
+      expect(listed).toMatchObject({ username: renamed, name: "改登录名" });
+
+      // 会话按 userId 关联:改名不踢在线会话
+      expect((await me(token)).statusCode).toBe(200);
+
+      // 旧名从下一次登录起失效,新名接管
+      expect((await login(member.username, member.password)).statusCode).toBe(401);
+      expect((await login(renamed, member.password)).statusCode).toBe(200);
+    });
+
+    it("renaming to a taken username → CONFLICT, nothing written", async () => {
+      const member = await makeUser();
+
+      await expect(
+        admin().user.update({
+          id: member.id,
+          username: "admin", // seeded
+          name: member.name,
+          email: null,
+          team: null,
+          password: null,
+        }),
+      ).rejects.toMatchObject({ code: "CONFLICT", message: "用户名已存在" });
+
+      const row = await prisma.user.findUniqueOrThrow({ where: { id: member.id } });
+      expect(row.username).toBe(member.username);
+      expect((await login(member.username, member.password)).statusCode).toBe(200);
     });
 
     it("a password reset kills the target's live sessions; a no-password edit leaves them alone", async () => {
@@ -222,6 +268,7 @@ describe("user + role management (Testcontainers)", () => {
       // 仅改基础字段:两个会话都继续有效
       await admin().user.update({
         id: member.id,
+        username: member.username,
         name: "改资料",
         email: null,
         team: null,
@@ -234,6 +281,7 @@ describe("user + role management (Testcontainers)", () => {
       // 重置密码:全部会话立即失效,行被删除而非仅被忽略
       await admin().user.update({
         id: member.id,
+        username: member.username,
         name: "改资料",
         email: null,
         team: null,
@@ -252,6 +300,7 @@ describe("user + role management (Testcontainers)", () => {
       await expect(
         admin().user.update({
           id: "no-such-user",
+          username: "nobody",
           name: "无人",
           email: null,
           team: null,
@@ -500,6 +549,7 @@ describe("user + role management (Testcontainers)", () => {
         run: (caller) =>
           caller.user.update({
             id: "no-such-user",
+            username: "rbac-update-probe",
             name: "探针",
             email: null,
             team: null,

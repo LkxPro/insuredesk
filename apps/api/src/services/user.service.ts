@@ -157,14 +157,16 @@ export async function createUser({ prisma }: TicketServiceDeps, input: UserCreat
 }
 
 /**
- * Edit basic info (user.edit). username is immutable (login handle + seed
- * natural key); role changes ride assignUserRole. A non-empty password resets
- * the credential, null leaves it untouched. A reset also deletes the target's
- * sessions in the same transaction — whoever held the old credential must not
- * keep riding a live session past the rotation.
+ * Edit basic info (user.edit), username included — sessions key on userId, so
+ * a rename leaves the target's live sessions alone; only the next login needs
+ * the new handle. Role changes ride assignUserRole. A non-empty password
+ * resets the credential, null leaves it untouched. A reset also deletes the
+ * target's sessions in the same transaction — whoever held the old credential
+ * must not keep riding a live session past the rotation.
  */
 export async function updateUser({ prisma }: TicketServiceDeps, input: UserUpdateData) {
   const data: Prisma.UserUpdateInput = {
+    username: input.username,
     name: input.name,
     email: input.email,
     team: input.team,

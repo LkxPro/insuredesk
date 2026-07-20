@@ -22,9 +22,9 @@ import { trpc } from "@/lib/trpc";
 import type { UserRow } from "./UsersPage";
 
 /**
- * 编辑用户 (user.edit): basic info + optional password reset. username is
- * immutable (it's the login handle) and the role is deliberately absent —
- * changing it is 分配角色, a separate permission point (user.assign_role).
+ * 编辑用户 (user.edit): basic info + optional password reset. The role is
+ * deliberately absent — changing it is 分配角色, a separate permission point
+ * (user.assign_role).
  */
 export function UserEditDialog({
   user,
@@ -38,13 +38,14 @@ export function UserEditDialog({
 
   const form = useForm<UserUpdateInput>({
     resolver: zodResolver(userUpdateInputSchema),
-    defaultValues: { id: "", name: "", email: "", team: "", password: "" },
+    defaultValues: { id: "", username: "", name: "", email: "", team: "", password: "" },
   });
 
   useEffect(() => {
     if (user) {
       form.reset({
         id: user.id,
+        username: user.username,
         name: user.name,
         email: user.email ?? "",
         team: user.team ?? "",
@@ -71,16 +72,23 @@ export function UserEditDialog({
         <DialogHeader>
           <DialogTitle>编辑用户</DialogTitle>
           <DialogDescription>
-            {user && `用户名 ${user.username} 不可修改；角色请通过「分配角色」调整。`}
+            修改用户名后该用户下次登录需用新用户名，在线会话不受影响；角色请通过「分配角色」调整。
           </DialogDescription>
         </DialogHeader>
 
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <Field data-invalid={!!errors.name}>
-            <FieldLabel htmlFor="edit-name">姓名</FieldLabel>
-            <Input id="edit-name" {...form.register("name")} />
-            {errors.name && <FieldError>{errors.name.message}</FieldError>}
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field data-invalid={!!errors.name}>
+              <FieldLabel htmlFor="edit-name">姓名</FieldLabel>
+              <Input id="edit-name" {...form.register("name")} />
+              {errors.name && <FieldError>{errors.name.message}</FieldError>}
+            </Field>
+            <Field data-invalid={!!errors.username}>
+              <FieldLabel htmlFor="edit-username">用户名</FieldLabel>
+              <Input id="edit-username" {...form.register("username")} placeholder="登录账号" />
+              {errors.username && <FieldError>{errors.username.message}</FieldError>}
+            </Field>
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field data-invalid={!!errors.email}>

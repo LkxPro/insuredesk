@@ -47,12 +47,12 @@ export type UserCreateInput = z.input<typeof userCreateInputSchema>;
 export type UserCreateData = z.output<typeof userCreateInputSchema>;
 
 /**
- * Edit basic info (user.edit). username is immutable — it is the login handle
- * and the seed's natural key. Role changes ride user.assignRole (a separate
+ * Edit basic info (user.edit). Role changes ride user.assignRole (a separate
  * permission point); a non-empty password resets it, empty/null keeps it.
  */
 export const userUpdateInputSchema = z.object({
   id: z.string().min(1),
+  username: usernameSchema,
   name: displayNameSchema,
   email: optionalEmailSchema,
   team: optionalTeamSchema,
