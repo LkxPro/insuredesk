@@ -1,5 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
+
+const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * global setup 里迁移完成后作为克隆源的 template 库名。template 只含 schema
@@ -13,6 +18,15 @@ declare module "vitest" {
     /** 共享容器管理库（默认库）的连接串；harness 由此派生各克隆库的连接。 */
     integrationDbBaseUri: string;
   }
+}
+
+/** 对目标库真跑 `prisma migrate deploy`；子进程跑完即退，不在库上留连接。 */
+export function migrateDeploy(databaseUrl: string): void {
+  execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
+    cwd: apiDir,
+    env: { ...process.env, DATABASE_URL: databaseUrl },
+    stdio: "pipe",
+  });
 }
 
 /** 把管理库连接串改指到 dbName。 */

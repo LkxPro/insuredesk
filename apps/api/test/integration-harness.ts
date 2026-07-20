@@ -1,7 +1,4 @@
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Permission } from "@insuredesk/shared";
 import { inject } from "vitest";
 import {
@@ -19,9 +16,7 @@ import { prisma } from "../src/db";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
 import { appRouter } from "../src/routers/index";
 import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
-import { runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { migrateDeploy, runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres";
 
 /**
  * real-migrations：保证每次真跑 `prisma migrate deploy`（在共享容器的全新
@@ -116,16 +111,12 @@ export async function startIntegrationHarness(
   const dbName = `harness_${randomUUID().replaceAll("-", "")}`;
   const databaseUrl = uriForDatabase(baseUri, dbName);
 
-  if (mode === "real-migrations") {
-    await runAdminSql(baseUri, `CREATE DATABASE "${dbName}"`);
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-  } else {
-    await runAdminSql(baseUri, `CREATE DATABASE "${dbName}" TEMPLATE "${TEMPLATE_DB}"`);
-  }
+  await runAdminSql(
+    baseUri,
+    mode === "real-migrations"
+      ? `CREATE DATABASE "${dbName}"`
+      : `CREATE DATABASE "${dbName}" TEMPLATE "${TEMPLATE_DB}"`,
+  );
 
   // WITH (FORCE)：库上可能还挂着测试自己拉起的连接（如 boot-env 起的子进程
   // 崩了没断连），强断后照样能删。
@@ -134,6 +125,10 @@ export async function startIntegrationHarness(
 
   process.env.DATABASE_URL = databaseUrl;
   try {
+    if (mode === "real-migrations") {
+      migrateDeploy(databaseUrl);
+    }
+
     const selected = new Set<SeedSetName>(seed);
     const seededRolesAndUsers = selected.has("rolesAndUsers")
       ? await seedFactoryRolesAndDemoUsers(prisma)
