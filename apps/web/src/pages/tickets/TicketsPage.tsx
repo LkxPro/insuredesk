@@ -2,6 +2,7 @@ import {
   BATCH_ASSIGN_LIMIT,
   COMPLAINT_LEVELS,
   TICKET_DISPLAY_STATUSES,
+  TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
   TICKET_SOURCES,
   TICKET_STATUS_LABELS,
@@ -367,7 +368,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onChange={(value) => setParam("status", value)}
         />
         <FilterSelect
-          label="渠道"
+          label={TICKET_FIELDS.channelId.overrides.listLabel}
           value={query.channelId}
           options={channelOptions.map((channel) => ({
             value: channel.id,
@@ -376,7 +377,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onChange={(value) => setParam("channel", value)}
         />
         <FilterSelect
-          label="类别"
+          label={TICKET_FIELDS.categoryId.overrides.listLabel}
           value={query.categoryId}
           options={categoryOptions.map((category) => ({
             value: category.id,
@@ -385,7 +386,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onChange={(value) => setParam("category", value)}
         />
         <FilterSelect
-          label="完结状态"
+          label={TICKET_FIELDS.completionStatusId.label}
           value={query.completionStatusId}
           options={completionStatusOptions.map((status) => ({
             value: status.id,
@@ -394,7 +395,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onChange={(value) => setParam("completionStatus", value)}
         />
         <FilterSelect
-          label="投诉等级"
+          label={TICKET_FIELDS.complaintLevel.label}
           value={query.complaintLevel}
           options={COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }))}
           onChange={(value) => setParam("level", value)}
@@ -483,10 +484,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 )}
                 <TableHead>工单号</TableHead>
                 <TableHead>状态</TableHead>
-                <TableHead>客户姓名</TableHead>
-                <TableHead>保单号</TableHead>
-                <TableHead>渠道</TableHead>
-                <TableHead>投诉等级</TableHead>
+                <TableHead>{TICKET_FIELDS.customerName.label}</TableHead>
+                <TableHead>{TICKET_FIELDS.policyNumber.label}</TableHead>
+                <TableHead>{TICKET_FIELDS.channelId.overrides.listLabel}</TableHead>
+                <TableHead>{TICKET_FIELDS.complaintLevel.label}</TableHead>
                 <TableHead>来源</TableHead>
                 <TableHead>责任人</TableHead>
                 <TableHead>

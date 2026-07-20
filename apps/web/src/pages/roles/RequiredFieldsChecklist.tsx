@@ -1,28 +1,5 @@
-import type { TicketCreateFieldKey } from "@insuredesk/shared";
+import { TICKET_FIELDS, type TicketCreateFieldKey } from "@insuredesk/shared";
 import { Checkbox } from "@/components/ui/checkbox";
-
-const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
-  feedbackTime: "反馈时间",
-  channelId: "业务渠道",
-  project: "项目名称",
-  brokerageEntity: "经纪主体",
-  paymentChannel: "支付渠道",
-  internalOrderNumber: "内部工单号",
-  policyNumber: "保单号",
-  userComplaintChannel: "用户投诉渠道",
-  complaintReceiveChannel: "投诉信息接收渠道",
-  customerName: "客户姓名",
-  phone: "手机号",
-  contactPhone: "联系电话",
-  customerRequest: "客户诉求",
-  nuclearBodyStatus: "保司侧是否核身",
-  hasContacted: "是否已联系",
-  contactTime: "进线时间",
-  contactId: "联系人ID",
-  categoryId: "分类",
-  complaintLevel: "投诉等级",
-  priority: "优先级",
-};
 
 /**
  * 建单必填字段清单：勾选列表按表单分组排列。
@@ -67,7 +44,7 @@ export function RequiredFieldsChecklist({
                 onCheckedChange={(checked) => toggle(field, checked === true)}
               />
               <label htmlFor={`required-field-${field}`} className="cursor-pointer">
-                {FIELD_LABELS[field as TicketCreateFieldKey]}
+                {TICKET_FIELDS[field as TicketCreateFieldKey].label}
               </label>
             </div>
           ))}
@@ -95,7 +72,7 @@ export function RequiredFieldsChecklist({
                 onCheckedChange={(checked) => toggle(field, checked === true)}
               />
               <label htmlFor={`required-field-${field}`} className="cursor-pointer">
-                {FIELD_LABELS[field as TicketCreateFieldKey]}
+                {TICKET_FIELDS[field as TicketCreateFieldKey].label}
               </label>
             </div>
           ))}
@@ -124,7 +101,7 @@ export function RequiredFieldsChecklist({
                 onCheckedChange={(checked) => toggle(field, checked === true)}
               />
               <label htmlFor={`required-field-${field}`} className="cursor-pointer">
-                {FIELD_LABELS[field as TicketCreateFieldKey]}
+                {TICKET_FIELDS[field as TicketCreateFieldKey].label}
               </label>
             </div>
           ))}
@@ -144,7 +121,7 @@ export function RequiredFieldsChecklist({
                 onCheckedChange={(checked) => toggle(field, checked === true)}
               />
               <label htmlFor={`required-field-${field}`} className="cursor-pointer">
-                {FIELD_LABELS[field as TicketCreateFieldKey]}
+                {TICKET_FIELDS[field as TicketCreateFieldKey].label}
               </label>
             </div>
           ))}

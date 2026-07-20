@@ -1,6 +1,7 @@
 import {
   PRIORITY_LABELS,
   PROCESS_LOG_ACTION_LABELS,
+  TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
 } from "@insuredesk/shared";
 import { AlertCircle, ArrowLeft, CheckCircle2, Pencil, Trash2, UserPlus } from "lucide-react";
@@ -166,43 +167,48 @@ export function TicketDetail() {
         <Item label="工单号">{ticket.workOrderNumber}</Item>
         <Item label="创建时间">{formatDateTime(ticket.createdAt)}</Item>
         <Item label="更新时间">{formatDateTime(ticket.updatedAt)}</Item>
-        <Item label="反馈时间">{formatDateTime(ticket.feedbackTime)}</Item>
+        <Item label={TICKET_FIELDS.feedbackTime.label}>{formatDateTime(ticket.feedbackTime)}</Item>
         <Item label="工单来源">{TICKET_SOURCE_LABELS[ticket.source]}</Item>
         <Item label="创建人">{ticket.createdBy}</Item>
       </Section>
 
       <Section title="业务信息">
-        <Item label="反馈渠道">{ticket.channel?.name}</Item>
-        <Item label="项目（保司）">{ticket.project}</Item>
-        <Item label="经纪主体">{ticket.brokerageEntity}</Item>
-        <Item label="支付渠道">{ticket.paymentChannel}</Item>
-        <Item label="内部订单号">{ticket.internalOrderNumber}</Item>
-        <Item label="保单号">{ticket.policyNumber}</Item>
-        <Item label="用户投诉渠道">{ticket.userComplaintChannel}</Item>
-        <Item label="投诉信息接收渠道">{ticket.complaintReceiveChannel}</Item>
+        <Item label={TICKET_FIELDS.channelId.label}>{ticket.channel?.name}</Item>
+        <Item label={TICKET_FIELDS.project.label}>{ticket.project}</Item>
+        <Item label={TICKET_FIELDS.brokerageEntity.label}>{ticket.brokerageEntity}</Item>
+        <Item label={TICKET_FIELDS.paymentChannel.label}>{ticket.paymentChannel}</Item>
+        <Item label={TICKET_FIELDS.internalOrderNumber.label}>{ticket.internalOrderNumber}</Item>
+        <Item label={TICKET_FIELDS.policyNumber.label}>{ticket.policyNumber}</Item>
+        <Item label={TICKET_FIELDS.userComplaintChannel.label}>{ticket.userComplaintChannel}</Item>
+        <Item label={TICKET_FIELDS.complaintReceiveChannel.label}>
+          {ticket.complaintReceiveChannel}
+        </Item>
       </Section>
 
       <Section title="客户信息">
-        <Item label="客户姓名">{ticket.customerName}</Item>
-        <Item label="客户电话（投保人）">{ticket.phone}</Item>
-        <Item label="联系人电话（备用）">{ticket.contactPhone}</Item>
-        <Item label="保司侧是否核身">{ticket.nuclearBodyStatus}</Item>
-        <Item label="客户曾进线">
-          {ticket.hasContacted === null ? null : ticket.hasContacted ? "是" : "否"}
+        <Item label={TICKET_FIELDS.customerName.label}>{ticket.customerName}</Item>
+        <Item label={TICKET_FIELDS.phone.label}>{ticket.phone}</Item>
+        <Item label={TICKET_FIELDS.contactPhone.overrides.detailLabel}>{ticket.contactPhone}</Item>
+        <Item label={TICKET_FIELDS.nuclearBodyStatus.label}>{ticket.nuclearBodyStatus}</Item>
+        <Item label={TICKET_FIELDS.hasContacted.label}>
+          {TICKET_FIELDS.hasContacted.options.find((option) => option.value === ticket.hasContacted)
+            ?.label ?? null}
         </Item>
-        <Item label="进线时间">{formatDateTime(ticket.contactTime)}</Item>
-        <Item label="进线ID">{ticket.contactId}</Item>
+        <Item label={TICKET_FIELDS.contactTime.label}>{formatDateTime(ticket.contactTime)}</Item>
+        <Item label={TICKET_FIELDS.contactId.label}>{ticket.contactId}</Item>
         <div className="sm:col-span-3">
-          <Item label="客户诉求">
+          <Item label={TICKET_FIELDS.customerRequest.label}>
             <span className="whitespace-pre-wrap">{ticket.customerRequest}</span>
           </Item>
         </div>
       </Section>
 
       <Section title="分类与等级">
-        <Item label="客诉类别">{ticket.category?.name}</Item>
-        <Item label="投诉等级">{ticket.complaintLevel}</Item>
-        <Item label="优先级">{ticket.priority ? PRIORITY_LABELS[ticket.priority] : null}</Item>
+        <Item label={TICKET_FIELDS.categoryId.label}>{ticket.category?.name}</Item>
+        <Item label={TICKET_FIELDS.complaintLevel.label}>{ticket.complaintLevel}</Item>
+        <Item label={TICKET_FIELDS.priority.label}>
+          {ticket.priority ? PRIORITY_LABELS[ticket.priority] : null}
+        </Item>
         <Item label="跟进频次要求">{ticket.followUpFrequency}</Item>
         <Item label="首响要求">{ticket.firstResponseRequirement}</Item>
       </Section>
@@ -231,7 +237,7 @@ export function TicketDetail() {
       {(ticket.completionTime || ticket.completionStatus) && (
         <Section title="完结信息">
           <Item label="完结时间">{formatDateTime(ticket.completionTime)}</Item>
-          <Item label="完结状态">{ticket.completionStatus}</Item>
+          <Item label={TICKET_FIELDS.completionStatusId.label}>{ticket.completionStatus}</Item>
         </Section>
       )}
 

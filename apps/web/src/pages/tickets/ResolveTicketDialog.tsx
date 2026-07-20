@@ -1,4 +1,4 @@
-import { TICKET_COMPLETION_REMARK_LIMIT } from "@insuredesk/shared";
+import { TICKET_COMPLETION_REMARK_LIMIT, TICKET_FIELDS } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -84,7 +84,9 @@ export function ResolveTicketDialog({
         </DialogHeader>
 
         <Field>
-          <FieldLabel htmlFor="completion-status">完结状态</FieldLabel>
+          <FieldLabel htmlFor="completion-status">
+            {TICKET_FIELDS.completionStatusId.label}
+          </FieldLabel>
           <Select value={completionStatusId} onValueChange={setCompletionStatusId}>
             <SelectTrigger id="completion-status" className="w-full">
               <SelectValue placeholder="请选择完结状态" />
@@ -100,7 +102,9 @@ export function ResolveTicketDialog({
         </Field>
 
         <Field>
-          <FieldLabel htmlFor="completion-remark">完结备注</FieldLabel>
+          <FieldLabel htmlFor="completion-remark">
+            {TICKET_FIELDS.completionRemark.label}
+          </FieldLabel>
           <Textarea
             id="completion-remark"
             placeholder="记录完结原因与处理结论"

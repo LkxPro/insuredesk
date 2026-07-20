@@ -12,12 +12,14 @@ import { COMPLAINT_LEVELS, NUCLEAR_BODY_STATUSES, PRIORITIES, PRIORITY_LABELS } 
  *   与标准名统一需另立 ticket 并通知使用方
  * - processLogLabel：编辑留痕的句中短名（如「客户电话」）
  * - detailLabel：详情页展示名（解释后缀，如「联系人电话（备用）」）
+ * - listLabel：列表页列头与筛选的短名（如「渠道」）
  */
 
 export interface TicketFieldOverrides {
   readonly exportHeader?: string;
   readonly processLogLabel?: string;
   readonly detailLabel?: string;
+  readonly listLabel?: string;
 }
 
 export interface TicketEnumOption {
@@ -76,7 +78,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     label: "反馈渠道",
     catalog: "channel",
     maxLength: 100,
-    overrides: { exportHeader: "渠道" },
+    overrides: { exportHeader: "渠道", listLabel: "渠道" },
   },
   {
     type: "text",
@@ -165,7 +167,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     label: "客诉类别",
     catalog: "category",
     maxLength: 100,
-    overrides: { exportHeader: "分类" },
+    overrides: { exportHeader: "分类", listLabel: "类别" },
   },
   {
     type: "enum",
