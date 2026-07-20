@@ -1,9 +1,18 @@
+import { changeOwnPasswordInputSchema } from "@insuredesk/shared";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { protectedProcedure, router } from "../trpc";
+import { prisma } from "../db";
+import {
+  changeOwnPassword,
+  IncorrectOldPasswordError,
+  NoPasswordAccountError,
+} from "../services/auth.service";
+import { protectedProcedure, requireNotForbidden, router } from "../trpc";
 
 /**
- * Authentication router - handles identity queries.
- * Login/logout are handled via REST endpoints in server.ts for easier cookie handling.
+ * Authentication router - handles identity queries and self-service
+ * credential changes. Login/logout are handled via REST endpoints in
+ * server.ts for easier cookie handling.
  */
 
 const meOutputSchema = z.object({
@@ -17,6 +26,17 @@ const meOutputSchema = z.object({
   permissions: z.array(z.string()),
   requiredTicketFields: z.array(z.string()),
 });
+
+/** Domain error → transport code. */
+function toTRPCError(error: unknown): never {
+  if (error instanceof IncorrectOldPasswordError) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  if (error instanceof NoPasswordAccountError) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message, cause: error });
+  }
+  throw error;
+}
 
 export const authRouter = router({
   /**
@@ -42,4 +62,11 @@ export const authRouter = router({
       requiredTicketFields: ctx.user.requiredTicketFields,
     };
   }),
+
+  /** 自助改密 — kicks every other session, keeps the caller's own. */
+  changeOwnPassword: requireNotForbidden("user.forbid_change_own_password")
+    .input(changeOwnPasswordInputSchema)
+    .mutation(({ ctx, input }) =>
+      changeOwnPassword(prisma, ctx.user.id, ctx.sessionToken, input).catch(toTRPCError),
+    ),
 });

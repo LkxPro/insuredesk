@@ -58,6 +58,12 @@ vi.mock("@/pages/shift-types/ShiftTypesPage", () => ({
   ShiftTypesPage: () => <h1>班次管理</h1>,
 }));
 
+// The 修改密码 block mutates over tRPC — stub it so the profile page's
+// read-only content renders without a provider. Covered in ProfilePage.test.tsx.
+vi.mock("@/pages/profile/ChangePasswordCard", () => ({
+  ChangePasswordCard: () => null,
+}));
+
 // And for the real 用户管理 / 角色权限 pages: they query user.list /
 // role.list on mount. Covered in UsersPage.test.tsx and RolesPage.test.tsx.
 vi.mock("@/pages/users/UsersPage", () => ({

@@ -29,6 +29,58 @@ export function effectivePermissions(role: {
   return role.system ? [...POSITIVE_PERMISSIONS] : (role.permissions as Permission[]);
 }
 
+export class IncorrectOldPasswordError extends Error {
+  constructor() {
+    super("旧密码不正确");
+    this.name = "IncorrectOldPasswordError";
+  }
+}
+
+/** No stored credential (e.g. a future SSO-only account) — nothing to rotate. */
+export class NoPasswordAccountError extends Error {
+  constructor() {
+    super("该账号未设置密码，无法修改密码");
+    this.name = "NoPasswordAccountError";
+  }
+}
+
+/**
+ * 自助改密 (profile page). Verifies the old credential before rotating.
+ * Accounts without a passwordHash are refused — this is a rotation, not a
+ * first-time set. Every OTHER session dies in the same transaction (whoever
+ * held the old password must not keep riding a live session), while the
+ * caller's own session survives — they just proved the credential.
+ */
+export async function changeOwnPassword(
+  prisma: PrismaClient,
+  userId: string,
+  currentSessionToken: SessionToken | null,
+  input: { oldPassword: string; newPassword: string },
+): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { passwordHash: true },
+  });
+  if (!user.passwordHash) {
+    throw new NoPasswordAccountError();
+  }
+  if (!(await bcrypt.compare(input.oldPassword, user.passwordHash))) {
+    throw new IncorrectOldPasswordError();
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+    prisma.session.deleteMany({
+      // A caller without a session token (tests via createCaller) kicks all.
+      where: {
+        userId,
+        ...(currentSessionToken ? { token: { not: currentSessionToken } } : {}),
+      },
+    }),
+  ]);
+}
+
 /**
  * Pluggable authentication abstraction. Current implementation supports password
  * login; future Feishu SSO will add a second implementation that calls the same
