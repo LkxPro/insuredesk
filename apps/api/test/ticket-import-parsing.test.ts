@@ -24,12 +24,14 @@ const HEADERS = [
   "内部订单号",
   "保单号",
   "用户投诉渠道",
+  "投诉信息接收渠道",
   "客户姓名",
   "客户电话（投保人）",
   "联系人电话",
   "保司侧是否核身",
   "客户诉求",
   "客户曾进线",
+  "进线时间",
   "进线ID",
   "客诉类别",
   "投诉等级",
@@ -148,9 +150,11 @@ describe("validateTicketImportRows", () => {
           反馈时间: "2026-07-01 10:00",
           反馈渠道: "飞书",
           "项目（保司）": " 融盛 ",
+          投诉信息接收渠道: "监管转办",
           客户姓名: "张三",
           保司侧是否核身: "待核实",
           客户曾进线: "是",
+          进线时间: "2026-06-30 21:15",
           客诉类别: "理赔",
           投诉等级: "高级投诉",
           优先级: "紧急",
@@ -164,9 +168,11 @@ describe("validateTicketImportRows", () => {
     expect(ticket.feedbackTime).toBe("2026-07-01T02:00:00.000Z");
     expect(ticket.channelId).toBe("ch-feishu");
     expect(ticket.project).toBe("融盛");
+    expect(ticket.complaintReceiveChannel).toBe("监管转办");
     expect(ticket.customerName).toBe("张三");
     expect(ticket.nuclearBodyStatus).toBe("待核实");
     expect(ticket.hasContacted).toBe(true);
+    expect(ticket.contactTime).toBe("2026-06-30T13:15:00.000Z");
     expect(ticket.categoryId).toBe("cat-claims");
     expect(ticket.complaintLevel).toBe("高级投诉");
     expect(ticket.priority).toBe("urgent");
@@ -183,8 +189,24 @@ describe("validateTicketImportRows", () => {
     expect(ticket.complaintLevel).toBeNull();
     expect(ticket.priority).toBeNull();
     expect(ticket.customerName).toBeNull();
+    expect(ticket.complaintReceiveChannel).toBeNull();
+    expect(ticket.contactTime).toBeNull();
     expect(ticket.completionStatusId).toBeNull();
     expect(ticket.completionRemark).toBeNull();
+  });
+
+  it("进线时间 follows the 反馈时间 date contract; 投诉信息接收渠道 caps at 100 chars", async () => {
+    const { errors } = await validate([
+      { 进线时间: "2026/07/01 10:00" },
+      { 进线时间: "2026-02-30 10:00" },
+      { 投诉信息接收渠道: "字".repeat(101) },
+    ]);
+    expect(errors).toHaveLength(3);
+    expect(errors[0]).toMatchObject({ row: 2, column: "进线时间" });
+    expect(errors[0]?.message).toContain("yyyy-MM-dd HH:mm");
+    expect(errors[1]).toMatchObject({ row: 3, column: "进线时间" });
+    expect(errors[2]).toMatchObject({ row: 4, column: "投诉信息接收渠道" });
+    expect(errors[2]?.message).toContain("100");
   });
 
   it("maps a filled 完结状态/完结备注 pair to the completion payload", async () => {
@@ -304,13 +326,13 @@ describe("validateTicketImportRows", () => {
     expect(errors[5]?.message).toContain("50");
   });
 
-  it("flags rows identical in all 20 fields as duplicates of the first occurrence", async () => {
+  it("flags fully identical rows as duplicates of the first occurrence", async () => {
     const row: RowInput = { 客户姓名: "张三", 投诉等级: "一般投诉" };
     const { errors } = await validate([row, { 客户姓名: "张三" }, { ...row }, { ...row }]);
     expect(errors).toHaveLength(2);
     expect(errors[0]).toMatchObject({ row: 4, column: null });
     expect(errors[0]?.message).toContain("第 2 行");
-    expect(errors[0]?.message).toContain("20 个字段");
+    expect(errors[0]?.message).toContain("22 个字段");
     expect(errors[1]).toMatchObject({ row: 5, column: null });
   });
 

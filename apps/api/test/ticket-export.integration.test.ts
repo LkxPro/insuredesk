@@ -325,6 +325,28 @@ describe("ticket export (Testcontainers)", () => {
       expect(fallback.statusCode).toBe(200);
       expect(parseCsv(fallback.body)[1]?.[createdColumn]).toBe("2026-07-09 16:30");
     });
+
+    it("进线时间/投诉信息接收渠道 columns sit in their detail-page positions, dates in the requested zone", async () => {
+      await makeTicket({
+        contactTime: "2026-07-08T02:00:00.000Z",
+        complaintReceiveChannel: "监管转办",
+      });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv", timeZone: "Asia/Shanghai" });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      const header = rows[0] ?? [];
+      // 投诉信息接收渠道 紧跟 用户投诉渠道；进线时间 位于 是否已联系｜联系ID 之间
+      expect(header.indexOf("投诉信息接收渠道")).toBe(header.indexOf("用户投诉渠道") + 1);
+      expect(header.indexOf("进线时间")).toBe(header.indexOf("是否已联系") + 1);
+      expect(header.indexOf("联系ID")).toBe(header.indexOf("进线时间") + 1);
+
+      const row = rows[1] ?? [];
+      expect(row[header.indexOf("投诉信息接收渠道")]).toBe("监管转办");
+      expect(row[header.indexOf("进线时间")]).toBe("2026-07-08 10:00"); // UTC+8
+    });
   });
 
   describe("数据范围 (PRD §5.2)", () => {

@@ -147,11 +147,20 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
           internalOrderNumber: "IO-20260710-01",
           hasContacted: true,
           priority: "high",
+          contactTime: "2026-07-08T13:15:00.000Z",
+          complaintReceiveChannel: "监管转办",
         }),
       );
       expect(result).toMatchObject({ id: ticketId });
       expect([...result.changedFields].sort()).toEqual(
-        ["customerName", "hasContacted", "internalOrderNumber", "priority"].sort(),
+        [
+          "customerName",
+          "complaintReceiveChannel",
+          "contactTime",
+          "hasContacted",
+          "internalOrderNumber",
+          "priority",
+        ].sort(),
       );
 
       const detail = await manager().ticket.detail({ id: ticketId });
@@ -159,6 +168,8 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.internalOrderNumber).toBe("IO-20260710-01");
       expect(detail.hasContacted).toBe(true);
       expect(detail.priority).toBe("high");
+      expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");
+      expect(detail.complaintReceiveChannel).toBe("监管转办");
 
       // 留痕: exactly one edit entry on top of create, remark carries the
       // per-field diff, from/to stay empty
@@ -174,6 +185,32 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(editLog?.remark).toContain("内部订单号: （空）→IO-20260710-01");
       expect(editLog?.remark).toContain("客户曾进线: 否→是");
       expect(editLog?.remark).toContain("优先级: （空）→高");
+      expect(editLog?.remark).toContain("进线时间: （空）→2026-07-08T13:15:00.000Z");
+      expect(editLog?.remark).toContain("投诉信息接收渠道: （空）→监管转办");
+    });
+
+    it("clears 进线时间/投诉信息接收渠道 back to 未填写, logged as →（空）", async () => {
+      const ticketId = await createTicket({
+        contactTime: "2026-07-08T13:15:00.000Z",
+        complaintReceiveChannel: "邮箱接收",
+      });
+
+      const result = await manager().ticket.edit(
+        editInput(ticketId, {
+          contactTime: null,
+          complaintReceiveChannel: null,
+        }),
+      );
+      expect([...result.changedFields].sort()).toEqual(
+        ["complaintReceiveChannel", "contactTime"].sort(),
+      );
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.contactTime).toBeNull();
+      expect(detail.complaintReceiveChannel).toBeNull();
+      const editLog = detail.processLogs.at(-1);
+      expect(editLog?.remark).toContain("进线时间: 2026-07-08T13:15:00.000Z→（空）");
+      expect(editLog?.remark).toContain("投诉信息接收渠道: 邮箱接收→（空）");
     });
 
     it("edits a completed ticket without reopening it (终态保持, 完结信息不动)", async () => {

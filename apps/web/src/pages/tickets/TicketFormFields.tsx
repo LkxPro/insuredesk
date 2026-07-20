@@ -38,15 +38,16 @@ import { trpc } from "@/lib/trpc";
  * Every field is optional: a fully blank form submits cleanly and unfilled
  * fields reach the server as null. No label says 选填 — optional is the rule,
  * not the exception. Validation is the shared ticketCreateInputSchema — the
- * contract the API parses — with one form-side deviation: feedbackTime is
- * held as a local datetime string ("" = unfilled) until submit, when the
- * caller converts it to an absolute instant or null.
+ * contract the API parses — with one form-side deviation: datetime fields are
+ * held as local datetime strings ("" = unfilled) until submit, when the
+ * caller converts them to absolute instants or null.
  *
  * 动态必填：建单表单据用户角色的必填集生成校验，编辑表单不受约束。必填字段标签后显示星号。
  */
 export function buildTicketFormSchema(requiredFields: readonly string[]) {
   let schema = ticketCreateInputSchema.extend({
     feedbackTime: z.string(),
+    contactTime: z.string(),
   });
 
   const requiredFieldTransforms: Partial<Record<TicketCreateFieldKey, z.ZodTypeAny>> = {
@@ -58,12 +59,14 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
     internalOrderNumber: z.string().trim().min(1, "内部工单号为必填项").max(200),
     policyNumber: z.string().trim().min(1, "保单号为必填项").max(100),
     userComplaintChannel: z.string().trim().min(1, "用户投诉渠道为必填项").max(100),
+    complaintReceiveChannel: z.string().trim().min(1, "投诉信息接收渠道为必填项").max(100),
     customerName: z.string().trim().min(1, "客户姓名为必填项").max(100),
     phone: z.string().trim().min(1, "手机号为必填项").max(50),
     contactPhone: z.string().trim().min(1, "联系电话为必填项").max(200),
     customerRequest: z.string().trim().min(1, "客户诉求为必填项").max(2000),
     nuclearBodyStatus: z.string().min(1, "保司侧是否核身为必填项"),
     hasContacted: z.boolean({ error: "是否已联系为必填项" }),
+    contactTime: z.string().min(1, "进线时间为必填项"),
     contactId: z.string().trim().min(1, "联系人ID为必填项").max(200),
     categoryId: z.string().min(1, "分类为必填项"),
     complaintLevel: z.string().min(1, "投诉等级为必填项"),
@@ -87,9 +90,15 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
 
 export const ticketFormSchema = ticketCreateInputSchema.extend({
   feedbackTime: z.string(),
+  contactTime: z.string(),
 });
 
 export type TicketFormValues = z.input<typeof ticketFormSchema>;
+
+/** Local datetime string ("YYYY-MM-DDTHH:mm") → absolute instant; "" stays null (未填写). */
+export function localDateTimeToIso(value: string): string | null {
+  return value ? new Date(value).toISOString() : null;
+}
 
 /** Radix Select forbids `value=""` items; stand-in for the "未设置" choice. */
 const UNSET = "__unset__";
@@ -293,6 +302,19 @@ export function TicketFormFields({
             />
             <FieldError errors={[errors.userComplaintChannel]} />
           </Field>
+          <Field data-invalid={!!errors.complaintReceiveChannel}>
+            <FieldLabel htmlFor="complaintReceiveChannel">
+              投诉信息接收渠道
+              {isRequired("complaintReceiveChannel") && <span className="text-destructive">*</span>}
+            </FieldLabel>
+            <Input
+              id="complaintReceiveChannel"
+              placeholder="如：监管转办、邮箱接收"
+              aria-invalid={!!errors.complaintReceiveChannel}
+              {...register("complaintReceiveChannel")}
+            />
+            <FieldError errors={[errors.complaintReceiveChannel]} />
+          </Field>
         </div>
       </FieldSet>
 
@@ -413,6 +435,24 @@ export function TicketFormFields({
               )}
             />
             <FieldError errors={[errors.hasContacted]} />
+          </Field>
+          <Field data-invalid={!!errors.contactTime}>
+            <FieldLabel htmlFor="contactTime-date">
+              进线时间{isRequired("contactTime") && <span className="text-destructive">*</span>}
+            </FieldLabel>
+            <Controller
+              control={control}
+              name="contactTime"
+              render={({ field }) => (
+                <DateTimePicker
+                  id="contactTime"
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalid={!!errors.contactTime}
+                />
+              )}
+            />
+            <FieldError errors={[errors.contactTime]} />
           </Field>
           <Field data-invalid={!!errors.contactId}>
             <FieldLabel htmlFor="contactId">

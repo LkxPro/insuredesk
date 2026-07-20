@@ -39,6 +39,7 @@ export const TICKET_TEXT_LIMITS = {
   internalOrderNumber: 200,
   policyNumber: 100,
   userComplaintChannel: 100,
+  complaintReceiveChannel: 100,
   customerName: 100,
   phone: 50,
   contactPhone: 200,
@@ -66,12 +67,14 @@ export const TICKET_CREATE_FIELD_KEYS = [
   "internalOrderNumber",
   "policyNumber",
   "userComplaintChannel",
+  "complaintReceiveChannel",
   "customerName",
   "phone",
   "contactPhone",
   "customerRequest",
   "nuclearBodyStatus",
   "hasContacted",
+  "contactTime",
   "contactId",
   "categoryId",
   "complaintLevel",
@@ -91,6 +94,8 @@ export const ticketCreateInputSchema = z.object({
   internalOrderNumber: optionalText(TICKET_TEXT_LIMITS.internalOrderNumber),
   policyNumber: optionalText(TICKET_TEXT_LIMITS.policyNumber),
   userComplaintChannel: optionalText(TICKET_TEXT_LIMITS.userComplaintChannel),
+  /** 我方收到投诉信息的途径（如监管转办、邮箱接收），区别于客户发起侧的用户投诉渠道。 */
+  complaintReceiveChannel: optionalText(TICKET_TEXT_LIMITS.complaintReceiveChannel),
   customerName: optionalText(TICKET_TEXT_LIMITS.customerName),
   phone: optionalText(TICKET_TEXT_LIMITS.phone),
   contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
@@ -101,6 +106,8 @@ export const ticketCreateInputSchema = z.object({
     .boolean()
     .nullish()
     .transform((value) => value ?? null),
+  /** 客户那次进线发生的时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。 */
+  contactTime: optionalEnum(z.string().datetime({ offset: true, message: "进线时间格式不正确" })),
   contactId: optionalText(TICKET_TEXT_LIMITS.contactId),
   /** 客诉类别目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
   categoryId: optionalText(100),

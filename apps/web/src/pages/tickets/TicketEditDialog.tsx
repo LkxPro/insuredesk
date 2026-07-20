@@ -20,6 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
 import {
   type CurrentCatalogOption,
+  localDateTimeToIso,
   TicketFormFields,
   type TicketFormValues,
   ticketFormSchema,
@@ -45,12 +46,14 @@ export interface EditableTicket {
   internalOrderNumber: string | null;
   policyNumber: string | null;
   userComplaintChannel: string | null;
+  complaintReceiveChannel: string | null;
   customerName: string | null;
   phone: string | null;
   contactPhone: string | null;
   customerRequest: string | null;
   nuclearBodyStatus: NuclearBodyStatus | null;
   hasContacted: boolean | null;
+  contactTime: string | null;
   contactId: string | null;
   category: CurrentCatalogOption | null;
   complaintLevel: ComplaintLevel | null;
@@ -70,12 +73,16 @@ function formDefaults(ticket: EditableTicket): TicketFormValues {
     internalOrderNumber: ticket.internalOrderNumber ?? "",
     policyNumber: ticket.policyNumber ?? "",
     userComplaintChannel: ticket.userComplaintChannel ?? "",
+    complaintReceiveChannel: ticket.complaintReceiveChannel ?? "",
     customerName: ticket.customerName ?? "",
     phone: ticket.phone ?? "",
     contactPhone: ticket.contactPhone ?? "",
     customerRequest: ticket.customerRequest ?? "",
     nuclearBodyStatus: ticket.nuclearBodyStatus ?? "",
     hasContacted: ticket.hasContacted,
+    contactTime: ticket.contactTime
+      ? format(new Date(ticket.contactTime), "yyyy-MM-dd'T'HH:mm")
+      : "",
     contactId: ticket.contactId ?? "",
     categoryId: ticket.category?.id ?? "",
     complaintLevel: ticket.complaintLevel ?? "",
@@ -125,8 +132,8 @@ export function TicketEditDialog({
     edit.mutate({
       ticketId: ticket.id,
       ...values,
-      // Local datetime string → absolute instant; unfilled stays null (未知)
-      feedbackTime: values.feedbackTime ? new Date(values.feedbackTime).toISOString() : null,
+      feedbackTime: localDateTimeToIso(values.feedbackTime),
+      contactTime: localDateTimeToIso(values.contactTime),
     }),
   );
 

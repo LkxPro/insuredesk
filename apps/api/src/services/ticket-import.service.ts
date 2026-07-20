@@ -17,7 +17,7 @@ import {
   type CatalogNameIndex,
   resolveCatalogNameRef,
 } from "./dictionary-catalog.service";
-import { computeSlaStamp, type TicketServiceDeps } from "./ticket.service";
+import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service";
 import { TICKET_IMPORT_TEMPLATE_HEADERS } from "./ticket-import-template.service";
 import { resolveTimeZone } from "./time-zone";
 
@@ -182,7 +182,7 @@ export function wallClockToInstant(wall: WallClock, timeZone: string): Date {
 
 // 与模板填写说明一字不差的格式契约；宽松变体（单位数月份、T 分隔、带秒）
 // 一律拒绝，避免静默丢弃秒数等歧义。
-const FEEDBACK_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
+const WALL_CLOCK_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
 
 /** "yyyy-MM-dd HH:mm" (or a native date cell's UTC fields) → wall clock; null = unparseable. */
 function toWallClock(raw: ImportCellValue): WallClock | null {
@@ -195,7 +195,7 @@ function toWallClock(raw: ImportCellValue): WallClock | null {
       minute: raw.getUTCMinutes(),
     };
   }
-  const match = FEEDBACK_TIME_PATTERN.exec(raw);
+  const match = WALL_CLOCK_PATTERN.exec(raw);
   if (!match) {
     return null;
   }
@@ -316,16 +316,13 @@ const PRIORITY_BY_LABEL = new Map(
 );
 
 /**
- * The 20 columns, template order. Semantics = 手工建单契约: every column may
- * be blank (null, never "" or a default), catalog names must be 存在且启用,
- * enum columns take the template's Chinese literals. The trailing 完结 pair
- * additionally binds cross-field: both filled or both blank (checked on the
- * raw cells in validateTicketImportRows).
+ * Wall-clock date column （反馈时间/进线时间）: blank → null, a native date cell
+ * or exact "yyyy-MM-dd HH:mm" text → the instant in the upload's zone.
  */
-const IMPORT_COLUMNS: readonly ImportColumnSpec[] = [
-  {
-    header: "反馈时间",
-    field: "feedbackTime",
+function wallClockColumn(header: string, field: "feedbackTime" | "contactTime"): ImportColumnSpec {
+  return {
+    header,
+    field,
     parse: (raw, { timeZone }) => {
       if (raw === "") {
         return { ok: null };
@@ -336,7 +333,18 @@ const IMPORT_COLUMNS: readonly ImportColumnSpec[] = [
       }
       return { ok: wallClockToInstant(wall, timeZone).toISOString() };
     },
-  },
+  };
+}
+
+/**
+ * Template order. Semantics = 手工建单契约: every column may
+ * be blank (null, never "" or a default), catalog names must be 存在且启用,
+ * enum columns take the template's Chinese literals. The trailing 完结 pair
+ * additionally binds cross-field: both filled or both blank (checked on the
+ * raw cells in validateTicketImportRows).
+ */
+const IMPORT_COLUMNS: readonly ImportColumnSpec[] = [
+  wallClockColumn("反馈时间", "feedbackTime"),
   catalogColumn("反馈渠道", "channelId", (catalogs) => catalogs.channels),
   textColumn("项目（保司）", "project"),
   textColumn("经纪主体", "brokerageEntity"),
@@ -344,12 +352,14 @@ const IMPORT_COLUMNS: readonly ImportColumnSpec[] = [
   textColumn("内部订单号", "internalOrderNumber"),
   textColumn("保单号", "policyNumber"),
   textColumn("用户投诉渠道", "userComplaintChannel"),
+  textColumn("投诉信息接收渠道", "complaintReceiveChannel"),
   textColumn("客户姓名", "customerName"),
   textColumn("客户电话（投保人）", "phone"),
   textColumn("联系人电话", "contactPhone"),
   enumColumn("保司侧是否核身", "nuclearBodyStatus", NUCLEAR_BODY_STATUSES),
   textColumn("客户诉求", "customerRequest"),
   enumColumn("客户曾进线", "hasContacted", ["是", "否"], (label) => label === "是"),
+  wallClockColumn("进线时间", "contactTime"),
   textColumn("进线ID", "contactId"),
   catalogColumn("客诉类别", "categoryId", (catalogs) => catalogs.categories),
   enumColumn("投诉等级", "complaintLevel", COMPLAINT_LEVELS),
@@ -379,7 +389,7 @@ if (TICKET_IMPORT_HEADERS.join("\u0000") !== TICKET_IMPORT_TEMPLATE_HEADERS.join
 }
 
 /**
- * In-file duplicate key: all 20 cells, joined with a separator no cell text
+ * In-file duplicate key: all cells, joined with a separator no cell text
  * can contain (cells are trimmed display text). Dates — native cells and
  * template-format text alike — normalize to their wall clock, so the same
  * moment written two ways still counts as the same content.
@@ -391,7 +401,7 @@ function rowContentKey(cells: ImportCellValue[]): string {
         const wall = toWallClock(cell) as WallClock;
         return `${wall.year}-${wall.month}-${wall.day} ${wall.hour}:${wall.minute}`;
       }
-      const asWall = FEEDBACK_TIME_PATTERN.exec(cell) ? toWallClock(cell) : null;
+      const asWall = WALL_CLOCK_PATTERN.exec(cell) ? toWallClock(cell) : null;
       return asWall
         ? `${asWall.year}-${asWall.month}-${asWall.day} ${asWall.hour}:${asWall.minute}`
         : cell;
@@ -542,7 +552,8 @@ export async function importTickets(
       const created = await tx.ticket.createManyAndReturn({
         data: tickets.map(({ completionStatusId, completionRemark: _, ...ticket }) => ({
           ...ticket,
-          feedbackTime: ticket.feedbackTime === null ? null : new Date(ticket.feedbackTime),
+          feedbackTime: toDateOrNull(ticket.feedbackTime),
+          contactTime: toDateOrNull(ticket.contactTime),
           createdAt: now,
           source: "file_import",
           creatorId: importer.id,

@@ -61,12 +61,14 @@ const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
   internalOrderNumber: "内部工单号",
   policyNumber: "保单号",
   userComplaintChannel: "用户投诉渠道",
+  complaintReceiveChannel: "投诉信息接收渠道",
   customerName: "客户姓名",
   phone: "手机号",
   contactPhone: "联系电话",
   customerRequest: "客户诉求",
   nuclearBodyStatus: "保司侧是否核身",
   hasContacted: "是否已联系",
+  contactTime: "进线时间",
   contactId: "联系人ID",
   categoryId: "分类",
   complaintLevel: "投诉等级",
@@ -74,6 +76,11 @@ const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
 };
 
 const HOUR_MS = 60 * 60 * 1000;
+
+/** Wire ISO-8601 datetime string (null = 未填写) → Date for persistence. */
+export function toDateOrNull(value: string | null): Date | null {
+  return value === null ? null : new Date(value);
+}
 
 /**
  * THE dueAt formula: createdAt + the level's overdueHours, null for 特急
@@ -170,7 +177,8 @@ export async function createTicket(
     const ticket = await tx.ticket.create({
       data: {
         ...input,
-        feedbackTime: input.feedbackTime === null ? null : new Date(input.feedbackTime),
+        feedbackTime: toDateOrNull(input.feedbackTime),
+        contactTime: toDateOrNull(input.contactTime),
         createdAt: now,
         source: "manual",
         creatorId: creator.id,
@@ -418,12 +426,14 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     internalOrderNumber: ticket.internalOrderNumber,
     policyNumber: ticket.policyNumber,
     userComplaintChannel: ticket.userComplaintChannel,
+    complaintReceiveChannel: ticket.complaintReceiveChannel,
     customerName: ticket.customerName,
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,
     customerRequest: ticket.customerRequest,
     nuclearBodyStatus: parseNullable(nuclearBodyStatusSchema, ticket.nuclearBodyStatus),
     hasContacted: ticket.hasContacted,
+    contactTime: ticket.contactTime?.toISOString() ?? null,
     contactId: ticket.contactId,
     category: ticket.category,
     complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),

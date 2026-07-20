@@ -15,7 +15,7 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *
  * - ticket.import guard: 401 unauthenticated, 403 without the permission —
  *   including factory roles, which are seeded once and never backfilled
- * - the sheet carries the 18 建单表单 columns plus the 完结状态/完结备注
+ * - the sheet carries the 建单表单 columns plus the 完结状态/完结备注
  *   pair, Chinese headers in form order
  * - enum/catalog columns carry Excel data-validation dropdowns; 渠道/客诉
  *   类别/完结状态 options are the ACTIVE catalog rows at download time
@@ -38,12 +38,14 @@ describe("ticket import template (Testcontainers)", () => {
     "内部订单号",
     "保单号",
     "用户投诉渠道",
+    "投诉信息接收渠道",
     "客户姓名",
     "客户电话（投保人）",
     "联系人电话",
     "保司侧是否核身",
     "客户诉求",
     "客户曾进线",
+    "进线时间",
     "进线ID",
     "客诉类别",
     "投诉等级",
@@ -170,14 +172,14 @@ describe("ticket import template (Testcontainers)", () => {
   });
 
   describe("模板结构", () => {
-    it("carries the 20 columns (建单表单 + 完结迁移对) with Chinese headers in form order", async () => {
+    it("carries the 建单表单 + 完结迁移对 columns with Chinese headers in form order", async () => {
       const workbook = await downloadWorkbook(await sessionFor("importer"));
       const sheet = workbook.getWorksheet("工单");
       expect(sheet).toBeDefined();
 
       const headers = EXPECTED_HEADERS.map((_, index) => sheet?.getRow(1).getCell(index + 1).value);
       expect(headers).toEqual(EXPECTED_HEADERS);
-      // exactly 20 — no extra columns ride along
+      // no extra columns ride along
       expect(sheet?.getRow(1).cellCount).toBe(EXPECTED_HEADERS.length);
     });
 

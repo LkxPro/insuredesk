@@ -75,12 +75,14 @@ function detailPayload(overrides: Record<string, unknown> = {}) {
     internalOrderNumber: null,
     policyNumber: "P2026070900123",
     userComplaintChannel: "400热线",
+    complaintReceiveChannel: "监管转办",
     customerName: "王小明",
     phone: "13800000001",
     contactPhone: null,
     customerRequest: "对理赔进度有异议",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
+    contactTime: null,
     contactId: null,
     category: { id: "cat-claims", name: "理赔投诉", active: true },
     complaintLevel: "一般投诉",
@@ -240,6 +242,8 @@ describe("editing from the dialog", () => {
       complaintLevel: "一般投诉",
       policyNumber: "P2026070900123",
       feedbackTime: "2026-07-09T01:00:00.000Z",
+      complaintReceiveChannel: "监管转办",
+      contactTime: null,
     });
     // status is not an editable field: never part of the payload
     expect(mutation?.input).not.toHaveProperty("status");
@@ -291,6 +295,22 @@ describe("editing from the dialog", () => {
     expect(calls.find((call) => call.path === "ticket.edit")?.input).toMatchObject({
       channelId: "ch-baosi",
       customerName: "王大明",
+    });
+  });
+
+  it("prefills 进线时间 and round-trips the same instant on submit", async () => {
+    detail = detailPayload({ contactTime: "2026-07-08T13:15:00.000Z" });
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === "ticket.edit")).toBe(true);
+    });
+    expect(calls.find((call) => call.path === "ticket.edit")?.input).toMatchObject({
+      contactTime: "2026-07-08T13:15:00.000Z",
     });
   });
 

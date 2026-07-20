@@ -19,7 +19,12 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
-import { buildTicketFormSchema, TicketFormFields, type TicketFormValues } from "./TicketFormFields";
+import {
+  buildTicketFormSchema,
+  localDateTimeToIso,
+  TicketFormFields,
+  type TicketFormValues,
+} from "./TicketFormFields";
 
 /**
  * Blank defaults with feedbackTime prefilled to the current local minute —
@@ -30,6 +35,7 @@ import { buildTicketFormSchema, TicketFormFields, type TicketFormValues } from "
 function createDefaults(): TicketFormValues {
   return {
     feedbackTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    contactTime: "",
     hasContacted: null,
     priority: "",
   };
@@ -78,8 +84,8 @@ export function TicketCreateDialog({
   const onSubmit = form.handleSubmit((values) =>
     create.mutate({
       ...values,
-      // Local datetime string → absolute instant; unfilled stays null (未知)
-      feedbackTime: values.feedbackTime ? new Date(values.feedbackTime).toISOString() : null,
+      feedbackTime: localDateTimeToIso(values.feedbackTime),
+      contactTime: localDateTimeToIso(values.contactTime),
     }),
   );
 

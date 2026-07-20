@@ -10,12 +10,14 @@ const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
   internalOrderNumber: "内部工单号",
   policyNumber: "保单号",
   userComplaintChannel: "用户投诉渠道",
+  complaintReceiveChannel: "投诉信息接收渠道",
   customerName: "客户姓名",
   phone: "手机号",
   contactPhone: "联系电话",
   customerRequest: "客户诉求",
   nuclearBodyStatus: "保司侧是否核身",
   hasContacted: "是否已联系",
+  contactTime: "进线时间",
   contactId: "联系人ID",
   categoryId: "分类",
   complaintLevel: "投诉等级",
@@ -23,7 +25,7 @@ const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
 };
 
 /**
- * 建单必填字段清单：17 个字段的勾选列表，按表单分组排列。
+ * 建单必填字段清单：勾选列表按表单分组排列。
  * 必填集保存在 Role 上，建单时从会话载荷读取并动态生成校验。
  */
 export function RequiredFieldsChecklist({
@@ -82,6 +84,7 @@ export function RequiredFieldsChecklist({
             "internalOrderNumber",
             "policyNumber",
             "userComplaintChannel",
+            "complaintReceiveChannel",
           ].map((field) => (
             <div key={field} className="flex items-start gap-2 text-sm">
               <Checkbox
@@ -109,6 +112,7 @@ export function RequiredFieldsChecklist({
             "nuclearBodyStatus",
             "customerRequest",
             "hasContacted",
+            "contactTime",
             "contactId",
           ].map((field) => (
             <div key={field} className="flex items-start gap-2 text-sm">

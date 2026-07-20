@@ -179,6 +179,7 @@ export function TicketDetail() {
         <Item label="内部订单号">{ticket.internalOrderNumber}</Item>
         <Item label="保单号">{ticket.policyNumber}</Item>
         <Item label="用户投诉渠道">{ticket.userComplaintChannel}</Item>
+        <Item label="投诉信息接收渠道">{ticket.complaintReceiveChannel}</Item>
       </Section>
 
       <Section title="客户信息">
@@ -189,6 +190,7 @@ export function TicketDetail() {
         <Item label="客户曾进线">
           {ticket.hasContacted === null ? null : ticket.hasContacted ? "是" : "否"}
         </Item>
+        <Item label="进线时间">{formatDateTime(ticket.contactTime)}</Item>
         <Item label="进线ID">{ticket.contactId}</Item>
         <div className="sm:col-span-3">
           <Item label="客户诉求">

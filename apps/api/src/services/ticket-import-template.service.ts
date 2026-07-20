@@ -17,7 +17,7 @@ import { ticketCategoryCatalog } from "./ticket-category.service";
  * the 渠道/客诉类别/完结状态 dropdowns are the ACTIVE catalog rows at download
  * time, so a stale file is fixed by re-downloading, not by re-deploying.
  *
- * Column set = the 18 建单表单 fields plus the 完结状态/完结备注 pair (历史
+ * Column set = the 建单表单 fields plus the 完结状态/完结备注 pair (历史
  * 工单迁移: both filled ⇒ the row lands already completed), Chinese headers
  * in the form's visual order — the headers are the contract upload parsing
  * resolves columns by.
@@ -59,6 +59,7 @@ const TICKET_IMPORT_COLUMNS: readonly ImportColumn[] = [
   { header: "内部订单号", note: "文本，最长 200 字" },
   { header: "保单号", note: "文本，最长 100 字" },
   { header: "用户投诉渠道", note: "文本，最长 100 字；如：飞书投诉、400热线" },
+  { header: "投诉信息接收渠道", note: "文本，最长 100 字；如：监管转办、邮箱接收" },
   { header: "客户姓名", note: "文本，最长 100 字" },
   { header: "客户电话（投保人）", note: "文本，最长 50 字" },
   { header: "联系人电话", note: "文本，最长 200 字" },
@@ -72,6 +73,10 @@ const TICKET_IMPORT_COLUMNS: readonly ImportColumn[] = [
     header: "客户曾进线",
     note: "从下拉选择：是 / 否；留空=未知",
     options: () => HAS_CONTACTED_OPTIONS,
+  },
+  {
+    header: "进线时间",
+    note: "格式 yyyy-MM-dd HH:mm（如 2026-07-09 14:30）；留空=未填写",
   },
   { header: "进线ID", note: "文本，最长 200 字" },
   {
@@ -118,7 +123,7 @@ type WorksheetWithValidations = ExcelJS.Worksheet & {
   dataValidations: { add(range: string, validation: ExcelJS.DataValidation): void };
 };
 
-/** A1-style column letter; the 20-column sheet never leaves A–Z. */
+/** A1-style column letter; the sheet never leaves A–Z. */
 function columnLetter(column: number): string {
   return String.fromCharCode(64 + column);
 }

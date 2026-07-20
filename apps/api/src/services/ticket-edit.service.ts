@@ -3,7 +3,7 @@ import type { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { channelCatalog } from "./channel.service";
 import { applyTicketDataScope } from "./data-scope.service";
-import { computeSlaStamp, type TicketServiceDeps } from "./ticket.service";
+import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
 import { ticketCategoryCatalog } from "./ticket-category.service";
 
@@ -45,12 +45,14 @@ const FIELD_LABELS: Record<EditableFieldKey, string> = {
   internalOrderNumber: "内部订单号",
   policyNumber: "保单号",
   userComplaintChannel: "用户投诉渠道",
+  complaintReceiveChannel: "投诉信息接收渠道",
   customerName: "客户姓名",
   phone: "客户电话",
   contactPhone: "联系人电话",
   customerRequest: "客户诉求",
   nuclearBodyStatus: "保司侧是否核身",
   hasContacted: "客户曾进线",
+  contactTime: "进线时间",
   contactId: "进线ID",
   categoryId: "客诉类别",
   complaintLevel: "投诉等级",
@@ -61,7 +63,7 @@ const EDITABLE_FIELD_KEYS = Object.keys(FIELD_LABELS) as EditableFieldKey[];
 
 /**
  * One remark-side value. Priorities render their Chinese labels (the stored
- * codes are English); feedbackTime renders the unambiguous ISO instant — the
+ * codes are English); datetimes render the unambiguous ISO instant — the
  * remark is a permanent audit string, so no viewer-local formatting here.
  */
 function formatValue(key: EditableFieldKey, value: string | boolean | Date | null): string {
@@ -97,11 +99,15 @@ export async function editTicket(
 ) {
   const now = clock.now();
   const { ticketId, ...fields } = input;
-  // The wire carries feedbackTime as an ISO string (or null = 未填写);
+  // The wire carries datetimes as ISO strings (or null = 未填写);
   // everything downstream (diff, remark, update) works on the parsed instant.
-  const next: Omit<EditableFields, "feedbackTime"> & { feedbackTime: Date | null } = {
+  const next: Omit<EditableFields, "feedbackTime" | "contactTime"> & {
+    feedbackTime: Date | null;
+    contactTime: Date | null;
+  } = {
     ...fields,
-    feedbackTime: fields.feedbackTime === null ? null : new Date(fields.feedbackTime),
+    feedbackTime: toDateOrNull(fields.feedbackTime),
+    contactTime: toDateOrNull(fields.contactTime),
   };
 
   return prisma.$transaction(async (tx) => {

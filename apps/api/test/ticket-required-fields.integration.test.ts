@@ -260,6 +260,44 @@ describe("role required ticket fields (Testcontainers)", () => {
       });
     });
 
+    it("enforces 进线时间/投诉信息接收渠道 when configured required", async () => {
+      await prisma.role.update({
+        where: { id: roleWithRequired.id },
+        data: {
+          requiredTicketFields: [
+            "customerName",
+            "phone",
+            "channelId",
+            "hasContacted",
+            "contactTime",
+            "complaintReceiveChannel",
+          ],
+        },
+      });
+
+      const error = await requiredUser()
+        .ticket.create(validInput())
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(TRPCError);
+      expect((error as TRPCError).message).toContain("以下字段为必填项");
+      expect((error as TRPCError).message).toContain("进线时间");
+      expect((error as TRPCError).message).toContain("投诉信息接收渠道");
+
+      const result = await requiredUser().ticket.create({
+        ...validInput(),
+        contactTime: "2026-07-14T02:00:00.000Z",
+        complaintReceiveChannel: "邮箱接收",
+      });
+      const detail = await requiredUser().ticket.detail({ id: result.id });
+      expect(detail.contactTime).toBe("2026-07-14T02:00:00.000Z");
+      expect(detail.complaintReceiveChannel).toBe("邮箱接收");
+
+      await prisma.role.update({
+        where: { id: roleWithRequired.id },
+        data: { requiredTicketFields: ["customerName", "phone", "channelId", "hasContacted"] },
+      });
+    });
+
     it("allows ticket creation when role has empty requiredTicketFields", async () => {
       const input = {
         complaintLevel: "一般投诉",
@@ -312,12 +350,14 @@ describe("role required ticket fields (Testcontainers)", () => {
         internalOrderNumber: null,
         policyNumber: null,
         userComplaintChannel: null,
+        complaintReceiveChannel: null,
         customerName: null,
         phone: null,
         contactPhone: null,
         customerRequest: null,
         nuclearBodyStatus: null,
         hasContacted: null,
+        contactTime: null,
         contactId: null,
         categoryId: null,
         complaintLevel: null,

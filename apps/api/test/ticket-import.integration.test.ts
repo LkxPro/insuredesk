@@ -21,12 +21,14 @@ const HEADERS = [
   "内部订单号",
   "保单号",
   "用户投诉渠道",
+  "投诉信息接收渠道",
   "客户姓名",
   "客户电话（投保人）",
   "联系人电话",
   "保司侧是否核身",
   "客户诉求",
   "客户曾进线",
+  "进线时间",
   "进线ID",
   "客诉类别",
   "投诉等级",
@@ -225,9 +227,11 @@ describe("ticket import upload (Testcontainers)", () => {
           反馈渠道: channelName,
           "项目（保司）": "融盛",
           保单号: "P202607010001",
+          投诉信息接收渠道: "监管转办",
           客户姓名: "张三",
           保司侧是否核身: "待核实",
           客户曾进线: "是",
+          进线时间: "2026-06-30 21:15",
           客诉类别: categoryName,
           投诉等级: "高级投诉",
           优先级: "紧急",
@@ -256,6 +260,8 @@ describe("ticket import upload (Testcontainers)", () => {
 
     // 反馈时间 wall clock interpreted in Asia/Shanghai
     expect(leveled.feedbackTime?.toISOString()).toBe("2026-07-01T02:00:00.000Z");
+    expect(leveled.contactTime?.toISOString()).toBe("2026-06-30T13:15:00.000Z");
+    expect(leveled.complaintReceiveChannel).toBe("监管转办");
     expect(leveled.nuclearBodyStatus).toBe("待核实");
     expect(leveled.hasContacted).toBe(true);
     expect(leveled.priority).toBe("urgent");
@@ -483,6 +489,8 @@ describe("ticket import upload (Testcontainers)", () => {
         { 客户姓名: "重".repeat(101) }, // row 7
         { 客户姓名: "重复行", 保单号: "P1" }, // row 8
         { 客户姓名: "重复行", 保单号: "P1" }, // row 9: duplicate of 8
+        { 进线时间: "昨天上午" }, // row 10
+        { 投诉信息接收渠道: "长".repeat(101) }, // row 11
       ]),
     );
     expect(res.statusCode).toBe(400);
@@ -490,7 +498,7 @@ describe("ticket import upload (Testcontainers)", () => {
       error: string;
       rowErrors: Array<{ row: number | null; column: string | null; message: string }>;
     };
-    expect(body.rowErrors).toHaveLength(6);
+    expect(body.rowErrors).toHaveLength(8);
     expect(body.rowErrors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ row: 3, column: "反馈渠道" }),
@@ -499,6 +507,8 @@ describe("ticket import upload (Testcontainers)", () => {
         expect.objectContaining({ row: 6, column: "反馈时间" }),
         expect.objectContaining({ row: 7, column: "客户姓名" }),
         expect.objectContaining({ row: 9, column: null }),
+        expect.objectContaining({ row: 10, column: "进线时间" }),
+        expect.objectContaining({ row: 11, column: "投诉信息接收渠道" }),
       ]),
     );
 
@@ -516,13 +526,17 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(headerRes.statusCode).toBe(400);
     expect(headerRes.json().rowErrors[0].message).toContain("表头与模板不符");
 
-    // 旧 18 列模板文件按既有表头契约报重新下载
+    // 旧模板文件（本次新增两列之前下载的）按表头契约报重新下载：
+    // 第一处不符在第 9 列（旧文件的「客户姓名」位置应为「投诉信息接收渠道」）
+    const legacyHeaders = HEADERS.filter(
+      (header) => header !== "投诉信息接收渠道" && header !== "进线时间",
+    );
     const legacy = await uploadRequest(
       session,
-      await buildFile([{ 客户姓名: "x" }], HEADERS.slice(0, 18)),
+      await buildFile([{ 客户姓名: "x" }], legacyHeaders),
     );
     expect(legacy.statusCode).toBe(400);
-    expect(legacy.json().rowErrors[0].message).toContain("第 19 列应为「完结状态」");
+    expect(legacy.json().rowErrors[0].message).toContain("第 9 列应为「投诉信息接收渠道」");
     expect(legacy.json().rowErrors[0].message).toContain("请重新下载模板");
 
     const emptyRes = await uploadRequest(session, await buildFile([]));

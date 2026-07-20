@@ -131,7 +131,11 @@ describe("ticket creation + detail (Testcontainers)", () => {
 
   describe("create (一般投诉)", () => {
     it("generates WO+sequence number, fixes dueAt = createdAt + 48h, stamps SLA texts, writes the create log", async () => {
-      const created = await manager().ticket.create(baseInput);
+      const created = await manager().ticket.create({
+        ...baseInput,
+        contactTime: "2026-07-08T13:15:00.000Z",
+        complaintReceiveChannel: "监管转办",
+      });
       expect(created.workOrderNumber).toMatch(/^WO\d{6,}$/);
 
       const detail = await manager().ticket.detail({ id: created.id });
@@ -145,6 +149,8 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(detail.processingResult).toBe("");
       expect(detail.priority).toBeNull(); // free label defaults to empty
       expect(detail.feedbackTime).toBe(baseInput.feedbackTime);
+      expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");
+      expect(detail.complaintReceiveChannel).toBe("监管转办");
       expect("deletedAt" in detail).toBe(false); // soft-delete marker never leaves the API
 
       // dueAt fixed at creation from the SLA config: exactly createdAt + 48h

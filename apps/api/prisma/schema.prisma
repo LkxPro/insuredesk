@@ -114,6 +114,8 @@ model Ticket {
   internalOrderNumber  String?
   policyNumber         String?
   userComplaintChannel String?
+  /// 投诉信息接收渠道（我方收到投诉的途径，区别于客户发起侧的用户投诉渠道）; null = 未填写
+  complaintReceiveChannel String?
 
   // 客户信息 (PRD §3.1.4) — all nullable: unfilled means unknown (issue #43)
   customerName      String?
@@ -124,6 +126,8 @@ model Ticket {
   nuclearBodyStatus String?
   /// Tri-state: null = 未知, deliberately not false (issue #43)
   hasContacted      Boolean?
+  /// 客户那次进线发生的时间; null = 未填写
+  contactTime       DateTime? @db.Timestamptz
   contactId         String?
 
   // 分类与等级 (PRD §3.1.5)
