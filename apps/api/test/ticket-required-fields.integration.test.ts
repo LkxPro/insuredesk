@@ -207,15 +207,15 @@ describe("role required ticket fields (Testcontainers)", () => {
       expect(error).toBeInstanceOf(TRPCError);
       expect(error.message).toContain("以下字段为必填项");
       expect(error.message).toContain("客户姓名");
-      expect(error.message).toContain("手机号");
-      expect(error.message).toContain("业务渠道");
-      expect(error.message).toContain("是否已联系");
+      expect(error.message).toContain("客户电话（投保人）");
+      expect(error.message).toContain("反馈渠道");
+      expect(error.message).toContain("客户曾进线");
     });
 
     it("rejects tri-state field when left as null (hasContacted)", async () => {
       const input = { ...validInput(), hasContacted: null };
       await expect(requiredUser().ticket.create(input)).rejects.toThrow(
-        /以下字段为必填项：是否已联系/,
+        /以下字段为必填项：客户曾进线/,
       );
     });
 
@@ -244,7 +244,7 @@ describe("role required ticket fields (Testcontainers)", () => {
       });
 
       await expect(requiredUser().ticket.create(validInput())).rejects.toThrow(
-        /以下字段为必填项：分类/,
+        /以下字段为必填项：客诉类别/,
       );
 
       const result = await requiredUser().ticket.create({

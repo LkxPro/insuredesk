@@ -172,7 +172,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.complaintReceiveChannel).toBe("监管转办");
 
       // 留痕: exactly one edit entry on top of create, remark carries the
-      // per-field diff, from/to stay empty
+      // per-field diff in 描述表行序（＝表单顺序）, from/to stay empty
       expect(detail.processLogs.map((log) => log.action)).toEqual(["create", "edit"]);
       const editLog = detail.processLogs.at(-1);
       expect(editLog).toMatchObject({
@@ -181,12 +181,14 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         from: null,
         to: null,
       });
-      expect(editLog?.remark).toContain("客户姓名: 张三→张三丰");
-      expect(editLog?.remark).toContain("内部订单号: （空）→IO-20260710-01");
-      expect(editLog?.remark).toContain("客户曾进线: 否→是");
-      expect(editLog?.remark).toContain("优先级: （空）→高");
-      expect(editLog?.remark).toContain("进线时间: （空）→2026-07-08T13:15:00.000Z");
-      expect(editLog?.remark).toContain("投诉信息接收渠道: （空）→监管转办");
+      expect(editLog?.remark).toBe(
+        "内部订单号: （空）→IO-20260710-01；" +
+          "投诉信息接收渠道: （空）→监管转办；" +
+          "客户姓名: 张三→张三丰；" +
+          "客户曾进线: 否→是；" +
+          "进线时间: （空）→2026-07-08T13:15:00.000Z；" +
+          "优先级: （空）→高",
+      );
     });
 
     it("clears 进线时间/投诉信息接收渠道 back to 未填写, logged as →（空）", async () => {

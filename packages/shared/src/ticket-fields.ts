@@ -252,6 +252,23 @@ export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS
   (descriptor) => descriptor.label,
 );
 
+function surfaceLabel(
+  descriptor: { readonly label: string; readonly overrides?: TicketFieldOverrides },
+  slot: keyof TicketFieldOverrides,
+): string {
+  return descriptor.overrides?.[slot] ?? descriptor.label;
+}
+
+/** 导出列头取词入口；消费方不得另维护 label 表。 */
+export function ticketExportHeader(key: TicketFieldKey): string {
+  return surfaceLabel(TICKET_FIELDS[key], "exportHeader");
+}
+
+/** 编辑留痕句中短名取词入口；消费方不得另维护 label 表。 */
+export function ticketProcessLogLabel(key: TicketFieldKey): string {
+  return surfaceLabel(TICKET_FIELDS[key], "processLogLabel");
+}
+
 /** 该字段在导入模板「填写说明」里的取值规则，按类型从声明派生。 */
 export function ticketImportFieldNote(descriptor: TicketFieldDescriptor): string {
   switch (descriptor.type) {

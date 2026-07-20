@@ -9,6 +9,7 @@ import {
   processLogActionSchema,
   reminderRulesSchema,
   TICKET_CREATE_FIELD_KEYS,
+  TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
   type TicketCreateData,
   type TicketCreateFieldKey,
@@ -51,29 +52,6 @@ export class RequiredFieldsMissingError extends Error {
     this.name = "RequiredFieldsMissingError";
   }
 }
-
-const FIELD_LABELS: Record<TicketCreateFieldKey, string> = {
-  feedbackTime: "反馈时间",
-  channelId: "业务渠道",
-  project: "项目名称",
-  brokerageEntity: "经纪主体",
-  paymentChannel: "支付渠道",
-  internalOrderNumber: "内部工单号",
-  policyNumber: "保单号",
-  userComplaintChannel: "用户投诉渠道",
-  complaintReceiveChannel: "投诉信息接收渠道",
-  customerName: "客户姓名",
-  phone: "手机号",
-  contactPhone: "联系电话",
-  customerRequest: "客户诉求",
-  nuclearBodyStatus: "保司侧是否核身",
-  hasContacted: "是否已联系",
-  contactTime: "进线时间",
-  contactId: "联系人ID",
-  categoryId: "分类",
-  complaintLevel: "投诉等级",
-  priority: "优先级",
-};
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -121,7 +99,8 @@ export async function computeSlaStamp(
 
 /**
  * 校验角色建单必填字段集：每项属于清单且值非空（三态字段必须明确选是/否）。
- * 缺失字段一次性全部报出，沿用现有中文风格。读取时忽略未知 key（防御字段改名）。
+ * 缺失字段一次性全部报出，字段名＝描述表标准名（与表单可见 label 对上）。
+ * 读取时忽略未知 key（防御字段改名）。
  */
 function validateRequiredFields(input: TicketCreateData, requiredFields: string[]): void {
   const missingLabels: string[] = [];
@@ -131,7 +110,7 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
     }
     const value = input[field as TicketCreateFieldKey];
     if (value === null || value === undefined) {
-      missingLabels.push(FIELD_LABELS[field as TicketCreateFieldKey]);
+      missingLabels.push(TICKET_FIELDS[field as TicketCreateFieldKey].label);
     }
   }
   if (missingLabels.length > 0) {

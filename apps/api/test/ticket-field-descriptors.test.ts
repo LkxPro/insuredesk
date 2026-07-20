@@ -5,6 +5,8 @@ import {
   TICKET_FIELDS,
   TICKET_IMPORT_HEADERS,
   TICKET_TEXT_LIMITS,
+  ticketExportHeader,
+  ticketProcessLogLabel,
 } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
 
@@ -91,6 +93,13 @@ describe("ticket field descriptors", () => {
       contactId: "联系ID",
       categoryId: "分类",
     });
+  });
+
+  it("表面用词派生：登记了 override 槽位用登记值，缺省回落标准名", () => {
+    expect(ticketExportHeader("channelId")).toBe("渠道");
+    expect(ticketExportHeader("customerName")).toBe("客户姓名");
+    expect(ticketProcessLogLabel("phone")).toBe("客户电话");
+    expect(ticketProcessLogLabel("channelId")).toBe("反馈渠道");
   });
 
   it("语境变体 override：留痕短名与详情页解释后缀", () => {

@@ -1,4 +1,11 @@
-import { PRIORITY_LABELS, type Priority, type TicketEditData } from "@insuredesk/shared";
+import {
+  PRIORITY_LABELS,
+  type Priority,
+  TICKET_CREATE_FIELD_KEYS,
+  type TicketCreateFieldKey,
+  type TicketEditData,
+  ticketProcessLogLabel,
+} from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { channelCatalog } from "./channel.service";
@@ -35,31 +42,14 @@ import { ticketCategoryCatalog } from "./ticket-category.service";
 type EditableFields = Omit<TicketEditData, "ticketId">;
 type EditableFieldKey = keyof EditableFields;
 
-/** Timeline labels for the edit remark, matching the form wording. */
-const FIELD_LABELS: Record<EditableFieldKey, string> = {
-  feedbackTime: "反馈时间",
-  channelId: "反馈渠道",
-  project: "项目（保司）",
-  brokerageEntity: "经纪主体",
-  paymentChannel: "支付渠道",
-  internalOrderNumber: "内部订单号",
-  policyNumber: "保单号",
-  userComplaintChannel: "用户投诉渠道",
-  complaintReceiveChannel: "投诉信息接收渠道",
-  customerName: "客户姓名",
-  phone: "客户电话",
-  contactPhone: "联系人电话",
-  customerRequest: "客户诉求",
-  nuclearBodyStatus: "保司侧是否核身",
-  hasContacted: "客户曾进线",
-  contactTime: "进线时间",
-  contactId: "进线ID",
-  categoryId: "客诉类别",
-  complaintLevel: "投诉等级",
-  priority: "优先级",
-};
-
-const EDITABLE_FIELD_KEYS = Object.keys(FIELD_LABELS) as EditableFieldKey[];
+/**
+ * 编辑字段集＝建单字段集，留痕段落按此（＝表单）顺序。条件类型注解把
+ * 「编辑 schema 长出描述表外的字段」变成编译错误——那种字段进不了清单，
+ * diff 与留痕会静默漏掉它。
+ */
+const EDITABLE_FIELD_KEYS: [Exclude<EditableFieldKey, TicketCreateFieldKey>] extends [never]
+  ? readonly EditableFieldKey[]
+  : never = TICKET_CREATE_FIELD_KEYS;
 
 /**
  * One remark-side value. Priorities render their Chinese labels (the stored
@@ -179,7 +169,7 @@ export async function editTicket(
         remark: changedFields
           .map(
             (key) =>
-              `${FIELD_LABELS[key]}: ${formatValue(key, sideValue(key, "from"))}→${formatValue(key, sideValue(key, "to"))}`,
+              `${ticketProcessLogLabel(key)}: ${formatValue(key, sideValue(key, "from"))}→${formatValue(key, sideValue(key, "to"))}`,
           )
           .join("；"),
         at: now,

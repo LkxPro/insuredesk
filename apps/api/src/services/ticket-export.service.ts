@@ -5,6 +5,7 @@ import {
   TICKET_SOURCE_LABELS,
   TICKET_STATUS_LABELS,
   type TicketExportQuery,
+  ticketExportHeader,
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
@@ -68,7 +69,8 @@ function makeDateFormatter(timeZone: string | undefined) {
 type ExportContext = { now: Date; formatDate: (date: Date | null) => string };
 
 /**
- * 导出列：工单关键字段, in the detail page's reading order. 状态 is the
+ * 导出列：工单关键字段, in the detail page's reading order — 列序与系统列
+ * 表头是对外契约，手写维持现状；用户字段列头从描述表取词。状态 is the
  * computed display status at export time (导出时刻口径) — same derivation as
  * the list, labelled in Chinese like every other enum column.
  */
@@ -82,34 +84,46 @@ const EXPORT_COLUMNS: ReadonlyArray<{
     value: (t, { now }) =>
       TICKET_STATUS_LABELS[deriveDisplayStatus(ticketStatusSchema.parse(t.status), t.dueAt, now)],
   },
-  { header: "客户姓名", value: (t) => t.customerName ?? "" },
-  { header: "客户电话", value: (t) => t.phone ?? "" },
-  { header: "联系电话", value: (t) => t.contactPhone ?? "" },
-  { header: "保单号", value: (t) => t.policyNumber ?? "" },
-  { header: "渠道", value: (t) => t.channel?.name ?? "" },
-  { header: "投诉等级", value: (t) => t.complaintLevel ?? "" },
-  { header: "分类", value: (t) => t.category?.name ?? "" },
+  { header: ticketExportHeader("customerName"), value: (t) => t.customerName ?? "" },
+  { header: ticketExportHeader("phone"), value: (t) => t.phone ?? "" },
+  { header: ticketExportHeader("contactPhone"), value: (t) => t.contactPhone ?? "" },
+  { header: ticketExportHeader("policyNumber"), value: (t) => t.policyNumber ?? "" },
+  { header: ticketExportHeader("channelId"), value: (t) => t.channel?.name ?? "" },
+  { header: ticketExportHeader("complaintLevel"), value: (t) => t.complaintLevel ?? "" },
+  { header: ticketExportHeader("categoryId"), value: (t) => t.category?.name ?? "" },
   {
-    header: "优先级",
+    header: ticketExportHeader("priority"),
     value: (t) => (t.priority === null ? "" : PRIORITY_LABELS[prioritySchema.parse(t.priority)]),
   },
   { header: "来源", value: (t) => TICKET_SOURCE_LABELS[ticketSourceSchema.parse(t.source)] },
-  { header: "项目", value: (t) => t.project ?? "" },
-  { header: "经纪主体", value: (t) => t.brokerageEntity ?? "" },
-  { header: "支付渠道", value: (t) => t.paymentChannel ?? "" },
-  { header: "内部订单号", value: (t) => t.internalOrderNumber ?? "" },
-  { header: "用户投诉渠道", value: (t) => t.userComplaintChannel ?? "" },
-  { header: "投诉信息接收渠道", value: (t) => t.complaintReceiveChannel ?? "" },
-  { header: "客户诉求", value: (t) => t.customerRequest ?? "" },
-  { header: "核体状态", value: (t) => t.nuclearBodyStatus ?? "" },
+  { header: ticketExportHeader("project"), value: (t) => t.project ?? "" },
+  { header: ticketExportHeader("brokerageEntity"), value: (t) => t.brokerageEntity ?? "" },
+  { header: ticketExportHeader("paymentChannel"), value: (t) => t.paymentChannel ?? "" },
+  { header: ticketExportHeader("internalOrderNumber"), value: (t) => t.internalOrderNumber ?? "" },
   {
-    header: "是否已联系",
+    header: ticketExportHeader("userComplaintChannel"),
+    value: (t) => t.userComplaintChannel ?? "",
+  },
+  {
+    header: ticketExportHeader("complaintReceiveChannel"),
+    value: (t) => t.complaintReceiveChannel ?? "",
+  },
+  { header: ticketExportHeader("customerRequest"), value: (t) => t.customerRequest ?? "" },
+  { header: ticketExportHeader("nuclearBodyStatus"), value: (t) => t.nuclearBodyStatus ?? "" },
+  {
+    header: ticketExportHeader("hasContacted"),
     value: (t) => (t.hasContacted === null ? "" : t.hasContacted ? "是" : "否"),
   },
-  { header: "进线时间", value: (t, { formatDate }) => formatDate(t.contactTime) },
-  { header: "联系ID", value: (t) => t.contactId ?? "" },
+  {
+    header: ticketExportHeader("contactTime"),
+    value: (t, { formatDate }) => formatDate(t.contactTime),
+  },
+  { header: ticketExportHeader("contactId"), value: (t) => t.contactId ?? "" },
   { header: "责任人", value: (t) => t.assignee?.name ?? "" },
-  { header: "反馈时间", value: (t, { formatDate }) => formatDate(t.feedbackTime) },
+  {
+    header: ticketExportHeader("feedbackTime"),
+    value: (t, { formatDate }) => formatDate(t.feedbackTime),
+  },
   { header: "创建时间", value: (t, { formatDate }) => formatDate(t.createdAt) },
   { header: "分配时间", value: (t, { formatDate }) => formatDate(t.assignedAt) },
   { header: "处理时限", value: (t, { formatDate }) => formatDate(t.dueAt) },
