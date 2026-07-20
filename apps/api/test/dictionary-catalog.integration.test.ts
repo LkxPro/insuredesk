@@ -369,7 +369,12 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
               permissions: ["ticket.view", "ticket.view_all", "ticket.export"],
               requiredTicketFields: [],
             },
-            { format: "csv", search: detail.workOrderNumber, sortBy: "createdAt", sortOrder: "desc" },
+            {
+              format: "csv",
+              search: detail.workOrderNumber,
+              sortBy: "createdAt",
+              sortOrder: "desc",
+            },
           );
           expect(file.body.toString("utf8")).toContain("完结用（新名）");
         });
@@ -433,7 +438,12 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
               permissions: ["ticket.view", "ticket.view_all", "ticket.export"],
               requiredTicketFields: [],
             },
-            { format: "csv", search: ticket.workOrderNumber, sortBy: "createdAt", sortOrder: "desc" },
+            {
+              format: "csv",
+              search: ticket.workOrderNumber,
+              sortBy: "createdAt",
+              sortOrder: "desc",
+            },
           );
           expect(file.body.toString("utf8")).toContain("创建用（新名）");
         });
