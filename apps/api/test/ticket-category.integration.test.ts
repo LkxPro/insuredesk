@@ -1,7 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Permission } from "@insuredesk/shared";
+import {
+  type Permission,
+  TICKET_CREATE_FIELD_KEYS,
+  type TicketCreateInput,
+} from "@insuredesk/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
@@ -130,25 +134,9 @@ describe("TicketCategory catalog smoke (Testcontainers)", () => {
       displayOrder: 120,
     });
     await manager().ticket.create({
-      feedbackTime: null,
-      channelId: null,
-      project: null,
-      brokerageEntity: null,
-      paymentChannel: null,
-      internalOrderNumber: null,
-      policyNumber: null,
-      userComplaintChannel: null,
-      customerName: null,
-      phone: null,
-      contactPhone: null,
-      customerRequest: null,
-      nuclearBodyStatus: null,
-      hasContacted: null,
-      contactId: null,
+      ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
       categoryId: category.id,
-      complaintLevel: null,
-      priority: null,
-    });
+    } as TicketCreateInput);
 
     await expect(manager().ticketCategory.delete({ id: category.id })).rejects.toMatchObject({
       code: "CONFLICT",

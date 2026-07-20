@@ -1,4 +1,4 @@
-import type { Permission } from "@insuredesk/shared";
+import { type Permission, TICKET_CREATE_FIELD_KEYS } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
@@ -200,22 +200,9 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
     });
     const mutation = calls.find((call) => call.path === "ticket.create");
     // feedbackTime defaults to the open instant, minute precision (秒归零)
-    expect(mutation?.input).toMatchObject({
+    expect(mutation?.input).toEqual({
+      ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
       feedbackTime: NOW.toISOString(),
-      channelId: null,
-      project: null,
-      userComplaintChannel: null,
-      complaintReceiveChannel: null,
-      customerName: null,
-      phone: null,
-      customerRequest: null,
-      nuclearBodyStatus: null,
-      hasContacted: null,
-      contactTime: null,
-      contactId: null,
-      categoryId: null,
-      complaintLevel: null,
-      priority: null,
     });
 
     // Success path is unchanged: straight to the new ticket's detail

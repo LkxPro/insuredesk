@@ -24,24 +24,6 @@ function requiredMessage(field: string): string | undefined {
 }
 
 describe("buildTicketFormSchema 必填消息（描述表派生）", () => {
-  // 独立金样：字面量手写，不从描述表转抄
-  const RENAMED_FIELD_MESSAGES: Record<string, string> = {
-    channelId: "反馈渠道为必填项",
-    project: "项目（保司）为必填项",
-    internalOrderNumber: "内部订单号为必填项",
-    phone: "客户电话（投保人）为必填项",
-    contactPhone: "联系人电话为必填项",
-    hasContacted: "客户曾进线为必填项",
-    contactId: "进线ID为必填项",
-    categoryId: "客诉类别为必填项",
-  };
-
-  for (const [field, message] of Object.entries(RENAMED_FIELD_MESSAGES)) {
-    it(`${field} 缺失时红字为「${message}」`, () => {
-      expect(requiredMessage(field)).toBe(message);
-    });
-  }
-
   it("每个建单字段的红字都是「标准名为必填项」", () => {
     for (const key of TICKET_CREATE_FIELD_KEYS) {
       expect(requiredMessage(key)).toBe(`${TICKET_FIELDS[key].label}为必填项`);

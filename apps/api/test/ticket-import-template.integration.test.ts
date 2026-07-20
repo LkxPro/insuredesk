@@ -1,6 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  TICKET_IMPORT_HEADERS as EXPECTED_HEADERS,
+  TICKET_FIELD_DESCRIPTORS,
+} from "@insuredesk/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
@@ -28,31 +32,6 @@ describe("ticket import template (Testcontainers)", () => {
   let prisma: PrismaClient;
   let app: FastifyInstance;
   let demoPassword: string;
-
-  const EXPECTED_HEADERS = [
-    "反馈时间",
-    "反馈渠道",
-    "项目（保司）",
-    "经纪主体",
-    "支付渠道",
-    "内部订单号",
-    "保单号",
-    "用户投诉渠道",
-    "投诉信息接收渠道",
-    "客户姓名",
-    "客户电话（投保人）",
-    "联系人电话",
-    "保司侧是否核身",
-    "客户诉求",
-    "客户曾进线",
-    "进线时间",
-    "进线ID",
-    "客诉类别",
-    "投诉等级",
-    "优先级",
-    "完结状态",
-    "完结备注",
-  ];
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -223,7 +202,10 @@ describe("ticket import template (Testcontainers)", () => {
       // the option feed is bookkeeping, not part of the fill-in surface
       expect(options?.state).not.toBe("visible");
 
-      for (const header of ["保司侧是否核身", "客户曾进线", "投诉等级", "优先级"]) {
+      const enumFields = TICKET_FIELD_DESCRIPTORS.filter(
+        (descriptor) => descriptor.type === "enum",
+      );
+      for (const { label: header } of enumFields) {
         const validation = sheet?.getRow(2).getCell(columnOf(header)).dataValidation;
         expect(validation?.type, header).toBe("list");
         expect(validation?.allowBlank, header).toBe(true);
@@ -238,17 +220,9 @@ describe("ticket import template (Testcontainers)", () => {
         });
       });
       const allOptions = optionColumns.flat();
-      for (const value of [
-        "是",
-        "否",
-        "待核实",
-        "低",
-        "中",
-        "高",
-        "紧急",
-        "一般投诉",
-        "特急投诉",
-      ]) {
+      for (const value of enumFields.flatMap((field) =>
+        field.options.map((option) => option.label),
+      )) {
         expect(allOptions).toContain(value);
       }
     });

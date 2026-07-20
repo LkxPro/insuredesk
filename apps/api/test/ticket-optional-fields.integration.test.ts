@@ -1,7 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Permission, TicketCreateInput, TicketEditInput } from "@insuredesk/shared";
+import {
+  type Permission,
+  TICKET_CREATE_FIELD_KEYS,
+  type TicketCreateInput,
+  type TicketEditInput,
+} from "@insuredesk/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
@@ -78,29 +83,8 @@ describe("optional business fields (Testcontainers)", () => {
 
   const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
 
-  /** The nullable business columns a blank submission must persist as NULL. */
-  const NULLABLE_COLUMNS = [
-    "feedbackTime",
-    "channelId",
-    "project",
-    "brokerageEntity",
-    "paymentChannel",
-    "internalOrderNumber",
-    "policyNumber",
-    "userComplaintChannel",
-    "complaintReceiveChannel",
-    "customerName",
-    "phone",
-    "contactPhone",
-    "customerRequest",
-    "nuclearBodyStatus",
-    "hasContacted",
-    "contactTime",
-    "contactId",
-    "categoryId",
-    "complaintLevel",
-    "priority",
-  ] as const;
+  /** Create-field keys double as ticket column names; a blank submission must persist each as NULL. */
+  const NULLABLE_COLUMNS = TICKET_CREATE_FIELD_KEYS;
 
   /** A full edit payload that changes nothing: every field blank. */
   function blankEditInput(ticketId: string, overrides: Partial<TicketEditInput> = {}) {

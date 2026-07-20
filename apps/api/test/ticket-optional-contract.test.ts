@@ -1,4 +1,8 @@
-import { ticketCreateInputSchema, ticketEditInputSchema } from "@insuredesk/shared";
+import {
+  TICKET_CREATE_FIELD_KEYS,
+  ticketCreateInputSchema,
+  ticketEditInputSchema,
+} from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -8,30 +12,9 @@ import { describe, expect, it } from "vitest";
  * never "" or an assumed value.
  */
 describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
-  it("accepts a completely empty object and yields all-null data", () => {
+  it("accepts a completely empty object and yields all-null data across every create field", () => {
     const data = ticketCreateInputSchema.parse({});
-    expect(data).toEqual({
-      feedbackTime: null,
-      channelId: null,
-      project: null,
-      brokerageEntity: null,
-      paymentChannel: null,
-      internalOrderNumber: null,
-      policyNumber: null,
-      userComplaintChannel: null,
-      complaintReceiveChannel: null,
-      customerName: null,
-      phone: null,
-      contactPhone: null,
-      customerRequest: null,
-      nuclearBodyStatus: null,
-      hasContacted: null,
-      contactTime: null,
-      contactId: null,
-      categoryId: null,
-      complaintLevel: null,
-      priority: null,
-    });
+    expect(data).toEqual(Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])));
   });
 
   it('normalizes "" and whitespace to null across text, enum and datetime fields', () => {

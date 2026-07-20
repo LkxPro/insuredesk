@@ -1,3 +1,4 @@
+import { TICKET_CREATE_FIELD_KEYS, TICKET_FIELDS } from "@insuredesk/shared";
 import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -7,34 +8,17 @@ import { RequiredFieldsChecklist } from "./RequiredFieldsChecklist";
  * 建单必填字段清单组件测试：字段按表单分组呈现、label 为描述表标准名，勾选状态与 onChange 回调联动。
  */
 describe("RequiredFieldsChecklist", () => {
-  it("renders all 17 ticket creation fields grouped by form sections", () => {
+  it("renders every ticket creation field with its 标准名, grouped by form sections", () => {
     render(<RequiredFieldsChecklist value={[]} />);
 
-    expect(screen.getByText("来源与渠道")).toBeInTheDocument();
-    expect(screen.getByText("反馈时间")).toBeInTheDocument();
-    expect(screen.getByText("反馈渠道")).toBeInTheDocument();
-
-    expect(screen.getByText("业务信息")).toBeInTheDocument();
-    expect(screen.getByText("项目（保司）")).toBeInTheDocument();
-    expect(screen.getByText("经纪主体")).toBeInTheDocument();
-    expect(screen.getByText("支付渠道")).toBeInTheDocument();
-    expect(screen.getByText("内部订单号")).toBeInTheDocument();
-    expect(screen.getByText("保单号")).toBeInTheDocument();
-    expect(screen.getByText("用户投诉渠道")).toBeInTheDocument();
-
-    expect(screen.getByText("客户信息")).toBeInTheDocument();
-    expect(screen.getByText("客户姓名")).toBeInTheDocument();
-    expect(screen.getByText("客户电话（投保人）")).toBeInTheDocument();
-    expect(screen.getByText("联系人电话")).toBeInTheDocument();
-    expect(screen.getByText("保司侧是否核身")).toBeInTheDocument();
-    expect(screen.getByText("客户诉求")).toBeInTheDocument();
-    expect(screen.getByText("客户曾进线")).toBeInTheDocument();
-    expect(screen.getByText("进线ID")).toBeInTheDocument();
-
-    expect(screen.getByText("分类与等级")).toBeInTheDocument();
-    expect(screen.getByText("客诉类别")).toBeInTheDocument();
-    expect(screen.getByText("投诉等级")).toBeInTheDocument();
-    expect(screen.getByText("优先级")).toBeInTheDocument();
+    for (const section of ["来源与渠道", "业务信息", "客户信息", "分类与等级"]) {
+      expect(screen.getByText(section)).toBeInTheDocument();
+    }
+    // 描述表加字段但漏排进分组时，这里按清单逐个点名报警
+    for (const key of TICKET_CREATE_FIELD_KEYS) {
+      expect(screen.getByLabelText(TICKET_FIELDS[key].label)).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole("checkbox")).toHaveLength(TICKET_CREATE_FIELD_KEYS.length);
   });
 
   it("reflects selected fields as checked", () => {

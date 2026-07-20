@@ -1,7 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Permission, TicketCreateInput } from "@insuredesk/shared";
+import {
+  type Permission,
+  TICKET_CREATE_FIELD_KEYS,
+  type TicketCreateInput,
+  type TicketEditInput,
+} from "@insuredesk/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -342,27 +347,8 @@ describe("role required ticket fields (Testcontainers)", () => {
 
       const allNull = {
         ticketId: created.id,
-        feedbackTime: null,
-        channelId: null,
-        project: null,
-        brokerageEntity: null,
-        paymentChannel: null,
-        internalOrderNumber: null,
-        policyNumber: null,
-        userComplaintChannel: null,
-        complaintReceiveChannel: null,
-        customerName: null,
-        phone: null,
-        contactPhone: null,
-        customerRequest: null,
-        nuclearBodyStatus: null,
-        hasContacted: null,
-        contactTime: null,
-        contactId: null,
-        categoryId: null,
-        complaintLevel: null,
-        priority: null,
-      };
+        ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
+      } as TicketEditInput;
 
       const edited = await requiredUser().ticket.edit(allNull);
       expect(edited).toBeDefined();

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Permission } from "@insuredesk/shared";
+import { TICKET_IMPORT_HEADERS as HEADERS, type Permission } from "@insuredesk/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import ExcelJS from "exceljs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -119,31 +119,6 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
   const importerCaller = () => callerWith(importer, IMPORTER_PERMISSIONS);
   const supervisorCaller = () => callerWith(supervisor, SUPERVISOR_PERMISSIONS);
   const deleterCaller = () => callerWith(deleterNoViewAll, DELETER_PERMISSIONS);
-
-  const HEADERS = [
-    "反馈时间",
-    "反馈渠道",
-    "项目（保司）",
-    "经纪主体",
-    "支付渠道",
-    "内部订单号",
-    "保单号",
-    "用户投诉渠道",
-    "投诉信息接收渠道",
-    "客户姓名",
-    "客户电话（投保人）",
-    "联系人电话",
-    "保司侧是否核身",
-    "客户诉求",
-    "客户曾进线",
-    "进线时间",
-    "进线ID",
-    "客诉类别",
-    "投诉等级",
-    "优先级",
-    "完结状态",
-    "完结备注",
-  ];
 
   let fileSeq = 0;
 

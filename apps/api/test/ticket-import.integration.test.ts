@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Permission } from "@insuredesk/shared";
+import { TICKET_IMPORT_HEADERS as HEADERS, type Permission } from "@insuredesk/shared";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
@@ -11,31 +11,6 @@ import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const HOUR_MS = 60 * 60 * 1000;
-
-const HEADERS = [
-  "反馈时间",
-  "反馈渠道",
-  "项目（保司）",
-  "经纪主体",
-  "支付渠道",
-  "内部订单号",
-  "保单号",
-  "用户投诉渠道",
-  "投诉信息接收渠道",
-  "客户姓名",
-  "客户电话（投保人）",
-  "联系人电话",
-  "保司侧是否核身",
-  "客户诉求",
-  "客户曾进线",
-  "进线时间",
-  "进线ID",
-  "客诉类别",
-  "投诉等级",
-  "优先级",
-  "完结状态",
-  "完结备注",
-];
 
 /**
  * Acceptance tests for 批量导入 upload over the real HTTP surface:
@@ -139,7 +114,10 @@ describe("ticket import upload (Testcontainers)", () => {
 
   type RowInput = Partial<Record<string, string | Date>>;
 
-  async function buildFile(rows: RowInput[], headers = HEADERS): Promise<Buffer> {
+  async function buildFile(
+    rows: RowInput[],
+    headers: readonly string[] = HEADERS,
+  ): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("工单");
     sheet.addRow(headers);
@@ -526,8 +504,7 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(headerRes.statusCode).toBe(400);
     expect(headerRes.json().rowErrors[0].message).toContain("表头与模板不符");
 
-    // 旧模板文件（本次新增两列之前下载的）按表头契约报重新下载：
-    // 第一处不符在第 9 列（旧文件的「客户姓名」位置应为「投诉信息接收渠道」）
+    // 缺列的旧模板文件整批拒收并指认第一处不符列，提示重新下载而非静默兼容
     const legacyHeaders = HEADERS.filter(
       (header) => header !== "投诉信息接收渠道" && header !== "进线时间",
     );
@@ -536,7 +513,10 @@ describe("ticket import upload (Testcontainers)", () => {
       await buildFile([{ 客户姓名: "x" }], legacyHeaders),
     );
     expect(legacy.statusCode).toBe(400);
-    expect(legacy.json().rowErrors[0].message).toContain("第 9 列应为「投诉信息接收渠道」");
+    const mismatchColumn = HEADERS.indexOf("投诉信息接收渠道") + 1;
+    expect(legacy.json().rowErrors[0].message).toContain(
+      `第 ${mismatchColumn} 列应为「投诉信息接收渠道」`,
+    );
     expect(legacy.json().rowErrors[0].message).toContain("请重新下载模板");
 
     const emptyRes = await uploadRequest(session, await buildFile([]));

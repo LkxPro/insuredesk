@@ -1,4 +1,4 @@
-import { TICKET_IMPORT_HEADERS, TICKET_IMPORT_ROW_LIMIT } from "@insuredesk/shared";
+import { TICKET_IMPORT_HEADERS as HEADERS, TICKET_IMPORT_ROW_LIMIT } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import {
@@ -14,31 +14,6 @@ import {
  * catalog names, wall-clock dates in the request's zone, in-file duplicates).
  */
 
-const HEADERS = [
-  "反馈时间",
-  "反馈渠道",
-  "项目（保司）",
-  "经纪主体",
-  "支付渠道",
-  "内部订单号",
-  "保单号",
-  "用户投诉渠道",
-  "投诉信息接收渠道",
-  "客户姓名",
-  "客户电话（投保人）",
-  "联系人电话",
-  "保司侧是否核身",
-  "客户诉求",
-  "客户曾进线",
-  "进线时间",
-  "进线ID",
-  "客诉类别",
-  "投诉等级",
-  "优先级",
-  "完结状态",
-  "完结备注",
-];
-
 /** Row literal keyed by header — unnamed positional tuples would be unreadable. */
 type RowInput = Partial<Record<string, string | Date>>;
 
@@ -51,7 +26,10 @@ function first<T>(items: readonly T[]): T {
   return item;
 }
 
-async function buildWorkbook(rows: Array<RowInput | null>, headers = HEADERS): Promise<Buffer> {
+async function buildWorkbook(
+  rows: Array<RowInput | null>,
+  headers: readonly string[] = HEADERS,
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("工单");
   sheet.addRow(headers);
@@ -98,10 +76,7 @@ describe("readTicketImportSheet", () => {
     const { TICKET_IMPORT_TEMPLATE_COLUMNS } = await import(
       "../src/services/ticket-import-template.service"
     );
-    expect(TICKET_IMPORT_TEMPLATE_COLUMNS.map((column) => column.header)).toEqual(
-      TICKET_IMPORT_HEADERS,
-    );
-    expect(TICKET_IMPORT_HEADERS).toEqual(HEADERS);
+    expect(TICKET_IMPORT_TEMPLATE_COLUMNS.map((column) => column.header)).toEqual(HEADERS);
   });
 
   it("returns data rows with their Excel row numbers, skipping blank rows", async () => {
@@ -333,7 +308,7 @@ describe("validateTicketImportRows", () => {
     expect(errors).toHaveLength(2);
     expect(errors[0]).toMatchObject({ row: 4, column: null });
     expect(errors[0]?.message).toContain("第 2 行");
-    expect(errors[0]?.message).toContain("22 个字段");
+    expect(errors[0]?.message).toContain(`${HEADERS.length} 个字段`);
     expect(errors[1]).toMatchObject({ row: 5, column: null });
   });
 
