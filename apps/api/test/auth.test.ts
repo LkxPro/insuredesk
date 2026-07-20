@@ -1,7 +1,8 @@
-import { ALL_PERMISSIONS } from "@insuredesk/shared";
+import { POSITIVE_PERMISSIONS, RESTRICTIVE_PERMISSIONS } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../src/generated/prisma/client";
 import {
+  effectivePermissions,
   hashPassword,
   hasPermission,
   PasswordAuthProvider,
@@ -149,15 +150,27 @@ describe("Authentication and RBAC (Testcontainers)", () => {
   });
 
   describe("RBAC - Permission Resolution", () => {
-    it("admin has all permissions", async () => {
+    it("admin has all positive permissions and no restrictive ones", async () => {
       const user = await prisma.user.findUnique({ where: { username: "admin" } });
       expectPresent(user);
 
-      // 系统角色的权限不读库,会话解析恒为当前代码的全量权限点
+      // 系统角色的权限不读库,会话解析恒为当前代码的全量正向权限点;
+      // 限制类权限(勾选=禁止)必须排除,否则 admin 会被自动禁止对应操作
       const token = await sessionService.createSession(user.id);
       const authenticated = await sessionService.validateSession(token);
       expectPresent(authenticated);
-      expect([...authenticated.permissions].sort()).toEqual([...ALL_PERMISSIONS].sort());
+      expect([...authenticated.permissions].sort()).toEqual([...POSITIVE_PERMISSIONS].sort());
+      for (const restrictive of RESTRICTIVE_PERMISSIONS) {
+        expect(authenticated.permissions).not.toContain(restrictive);
+      }
+    });
+
+    it("effectivePermissions keeps stored restrictive permissions for normal roles", () => {
+      const resolved = effectivePermissions({
+        system: false,
+        permissions: ["dashboard.view", "user.forbid_change_own_password"],
+      });
+      expect(resolved).toEqual(["dashboard.view", "user.forbid_change_own_password"]);
     });
 
     it("frontline CS has limited permissions", async () => {

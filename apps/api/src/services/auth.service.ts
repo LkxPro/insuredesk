@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { ALL_PERMISSIONS, type Permission } from "@insuredesk/shared";
+import { type Permission, POSITIVE_PERMISSIONS } from "@insuredesk/shared";
 import * as bcrypt from "bcryptjs";
 import type { PrismaClient } from "../generated/prisma/client";
 
@@ -18,14 +18,15 @@ export function hashPassword(plain: string): Promise<string> {
 
 /**
  * The permission set a role actually grants. 系统角色不受权限配置约束:
- * 不读库中数组,恒为当前代码的全量权限点,新增权限点无需迁移即生效。
+ * 不读库中数组,恒为当前代码的全量正向权限点,新增权限点无需迁移即生效。
+ * 限制类权限(勾选=禁止)必须排除,否则 admin 会被自动禁止对应操作。
  * 判定与展示必须同走这里,不得直接读 role.permissions。
  */
 export function effectivePermissions(role: {
   system: boolean;
   permissions: string[];
 }): Permission[] {
-  return role.system ? [...ALL_PERMISSIONS] : (role.permissions as Permission[]);
+  return role.system ? [...POSITIVE_PERMISSIONS] : (role.permissions as Permission[]);
 }
 
 /**

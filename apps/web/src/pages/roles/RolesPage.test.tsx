@@ -184,6 +184,10 @@ describe("the role table", () => {
     const box = within(dialog).getByRole("checkbox", { name: /访问工单列表/ });
     expect(box).toBeChecked();
     expect(box).toBeDisabled();
+
+    // 管理员全量展开只含正向权限,限制类勾选框必须保持未勾选
+    const forbid = within(dialog).getByRole("checkbox", { name: /禁止修改自己的密码/ });
+    expect(forbid).not.toBeChecked();
   });
 });
 
@@ -225,6 +229,27 @@ describe("configuring roles", () => {
       expect(calls.find((call) => call.path === "role.updatePermissions")?.input).toEqual({
         id: "r-qa",
         permissions: ["ticket.view", "ticket.view_all", "dashboard.view"],
+      }),
+    );
+  });
+
+  it("限制类权限单独分组、标注勾选=禁止,可勾选并保存", async () => {
+    renderRolesPage();
+    await screen.findByText("质检专员");
+
+    fireEvent.click(screen.getByRole("button", { name: "配置权限" }));
+    const dialog = await screen.findByRole("dialog");
+
+    const restrictiveGroup = within(dialog).getByRole("group", { name: /限制类权限/ });
+    expect(within(restrictiveGroup).getByText(/勾选 = 禁止/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /禁止修改自己的密码/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "role.updatePermissions")?.input).toEqual({
+        id: "r-qa",
+        permissions: ["ticket.view", "ticket.view_all", "user.forbid_change_own_password"],
       }),
     );
   });

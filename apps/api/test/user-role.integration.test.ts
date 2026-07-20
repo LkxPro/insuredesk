@@ -1,4 +1,4 @@
-import { ALL_PERMISSIONS, type Permission } from "@insuredesk/shared";
+import { ALL_PERMISSIONS, type Permission, POSITIVE_PERMISSIONS } from "@insuredesk/shared";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DEMO_PASSWORD } from "../prisma/seed-data";
@@ -551,8 +551,8 @@ describe("user + role management (Testcontainers)", () => {
     });
   });
 
-  describe("管理员动态全量权限 (acceptance: 权限不读库,恒为当前代码的全量权限点)", () => {
-    it("清空管理员角色库中的权限数组后,登录仍拥有全部权限", async () => {
+  describe("管理员动态全量权限 (acceptance: 权限不读库,恒为当前代码的全量正向权限点,排除限制类)", () => {
+    it("清空管理员角色库中的权限数组后,登录仍拥有全部正向权限", async () => {
       await prisma.role.update({
         where: { id: seeded.roles.admin.id },
         data: { permissions: [] },
@@ -560,21 +560,21 @@ describe("user + role management (Testcontainers)", () => {
 
       const token = await loginToken("admin", demoPassword);
       const identity = (await me(token)).json().result.data;
-      expect([...identity.permissions].sort()).toEqual([...ALL_PERMISSIONS].sort());
+      expect([...identity.permissions].sort()).toEqual([...POSITIVE_PERMISSIONS].sort());
 
       // 后端守卫与前端菜单同源(auth.me),这里再验一次真实守卫端点
       const guarded = await query("shiftType.list", token);
       expect(guarded.statusCode).toBe(200);
     });
 
-    it("角色页对管理员显示全量权限,而非库中快照", async () => {
+    it("角色页对管理员显示全量正向权限,而非库中快照", async () => {
       await prisma.role.update({
         where: { id: seeded.roles.admin.id },
         data: { permissions: [] },
       });
 
       const listed = (await admin().role.list()).find((role) => role.system);
-      expect(listed?.permissions).toEqual([...ALL_PERMISSIONS]);
+      expect(listed?.permissions).toEqual([...POSITIVE_PERMISSIONS]);
     });
   });
 

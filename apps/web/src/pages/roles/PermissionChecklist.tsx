@@ -36,7 +36,14 @@ export function PermissionChecklist({
     <div className="flex flex-col gap-5">
       {PERMISSION_GROUPS.map((group) => (
         <fieldset key={group.label} className="flex flex-col gap-2">
-          <legend className="mb-2 text-sm font-medium">{group.label}</legend>
+          <legend className="mb-2 text-sm font-medium">
+            {group.label}
+            {group.restrictive && (
+              <span className="ml-2 text-xs font-normal text-destructive">
+                勾选 = 禁止该操作，与其他权限相反
+              </span>
+            )}
+          </legend>
           <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
             {group.permissions.map((permission) => (
               <div key={permission} className="flex items-start gap-2 text-sm">
