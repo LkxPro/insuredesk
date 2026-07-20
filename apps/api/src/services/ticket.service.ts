@@ -20,9 +20,9 @@ import {
 import type { Clock } from "../clock";
 import type { Prisma, PrismaClient } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
-import { resolveNewChannel } from "./channel.service";
+import { channelCatalog } from "./channel.service";
 import { applyTicketDataScope } from "./data-scope.service";
-import { resolveNewCategory } from "./ticket-category.service";
+import { ticketCategoryCatalog } from "./ticket-category.service";
 import { displayStatusTicketWhere } from "./ticket-display-status";
 
 /**
@@ -164,8 +164,8 @@ export async function createTicket(
 
   return prisma.$transaction(async (tx) => {
     // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
-    await resolveNewCategory(tx, input.categoryId);
-    await resolveNewChannel(tx, input.channelId);
+    await ticketCategoryCatalog.resolveNewRef(tx, input.categoryId);
+    await channelCatalog.resolveNewRef(tx, input.channelId);
 
     const ticket = await tx.ticket.create({
       data: {

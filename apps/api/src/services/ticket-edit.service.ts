@@ -1,11 +1,11 @@
 import { PRIORITY_LABELS, type Priority, type TicketEditData } from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
-import { resolveNewChannel } from "./channel.service";
+import { channelCatalog } from "./channel.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { computeSlaStamp, type TicketServiceDeps } from "./ticket.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
-import { resolveNewCategory } from "./ticket-category.service";
+import { ticketCategoryCatalog } from "./ticket-category.service";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结
@@ -129,13 +129,13 @@ export async function editTicket(
       categoryId: {
         from: ticket.category?.name ?? null,
         to: changedFields.includes("categoryId")
-          ? ((await resolveNewCategory(tx, next.categoryId))?.name ?? null)
+          ? ((await ticketCategoryCatalog.resolveNewRef(tx, next.categoryId))?.name ?? null)
           : null,
       },
       channelId: {
         from: ticket.channel?.name ?? null,
         to: changedFields.includes("channelId")
-          ? ((await resolveNewChannel(tx, next.channelId))?.name ?? null)
+          ? ((await channelCatalog.resolveNewRef(tx, next.channelId))?.name ?? null)
           : null,
       },
     };

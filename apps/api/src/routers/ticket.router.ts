@@ -15,8 +15,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
-import { ChannelUnavailableError } from "../services/channel.service";
-import { CompletionStatusUnavailableError } from "../services/completion-status.service";
+import { CatalogUnavailableError } from "../services/dictionary-catalog.service";
 import {
   createTicket,
   getTicketDetail,
@@ -33,7 +32,6 @@ import {
   TicketNotAssignableError,
   TicketNotFoundError,
 } from "../services/ticket-assign.service";
-import { TicketCategoryUnavailableError } from "../services/ticket-category.service";
 import { addTicketComment, TicketNotProcessableError } from "../services/ticket-comment.service";
 import { deleteTicket } from "../services/ticket-delete.service";
 import { editTicket } from "../services/ticket-edit.service";
@@ -96,10 +94,7 @@ export const ticketRouter = router({
             cause: error,
           });
         }
-        if (
-          error instanceof TicketCategoryUnavailableError ||
-          error instanceof ChannelUnavailableError
-        ) {
+        if (error instanceof CatalogUnavailableError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         throw error;
@@ -188,7 +183,7 @@ export const ticketRouter = router({
             cause: error,
           });
         }
-        if (error instanceof CompletionStatusUnavailableError) {
+        if (error instanceof CatalogUnavailableError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         throw error;
@@ -216,10 +211,7 @@ export const ticketRouter = router({
             cause: error,
           });
         }
-        if (
-          error instanceof TicketCategoryUnavailableError ||
-          error instanceof ChannelUnavailableError
-        ) {
+        if (error instanceof CatalogUnavailableError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         throw error;

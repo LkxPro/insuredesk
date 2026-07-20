@@ -2,6 +2,7 @@ export * from "./auth";
 export * from "./channel";
 export * from "./completion-status";
 export * from "./dashboard";
+export * from "./dictionary-catalog";
 export * from "./enums";
 export * from "./health";
 export * from "./notification";

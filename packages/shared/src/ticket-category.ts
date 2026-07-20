@@ -1,30 +1,22 @@
-import { z } from "zod";
+import type { z } from "zod";
+import { createCatalogSchemas } from "./dictionary-catalog";
 
 /**
- * 客诉类别目录 contracts (issue #68). Tickets reference catalog rows by id, so
- * a rename propagates everywhere at read time; only the ProcessLog remark
- * keeps the literal name snapshot of the moment.
+ * 客诉类别目录 contracts. Tickets reference catalog rows by id, so a rename
+ * propagates everywhere at read time; only the ProcessLog remark keeps the
+ * literal name snapshot of the moment.
  */
 
-const ticketCategoryFields = {
-  name: z.string().trim().min(1, "请填写类别名称").max(50, "类别名称最多 50 个字符"),
-  displayOrder: z.number().int("显示顺序必须为整数"),
-};
+const schemas = createCatalogSchemas("类别");
 
-export const ticketCategoryCreateInputSchema = z.object(ticketCategoryFields);
+export const ticketCategoryCreateInputSchema = schemas.createInputSchema;
 export type TicketCategoryCreateInput = z.infer<typeof ticketCategoryCreateInputSchema>;
 
-export const ticketCategoryUpdateInputSchema = z.object({
-  id: z.string().min(1),
-  ...ticketCategoryFields,
-});
+export const ticketCategoryUpdateInputSchema = schemas.updateInputSchema;
 export type TicketCategoryUpdateInput = z.infer<typeof ticketCategoryUpdateInputSchema>;
 
-export const ticketCategorySetActiveInputSchema = z.object({
-  id: z.string().min(1),
-  active: z.boolean(),
-});
+export const ticketCategorySetActiveInputSchema = schemas.setActiveInputSchema;
 export type TicketCategorySetActiveInput = z.infer<typeof ticketCategorySetActiveInputSchema>;
 
-export const ticketCategoryDeleteInputSchema = z.object({ id: z.string().min(1) });
+export const ticketCategoryDeleteInputSchema = schemas.deleteInputSchema;
 export type TicketCategoryDeleteInput = z.infer<typeof ticketCategoryDeleteInputSchema>;

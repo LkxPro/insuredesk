@@ -1,6 +1,6 @@
 import { type TicketResolveInput, TicketStatus } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service";
-import { resolveNewCompletionStatus } from "./completion-status.service";
+import { completionStatusCatalog } from "./completion-status.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import type { TicketServiceDeps } from "./ticket.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
@@ -67,7 +67,10 @@ export async function resolveTicket(
     }
 
     // 校验与写入同事务；并发删除由 FK Restrict 兜底
-    const completionStatus = await resolveNewCompletionStatus(tx, input.completionStatusId);
+    const completionStatus = await completionStatusCatalog.resolveNewRef(
+      tx,
+      input.completionStatusId,
+    );
 
     // Claim the 终态 with a conditional write on the EXACT status we read, so
     // the status_change log's `from` is the true prior state. Statuses only

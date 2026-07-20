@@ -8,9 +8,9 @@ import {
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import type { PrismaClient } from "../generated/prisma/client";
-import { listChannelOptions } from "./channel.service";
-import { listCompletionStatusOptions } from "./completion-status.service";
-import { listTicketCategoryOptions } from "./ticket-category.service";
+import { channelCatalog } from "./channel.service";
+import { completionStatusCatalog } from "./completion-status.service";
+import { ticketCategoryCatalog } from "./ticket-category.service";
 
 /**
  * 批量导入 template: a dynamically generated workbook, never a static asset —
@@ -127,9 +127,9 @@ export async function buildTicketImportTemplate(
   prisma: PrismaClient,
 ): Promise<TicketImportTemplateFile> {
   const [channels, categories, completionStatuses] = await Promise.all([
-    listChannelOptions(prisma),
-    listTicketCategoryOptions(prisma),
-    listCompletionStatusOptions(prisma),
+    channelCatalog.listOptions(prisma),
+    ticketCategoryCatalog.listOptions(prisma),
+    completionStatusCatalog.listOptions(prisma),
   ]);
   const catalogs: CatalogOptions = {
     channels: channels.map((channel) => channel.name),
