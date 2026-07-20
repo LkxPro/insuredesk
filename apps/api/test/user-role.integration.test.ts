@@ -212,6 +212,42 @@ describe("user + role management (Testcontainers)", () => {
       expect((await login(member.username, "rotated-456")).statusCode).toBe(200);
     });
 
+    it("a password reset kills the target's live sessions; a no-password edit leaves them alone", async () => {
+      const member = await makeUser();
+      const tokens = [
+        await loginToken(member.username, member.password),
+        await loginToken(member.username, member.password),
+      ];
+
+      // 仅改基础字段:两个会话都继续有效
+      await admin().user.update({
+        id: member.id,
+        name: "改资料",
+        email: null,
+        team: null,
+        password: null,
+      });
+      for (const token of tokens) {
+        expect((await me(token)).statusCode).toBe(200);
+      }
+
+      // 重置密码:全部会话立即失效,行被删除而非仅被忽略
+      await admin().user.update({
+        id: member.id,
+        name: "改资料",
+        email: null,
+        team: null,
+        password: "rotated-789",
+      });
+      for (const token of tokens) {
+        expect((await me(token)).statusCode).toBe(401);
+      }
+      expect(await prisma.session.count({ where: { userId: member.id } })).toBe(0);
+
+      // 新凭据重新登录不受影响
+      expect((await login(member.username, "rotated-789")).statusCode).toBe(200);
+    });
+
     it("update/setActive/assignRole on unknown users → NOT_FOUND", async () => {
       await expect(
         admin().user.update({
