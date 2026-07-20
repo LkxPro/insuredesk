@@ -34,9 +34,11 @@ const HEADERS = [
   "客诉类别",
   "投诉等级",
   "优先级",
+  "完结状态",
+  "完结备注",
 ];
 
-/** Row literal keyed by header — unnamed 18-tuples would be unreadable. */
+/** Row literal keyed by header — unnamed positional tuples would be unreadable. */
 type RowInput = Partial<Record<string, string | Date>>;
 
 /** First element, asserted present — noUncheckedIndexedAccess-friendly. */
@@ -70,6 +72,10 @@ const catalogs = {
   categories: new Map([
     ["理赔", { id: "cat-claims", active: true }],
     ["旧类别", { id: "cat-old", active: false }],
+  ]),
+  completionStatuses: new Map([
+    ["已解决", { id: "cs-resolved", active: true }],
+    ["旧口径", { id: "cs-legacy", active: false }],
   ]),
 };
 
@@ -177,6 +183,48 @@ describe("validateTicketImportRows", () => {
     expect(ticket.complaintLevel).toBeNull();
     expect(ticket.priority).toBeNull();
     expect(ticket.customerName).toBeNull();
+    expect(ticket.completionStatusId).toBeNull();
+    expect(ticket.completionRemark).toBeNull();
+  });
+
+  it("maps a filled 完结状态/完结备注 pair to the completion payload", async () => {
+    const { tickets, errors } = await validate([
+      { 客户姓名: "张三", 完结状态: "已解决", 完结备注: " 历史迁移，电话回访已确认 " },
+    ]);
+    expect(errors).toEqual([]);
+    const ticket = first(tickets);
+    expect(ticket.completionStatusId).toBe("cs-resolved");
+    expect(ticket.completionRemark).toBe("历史迁移，电话回访已确认");
+  });
+
+  it("rejects a half-filled 完结状态/完结备注 pair as a row error", async () => {
+    const { errors } = await validate([
+      { 客户姓名: "只填状态", 完结状态: "已解决" },
+      { 客户姓名: "只填备注", 完结备注: "备注" },
+    ]);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toMatchObject({ row: 2, column: null });
+    expect(errors[0]?.message).toContain("同时填写或同时留空");
+    expect(errors[1]).toMatchObject({ row: 3, column: null });
+  });
+
+  it("distinguishes unknown from disabled 完结状态 names, same as channel/category", async () => {
+    const { errors } = await validate([
+      { 完结状态: "不存在的状态", 完结备注: "x" },
+      { 完结状态: "旧口径", 完结备注: "x" },
+    ]);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toMatchObject({ row: 2, column: "完结状态" });
+    expect(errors[0]?.message).toContain("不存在");
+    expect(errors[1]).toMatchObject({ row: 3, column: "完结状态" });
+    expect(errors[1]?.message).toContain("已停用");
+  });
+
+  it("rejects a 完结备注 over 2000 chars", async () => {
+    const { errors } = await validate([{ 完结状态: "已解决", 完结备注: "字".repeat(2001) }]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ row: 2, column: "完结备注" });
+    expect(errors[0]?.message).toContain("2000");
   });
 
   it("interprets wall-clock feedbackTime in the request zone, falling back to UTC", async () => {
@@ -256,13 +304,22 @@ describe("validateTicketImportRows", () => {
     expect(errors[5]?.message).toContain("50");
   });
 
-  it("flags rows identical in all 18 fields as duplicates of the first occurrence", async () => {
+  it("flags rows identical in all 20 fields as duplicates of the first occurrence", async () => {
     const row: RowInput = { 客户姓名: "张三", 投诉等级: "一般投诉" };
     const { errors } = await validate([row, { 客户姓名: "张三" }, { ...row }, { ...row }]);
     expect(errors).toHaveLength(2);
     expect(errors[0]).toMatchObject({ row: 4, column: null });
     expect(errors[0]?.message).toContain("第 2 行");
+    expect(errors[0]?.message).toContain("20 个字段");
     expect(errors[1]).toMatchObject({ row: 5, column: null });
+  });
+
+  it("counts the 完结 columns into the duplicate key — rows differing only there pass", async () => {
+    const { errors } = await validate([
+      { 客户姓名: "张三", 完结状态: "已解决", 完结备注: "第一单" },
+      { 客户姓名: "张三", 完结状态: "已解决", 完结备注: "第二单" },
+    ]);
+    expect(errors).toEqual([]);
   });
 
   it("treats a text date and its native-cell equivalent as the same row content", async () => {

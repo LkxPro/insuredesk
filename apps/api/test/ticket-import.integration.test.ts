@@ -31,6 +31,8 @@ const HEADERS = [
   "客诉类别",
   "投诉等级",
   "优先级",
+  "完结状态",
+  "完结备注",
 ];
 
 /**
@@ -45,6 +47,10 @@ const HEADERS = [
  * - file-level gates: header mismatch, zero rows, row limit, size limit
  * - the imported tickets surface through the importer's own data scope, the
  *   source filter, and the export's 来源 column
+ * - rows with the 完结状态/完结备注 pair land directly completed (历史工单
+ *   迁移): completionTime = the import instant, no assignee, SLA stamped as
+ *   usual, create + resolve logs and no status_change — still only
+ *   ticket.import, never ticket.process
  */
 describe("ticket import upload (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;
@@ -291,6 +297,142 @@ describe("ticket import upload (Testcontainers)", () => {
     }
   });
 
+  it("lands both-filled 完结 rows as completed, both-empty rows as unassigned, in one batch", async () => {
+    const completionStatus = await prisma.completionStatus.findFirstOrThrow({
+      where: { name: "已达成一致", active: true },
+    });
+    const otherStatus = await prisma.completionStatus.findFirstOrThrow({
+      where: { name: "已赔付", active: true },
+    });
+    const session = await sessionFor("importer");
+    const res = await uploadRequest(
+      session,
+      await buildFile([
+        {
+          客户姓名: "迁移客户",
+          投诉等级: "高级投诉",
+          完结状态: "已达成一致",
+          完结备注: "历史工单迁移，电话回访已确认",
+        },
+        // 第二条完结行：状态与备注都不同，钉死逐行配对（错位会窜备注/窜目录）
+        { 客户姓名: "迁移客户乙", 完结状态: "已赔付", 完结备注: "迁移备注乙" },
+        { 客户姓名: "新客户" },
+      ]),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ imported: 3 });
+
+    const batch = await prisma.ticketImportBatch.findFirstOrThrow();
+    const completed = await prisma.ticket.findFirstOrThrow({
+      where: { customerName: "迁移客户" },
+    });
+    const unassigned = await prisma.ticket.findFirstOrThrow({
+      where: { customerName: "新客户" },
+    });
+
+    // 完结行落地即终态：完结时间=导入时刻、目录引用正确、无责任人
+    expect(completed.status).toBe("completed");
+    expect(completed.completionTime?.getTime()).toBe(batch.importedAt.getTime());
+    expect(completed.completionStatusId).toBe(completionStatus.id);
+    expect(completed.assigneeId).toBeNull();
+    expect(completed.assignedAt).toBeNull();
+
+    // SLA 照常按投诉等级盖章
+    const policy = await prisma.slaPolicy.findUniqueOrThrow({
+      where: { complaintLevel: "高级投诉" },
+    });
+    expect(completed.dueAt?.getTime()).toBe(
+      batch.importedAt.getTime() + (policy.overdueHours as number) * HOUR_MS,
+    );
+    expect(completed.followUpFrequency).not.toBeNull();
+
+    // 两列都空的行照旧落未分配
+    expect(unassigned.status).toBe("unassigned");
+    expect(unassigned.completionTime).toBeNull();
+    expect(unassigned.completionStatusId).toBeNull();
+
+    // 第二条完结行拿到自己的目录引用与备注，不与第一条窜行
+    const otherCompleted = await prisma.ticket.findFirstOrThrow({
+      where: { customerName: "迁移客户乙" },
+    });
+    expect(otherCompleted.status).toBe("completed");
+    expect(otherCompleted.completionStatusId).toBe(otherStatus.id);
+    const otherResolve = await prisma.processLog.findFirstOrThrow({
+      where: { ticketId: otherCompleted.id, action: "resolve" },
+    });
+    expect(otherResolve.remark).toBe("迁移备注乙");
+
+    // 完结行时间线 = create + resolve（同导入瞬间、完结备注可见），无 status_change
+    const timeline = await prisma.processLog.findMany({
+      where: { ticketId: completed.id },
+      orderBy: [{ at: "asc" }, { id: "asc" }],
+    });
+    expect(timeline.map((log) => log.action)).toEqual(["create", "resolve"]);
+    const [create, resolve] = timeline as [(typeof timeline)[0], (typeof timeline)[0]];
+    expect(create.remark).toBe("导入创建");
+    expect(resolve.remark).toBe("历史工单迁移，电话回访已确认");
+    expect(resolve.operatorId).toBe(importerUser.id);
+    expect(resolve.operatorName).toBe("导入员一号");
+    expect(resolve.at.getTime()).toBe(batch.importedAt.getTime());
+
+    // 未完结行只有 create
+    const unassignedLogs = await prisma.processLog.findMany({
+      where: { ticketId: unassigned.id },
+    });
+    expect(unassignedLogs.map((log) => log.action)).toEqual(["create"]);
+  });
+
+  it("rejects 半填/不存在/已停用/超长 完结 cells row by row, importing nothing", async () => {
+    await prisma.completionStatus.create({
+      data: { name: "停用完结X", active: false, displayOrder: 90 },
+    });
+    const session = await sessionFor("importer");
+    const res = await uploadRequest(
+      session,
+      await buildFile([
+        { 客户姓名: "只填状态", 完结状态: "已达成一致" }, // row 2: half-filled
+        { 客户姓名: "只填备注", 完结备注: "备注" }, // row 3: half-filled
+        { 完结状态: "没有这个状态", 完结备注: "x" }, // row 4
+        { 完结状态: "停用完结X", 完结备注: "x" }, // row 5
+        { 完结状态: "已达成一致", 完结备注: "字".repeat(2001) }, // row 6
+      ]),
+    );
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as {
+      rowErrors: Array<{ row: number | null; column: string | null; message: string }>;
+    };
+    expect(body.rowErrors).toHaveLength(5);
+    expect(body.rowErrors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          row: 2,
+          column: null,
+          message: expect.stringContaining("同时填写或同时留空"),
+        }),
+        expect.objectContaining({ row: 3, column: null }),
+        expect.objectContaining({
+          row: 4,
+          column: "完结状态",
+          message: expect.stringContaining("不存在"),
+        }),
+        expect.objectContaining({
+          row: 5,
+          column: "完结状态",
+          message: expect.stringContaining("已停用"),
+        }),
+        expect.objectContaining({
+          row: 6,
+          column: "完结备注",
+          message: expect.stringContaining("2000"),
+        }),
+      ]),
+    );
+
+    // 整批零入库
+    expect(await prisma.ticket.count()).toBe(0);
+    expect(await prisma.ticketImportBatch.count()).toBe(0);
+  });
+
   it("imported tickets reach the importer's own data scope, source filter, and detail 由谁创建", async () => {
     const session = await sessionFor("importer");
     expect((await uploadRequest(session, await buildFile([{ 客户姓名: "李四" }]))).statusCode).toBe(
@@ -373,6 +515,15 @@ describe("ticket import upload (Testcontainers)", () => {
     const headerRes = await uploadRequest(session, await buildFile([{ 客户姓名: "x" }], renamed));
     expect(headerRes.statusCode).toBe(400);
     expect(headerRes.json().rowErrors[0].message).toContain("表头与模板不符");
+
+    // 旧 18 列模板文件按既有表头契约报重新下载
+    const legacy = await uploadRequest(
+      session,
+      await buildFile([{ 客户姓名: "x" }], HEADERS.slice(0, 18)),
+    );
+    expect(legacy.statusCode).toBe(400);
+    expect(legacy.json().rowErrors[0].message).toContain("第 19 列应为「完结状态」");
+    expect(legacy.json().rowErrors[0].message).toContain("请重新下载模板");
 
     const emptyRes = await uploadRequest(session, await buildFile([]));
     expect(emptyRes.statusCode).toBe(400);

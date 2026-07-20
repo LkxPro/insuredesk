@@ -1,3 +1,4 @@
+import { TICKET_COMPLETION_REMARK_LIMIT } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -105,7 +106,7 @@ export function ResolveTicketDialog({
             placeholder="记录完结原因与处理结论"
             value={remark}
             onChange={(event) => setRemark(event.target.value)}
-            maxLength={2000}
+            maxLength={TICKET_COMPLETION_REMARK_LIMIT}
             disabled={resolve.isPending}
           />
         </Field>

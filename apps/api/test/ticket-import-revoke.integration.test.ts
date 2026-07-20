@@ -139,22 +139,25 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
     "客诉类别",
     "投诉等级",
     "优先级",
+    "完结状态",
+    "完结备注",
   ];
 
   let fileSeq = 0;
 
-  /** Import a batch of named customers through the real import service. */
+  /** Import a batch through the real import service; a string row = 客户姓名 only. */
   async function importBatchOf(
     actor: User,
     permissions: Permission[],
-    customerNames: string[],
+    rows: Array<string | Partial<Record<string, string>>>,
     filename = `导入-${++fileSeq}.xlsx`,
   ): Promise<string> {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("工单");
     sheet.addRow(HEADERS);
-    for (const name of customerNames) {
-      sheet.addRow(HEADERS.map((header) => (header === "客户姓名" ? name : "")));
+    for (const row of rows) {
+      const cells = typeof row === "string" ? { 客户姓名: row } : row;
+      sheet.addRow(HEADERS.map((header) => cells[header] ?? ""));
     }
     const body = Buffer.from(await workbook.xlsx.writeBuffer());
     await importTickets(deps(), authUser(actor, permissions), { body, filename });
@@ -268,6 +271,39 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
         code: "PRECONDITION_FAILED",
       });
       expect((await supervisorCaller().ticket.importBatches({})).items[0]?.status).toBe("locked");
+    });
+
+    // 导入即完结的整条链路：完结行的 resolve 日志与导入同瞬间，不锁批。
+    it("keeps a batch containing 导入即完结 rows immediately revocable", async () => {
+      const batchId = await importBatchOf(importer, IMPORTER_PERMISSIONS, [
+        { 客户姓名: "迁移客户", 完结状态: "已达成一致", 完结备注: "历史迁移" },
+        "新客户",
+      ]);
+
+      expect((await supervisorCaller().ticket.importBatches({})).items[0]?.status).toBe(
+        "revocable",
+      );
+      await expect(supervisorCaller().ticket.revokeImportBatch({ batchId })).resolves.toEqual({
+        revoked: 2,
+      });
+      expect(await prisma.ticket.count({ where: { deletedAt: null } })).toBe(0);
+    });
+
+    it("still locks a 完结-containing batch on any manual action after the import", async () => {
+      const batchId = await importBatchOf(importer, IMPORTER_PERMISSIONS, [
+        { 客户姓名: "迁移客户", 完结状态: "已达成一致", 完结备注: "历史迁移" },
+        "新客户",
+      ]);
+      const unassigned = await prisma.ticket.findFirstOrThrow({
+        where: { customerName: "新客户" },
+      });
+
+      await supervisorCaller().ticket.assign({ ticketId: unassigned.id, assigneeId: importer.id });
+      expect((await supervisorCaller().ticket.importBatches({})).items[0]?.status).toBe("locked");
+      await expect(supervisorCaller().ticket.revokeImportBatch({ batchId })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+      });
+      expect(await prisma.ticket.count({ where: { deletedAt: null } })).toBe(2);
     });
 
     // 「已有处理」以批次导入瞬间为界：同瞬间的日志属于导入本身（导入即完结

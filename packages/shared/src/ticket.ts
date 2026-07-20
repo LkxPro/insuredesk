@@ -265,6 +265,9 @@ export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
 /** Server-side shape (after transforms) — what the service receives. */
 export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
 
+/** 完结备注长度上限；完结弹窗与批量导入的完结备注列共用这一个数。 */
+export const TICKET_COMPLETION_REMARK_LIMIT = 2000;
+
 /**
  * 完结工单 contract: the mandatory completion reason — a 完结状态目录 reference,
  * which must exist and be 启用 — plus the 完结备注 that becomes the resolve
@@ -274,7 +277,7 @@ export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
 export const ticketResolveInputSchema = z.object({
   ticketId: z.string().min(1),
   completionStatusId: z.string().min(1, "请选择完结状态"),
-  remark: z.string().trim().min(1, "请填写完结备注").max(2000),
+  remark: z.string().trim().min(1, "请填写完结备注").max(TICKET_COMPLETION_REMARK_LIMIT),
 });
 export type TicketResolveInput = z.infer<typeof ticketResolveInputSchema>;
 

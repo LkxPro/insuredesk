@@ -3,6 +3,7 @@ import {
   NUCLEAR_BODY_STATUSES,
   PRIORITIES,
   PRIORITY_LABELS,
+  TICKET_COMPLETION_REMARK_LIMIT,
   TICKET_IMPORT_ROW_LIMIT,
   TICKET_TEXT_LIMITS,
   type TicketCreateData,
@@ -121,7 +122,18 @@ export async function readTicketImportSheet(body: Buffer): Promise<TicketImportS
 export interface TicketImportCatalogs {
   channels: Map<string, { id: string; active: boolean }>;
   categories: Map<string, { id: string; active: boolean }>;
+  completionStatuses: Map<string, { id: string; active: boolean }>;
 }
+
+/**
+ * Row payload = the 手工建单 fields plus the 完结迁移 pair; the pair is
+ * both-or-neither (validated cross-field), non-null ⇒ the row lands already
+ * completed.
+ */
+export type TicketImportRowData = TicketCreateData & {
+  completionStatusId: string | null;
+  completionRemark: string | null;
+};
 
 type WallClock = { year: number; month: number; day: number; hour: number; minute: number };
 
@@ -201,11 +213,11 @@ function toWallClock(raw: ImportCellValue): WallClock | null {
   return valid ? { year, month, day, hour, minute } : null;
 }
 
-type ParseOutcome = { ok: TicketCreateData[keyof TicketCreateData] } | { fail: string };
+type ParseOutcome = { ok: TicketImportRowData[keyof TicketImportRowData] } | { fail: string };
 
 interface ImportColumnSpec {
   header: string;
-  field: keyof TicketCreateData;
+  field: keyof TicketImportRowData;
   parse: (
     raw: ImportCellValue,
     ctx: { catalogs: TicketImportCatalogs; timeZone: string },
@@ -216,8 +228,11 @@ const notText = (raw: Date): ParseOutcome => ({
   fail: `应为文本，实际是日期单元格（${raw.toISOString()}）`,
 });
 
-function textColumn(header: string, field: keyof typeof TICKET_TEXT_LIMITS): ImportColumnSpec {
-  const limit = TICKET_TEXT_LIMITS[field];
+function limitedTextColumn(
+  header: string,
+  field: keyof TicketImportRowData,
+  limit: number,
+): ImportColumnSpec {
   return {
     header,
     field,
@@ -234,6 +249,10 @@ function textColumn(header: string, field: keyof typeof TICKET_TEXT_LIMITS): Imp
       return { ok: raw };
     },
   };
+}
+
+function textColumn(header: string, field: keyof typeof TICKET_TEXT_LIMITS): ImportColumnSpec {
+  return limitedTextColumn(header, field, TICKET_TEXT_LIMITS[field]);
 }
 
 function enumColumn(
@@ -265,7 +284,7 @@ type CatalogNameMap = Map<string, { id: string; active: boolean }>;
 
 function catalogColumn(
   header: string,
-  field: "channelId" | "categoryId",
+  field: "channelId" | "categoryId" | "completionStatusId",
   pick: (catalogs: TicketImportCatalogs) => CatalogNameMap,
 ): ImportColumnSpec {
   return {
@@ -295,9 +314,11 @@ const PRIORITY_BY_LABEL = new Map(
 );
 
 /**
- * The 18 columns, template order. Semantics = 手工建单契约: every column may
+ * The 20 columns, template order. Semantics = 手工建单契约: every column may
  * be blank (null, never "" or a default), catalog names must be 存在且启用,
- * enum columns take the template's Chinese literals.
+ * enum columns take the template's Chinese literals. The trailing 完结 pair
+ * additionally binds cross-field: both filled or both blank (checked on the
+ * raw cells in validateTicketImportRows).
  */
 const IMPORT_COLUMNS: readonly ImportColumnSpec[] = [
   {
@@ -336,7 +357,16 @@ const IMPORT_COLUMNS: readonly ImportColumnSpec[] = [
     PRIORITIES.map((priority) => PRIORITY_LABELS[priority]),
     (label) => PRIORITY_BY_LABEL.get(label) ?? null,
   ),
+  catalogColumn("完结状态", "completionStatusId", (catalogs) => catalogs.completionStatuses),
+  limitedTextColumn("完结备注", "completionRemark", TICKET_COMPLETION_REMARK_LIMIT),
 ];
+
+const COMPLETION_STATUS_INDEX = IMPORT_COLUMNS.findIndex(
+  (column) => column.field === "completionStatusId",
+);
+const COMPLETION_REMARK_INDEX = IMPORT_COLUMNS.findIndex(
+  (column) => column.field === "completionRemark",
+);
 
 /** Column order IS the header contract; drift here is a programming error. */
 export const TICKET_IMPORT_HEADERS: readonly string[] = IMPORT_COLUMNS.map(
@@ -347,7 +377,7 @@ if (TICKET_IMPORT_HEADERS.join("\u0000") !== TICKET_IMPORT_TEMPLATE_HEADERS.join
 }
 
 /**
- * In-file duplicate key: all 18 cells, joined with a separator no cell text
+ * In-file duplicate key: all 20 cells, joined with a separator no cell text
  * can contain (cells are trimmed display text). Dates — native cells and
  * template-format text alike — normalize to their wall clock, so the same
  * moment written two ways still counts as the same content.
@@ -376,14 +406,17 @@ export function validateTicketImportRows(
   rows: TicketImportSheetRow[],
   catalogs: TicketImportCatalogs,
   timeZone: string | undefined,
-): { tickets: TicketCreateData[]; errors: TicketImportRowError[] } {
+): { tickets: TicketImportRowData[]; errors: TicketImportRowError[] } {
   const ctx = { catalogs, timeZone: resolveTimeZone(timeZone) };
   const errors: TicketImportRowError[] = [];
-  const tickets: TicketCreateData[] = [];
+  const tickets: TicketImportRowData[] = [];
   const seenContent = new Map<string, number>();
 
   for (const row of rows) {
-    const ticket = {} as Record<keyof TicketCreateData, TicketCreateData[keyof TicketCreateData]>;
+    const ticket = {} as Record<
+      keyof TicketImportRowData,
+      TicketImportRowData[keyof TicketImportRowData]
+    >;
     for (const [index, column] of IMPORT_COLUMNS.entries()) {
       const outcome = column.parse(row.cells[index] ?? "", ctx);
       if ("fail" in outcome) {
@@ -394,6 +427,18 @@ export function validateTicketImportRows(
       }
     }
 
+    // 同填同空 is checked on the RAW cells: an invalid 完结状态 name still
+    // counts as "filled", so it gets its catalog error alone, not a bogus
+    // half-filled error on top.
+    const rawFilled = (index: number) => (row.cells[index] ?? "") !== "";
+    if (rawFilled(COMPLETION_STATUS_INDEX) !== rawFilled(COMPLETION_REMARK_INDEX)) {
+      errors.push({
+        row: row.rowNumber,
+        column: null,
+        message: "「完结状态」与「完结备注」须同时填写或同时留空（该行只填写了其中一列）",
+      });
+    }
+
     const key = rowContentKey(row.cells);
     const firstRow = seenContent.get(key);
     if (firstRow === undefined) {
@@ -402,11 +447,11 @@ export function validateTicketImportRows(
       errors.push({
         row: row.rowNumber,
         column: null,
-        message: `与第 ${firstRow} 行完全重复（18 个字段全部相同）`,
+        message: `与第 ${firstRow} 行完全重复（${IMPORT_COLUMNS.length} 个字段全部相同）`,
       });
     }
 
-    tickets.push(ticket as TicketCreateData);
+    tickets.push(ticket as TicketImportRowData);
   }
 
   return { tickets, errors };
@@ -441,6 +486,12 @@ function toNameMap(rows: Array<{ id: string; name: string; active: boolean }>) {
  *   is "全字段可空", independent of who uploads
  * - every ticket gets its `create` ProcessLog (remark 导入创建) and a
  *   reference to the batch row recording 导入人/时刻/行数/文件名
+ * - rows with the 完结 pair land directly in the 终态: status=completed,
+ *   completionTime=the import instant, no assignee, SLA stamped as usual, plus
+ *   a `resolve` ProcessLog (remark = the file's 完结备注, operator = the
+ *   importer, same instant). No status_change log — the row never transitioned;
+ *   and no ticket.process required — migrating history is still just
+ *   ticket.import. Same-instant logs keep the batch 整批可撤销.
  */
 export async function importTickets(
   { prisma, clock }: TicketServiceDeps,
@@ -452,13 +503,18 @@ export async function importTickets(
 
   return prisma.$transaction(
     async (tx) => {
-      const [channels, categories] = await Promise.all([
+      const [channels, categories, completionStatuses] = await Promise.all([
         tx.channel.findMany(),
         tx.ticketCategory.findMany(),
+        tx.completionStatus.findMany(),
       ]);
       const { tickets, errors } = validateTicketImportRows(
         rows,
-        { channels: toNameMap(channels), categories: toNameMap(categories) },
+        {
+          channels: toNameMap(channels),
+          categories: toNameMap(categories),
+          completionStatuses: toNameMap(completionStatuses),
+        },
         input.timeZone,
       );
       if (errors.length > 0) {
@@ -486,29 +542,41 @@ export async function importTickets(
       });
 
       const created = await tx.ticket.createManyAndReturn({
-        data: tickets.map((ticket) => ({
+        data: tickets.map(({ completionStatusId, completionRemark: _, ...ticket }) => ({
           ...ticket,
           feedbackTime: ticket.feedbackTime === null ? null : new Date(ticket.feedbackTime),
           createdAt: now,
           source: "file_import",
           creatorId: importer.id,
           importBatchId: batch.id,
-          status: TicketStatus.Unassigned,
+          ...(completionStatusId === null
+            ? { status: TicketStatus.Unassigned }
+            : { status: TicketStatus.Completed, completionTime: now, completionStatusId }),
           ...slaStamps.get(ticket.complaintLevel),
         })),
         select: { id: true },
       });
 
+      const operator = { operatorId: importer.id, operatorName: importer.name, at: now };
       await tx.processLog.createMany({
         data: created.map(({ id }) => ({
           ticketId: id,
-          operatorId: importer.id,
-          operatorName: importer.name,
+          ...operator,
           action: "create",
           remark: "导入创建",
-          at: now,
         })),
       });
+
+      // Postgres returns INSERT … RETURNING rows in insertion order, so
+      // created[i] is tickets[i] — the per-row 完结备注 rides on that pairing.
+      // Written after the create logs so the timeline reads 创建 → 完结.
+      const resolveLogs = created.flatMap(({ id }, index) => {
+        const remark = tickets[index]?.completionRemark;
+        return remark == null ? [] : [{ ticketId: id, ...operator, action: "resolve", remark }];
+      });
+      if (resolveLogs.length > 0) {
+        await tx.processLog.createMany({ data: resolveLogs });
+      }
 
       return { imported: created.length };
     },

@@ -3,20 +3,24 @@ import {
   NUCLEAR_BODY_STATUSES,
   PRIORITIES,
   PRIORITY_LABELS,
+  TICKET_COMPLETION_REMARK_LIMIT,
   TICKET_IMPORT_ROW_LIMIT,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import type { PrismaClient } from "../generated/prisma/client";
 import { listChannelOptions } from "./channel.service";
+import { listCompletionStatusOptions } from "./completion-status.service";
 import { listTicketCategoryOptions } from "./ticket-category.service";
 
 /**
  * 批量导入 template: a dynamically generated workbook, never a static asset —
- * the 渠道/客诉类别 dropdowns are the ACTIVE catalog rows at download time, so
- * a stale file is fixed by re-downloading, not by re-deploying.
+ * the 渠道/客诉类别/完结状态 dropdowns are the ACTIVE catalog rows at download
+ * time, so a stale file is fixed by re-downloading, not by re-deploying.
  *
- * Column set = the 18 建单表单 fields, Chinese headers in the form's visual
- * order — the headers are the contract upload parsing resolves columns by.
+ * Column set = the 18 建单表单 fields plus the 完结状态/完结备注 pair (历史
+ * 工单迁移: both filled ⇒ the row lands already completed), Chinese headers
+ * in the form's visual order — the headers are the contract upload parsing
+ * resolves columns by.
  */
 
 export interface TicketImportTemplateFile {
@@ -29,7 +33,7 @@ export interface TicketImportTemplateFile {
 const HAS_CONTACTED_OPTIONS = ["是", "否"] as const;
 
 /** The active-catalog names resolved once per download, fed to every dropdown. */
-type CatalogOptions = { channels: string[]; categories: string[] };
+type CatalogOptions = { channels: string[]; categories: string[]; completionStatuses: string[] };
 
 type ImportColumn = {
   header: string;
@@ -85,6 +89,15 @@ const TICKET_IMPORT_COLUMNS: readonly ImportColumn[] = [
     note: `从下拉选择：${PRIORITIES.map((priority) => PRIORITY_LABELS[priority]).join(" / ")}；留空=未设置`,
     options: () => PRIORITIES.map((priority) => PRIORITY_LABELS[priority]),
   },
+  {
+    header: "完结状态",
+    note: "从下拉选择（下载模板时启用的完结状态目录）；须与「完结备注」同时填写或同时留空",
+    options: ({ completionStatuses }) => completionStatuses,
+  },
+  {
+    header: "完结备注",
+    note: `文本，最长 ${TICKET_COMPLETION_REMARK_LIMIT} 字；须与「完结状态」同时填写或同时留空`,
+  },
 ];
 
 /**
@@ -105,7 +118,7 @@ type WorksheetWithValidations = ExcelJS.Worksheet & {
   dataValidations: { add(range: string, validation: ExcelJS.DataValidation): void };
 };
 
-/** A1-style column letter; the 18-column sheet never leaves A–Z. */
+/** A1-style column letter; the 20-column sheet never leaves A–Z. */
 function columnLetter(column: number): string {
   return String.fromCharCode(64 + column);
 }
@@ -113,13 +126,15 @@ function columnLetter(column: number): string {
 export async function buildTicketImportTemplate(
   prisma: PrismaClient,
 ): Promise<TicketImportTemplateFile> {
-  const [channels, categories] = await Promise.all([
+  const [channels, categories, completionStatuses] = await Promise.all([
     listChannelOptions(prisma),
     listTicketCategoryOptions(prisma),
+    listCompletionStatusOptions(prisma),
   ]);
   const catalogs: CatalogOptions = {
     channels: channels.map((channel) => channel.name),
     categories: categories.map((category) => category.name),
+    completionStatuses: completionStatuses.map((status) => status.name),
   };
 
   const workbook = new ExcelJS.Workbook();
@@ -164,6 +179,9 @@ export async function buildTicketImportTemplate(
   notes.getColumn(2).width = 80;
   notes.addRow([`一次最多导入 ${TICKET_IMPORT_ROW_LIMIT} 行（不含表头），超出请分批。`]);
   notes.addRow(["所有列均可留空：留空=未填写/未知，不会代填任何默认值。"]);
+  notes.addRow([
+    "「完结状态」「完结备注」两列同填的行导入后直接为已完结（历史工单迁移）；仅填其中一列会整批报错，两列都留空照常落未分配。",
+  ]);
   notes.addRow(["下拉选项按下载时刻的启用目录生成；目录调整后请重新下载模板。"]);
   notes.addRow([]);
   const notesHeader = notes.addRow(["列名", "取值规则"]);

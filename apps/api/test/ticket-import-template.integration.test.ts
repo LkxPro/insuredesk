@@ -15,10 +15,13 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *
  * - ticket.import guard: 401 unauthenticated, 403 without the permission —
  *   including factory roles, which are seeded once and never backfilled
- * - the sheet carries the 18 建单表单 columns, Chinese headers in form order
- * - enum/catalog columns carry Excel data-validation dropdowns; 渠道/客诉类别
- *   options are the ACTIVE catalog rows at download time (停用后重新下载即消失)
- * - a 填写说明 sheet documents per-column rules and the 2000-row limit
+ * - the sheet carries the 18 建单表单 columns plus the 完结状态/完结备注
+ *   pair, Chinese headers in form order
+ * - enum/catalog columns carry Excel data-validation dropdowns; 渠道/客诉
+ *   类别/完结状态 options are the ACTIVE catalog rows at download time
+ *   (停用后重新下载即消失)
+ * - a 填写说明 sheet documents per-column rules, the 2000-row limit, and the
+ *   完结 pair's 同填同空 rule
  */
 describe("ticket import template (Testcontainers)", () => {
   let container: StartedPostgreSqlContainer;
@@ -45,6 +48,8 @@ describe("ticket import template (Testcontainers)", () => {
     "客诉类别",
     "投诉等级",
     "优先级",
+    "完结状态",
+    "完结备注",
   ];
 
   beforeAll(async () => {
@@ -165,14 +170,14 @@ describe("ticket import template (Testcontainers)", () => {
   });
 
   describe("模板结构", () => {
-    it("carries the 18 建单表单 columns with Chinese headers in form order", async () => {
+    it("carries the 20 columns (建单表单 + 完结迁移对) with Chinese headers in form order", async () => {
       const workbook = await downloadWorkbook(await sessionFor("importer"));
       const sheet = workbook.getWorksheet("工单");
       expect(sheet).toBeDefined();
 
       const headers = EXPECTED_HEADERS.map((_, index) => sheet?.getRow(1).getCell(index + 1).value);
       expect(headers).toEqual(EXPECTED_HEADERS);
-      // exactly 18 — no extra columns ride along
+      // exactly 20 — no extra columns ride along
       expect(sheet?.getRow(1).cellCount).toBe(EXPECTED_HEADERS.length);
     });
 
@@ -194,6 +199,9 @@ describe("ticket import template (Testcontainers)", () => {
       for (const header of EXPECTED_HEADERS) {
         expect(combined).toContain(header);
       }
+      // 完结 pair: 同填同空 rule and the 导入即完结 semantics
+      expect(combined).toContain("同时填写或同时留空");
+      expect(combined).toContain("已完结");
     });
   });
 
@@ -243,7 +251,7 @@ describe("ticket import template (Testcontainers)", () => {
       }
     });
 
-    it("渠道/客诉类别 dropdowns hold the active catalog rows of the download instant", async () => {
+    it("渠道/客诉类别/完结状态 dropdowns hold the active catalog rows of the download instant", async () => {
       const importer = await sessionFor("importer");
 
       const disabledChannel = await prisma.channel.create({
@@ -251,6 +259,9 @@ describe("ticket import template (Testcontainers)", () => {
       });
       const disabledCategory = await prisma.ticketCategory.create({
         data: { name: "已停用类别", active: false, displayOrder: 99 },
+      });
+      const disabledCompletion = await prisma.completionStatus.create({
+        data: { name: "已停用完结状态", active: false, displayOrder: 99 },
       });
 
       const first = await downloadWorkbook(importer);
@@ -264,8 +275,10 @@ describe("ticket import template (Testcontainers)", () => {
 
       const firstOptions = collect(first);
       expect(firstOptions).toContain("保司"); // seeded active channel
+      expect(firstOptions).toContain("已达成一致"); // 迁移种子的启用完结状态
       expect(firstOptions).not.toContain(disabledChannel.name);
       expect(firstOptions).not.toContain(disabledCategory.name);
+      expect(firstOptions).not.toContain(disabledCompletion.name);
 
       const channelColumn = columnOf("反馈渠道");
       const sheet = first.getWorksheet("工单");
@@ -273,16 +286,32 @@ describe("ticket import template (Testcontainers)", () => {
       expect(channelValidation?.type).toBe("list");
       const categoryValidation = sheet?.getRow(2).getCell(columnOf("客诉类别")).dataValidation;
       expect(categoryValidation?.type).toBe("list");
+      const completionValidation = sheet?.getRow(2).getCell(columnOf("完结状态")).dataValidation;
+      expect(completionValidation?.type).toBe("list");
+      expect(completionValidation?.allowBlank).toBe(true);
 
       // 停用后重新下载即消失
       const victim = await prisma.channel.findFirstOrThrow({ where: { name: "支付" } });
+      const completionVictim = await prisma.completionStatus.findFirstOrThrow({
+        where: { name: "正常完结" },
+      });
       await prisma.channel.update({ where: { id: victim.id }, data: { active: false } });
+      await prisma.completionStatus.update({
+        where: { id: completionVictim.id },
+        data: { active: false },
+      });
       try {
         const second = collect(await downloadWorkbook(importer));
         expect(second).not.toContain("支付");
+        expect(second).not.toContain("正常完结");
         expect(second).toContain("保司");
+        expect(second).toContain("已达成一致");
       } finally {
         await prisma.channel.update({ where: { id: victim.id }, data: { active: true } });
+        await prisma.completionStatus.update({
+          where: { id: completionVictim.id },
+          data: { active: true },
+        });
       }
     });
   });

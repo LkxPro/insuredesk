@@ -270,10 +270,16 @@ describe("上传导入", () => {
     downloadFetch.mockResolvedValue(
       new Response(
         JSON.stringify({
-          error: "导入校验未通过，共 2 个错误",
+          error: "导入校验未通过，共 4 个错误",
           rowErrors: [
             { row: 3, column: "反馈渠道", message: "「不存在的渠道」不存在" },
-            { row: 5, column: null, message: "与第 4 行完全重复（18 个字段全部相同）" },
+            { row: 5, column: null, message: "与第 4 行完全重复（20 个字段全部相同）" },
+            { row: 6, column: "完结状态", message: "「旧口径」已停用" },
+            {
+              row: 7,
+              column: null,
+              message: "「完结状态」与「完结备注」须同时填写或同时留空（该行只填写了其中一列）",
+            },
           ],
         }),
         { status: 400, headers: { "content-type": "application/json" } },
@@ -285,12 +291,18 @@ describe("上传导入", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "上传并导入" }));
 
-    await waitFor(() => expect(dialog).toHaveTextContent("导入校验未通过，共 2 个错误"));
+    await waitFor(() => expect(dialog).toHaveTextContent("导入校验未通过，共 4 个错误"));
     expect(dialog).toHaveTextContent("第 3 行");
     expect(dialog).toHaveTextContent("反馈渠道");
     expect(dialog).toHaveTextContent("「不存在的渠道」不存在");
     expect(dialog).toHaveTextContent("第 5 行");
     expect(dialog).toHaveTextContent("完全重复");
+    // 完结迁移两列的错误走同一逐行清单
+    expect(dialog).toHaveTextContent("第 6 行");
+    expect(dialog).toHaveTextContent("完结状态");
+    expect(dialog).toHaveTextContent("「旧口径」已停用");
+    expect(dialog).toHaveTextContent("第 7 行");
+    expect(dialog).toHaveTextContent("同时填写或同时留空");
   });
 
   it("rejects an oversized file locally without a request", async () => {
