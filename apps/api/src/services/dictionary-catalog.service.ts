@@ -61,6 +61,37 @@ export interface CatalogRow {
   updatedAt: Date;
 }
 
+/** Catalog rows keyed by NAME — 停用 kept so missing/disabled stay distinguishable. */
+export type CatalogNameIndex = ReadonlyMap<string, { id: string; active: boolean }>;
+
+/** 名字判定的三分支：存在且启用 / 查无此名 / 存在但停用。 */
+export type CatalogNameRef =
+  | { status: "ok"; id: string }
+  | { status: "missing" }
+  | { status: "disabled" };
+
+export function buildCatalogNameIndex(
+  rows: ReadonlyArray<{ id: string; name: string; active: boolean }>,
+): CatalogNameIndex {
+  return new Map(rows.map((row) => [row.name, { id: row.id, active: row.active }]));
+}
+
+/**
+ * Resolve a reference by NAME (files carry names, not ids): same 存在且启用
+ * constraint as resolveNewRef, but returns the verdict instead of throwing —
+ * callers that accumulate their own per-row errors keep their wording.
+ */
+export function resolveCatalogNameRef(index: CatalogNameIndex, name: string): CatalogNameRef {
+  const entry = index.get(name);
+  if (!entry) {
+    return { status: "missing" };
+  }
+  if (!entry.active) {
+    return { status: "disabled" };
+  }
+  return { status: "ok", id: entry.id };
+}
+
 type CatalogDb = PrismaClient | Prisma.TransactionClient;
 
 type CatalogOrderBy = { displayOrder?: "asc"; name?: "asc" }[];

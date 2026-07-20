@@ -69,6 +69,9 @@ function fakeTrpcFetch(input: RequestInfo | URL): Promise<Response> {
     if (path === "channel.filterOptions") {
       return { result: { data: [{ id: "ch-pay", name: "支付", active: true }] } };
     }
+    if (path === "ticketCategory.filterOptions") {
+      return { result: { data: [] } };
+    }
     if (path === "completionStatus.filterOptions") {
       return { result: { data: [] } };
     }

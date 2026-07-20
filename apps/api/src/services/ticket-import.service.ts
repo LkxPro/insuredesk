@@ -12,6 +12,11 @@ import {
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import type { AuthenticatedUser } from "./auth.service";
+import {
+  buildCatalogNameIndex,
+  type CatalogNameIndex,
+  resolveCatalogNameRef,
+} from "./dictionary-catalog.service";
 import { computeSlaStamp, type TicketServiceDeps } from "./ticket.service";
 import { TICKET_IMPORT_TEMPLATE_HEADERS } from "./ticket-import-template.service";
 import { resolveTimeZone } from "./time-zone";
@@ -118,11 +123,11 @@ export async function readTicketImportSheet(body: Buffer): Promise<TicketImportS
 // Per-row validation — same semantics as the manual creation contract
 // ---------------------------------------------------------------------------
 
-/** Catalog rows by NAME (the file carries names, not ids), 停用 included so 不存在/已停用 stay distinguishable. */
+/** Catalog name indexes (the file carries names, not ids); the module owns the missing/disabled 判定. */
 export interface TicketImportCatalogs {
-  channels: Map<string, { id: string; active: boolean }>;
-  categories: Map<string, { id: string; active: boolean }>;
-  completionStatuses: Map<string, { id: string; active: boolean }>;
+  channels: CatalogNameIndex;
+  categories: CatalogNameIndex;
+  completionStatuses: CatalogNameIndex;
 }
 
 /**
@@ -279,13 +284,10 @@ function enumColumn(
   };
 }
 
-/** Catalog rows keyed by NAME (the file carries names, not ids). */
-type CatalogNameMap = Map<string, { id: string; active: boolean }>;
-
 function catalogColumn(
   header: string,
   field: "channelId" | "categoryId" | "completionStatusId",
-  pick: (catalogs: TicketImportCatalogs) => CatalogNameMap,
+  pick: (catalogs: TicketImportCatalogs) => CatalogNameIndex,
 ): ImportColumnSpec {
   return {
     header,
@@ -297,14 +299,14 @@ function catalogColumn(
       if (raw === "") {
         return { ok: null };
       }
-      const entry = pick(catalogs).get(raw);
-      if (!entry) {
+      const ref = resolveCatalogNameRef(pick(catalogs), raw);
+      if (ref.status === "missing") {
         return { fail: `「${raw}」不存在，请重新下载模板并从下拉中选择` };
       }
-      if (!entry.active) {
+      if (ref.status === "disabled") {
         return { fail: `「${raw}」已停用` };
       }
-      return { ok: entry.id };
+      return { ok: ref.id };
     },
   };
 }
@@ -469,10 +471,6 @@ export interface TicketImportInput {
   timeZone?: string;
 }
 
-function toNameMap(rows: Array<{ id: string; name: string; active: boolean }>) {
-  return new Map(rows.map((row) => [row.name, { id: row.id, active: row.active }]));
-}
-
 /**
  * Parse, validate, and create the whole batch in ONE transaction — or throw
  * TicketImportValidationError with the full 行号/列名/原因 list and write
@@ -511,9 +509,9 @@ export async function importTickets(
       const { tickets, errors } = validateTicketImportRows(
         rows,
         {
-          channels: toNameMap(channels),
-          categories: toNameMap(categories),
-          completionStatuses: toNameMap(completionStatuses),
+          channels: buildCatalogNameIndex(channels),
+          categories: buildCatalogNameIndex(categories),
+          completionStatuses: buildCatalogNameIndex(completionStatuses),
         },
         input.timeZone,
       );

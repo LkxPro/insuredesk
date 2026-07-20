@@ -127,6 +127,7 @@ function respond(path: string): unknown {
     path === "ticketCategory.options" ||
     path === "channel.options" ||
     path === "channel.filterOptions" ||
+    path === "ticketCategory.filterOptions" ||
     path === "completionStatus.filterOptions"
   ) {
     return [];

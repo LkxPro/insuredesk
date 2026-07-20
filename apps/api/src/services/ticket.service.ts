@@ -211,6 +211,7 @@ type TicketListFilters = Pick<
   TicketListQuery,
   | "status"
   | "channelId"
+  | "categoryId"
   | "completionStatusId"
   | "complaintLevel"
   | "source"
@@ -243,6 +244,9 @@ export function buildTicketListWhere(
   }
   if (query.channelId) {
     filters.push({ channelId: query.channelId });
+  }
+  if (query.categoryId) {
+    filters.push({ categoryId: query.categoryId });
   }
   if (query.completionStatusId) {
     filters.push({ completionStatusId: query.completionStatusId });

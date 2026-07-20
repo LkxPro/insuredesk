@@ -29,6 +29,7 @@ describe("ticket list (Testcontainers)", () => {
     users: { admin: User; manager: User; cs1: User; observer: User };
   };
   let channelIds: Map<string, string>;
+  let categoryIds: Map<string, string>;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer("postgres:17-alpine").start();
@@ -54,6 +55,7 @@ describe("ticket list (Testcontainers)", () => {
     seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
     await seedData.seedSlaPolicies(prisma);
     channelIds = new Map((await seedData.seedChannels(prisma)).map((c) => [c.name, c.id]));
+    categoryIds = new Map((await seedData.seedTicketCategories(prisma)).map((c) => [c.name, c.id]));
   }, 180_000);
 
   afterAll(async () => {
@@ -105,6 +107,12 @@ describe("ticket list (Testcontainers)", () => {
   const channelId = (name: string) => {
     const id = channelIds.get(name);
     if (!id) throw new Error(`渠道「${name}」未播种`);
+    return id;
+  };
+
+  const categoryId = (name: string) => {
+    const id = categoryIds.get(name);
+    if (!id) throw new Error(`类别「${name}」未播种`);
     return id;
   };
 
@@ -366,6 +374,32 @@ describe("ticket list (Testcontainers)", () => {
       const result = await manager().ticket.list({ source: "feishu_form" });
       expect(result.items.map((t) => t.id)).toEqual([feishu.id]);
       expect(result.items[0]?.source).toBe("feishu_form");
+    });
+  });
+
+  describe("category filter", () => {
+    it("filters by category, disabled categories included — 存量工单 stays reachable", async () => {
+      const claims = await makeTicket({ categoryId: categoryId("理赔咨询") });
+      const disabledCat = await makeTicket({ categoryId: categoryId("回访问题") });
+      await makeTicket({ categoryId: categoryId("其他") });
+
+      // 停用类别仍能筛出建单时已引用它的存量工单
+      await prisma.ticketCategory.update({
+        where: { id: categoryId("回访问题") },
+        data: { active: false },
+      });
+
+      expect(
+        (await manager().ticket.list({ categoryId: categoryId("理赔咨询") })).items.map(
+          (t) => t.id,
+        ),
+      ).toEqual([claims.id]);
+
+      expect(
+        (await manager().ticket.list({ categoryId: categoryId("回访问题") })).items.map(
+          (t) => t.id,
+        ),
+      ).toEqual([disabledCat.id]);
     });
   });
 

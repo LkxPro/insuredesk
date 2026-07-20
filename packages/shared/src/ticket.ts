@@ -296,6 +296,8 @@ export const ticketListInputSchema = z.object({
   status: ticketDisplayStatusSchema.optional(),
   /** 渠道目录引用筛选；停用渠道也可选，仍能查到其存量工单。 */
   channelId: z.string().min(1).optional(),
+  /** 类别目录引用筛选；停用类别也可选，仍能查到其存量工单。 */
+  categoryId: z.string().min(1).optional(),
   /** 完结状态目录引用筛选；停用状态也可选，仍能查到其存量工单。 */
   completionStatusId: z.string().min(1).optional(),
   complaintLevel: complaintLevelSchema.optional(),

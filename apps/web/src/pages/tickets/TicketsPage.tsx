@@ -98,6 +98,7 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
   const candidate = {
     status: params.get("status") ?? undefined,
     channelId: params.get("channel") ?? undefined,
+    categoryId: params.get("category") ?? undefined,
     completionStatusId: params.get("completionStatus") ?? undefined,
     complaintLevel: params.get("level") ?? undefined,
     source: params.get("source") ?? undefined,
@@ -217,6 +218,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
   const channelOptions = trpc.channel.filterOptions.useQuery().data ?? [];
+  const categoryOptions = trpc.ticketCategory.filterOptions.useQuery().data ?? [];
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
 
   /** Set/clear one URL param; filter changes restart from page 1. */
@@ -372,6 +374,15 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             label: channel.active ? channel.name : `${channel.name}（已停用）`,
           }))}
           onChange={(value) => setParam("channel", value)}
+        />
+        <FilterSelect
+          label="类别"
+          value={query.categoryId}
+          options={categoryOptions.map((category) => ({
+            value: category.id,
+            label: category.active ? category.name : `${category.name}（已停用）`,
+          }))}
+          onChange={(value) => setParam("category", value)}
         />
         <FilterSelect
           label="完结状态"

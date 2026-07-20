@@ -22,7 +22,7 @@ _Avoid_: 把目录名快照存回工单——改名即需回写存量数据，�
 _Avoid_: 与 source 混用——source 是录入方式（manual/feishu_form/community），兼作"由谁创建"的判别器
 
 **Category（客诉类别）**：
-字典目录之一。首次初始化播种 17 个类别。工单引用可空（= 未填写）。
+字典目录之一。首次初始化播种 17 个类别。工单引用可空（= 未填写），也是工单列表筛选维度（含停用项）。
 
 **Status（工单状态）**：
 数据库只存 4 个基础状态（unassigned/assigned/processing/completed）；pending_timeout 与 overdue 是**计算状态**，查询时按 deadlineWarningAt / dueAt 实时算、仅覆盖显示（ADR 0001）。状态只能经生命周期动作流转，不可直接编辑；completed 是终态，不可重开。

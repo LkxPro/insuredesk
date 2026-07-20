@@ -109,7 +109,11 @@ function respond(path: string, input: unknown): unknown {
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
-  if (path === "channel.filterOptions" || path === "completionStatus.filterOptions") {
+  if (
+    path === "channel.filterOptions" ||
+    path === "ticketCategory.filterOptions" ||
+    path === "completionStatus.filterOptions"
+  ) {
     return [];
   }
   if (path === "ticket.list") {

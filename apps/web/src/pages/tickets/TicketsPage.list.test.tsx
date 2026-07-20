@@ -108,6 +108,16 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
         },
       };
     }
+    if (path === "ticketCategory.filterOptions") {
+      return {
+        result: {
+          data: [
+            { id: "cat-claims", name: "理赔咨询", active: true },
+            { id: "cat-legacy", name: "旧类别", active: false },
+          ],
+        },
+      };
+    }
     if (path === "completionStatus.filterOptions") {
       return {
         result: {
@@ -220,6 +230,26 @@ describe("URL-driven filters (deep-linkable)", () => {
       expect(screen.getByRole("combobox", { name: "完结状态" })).toHaveTextContent(
         "旧完结状态（已停用）",
       ),
+    );
+  });
+
+  it("类别筛选：查询串带 category id，入参落到 categoryId", async () => {
+    renderAt("/tickets?category=cat-claims");
+
+    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
+    expect(listInputs[0]).toMatchObject({ categoryId: "cat-claims" });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "类别" })).toHaveTextContent("理赔咨询"),
+    );
+  });
+
+  it("按停用类别筛选：查询带其 id，触发器显示（已停用）标注", async () => {
+    renderAt("/tickets?category=cat-legacy");
+
+    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
+    expect(listInputs[0]).toMatchObject({ categoryId: "cat-legacy" });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "类别" })).toHaveTextContent("旧类别（已停用）"),
     );
   });
 
