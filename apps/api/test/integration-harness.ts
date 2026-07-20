@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Permission } from "@insuredesk/shared";
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import { inject } from "vitest";
 import {
   seedChannels,
   seedFactoryRolesAndDemoUsers,
@@ -18,17 +19,15 @@ import { prisma } from "../src/db";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
 import { appRouter } from "../src/routers/index";
 import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
+import { runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** harness 所起容器统一使用的 Postgres 镜像。 */
-const POSTGRES_IMAGE = "postgres:17-alpine";
-
 /**
- * real-migrations：保证每次真跑 `prisma migrate deploy`，供迁移管线类测试
- * （它们证明的就是迁移本身）。fast：只承诺「已迁移的库」这一结果，不承诺
- * 如何得到——内部可换成 template database 克隆等快速路径而不改调用方。
- * 快速路径尚未实现，当前两种模式共用真迁移实现。
+ * real-migrations：保证每次真跑 `prisma migrate deploy`（在共享容器的全新
+ * 空库上），供迁移管线类测试（它们证明的就是迁移本身）。fast：只承诺
+ * 「已迁移的库」这一结果，不承诺如何得到——实现为克隆 global setup 里
+ * 已迁移的 template 库。
  */
 export type IntegrationHarnessMode = "real-migrations" | "fast";
 
@@ -96,32 +95,45 @@ function idLookup(
 let startedInThisProcess = false;
 
 /**
- * 起一个已迁移、按声明播种的真 Postgres，并把应用自己的 Prisma 客户端接上去。
- * 调用方只拿返回的句柄，不接触容器、migrate deploy 或模块加载时序。
+ * 在共享 Postgres 容器上给出一个已迁移、按声明播种的隔离库，并把应用自己的
+ * Prisma 客户端接上去。调用方只拿返回的句柄，不接触容器、migrate deploy 或
+ * 模块加载时序。
  */
 export async function startIntegrationHarness(
   options: IntegrationHarnessOptions = {},
 ): Promise<IntegrationHarness> {
-  const { seed = [], traceId = "integration-harness" } = options;
+  const { mode = "fast", seed = [], traceId = "integration-harness" } = options;
 
   // 应用的 Prisma 客户端与 DATABASE_URL 都是进程级单例，客户端一经初始化便
-  // 钉死首个容器的连接串：同进程第二次 start 只会把种子灌进第一个库。
+  // 钉死首个库的连接串：同进程第二次 start 只会把种子灌进第一个库。
   // stop 后客户端仍缓存旧连接串，因此该限制不随 stop 解除。
   if (startedInThisProcess) {
     throw new Error("startIntegrationHarness 同一进程只能调用一次（每个测试文件一个 harness）");
   }
   startedInThisProcess = true;
 
-  const container = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
-  try {
-    const databaseUrl = container.getConnectionUri();
+  const baseUri = inject("integrationDbBaseUri");
+  const dbName = `harness_${randomUUID().replaceAll("-", "")}`;
+  const databaseUrl = uriForDatabase(baseUri, dbName);
+
+  if (mode === "real-migrations") {
+    await runAdminSql(baseUri, `CREATE DATABASE "${dbName}"`);
     execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
       cwd: apiDir,
       env: { ...process.env, DATABASE_URL: databaseUrl },
       stdio: "pipe",
     });
-    process.env.DATABASE_URL = databaseUrl;
+  } else {
+    await runAdminSql(baseUri, `CREATE DATABASE "${dbName}" TEMPLATE "${TEMPLATE_DB}"`);
+  }
 
+  // WITH (FORCE)：库上可能还挂着测试自己拉起的连接（如 boot-env 起的子进程
+  // 崩了没断连），强断后照样能删。
+  const dropDatabase = () =>
+    runAdminSql(baseUri, `DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
+
+  process.env.DATABASE_URL = databaseUrl;
+  try {
     const selected = new Set<SeedSetName>(seed);
     const seededRolesAndUsers = selected.has("rolesAndUsers")
       ? await seedFactoryRolesAndDemoUsers(prisma)
@@ -170,11 +182,11 @@ export async function startIntegrationHarness(
       callerWith: (user, role, permissions) => caller(authUserFor(user, role, permissions)),
       stop: async () => {
         await prisma.$disconnect();
-        await container.stop();
+        await dropDatabase();
       },
     };
   } catch (error) {
-    await container.stop();
+    await dropDatabase();
     throw error;
   }
 }
