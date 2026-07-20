@@ -50,6 +50,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     username: "tester",
     name: "测试用户",
     email: null,
+    team: null,
     roleId: "r1",
     roleName: role.name,
     permissions: [...role.permissions],

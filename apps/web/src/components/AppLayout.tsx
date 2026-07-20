@@ -1,8 +1,18 @@
-import { LifeBuoy, LogOut } from "lucide-react";
+import { CircleUser, LifeBuoy, LogOut } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { TodoBell } from "@/components/TodoBell";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
@@ -129,6 +139,40 @@ function AppSidebar() {
   );
 }
 
+function UserMenu() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  if (!user) {
+    return null;
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="rounded-full" aria-label="用户菜单">
+          <Avatar className="size-8">
+            <AvatarFallback>{user.name.slice(0, 1)}</AvatarFallback>
+          </Avatar>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel className="grid leading-tight">
+          <span className="truncate text-sm font-medium">{user.name}</span>
+          <span className="truncate text-xs font-normal text-muted-foreground">
+            @{user.username} · {user.roleName}
+          </span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => navigate("/profile")}>
+          <CircleUser />
+          个人资料
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function AppLayout() {
   return (
     <SidebarProvider>
@@ -141,6 +185,7 @@ export function AppLayout() {
           <TodoBell />
           <NotificationBell />
           <ThemeToggle />
+          <UserMenu />
         </header>
         <main className="flex min-w-0 flex-1 flex-col p-4 md:p-6">
           <Outlet />

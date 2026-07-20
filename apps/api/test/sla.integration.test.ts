@@ -42,6 +42,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: role.id,
       roleName: role.name,
       permissions: effectivePermissions(role),

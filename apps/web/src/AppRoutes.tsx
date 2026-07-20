@@ -8,6 +8,7 @@ import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
+import { ProfilePage } from "@/pages/profile/ProfilePage";
 import { RolesPage } from "@/pages/roles/RolesPage";
 import { SchedulePage } from "@/pages/schedule/SchedulePage";
 import { ShiftTypesPage } from "@/pages/shift-types/ShiftTypesPage";
@@ -56,6 +57,9 @@ export function AppRoutes() {
         }
       >
         <Route index element={<IndexRedirect />} />
+        {/* 个人资料: entered from the header user menu, not the sidebar —
+            login is the only guard, so it takes no permission point. */}
+        <Route path="/profile" element={<ProfilePage />} />
         {NAV_ITEMS.map((item) => (
           <Route
             key={item.path}

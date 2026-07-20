@@ -73,6 +73,7 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: "role-under-test",
       roleName: "测试角色",
       permissions,

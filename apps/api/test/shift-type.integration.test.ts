@@ -31,6 +31,7 @@ describe("ShiftType management (Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: "role-under-test",
       roleName: "班次管理员",
       permissions,

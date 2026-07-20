@@ -38,6 +38,7 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: "role-under-test",
       roleName,
       permissions,

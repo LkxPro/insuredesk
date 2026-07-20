@@ -153,6 +153,7 @@ describe("ticket import upload (Testcontainers)", () => {
         username: importerUser.username,
         name: importerUser.name,
         email: importerUser.email,
+        team: importerUser.team,
         roleId: importerRole.id,
         roleName: importerRole.name,
         permissions: importerRole.permissions as Permission[],

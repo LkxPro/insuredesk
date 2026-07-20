@@ -37,6 +37,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: role.id,
       roleName: role.name,
       permissions: role.permissions as Permission[],

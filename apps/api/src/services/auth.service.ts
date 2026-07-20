@@ -157,6 +157,7 @@ export class SessionService {
       username: session.user.username,
       name: session.user.name,
       email: session.user.email,
+      team: session.user.team,
       roleId: session.user.roleId,
       roleName: session.user.role.name,
       permissions: effectivePermissions(session.user.role),
@@ -192,6 +193,7 @@ export interface AuthenticatedUser {
   username: string;
   name: string;
   email: string | null;
+  team: string | null;
   roleId: string;
   roleName: string;
   permissions: Permission[];

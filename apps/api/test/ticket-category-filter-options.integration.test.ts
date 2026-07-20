@@ -29,6 +29,7 @@ describe("TicketCategory filter options (Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: "role-under-test",
       roleName: "目录管理员",
       permissions,

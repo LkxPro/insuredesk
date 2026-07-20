@@ -148,6 +148,31 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
       expect(cs.permissions).not.toContain("ticket.assign");
     });
 
+    it("me carries the user's 团队 label, null when unset", async () => {
+      const admin = (
+        await app.inject({
+          method: "GET",
+          url: "/trpc/auth.me",
+          cookies: { session: String(sessionCookie(await login("admin", DEMO_PASSWORD))?.value) },
+        })
+      ).json().result.data;
+      expect(admin.team).toBeNull();
+
+      await prisma.user.update({ where: { username: "cs1" }, data: { team: "一线客服组" } });
+      try {
+        const cs = (
+          await app.inject({
+            method: "GET",
+            url: "/trpc/auth.me",
+            cookies: { session: String(sessionCookie(await login("cs1", DEMO_PASSWORD))?.value) },
+          })
+        ).json().result.data;
+        expect(cs.team).toBe("一线客服组");
+      } finally {
+        await prisma.user.update({ where: { username: "cs1" }, data: { team: null } });
+      }
+    });
+
     it("a stale session cookie is cleared on the response", async () => {
       const res = await app.inject({
         method: "GET",

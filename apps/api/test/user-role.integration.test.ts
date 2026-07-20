@@ -56,6 +56,7 @@ describe("user + role management (Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: "role-under-test",
       roleName,
       permissions,

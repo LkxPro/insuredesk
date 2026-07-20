@@ -35,6 +35,7 @@ describe("assigned notifications (Testcontainers)", () => {
         username: user.username,
         name: user.name,
         email: user.email,
+        team: user.team,
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
