@@ -1,6 +1,6 @@
 import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ import { ThemeProvider } from "../../components/ThemeProvider";
 /**
  * Issue #99: 漏填必填项时，红字里的字段名与该输入框可见 label 逐字一致。
  * 覆盖三种控件形态：文本输入（客户电话（投保人））、目录下拉（反馈渠道）、
- * 三态下拉（客户曾进线）——含改名残留曾错位的「手机号/业务渠道/是否已联系」。
+ * 三态下拉（客户曾进线）。
  */
 
 const auth = vi.hoisted(() => ({
@@ -117,18 +117,14 @@ describe("必填红字与输入框 label 逐字一致 (issue #99)", () => {
     expect(screen.getByText("反馈渠道为必填项")).toBeInTheDocument();
     expect(screen.getByText("客户曾进线为必填项")).toBeInTheDocument();
 
-    // 改名残留不再出现
     for (const stale of ["手机号为必填项", "业务渠道为必填项", "是否已联系为必填项"]) {
       expect(screen.queryByText(stale)).not.toBeInTheDocument();
     }
 
-    // 红字里的字段名正是该输入框的可见 label
     expect(screen.getByLabelText(/^客户电话（投保人）/)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /^反馈渠道/ })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /^客户曾进线/ })).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(calls.some((call) => call.path === "ticket.create")).toBe(false);
-    });
+    expect(calls.some((call) => call.path === "ticket.create")).toBe(false);
   });
 });

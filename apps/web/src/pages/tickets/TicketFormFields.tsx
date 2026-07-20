@@ -46,23 +46,6 @@ import { trpc } from "@/lib/trpc";
  *
  * 动态必填：建单表单据用户角色的必填集生成校验，编辑表单不受约束。必填字段标签后显示星号。
  */
-/** 红字文案与文本限长都取描述表行；类型错误也用同一句，未触碰的下拉（undefined）同样报「◯◯为必填项」。 */
-function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFieldKey]) {
-  const message = `${descriptor.label}为必填项`;
-  switch (descriptor.type) {
-    case "text":
-      return z.string(message).trim().min(1, message).max(descriptor.maxLength);
-    case "enum":
-      // 布尔取值的三态字段（客户曾进线）在表单里就是 boolean|null
-      return typeof descriptor.options[0]?.value === "boolean"
-        ? z.boolean({ error: message })
-        : z.string(message).min(1, message);
-    default:
-      // date 在表单里是本地时间字符串（"" = 未填），catalog 是目录 id
-      return z.string(message).min(1, message);
-  }
-}
-
 export function buildTicketFormSchema(requiredFields: readonly string[]) {
   let schema = ticketCreateInputSchema.extend({
     feedbackTime: z.string(),
@@ -81,6 +64,24 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
   }
 
   return schema;
+}
+
+/** 类型错误也用必填句——未触碰的下拉提交时是 undefined，不能落到 zod 默认英文文案。 */
+function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFieldKey]) {
+  const message = `${descriptor.label}为必填项`;
+  switch (descriptor.type) {
+    case "text":
+      return z.string(message).trim().min(1, message).max(descriptor.maxLength);
+    case "enum":
+      // 布尔取值的三态字段（客户曾进线）在表单里就是 boolean|null
+      return typeof descriptor.options[0]?.value === "boolean"
+        ? z.boolean({ error: message })
+        : z.string(message).min(1, message);
+    case "date":
+    case "catalog":
+      // date 在表单里是本地时间字符串（"" = 未填），catalog 是目录 id
+      return z.string(message).min(1, message);
+  }
 }
 
 export const ticketFormSchema = ticketCreateInputSchema.extend({

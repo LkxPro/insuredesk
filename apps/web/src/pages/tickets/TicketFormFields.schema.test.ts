@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildTicketFormSchema } from "./TicketFormFields";
 
 /**
- * Issue #99: 必填红字与输入框可见 label 逐字一致。红字文案由描述表标准名
- * 派生；此处用字面量金样钉住曾经错位的八个改名残留（业务渠道/项目名称/
- * 手机号/联系电话/是否已联系/联系人ID/分类/内部工单号 → 标准名）。
+ * Issue #99: 必填红字与输入框可见 label 逐字一致，文本限长与描述表同源。
  */
 
 /** A wholly untouched form: text/select fields "", datetime "", tri-state null. */
@@ -26,7 +24,7 @@ function requiredMessage(field: string): string | undefined {
 }
 
 describe("buildTicketFormSchema 必填消息（描述表派生）", () => {
-  // 独立金样：标准名来自 #97 已定口径，不从描述表转抄
+  // 独立金样：字面量手写，不从描述表转抄
   const RENAMED_FIELD_MESSAGES: Record<string, string> = {
     channelId: "反馈渠道为必填项",
     project: "项目（保司）为必填项",
