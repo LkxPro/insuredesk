@@ -5,6 +5,7 @@ import {
   prioritySchema,
   ticketSourceSchema,
 } from "./enums";
+import { TICKET_COMPLETION_REMARK_LIMIT, TICKET_FIELDS, TICKET_TEXT_LIMITS } from "./ticket-fields";
 import { ticketDisplayStatusSchema } from "./ticket-status";
 
 /**
@@ -28,25 +29,6 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((value) => (value ? value : null));
 
-/**
- * 建单自由文本字段的长度上限，建单/编辑 schema 与批量导入逐行校验共用 ——
- * 导入的每列长度检查引用这里，不另抄一份。
- */
-export const TICKET_TEXT_LIMITS = {
-  project: 100,
-  brokerageEntity: 100,
-  paymentChannel: 100,
-  internalOrderNumber: 200,
-  policyNumber: 100,
-  userComplaintChannel: 100,
-  complaintReceiveChannel: 100,
-  customerName: 100,
-  phone: 50,
-  contactPhone: 200,
-  customerRequest: 2000,
-  contactId: 200,
-} as const;
-
 /** Optional enum select: "" (nothing chosen) and absence both become NULL. */
 const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
   schema
@@ -54,40 +36,11 @@ const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
     .nullish()
     .transform((value): z.output<T> | null => (value ? value : null));
 
-/**
- * 建单表单字段清单，从建单 schema 派生——合法字段域，前后端共用。
- * 顺序与表单呈现一致；角色可配置必填集时，校验每个 key 属于此清单。
- */
-export const TICKET_CREATE_FIELD_KEYS = [
-  "feedbackTime",
-  "channelId",
-  "project",
-  "brokerageEntity",
-  "paymentChannel",
-  "internalOrderNumber",
-  "policyNumber",
-  "userComplaintChannel",
-  "complaintReceiveChannel",
-  "customerName",
-  "phone",
-  "contactPhone",
-  "customerRequest",
-  "nuclearBodyStatus",
-  "hasContacted",
-  "contactTime",
-  "contactId",
-  "categoryId",
-  "complaintLevel",
-  "priority",
-] as const;
-
-export type TicketCreateFieldKey = (typeof TICKET_CREATE_FIELD_KEYS)[number];
-
 export const ticketCreateInputSchema = z.object({
   /** 客户实际反馈时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。 */
   feedbackTime: optionalEnum(z.string().datetime({ offset: true, message: "反馈时间格式不正确" })),
   /** 反馈渠道目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
-  channelId: optionalText(100),
+  channelId: optionalText(TICKET_FIELDS.channelId.maxLength),
   project: optionalText(TICKET_TEXT_LIMITS.project),
   brokerageEntity: optionalText(TICKET_TEXT_LIMITS.brokerageEntity),
   paymentChannel: optionalText(TICKET_TEXT_LIMITS.paymentChannel),
@@ -110,7 +63,7 @@ export const ticketCreateInputSchema = z.object({
   contactTime: optionalEnum(z.string().datetime({ offset: true, message: "进线时间格式不正确" })),
   contactId: optionalText(TICKET_TEXT_LIMITS.contactId),
   /** 客诉类别目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
-  categoryId: optionalText(100),
+  categoryId: optionalText(TICKET_FIELDS.categoryId.maxLength),
   complaintLevel: optionalEnum(complaintLevelSchema),
   /** 独立自由标签，默认空；"" 来自未选择的下拉框。 */
   priority: optionalEnum(prioritySchema),
@@ -271,9 +224,6 @@ export const ticketAddCommentInputSchema = z.object({
 export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
 /** Server-side shape (after transforms) — what the service receives. */
 export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
-
-/** 完结备注长度上限；完结弹窗与批量导入的完结备注列共用这一个数。 */
-export const TICKET_COMPLETION_REMARK_LIMIT = 2000;
 
 /**
  * 完结工单 contract: the mandatory completion reason — a 完结状态目录 reference,

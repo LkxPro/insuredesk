@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { permissionSchema } from "./permissions";
-import { TICKET_CREATE_FIELD_KEYS } from "./ticket";
+import { TICKET_CREATE_FIELD_KEYS } from "./ticket-fields";
 
 /**
  * 角色管理 contracts, shared by the 角色权限 page and the API — one schema,

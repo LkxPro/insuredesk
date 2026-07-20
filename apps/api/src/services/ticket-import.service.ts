@@ -1,12 +1,10 @@
 import {
-  COMPLAINT_LEVELS,
-  NUCLEAR_BODY_STATUSES,
-  PRIORITIES,
-  PRIORITY_LABELS,
-  TICKET_COMPLETION_REMARK_LIMIT,
+  TICKET_FIELD_DESCRIPTORS,
+  TICKET_IMPORT_HEADERS,
   TICKET_IMPORT_ROW_LIMIT,
-  TICKET_TEXT_LIMITS,
+  type TicketCatalogKind,
   type TicketCreateData,
+  type TicketFieldDescriptor,
   type TicketImportRowError,
   TicketStatus,
 } from "@insuredesk/shared";
@@ -18,7 +16,6 @@ import {
   resolveCatalogNameRef,
 } from "./dictionary-catalog.service";
 import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service";
-import { TICKET_IMPORT_TEMPLATE_HEADERS } from "./ticket-import-template.service";
 import { resolveTimeZone } from "./time-zone";
 
 /**
@@ -233,14 +230,13 @@ const notText = (raw: Date): ParseOutcome => ({
   fail: `应为文本，实际是日期单元格（${raw.toISOString()}）`,
 });
 
-function limitedTextColumn(
-  header: string,
-  field: keyof TicketImportRowData,
-  limit: number,
+function textColumn(
+  descriptor: Extract<TicketFieldDescriptor, { type: "text" }>,
 ): ImportColumnSpec {
+  const limit = descriptor.maxLength;
   return {
-    header,
-    field,
+    header: descriptor.label,
+    field: descriptor.key,
     parse: (raw) => {
       if (raw instanceof Date) {
         return notText(raw);
@@ -256,19 +252,13 @@ function limitedTextColumn(
   };
 }
 
-function textColumn(header: string, field: keyof typeof TICKET_TEXT_LIMITS): ImportColumnSpec {
-  return limitedTextColumn(header, field, TICKET_TEXT_LIMITS[field]);
-}
-
 function enumColumn(
-  header: string,
-  field: keyof TicketCreateData,
-  options: readonly string[],
-  toValue: (label: string) => TicketCreateData[keyof TicketCreateData] = (label) => label,
+  descriptor: Extract<TicketFieldDescriptor, { type: "enum" }>,
 ): ImportColumnSpec {
+  const labels = descriptor.options.map((option) => option.label);
   return {
-    header,
-    field,
+    header: descriptor.label,
+    field: descriptor.key,
     parse: (raw) => {
       if (raw instanceof Date) {
         return notText(raw);
@@ -276,22 +266,31 @@ function enumColumn(
       if (raw === "") {
         return { ok: null };
       }
-      if (!options.includes(raw)) {
-        return { fail: `无效取值「${raw}」，可选：${options.join(" / ")}` };
+      const option = descriptor.options.find((candidate) => candidate.label === raw);
+      if (!option) {
+        return { fail: `无效取值「${raw}」，可选：${labels.join(" / ")}` };
       }
-      return { ok: toValue(raw) };
+      return { ok: option.value };
     },
   };
 }
 
+const CATALOG_INDEXES: Record<
+  TicketCatalogKind,
+  (catalogs: TicketImportCatalogs) => CatalogNameIndex
+> = {
+  channel: (catalogs) => catalogs.channels,
+  category: (catalogs) => catalogs.categories,
+  completionStatus: (catalogs) => catalogs.completionStatuses,
+};
+
 function catalogColumn(
-  header: string,
-  field: "channelId" | "categoryId" | "completionStatusId",
-  pick: (catalogs: TicketImportCatalogs) => CatalogNameIndex,
+  descriptor: Extract<TicketFieldDescriptor, { type: "catalog" }>,
 ): ImportColumnSpec {
+  const pick = CATALOG_INDEXES[descriptor.catalog];
   return {
-    header,
-    field,
+    header: descriptor.label,
+    field: descriptor.key,
     parse: (raw, { catalogs }) => {
       if (raw instanceof Date) {
         return notText(raw);
@@ -311,18 +310,16 @@ function catalogColumn(
   };
 }
 
-const PRIORITY_BY_LABEL = new Map(
-  PRIORITIES.map((priority) => [PRIORITY_LABELS[priority], priority]),
-);
-
 /**
  * Wall-clock date column （反馈时间/进线时间）: blank → null, a native date cell
  * or exact "yyyy-MM-dd HH:mm" text → the instant in the upload's zone.
  */
-function wallClockColumn(header: string, field: "feedbackTime" | "contactTime"): ImportColumnSpec {
+function wallClockColumn(
+  descriptor: Extract<TicketFieldDescriptor, { type: "date" }>,
+): ImportColumnSpec {
   return {
-    header,
-    field,
+    header: descriptor.label,
+    field: descriptor.key,
     parse: (raw, { timeZone }) => {
       if (raw === "") {
         return { ok: null };
@@ -343,35 +340,20 @@ function wallClockColumn(header: string, field: "feedbackTime" | "contactTime"):
  * additionally binds cross-field: both filled or both blank (checked on the
  * raw cells in validateTicketImportRows).
  */
-const IMPORT_COLUMNS: readonly ImportColumnSpec[] = [
-  wallClockColumn("反馈时间", "feedbackTime"),
-  catalogColumn("反馈渠道", "channelId", (catalogs) => catalogs.channels),
-  textColumn("项目（保司）", "project"),
-  textColumn("经纪主体", "brokerageEntity"),
-  textColumn("支付渠道", "paymentChannel"),
-  textColumn("内部订单号", "internalOrderNumber"),
-  textColumn("保单号", "policyNumber"),
-  textColumn("用户投诉渠道", "userComplaintChannel"),
-  textColumn("投诉信息接收渠道", "complaintReceiveChannel"),
-  textColumn("客户姓名", "customerName"),
-  textColumn("客户电话（投保人）", "phone"),
-  textColumn("联系人电话", "contactPhone"),
-  enumColumn("保司侧是否核身", "nuclearBodyStatus", NUCLEAR_BODY_STATUSES),
-  textColumn("客户诉求", "customerRequest"),
-  enumColumn("客户曾进线", "hasContacted", ["是", "否"], (label) => label === "是"),
-  wallClockColumn("进线时间", "contactTime"),
-  textColumn("进线ID", "contactId"),
-  catalogColumn("客诉类别", "categoryId", (catalogs) => catalogs.categories),
-  enumColumn("投诉等级", "complaintLevel", COMPLAINT_LEVELS),
-  enumColumn(
-    "优先级",
-    "priority",
-    PRIORITIES.map((priority) => PRIORITY_LABELS[priority]),
-    (label) => PRIORITY_BY_LABEL.get(label) ?? null,
-  ),
-  catalogColumn("完结状态", "completionStatusId", (catalogs) => catalogs.completionStatuses),
-  limitedTextColumn("完结备注", "completionRemark", TICKET_COMPLETION_REMARK_LIMIT),
-];
+function toColumnSpec(descriptor: TicketFieldDescriptor): ImportColumnSpec {
+  switch (descriptor.type) {
+    case "text":
+      return textColumn(descriptor);
+    case "date":
+      return wallClockColumn(descriptor);
+    case "enum":
+      return enumColumn(descriptor);
+    case "catalog":
+      return catalogColumn(descriptor);
+  }
+}
+
+const IMPORT_COLUMNS: readonly ImportColumnSpec[] = TICKET_FIELD_DESCRIPTORS.map(toColumnSpec);
 
 const COMPLETION_STATUS_INDEX = IMPORT_COLUMNS.findIndex(
   (column) => column.field === "completionStatusId",
@@ -379,14 +361,6 @@ const COMPLETION_STATUS_INDEX = IMPORT_COLUMNS.findIndex(
 const COMPLETION_REMARK_INDEX = IMPORT_COLUMNS.findIndex(
   (column) => column.field === "completionRemark",
 );
-
-/** Column order IS the header contract; drift here is a programming error. */
-export const TICKET_IMPORT_HEADERS: readonly string[] = IMPORT_COLUMNS.map(
-  (column) => column.header,
-);
-if (TICKET_IMPORT_HEADERS.join("\u0000") !== TICKET_IMPORT_TEMPLATE_HEADERS.join("\u0000")) {
-  throw new Error("ticket import columns out of sync with the template headers");
-}
 
 /**
  * In-file duplicate key: all cells, joined with a separator no cell text

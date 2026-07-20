@@ -1,9 +1,8 @@
-import { TICKET_IMPORT_ROW_LIMIT } from "@insuredesk/shared";
+import { TICKET_IMPORT_HEADERS, TICKET_IMPORT_ROW_LIMIT } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import {
   readTicketImportSheet,
-  TICKET_IMPORT_HEADERS,
   TicketImportValidationError,
   validateTicketImportRows,
 } from "../src/services/ticket-import.service";
@@ -96,10 +95,12 @@ async function expectFileError(body: Buffer, messagePart: string) {
 
 describe("readTicketImportSheet", () => {
   it("导入列头与模板生成列头是同一契约", async () => {
-    const { TICKET_IMPORT_TEMPLATE_HEADERS } = await import(
+    const { TICKET_IMPORT_TEMPLATE_COLUMNS } = await import(
       "../src/services/ticket-import-template.service"
     );
-    expect(TICKET_IMPORT_HEADERS).toEqual(TICKET_IMPORT_TEMPLATE_HEADERS);
+    expect(TICKET_IMPORT_TEMPLATE_COLUMNS.map((column) => column.header)).toEqual(
+      TICKET_IMPORT_HEADERS,
+    );
     expect(TICKET_IMPORT_HEADERS).toEqual(HEADERS);
   });
 

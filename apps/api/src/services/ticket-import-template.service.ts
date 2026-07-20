@@ -1,10 +1,9 @@
 import {
-  COMPLAINT_LEVELS,
-  NUCLEAR_BODY_STATUSES,
-  PRIORITIES,
-  PRIORITY_LABELS,
-  TICKET_COMPLETION_REMARK_LIMIT,
+  TICKET_FIELD_DESCRIPTORS,
   TICKET_IMPORT_ROW_LIMIT,
+  type TicketCatalogKind,
+  type TicketFieldDescriptor,
+  ticketImportFieldNote,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import type { PrismaClient } from "../generated/prisma/client";
@@ -19,7 +18,7 @@ import { ticketCategoryCatalog } from "./ticket-category.service";
  *
  * Column set = the 建单表单 fields plus the 完结状态/完结备注 pair (历史
  * 工单迁移: both filled ⇒ the row lands already completed), Chinese headers
- * in the form's visual order — the headers are the contract upload parsing
+ * in the form's visual order — the same descriptor rows upload parsing
  * resolves columns by.
  */
 
@@ -30,10 +29,14 @@ export interface TicketImportTemplateFile {
   body: Buffer;
 }
 
-const HAS_CONTACTED_OPTIONS = ["是", "否"] as const;
-
 /** The active-catalog names resolved once per download, fed to every dropdown. */
 type CatalogOptions = { channels: string[]; categories: string[]; completionStatuses: string[] };
+
+const CATALOG_OPTION_KEYS: Record<TicketCatalogKind, keyof CatalogOptions> = {
+  channel: "channels",
+  category: "categories",
+  completionStatus: "completionStatuses",
+};
 
 type ImportColumn = {
   header: string;
@@ -43,75 +46,23 @@ type ImportColumn = {
   options?: (catalogs: CatalogOptions) => readonly string[];
 };
 
-const TICKET_IMPORT_COLUMNS: readonly ImportColumn[] = [
-  {
-    header: "反馈时间",
-    note: "格式 yyyy-MM-dd HH:mm（如 2026-07-09 14:30）；留空=未填写",
-  },
-  {
-    header: "反馈渠道",
-    note: "从下拉选择（下载模板时启用的渠道目录）；留空=未填写",
-    options: ({ channels }) => channels,
-  },
-  { header: "项目（保司）", note: "文本，最长 100 字；如：融盛、泰康" },
-  { header: "经纪主体", note: "文本，最长 100 字；如：东方大地" },
-  { header: "支付渠道", note: "文本，最长 100 字；如：连连支付" },
-  { header: "内部订单号", note: "文本，最长 200 字" },
-  { header: "保单号", note: "文本，最长 100 字" },
-  { header: "用户投诉渠道", note: "文本，最长 100 字；如：飞书投诉、400热线" },
-  { header: "投诉信息接收渠道", note: "文本，最长 100 字；如：监管转办、邮箱接收" },
-  { header: "客户姓名", note: "文本，最长 100 字" },
-  { header: "客户电话（投保人）", note: "文本，最长 50 字" },
-  { header: "联系人电话", note: "文本，最长 200 字" },
-  {
-    header: "保司侧是否核身",
-    note: "从下拉选择：是 / 否 / 待核实；留空=未填写",
-    options: () => NUCLEAR_BODY_STATUSES,
-  },
-  { header: "客户诉求", note: "文本，最长 2000 字" },
-  {
-    header: "客户曾进线",
-    note: "从下拉选择：是 / 否；留空=未知",
-    options: () => HAS_CONTACTED_OPTIONS,
-  },
-  {
-    header: "进线时间",
-    note: "格式 yyyy-MM-dd HH:mm（如 2026-07-09 14:30）；留空=未填写",
-  },
-  { header: "进线ID", note: "文本，最长 200 字" },
-  {
-    header: "客诉类别",
-    note: "从下拉选择（下载模板时启用的类别目录）；留空=未填写",
-    options: ({ categories }) => categories,
-  },
-  {
-    header: "投诉等级",
-    note: `从下拉选择：${COMPLAINT_LEVELS.join(" / ")}；留空=未定级（无处理时限与 SLA 告警）`,
-    options: () => COMPLAINT_LEVELS,
-  },
-  {
-    header: "优先级",
-    note: `从下拉选择：${PRIORITIES.map((priority) => PRIORITY_LABELS[priority]).join(" / ")}；留空=未设置`,
-    options: () => PRIORITIES.map((priority) => PRIORITY_LABELS[priority]),
-  },
-  {
-    header: "完结状态",
-    note: "从下拉选择（下载模板时启用的完结状态目录）；须与「完结备注」同时填写或同时留空",
-    options: ({ completionStatuses }) => completionStatuses,
-  },
-  {
-    header: "完结备注",
-    note: `文本，最长 ${TICKET_COMPLETION_REMARK_LIMIT} 字；须与「完结状态」同时填写或同时留空`,
-  },
-];
+function toTemplateColumn(descriptor: TicketFieldDescriptor): ImportColumn {
+  const column: ImportColumn = {
+    header: descriptor.label,
+    note: ticketImportFieldNote(descriptor),
+  };
+  if (descriptor.type === "enum") {
+    const labels = descriptor.options.map((option) => option.label);
+    column.options = () => labels;
+  } else if (descriptor.type === "catalog") {
+    const key = CATALOG_OPTION_KEYS[descriptor.catalog];
+    column.options = (catalogs) => catalogs[key];
+  }
+  return column;
+}
 
-/**
- * The header contract in column order — upload parsing must resolve columns
- * by exactly these names (ticket-import.service.ts asserts alignment).
- */
-export const TICKET_IMPORT_TEMPLATE_HEADERS: readonly string[] = TICKET_IMPORT_COLUMNS.map(
-  (column) => column.header,
-);
+export const TICKET_IMPORT_TEMPLATE_COLUMNS: readonly ImportColumn[] =
+  TICKET_FIELD_DESCRIPTORS.map(toTemplateColumn);
 
 /**
  * exceljs implements worksheet.dataValidations (range-level validations,
@@ -151,13 +102,13 @@ export async function buildTicketImportTemplate(
   const options = workbook.addWorksheet("选项");
   options.state = "hidden";
 
-  sheet.addRow(TICKET_IMPORT_COLUMNS.map((column) => column.header));
+  sheet.addRow(TICKET_IMPORT_TEMPLATE_COLUMNS.map((column) => column.header));
   sheet.getRow(1).font = { bold: true };
-  for (const [index, column] of TICKET_IMPORT_COLUMNS.entries()) {
+  for (const [index, column] of TICKET_IMPORT_TEMPLATE_COLUMNS.entries()) {
     sheet.getColumn(index + 1).width = Math.max(14, column.header.length * 2 + 4);
   }
 
-  for (const [index, column] of TICKET_IMPORT_COLUMNS.entries()) {
+  for (const [index, column] of TICKET_IMPORT_TEMPLATE_COLUMNS.entries()) {
     const values = column.options?.(catalogs);
     if (!values || values.length === 0) {
       continue;
@@ -191,7 +142,7 @@ export async function buildTicketImportTemplate(
   notes.addRow([]);
   const notesHeader = notes.addRow(["列名", "取值规则"]);
   notesHeader.font = { bold: true };
-  for (const column of TICKET_IMPORT_COLUMNS) {
+  for (const column of TICKET_IMPORT_TEMPLATE_COLUMNS) {
     notes.addRow([column.header, column.note]);
   }
 
