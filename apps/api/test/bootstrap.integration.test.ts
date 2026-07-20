@@ -1,14 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import bcrypt from "bcryptjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bootstrapSystemData } from "../prisma/seed-data";
-import { PrismaClient } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import type { PrismaClient } from "../src/generated/prisma/client";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * Production bootstrap (runs on every container start) against a real
@@ -20,25 +14,16 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * never touch an existing user's credentials.
  */
 describe("bootstrapSystemData (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-
-    prisma = new PrismaClient({ adapter: new PrismaPg(databaseUrl) });
-  }, 120_000);
+    harness = await startIntegrationHarness();
+    prisma = harness.prisma;
+  }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   it("first run creates roles, SLA policies, default shifts, and the admin account", async () => {

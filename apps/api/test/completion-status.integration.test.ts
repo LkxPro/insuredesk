@@ -1,17 +1,13 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   type Permission,
   TICKET_CREATE_FIELD_KEYS,
   type TicketCreateInput,
 } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
+import type { User } from "../src/generated/prisma/client";
+import { appRouter } from "../src/routers/index";
 import type { AuthenticatedUser } from "../src/services/auth.service";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * CompletionStatus catalog smoke tests (issue #93). Full lifecycle coverage now lives
@@ -20,39 +16,15 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * no edit path (status is assigned at resolve, not create/edit).
  */
 describe("CompletionStatus catalog smoke (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
-  let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
-
+  let harness: IntegrationHarness;
+  let seeded: IntegrationHarness["seeded"];
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-    ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
+    seeded = harness.seeded;
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   function callerWith(user: User, permissions: Permission[]) {

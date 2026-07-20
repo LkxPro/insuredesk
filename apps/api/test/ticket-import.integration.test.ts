@@ -1,14 +1,14 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { TICKET_IMPORT_HEADERS as HEADERS, type Permission } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { DEMO_PASSWORD } from "../prisma/seed-data";
+import { parseEnv } from "../src/env";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { appRouter } from "../src/routers/index";
+import { buildServer } from "../src/server";
+import { hashPassword } from "../src/services/auth.service";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -30,44 +30,23 @@ const HOUR_MS = 60 * 60 * 1000;
  *   ticket.import, never ticket.process
  */
 describe("ticket import upload (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let app: FastifyInstance;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let demoPassword: string;
   let importerUser: User;
   let importerRole: Role;
   let channelName: string;
   let categoryName: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "slaPolicies", "channels", "categories"],
     });
-    process.env.DATABASE_URL = databaseUrl;
+    prisma = harness.prisma;
+    const databaseUrl = harness.databaseUrl;
 
-    const [{ prisma: appPrisma }, seedData, { parseEnv }, { buildServer }, routers, auth] =
-      await Promise.all([
-        import("../src/db"),
-        import("../prisma/seed-data"),
-        import("../src/env"),
-        import("../src/server"),
-        import("../src/routers/index"),
-        import("../src/services/auth.service"),
-      ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    demoPassword = seedData.DEMO_PASSWORD;
-
-    await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
-    const channels = await seedData.seedChannels(prisma);
-    const categories = await seedData.seedTicketCategories(prisma);
+    const channels = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
+    const categories = await prisma.ticketCategory.findMany({ orderBy: { displayOrder: "asc" } });
     channelName = channels.find((channel) => channel.active)?.name as string;
     categoryName = categories.find((category) => category.active)?.name as string;
 
@@ -86,7 +65,7 @@ describe("ticket import upload (Testcontainers)", () => {
         name: "导入员一号",
         email: "importer@example.com",
         roleId: importerRole.id,
-        passwordHash: await auth.hashPassword(seedData.DEMO_PASSWORD),
+        passwordHash: await hashPassword(DEMO_PASSWORD),
         active: true,
       },
     });
@@ -103,8 +82,7 @@ describe("ticket import upload (Testcontainers)", () => {
 
   afterAll(async () => {
     await app?.close();
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   beforeEach(async () => {
@@ -131,7 +109,7 @@ describe("ticket import upload (Testcontainers)", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { username, password: demoPassword },
+      payload: { username, password: DEMO_PASSWORD },
     });
     const cookie = res.cookies.find((c) => c.name === "session");
     expect(cookie, `login as ${username}`).toBeDefined();

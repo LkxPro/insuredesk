@@ -1,13 +1,11 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { TICKET_IMPORT_HEADERS as HEADERS, type Permission } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import ExcelJS from "exceljs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient, User } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { appRouter } from "../src/routers/index";
+import { exportTickets } from "../src/services/ticket-export.service";
+import { importTickets } from "../src/services/ticket-import.service";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * Acceptance tests for 导入历史 + 整批撤销 against a real Postgres, through
@@ -26,11 +24,8 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   a revoked batch can never be revoked again
  */
 describe("ticket import history & batch revocation (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let importTickets: typeof import("../src/services/ticket-import.service").importTickets;
-  let exportTickets: typeof import("../src/services/ticket-export.service").exportTickets;
   let importer: User;
   let supervisor: User;
   let deleterNoViewAll: User;
@@ -38,31 +33,9 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
   const deps = () => ({ prisma, clock: { now: () => new Date() } });
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers, importService, exportService] =
-      await Promise.all([
-        import("../src/db"),
-        import("../prisma/seed-data"),
-        import("../src/routers/index"),
-        import("../src/services/ticket-import.service"),
-        import("../src/services/ticket-export.service"),
-      ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    importTickets = importService.importTickets;
-    exportTickets = exportService.exportTickets;
-
-    const { roles } = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
+    prisma = harness.prisma;
+    const { roles } = harness.seeded;
 
     const user = (username: string, name: string) =>
       prisma.user.create({ data: { username, name, roleId: roles.frontline.id, active: true } });
@@ -72,8 +45,7 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   beforeEach(async () => {

@@ -1,12 +1,12 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DEMO_PASSWORD } from "../prisma/seed-data";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -30,29 +30,15 @@ function freePort(): Promise<number> {
  * this ordering, only a spawned boot can.
  */
 describe("entrypoint boot with .env-only configuration", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let child: ChildProcess | undefined;
   let childStderr = "";
   let workDir: string;
   let port: number;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-
-    process.env.DATABASE_URL = databaseUrl;
-    const [{ prisma }, { seedFactoryRolesAndDemoUsers }] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-    ]);
-    await seedFactoryRolesAndDemoUsers(prisma);
-    await prisma.$disconnect();
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers"] });
+    const databaseUrl = harness.databaseUrl;
 
     port = await freePort();
     workDir = mkdtempSync(join(tmpdir(), "insuredesk-boot-"));
@@ -100,7 +86,7 @@ describe("entrypoint boot with .env-only configuration", () => {
   afterAll(async () => {
     child?.kill();
     if (workDir) rmSync(workDir, { recursive: true, force: true });
-    await container?.stop();
+    await harness?.stop();
   });
 
   it("logs in against the database configured in .env", async () => {

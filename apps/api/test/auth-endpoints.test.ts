@@ -1,13 +1,10 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DEMO_PASSWORD } from "../prisma/seed-data";
+import { parseEnv } from "../src/env";
 import type { PrismaClient } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { buildServer } from "../src/server";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * Endpoint-level auth tests: drive the real Fastify app (buildServer) over
@@ -21,33 +18,14 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  */
 
 describe("Auth HTTP endpoints (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    // Apply migrations via the real Prisma CLI, then point the app's canonical
-    // client at the container before importing any app module (same pattern as
-    // db.integration.test.ts).
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, { seedFactoryRolesAndDemoUsers }, { parseEnv }, { buildServer }] =
-      await Promise.all([
-        import("../src/db"),
-        import("../prisma/seed-data"),
-        import("../src/env"),
-        import("../src/server"),
-      ]);
-    prisma = appPrisma;
-    await seedFactoryRolesAndDemoUsers(prisma);
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers"] });
+    prisma = harness.prisma;
+    const databaseUrl = harness.databaseUrl;
 
     const env = parseEnv({
       DATABASE_URL: databaseUrl,
@@ -57,12 +35,11 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
     });
     app = buildServer(env);
     await app.ready();
-  }, 120_000);
+  }, 180_000);
 
   afterAll(async () => {
     await app?.close();
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   /** POST /api/auth/login as the given demo user. */

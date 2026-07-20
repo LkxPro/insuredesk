@@ -1,13 +1,9 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Permission, TicketCreateInput, TicketEditInput } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
+import { appRouter } from "../src/routers/index";
 import { effectivePermissions } from "../src/services/auth.service";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -22,36 +18,15 @@ const HOUR_MS = 60 * 60 * 1000;
  * included) the HTTP adapter uses.
  */
 describe("ticket edit + soft delete (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
   let cs2: User;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-    ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
+    prisma = harness.prisma;
+    seeded = harness.seeded;
 
     cs2 = await prisma.user.create({
       data: {
@@ -64,8 +39,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   /** Caller with the given user identity and an explicit permission set. */

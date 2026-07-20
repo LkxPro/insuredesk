@@ -6,6 +6,7 @@ import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import {
   seedChannels,
   seedFactoryRolesAndDemoUsers,
+  seedShiftTypes,
   seedSlaPolicies,
   seedTicketCategories,
 } from "../prisma/seed-data";
@@ -31,7 +32,12 @@ const POSTGRES_IMAGE = "postgres:17-alpine";
  */
 export type IntegrationHarnessMode = "real-migrations" | "fast";
 
-export type SeedSetName = "rolesAndUsers" | "slaPolicies" | "channels" | "categories";
+export type SeedSetName =
+  | "rolesAndUsers"
+  | "slaPolicies"
+  | "channels"
+  | "categories"
+  | "shiftTypes";
 
 export interface IntegrationHarnessOptions {
   mode?: IntegrationHarnessMode;
@@ -122,6 +128,9 @@ export async function startIntegrationHarness(
       : undefined;
     if (selected.has("slaPolicies")) {
       await seedSlaPolicies(prisma);
+    }
+    if (selected.has("shiftTypes")) {
+      await seedShiftTypes(prisma);
     }
     const channels = selected.has("channels") ? await seedChannels(prisma) : undefined;
     const categories = selected.has("categories") ? await seedTicketCategories(prisma) : undefined;

@@ -1,14 +1,13 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { ALL_PERMISSIONS, type Permission } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
+import { DEMO_PASSWORD } from "../prisma/seed-data";
+import { parseEnv } from "../src/env";
+import type { PrismaClient, User } from "../src/generated/prisma/client";
+import { appRouter } from "../src/routers/index";
+import { buildServer } from "../src/server";
 import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * 用户与角色管理 acceptance tests against a real Postgres: 用户管理 (create /
@@ -23,39 +22,17 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * real Fastify app over app.inject — the exact doors the browser uses.
  */
 describe("user + role management (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let app: FastifyInstance;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
-  let demoPassword: string;
+  let seeded: IntegrationHarness["seeded"];
+  const demoPassword = DEMO_PASSWORD;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers, { parseEnv }, { buildServer }] =
-      await Promise.all([
-        import("../src/db"),
-        import("../prisma/seed-data"),
-        import("../src/routers/index"),
-        import("../src/env"),
-        import("../src/server"),
-      ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    demoPassword = seedData.DEMO_PASSWORD;
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers"] });
+    prisma = harness.prisma;
+    seeded = harness.seeded;
+    const databaseUrl = harness.databaseUrl;
 
     app = buildServer(
       parseEnv({
@@ -70,8 +47,7 @@ describe("user + role management (Testcontainers)", () => {
 
   afterAll(async () => {
     await app?.close();
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   function identityOf(user: User, roleName: string, permissions: Permission[]): AuthenticatedUser {
