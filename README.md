@@ -14,7 +14,7 @@ pnpm monorepo（`apps/api`、`apps/web`、`packages/shared`）。
 docker compose up -d    # 首次会自动安装依赖、迁移数据库、seed、启动服务
 ```
 
-全容器化开发环境（ADR 0012）：依赖安装、PostgreSQL、api（3000）、web（5173）
+全容器化开发环境（ADR 0007）：依赖安装、PostgreSQL、api（3000）、web（5173）
 全部运行在容器内，支持热重载。浏览器访问 <http://localhost:5173>。
 
 常用命令（Makefile 封装）：
@@ -27,7 +27,7 @@ make shell    # 进入 api 容器 shell
 ```
 
 - 清库重来：`docker compose down -v` 后重新 `docker compose up -d`。
-- 改 schema：先 `pnpm db:migrate` 生成迁移文件，再 `make migrate` 应用（或重启 api 服务）。
+- 改 schema：`docker compose exec api pnpm db:migrate` 生成迁移文件并应用到开发库（重启 api 服务也会自动应用）。
 - 受限网络：在根目录创建 `.env` 设置 `NPM_CONFIG_REGISTRY` 和 `PRISMA_ENGINES_MIRROR` 切换镜像源。
 
 ## 文档

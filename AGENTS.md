@@ -2,7 +2,7 @@
 
 ## Development
 
-Dev environment is **fully containerized** (ADR 0012). Host only needs Docker + git + editor.
+Dev environment is **fully containerized** (ADR 0007). Host only needs Docker + git + editor.
 First run:
 
 ```bash
@@ -13,9 +13,9 @@ All services run in containers: dependency install (idempotent), PostgreSQL, api
 web (port 5173). Hot reload works for both api and web. Use `make` commands for common tasks:
 `make test`, `make lint`, `make migrate`, `make shell`. Run `make` (no args) for help.
 
-`docker compose down -v` drops volumes for clean state. Schema changes: `pnpm db:migrate` 
-generates migration files, then `make migrate` (or restart api service) applies them.
-Full dev setup in `README.md`; production deploy in `docs/deployment.md` (unchanged from ADR 0007).
+`docker compose down -v` drops volumes for clean state. Schema changes: `docker compose exec api pnpm db:migrate` 
+generates + applies migration files (restarting the api service applies them too).
+Full dev setup in `README.md`; production deploy in `docs/deployment.md`.
 
 ## Agent skills
 
