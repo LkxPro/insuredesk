@@ -1,12 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  isTicketInFlight,
   PROCESS_LOG_ACTION_LABELS,
   TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
   type TicketCreateFieldKey,
 } from "@insuredesk/shared";
 import { AlertCircle, CheckCircle2, Pencil, Trash2, UserPlus } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { DiscardChangesDialog } from "@/components/DiscardChangesDialog";
@@ -49,6 +50,13 @@ import { localDateTimeToIso, type TicketFormValues, ticketFormSchema } from "./T
  * the footer returns to read-only without closing the dialog. Outside click,
  * X and Esc close the dialog in both modes; when the edit draft has changes,
  * any of those — and 取消 — first asks 丢弃修改？.
+ *
+ * QuickLook 键盘浏览: ↑/↓ swaps in the neighbouring ticket the caller derived
+ * from its list (prev/nextTicketId; null means the edge — the key does
+ * nothing). The swap goes through onNavigate so the URL moves with the
+ * content, a dirty edit draft diverts to the same 丢弃修改？ first, and keys
+ * pressed while a stacked dialog is open or while typing in a field are left
+ * alone.
  */
 
 /** One label/value cell of a detail section (系统/SLA 字段只读展示). */
@@ -121,14 +129,23 @@ const EMPTY_FORM: TicketFormValues = {
   priority: "",
 };
 
+/** What a confirmed 丢弃修改？ proceeds to do. */
+type DiscardAction = { kind: "close" } | { kind: "exitEdit" } | { kind: "navigate"; to: string };
+
 export function TicketDetailDialog({
   open,
   onOpenChange,
   ticketId,
+  prevTicketId,
+  nextTicketId,
+  onNavigate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ticketId: string;
+  prevTicketId: string | null;
+  nextTicketId: string | null;
+  onNavigate: (ticketId: string) => void;
 }) {
   const { hasPermission } = useAuth();
   const utils = trpc.useUtils();
@@ -136,9 +153,10 @@ export function TicketDetailDialog({
   const [resolveOpen, setResolveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  // A dirty edit draft intercepts both ways out — closing the dialog and 取消
-  // back to read-only — behind the same 丢弃修改？ confirmation.
-  const [discardAction, setDiscardAction] = useState<"close" | "exitEdit" | null>(null);
+  // A dirty edit draft intercepts every way out — closing the dialog, 取消
+  // back to read-only, an arrow-key jump — behind the same 丢弃修改？
+  // confirmation.
+  const [discardAction, setDiscardAction] = useState<DiscardAction | null>(null);
   const detailQuery = trpc.ticket.detail.useQuery({ id: ticketId }, { enabled: open });
 
   const form = useForm<TicketFormValues>({
@@ -164,9 +182,7 @@ export function TicketDetailDialog({
   const ticket = detailQuery.data;
   // Mirrors the API guard: 完结 is part of 处理工单, only from an in-flight state
   const canResolve =
-    ticket !== undefined &&
-    hasPermission("ticket.process") &&
-    (ticket.status === "assigned" || ticket.status === "processing");
+    ticket !== undefined && hasPermission("ticket.process") && isTicketInFlight(ticket.status);
   const busy = isSubmitting || edit.isPending;
 
   // Entering edit mode starts from the CURRENT detail, not a stale draft —
@@ -189,7 +205,7 @@ export function TicketDetailDialog({
   const requestClose = () => {
     if (busy) return;
     if (editing && isDirty) {
-      setDiscardAction("close");
+      setDiscardAction({ kind: "close" });
     } else {
       onOpenChange(false);
     }
@@ -197,19 +213,61 @@ export function TicketDetailDialog({
   const requestStopEditing = () => {
     if (busy) return;
     if (isDirty) {
-      setDiscardAction("exitEdit");
+      setDiscardAction({ kind: "exitEdit" });
     } else {
       stopEditing();
     }
+  };
+  // Leaving for a neighbour always exits edit mode first: the dialog instance
+  // survives the swap, so a draft (or the editing state itself) must never
+  // carry over to the next ticket.
+  const navigateTo = (id: string) => {
+    stopEditing();
+    onNavigate(id);
   };
   const confirmDiscard = () => {
     const action = discardAction;
     setDiscardAction(null);
     stopEditing();
-    if (action === "close") {
+    if (action?.kind === "close") {
       onOpenChange(false);
+    } else if (action?.kind === "navigate") {
+      onNavigate(action.to);
     }
   };
+
+  // ↑/↓ live on document, not the dialog element: focus can land on body when
+  // a header button unmounts (e.g. right after 编辑), and the keys should keep
+  // working. Radix keeps stacked dialogs' focus in their own portals, so the
+  // open-state gate — not bubbling — is what keeps them arrow-free.
+  useEffect(() => {
+    if (!open) return;
+    const stackedDialogOpen = assignOpen || resolveOpen || deleteOpen || discardAction !== null;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      if (stackedDialogOpen || busy) return;
+      // Typing surfaces keep their native arrow behaviour (text cursor,
+      // select option hopping)
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest(
+          "input, textarea, select, [contenteditable], [role='combobox'], [role='listbox']",
+        )
+      ) {
+        return;
+      }
+      const to = event.key === "ArrowUp" ? prevTicketId : nextTicketId;
+      if (to === null) return;
+      event.preventDefault();
+      if (editing && isDirty) {
+        setDiscardAction({ kind: "navigate", to });
+      } else {
+        navigateTo(to);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  });
 
   const onSubmit = form.handleSubmit((values) => {
     if (!ticket) return;
@@ -297,11 +355,9 @@ export function TicketDetailDialog({
           </Section>
         )}
 
-        {!editing &&
-          hasPermission("ticket.process") &&
-          (t.status === "assigned" || t.status === "processing") && (
-            <AddCommentCard ticketId={t.id} />
-          )}
+        {!editing && hasPermission("ticket.process") && isTicketInFlight(t.status) && (
+          <AddCommentCard ticketId={t.id} />
+        )}
 
         <Card>
           <CardHeader>

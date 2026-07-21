@@ -1,6 +1,7 @@
 import {
   BATCH_ASSIGN_LIMIT,
   COMPLAINT_LEVELS,
+  isTicketInFlight,
   TICKET_DISPLAY_STATUSES,
   TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
@@ -66,6 +67,7 @@ import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
+import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { TicketDetailDialog } from "./TicketDetailDialog";
@@ -90,6 +92,12 @@ import { downloadTicketExport } from "./ticket-export";
  * action (ticket.assign) and multi-select checkboxes feeding 批量分配
  * (ticket.batch_assign). Selection is kept as id → AssignTarget so it survives
  * paging; completed tickets are terminal and not selectable.
+ *
+ * The 操作 cell is a hover-revealed quick-action strip: 分配/改派 and 自动分配
+ * (ticket.assign, non-terminal rows) plus 完结 (ticket.process, in-flight
+ * rows) jump straight into their dialogs without opening the detail — the
+ * same gates the detail header applies. The buttons stay in the DOM (and the
+ * strip reveals on focus) so keyboard users reach them too.
  */
 
 const BASE_COLUMN_COUNT = 10;
@@ -207,8 +215,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const canCreate = hasPermission("ticket.create");
   const canAssign = hasPermission("ticket.assign");
   const canBatchAssign = hasPermission("ticket.batch_assign");
+  const canProcess = hasPermission("ticket.process");
   const canExport = hasPermission("ticket.export");
   const canImport = hasPermission("ticket.import");
+  const canRowActions = canAssign || canProcess;
 
   const [searchParams, setSearchParams] = useSearchParams();
   const query = parseListQuery(searchParams);
@@ -218,6 +228,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   // more than the id, and page 2 replaces `items`)
   const [selected, setSelected] = useState<ReadonlyMap<string, AssignTarget>>(new Map());
   const [singleTarget, setSingleTarget] = useState<AssignTarget | null>(null);
+  const [resolveTarget, setResolveTarget] = useState<ResolveTarget | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -265,7 +276,14 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
-  const columnCount = BASE_COLUMN_COUNT + (canBatchAssign ? 1 : 0) + (canAssign ? 1 : 0);
+
+  // QuickLook 键盘浏览: the detail dialog's ↑/↓ walk this page's rows in
+  // their listed (filter + sort) order. Edges stop dead — no page turn — and
+  // a detail deep-linked from outside the current page has no neighbours.
+  const detailIndex = detailId === undefined ? -1 : items.findIndex((t) => t.id === detailId);
+  const prevTicketId = detailIndex > 0 ? (items[detailIndex - 1]?.id ?? null) : null;
+  const nextTicketId = detailIndex === -1 ? null : (items[detailIndex + 1]?.id ?? null);
+  const columnCount = BASE_COLUMN_COUNT + (canBatchAssign ? 1 : 0) + (canRowActions ? 1 : 0);
 
   type ListItem = (typeof items)[number];
 
@@ -510,7 +528,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 <TableHead>
                   <SortHead field="dueAt" label="处理时限" query={query} onToggle={toggleSort} />
                 </TableHead>
-                {canAssign && <TableHead className="w-40">操作</TableHead>}
+                {canRowActions && <TableHead className="w-40">操作</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -535,7 +553,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                   <TableRow
                     key={ticket.id}
                     data-highlighted={ticket.id === highlightId || undefined}
-                    className="cursor-pointer data-[highlighted]:bg-primary/10 data-[highlighted]:hover:bg-primary/15"
+                    className="group cursor-pointer data-[highlighted]:bg-primary/10 data-[highlighted]:hover:bg-primary/15"
                     // The filter query string rides to the detail and back
                     onClick={() => navigate(`/tickets/${ticket.id}${location.search}`)}
                   >
@@ -581,34 +599,53 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                         <Unknown />
                       )}
                     </TableCell>
-                    {canAssign && (
+                    {canRowActions && (
                       <TableCell>
-                        {ticket.status !== "completed" && (
-                          <div className="flex items-center whitespace-nowrap">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setSingleTarget(toTarget(ticket));
-                              }}
-                            >
-                              {ticket.assigneeId ? "改派" : "分配"}
-                            </Button>
-                            {ticket.assigneeId === null && (
+                        {/* stopPropagation everywhere: a quick action must
+                            never double as the row's open-detail click */}
+                        <div className="flex items-center whitespace-nowrap opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          {canAssign && ticket.status !== "completed" && (
+                            <>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  setAutoTargets([toTarget(ticket)]);
+                                  setSingleTarget(toTarget(ticket));
                                 }}
                               >
-                                自动分配
+                                {ticket.assigneeId ? "改派" : "分配"}
                               </Button>
-                            )}
-                          </div>
-                        )}
+                              {ticket.assigneeId === null && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setAutoTargets([toTarget(ticket)]);
+                                  }}
+                                >
+                                  自动分配
+                                </Button>
+                              )}
+                            </>
+                          )}
+                          {canProcess && isTicketInFlight(ticket.status) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setResolveTarget({
+                                  id: ticket.id,
+                                  workOrderNumber: ticket.workOrderNumber,
+                                });
+                              }}
+                            >
+                              完结
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -659,6 +696,11 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         <TicketDetailDialog
           open
           ticketId={detailId}
+          prevTicketId={prevTicketId}
+          nextTicketId={nextTicketId}
+          // replace: arrow browsing is transient scanning — Back should return
+          // to wherever the detail was entered from, not replay every stop
+          onNavigate={(id) => navigate(`/tickets/${id}${location.search}`, { replace: true })}
           onOpenChange={(open) => {
             if (!open) navigate(`/tickets${location.search}`);
           }}
@@ -675,6 +717,16 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             if (!open) setSingleTarget(null);
           }}
           targets={[singleTarget]}
+        />
+      )}
+
+      {canProcess && resolveTarget && (
+        <ResolveTicketDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setResolveTarget(null);
+          }}
+          ticket={resolveTarget}
         />
       )}
 

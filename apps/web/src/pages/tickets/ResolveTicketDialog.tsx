@@ -32,6 +32,9 @@ import { trpc } from "@/lib/trpc";
  * the → completed transition and its ProcessLog pair are derived server-side
  * in ticket.resolve. completed is a 终态, hence the warning copy.
  */
+/** What the dialog needs to know about the ticket it is completing. */
+export type ResolveTarget = { id: string; workOrderNumber: string };
+
 export function ResolveTicketDialog({
   open,
   onOpenChange,
@@ -39,7 +42,7 @@ export function ResolveTicketDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  ticket: { id: string; workOrderNumber: string };
+  ticket: ResolveTarget;
 }) {
   const utils = trpc.useUtils();
   const [completionStatusId, setCompletionStatusId] = useState("");
