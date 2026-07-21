@@ -206,8 +206,12 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       feedbackTime: NOW.toISOString(),
     });
 
-    // Success path is unchanged: straight to the new ticket's detail
-    expect(await screen.findByRole("heading", { name: "WO100001" })).toBeInTheDocument();
+    // 建单后留列表 (issue #116): the dialog closes onto 工单管理, no detail opens
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "工单管理" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "WO100001" })).not.toBeInTheDocument();
   });
 
   it("clearing the prefilled feedbackTime submits it as null (未填写), others still null", async () => {

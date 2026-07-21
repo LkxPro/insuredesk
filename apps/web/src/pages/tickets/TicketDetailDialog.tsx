@@ -9,6 +9,7 @@ import { AlertCircle, CheckCircle2, Pencil, Trash2, UserPlus } from "lucide-reac
 import { type ReactNode, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { DiscardChangesDialog } from "@/components/DiscardChangesDialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,9 @@ import { localDateTimeToIso, type TicketFormValues, ticketFormSchema } from "./T
  * in ANY status (已完结 included), which switches THIS dialog to edit mode
  * in place: editable fields become controls at their read-only positions
  * (TicketDetailField), system/SLA sections stay read-only, and 取消/保存 in
- * the footer returns to read-only without the dialog ever closing.
+ * the footer returns to read-only without closing the dialog. Outside click,
+ * X and Esc close the dialog in both modes; when the edit draft has changes,
+ * any of those — and 取消 — first asks 丢弃修改？.
  */
 
 /** One label/value cell of a detail section (系统/SLA 字段只读展示). */
@@ -133,13 +136,16 @@ export function TicketDetailDialog({
   const [resolveOpen, setResolveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  // A dirty edit draft intercepts both ways out — closing the dialog and 取消
+  // back to read-only — behind the same 丢弃修改？ confirmation.
+  const [discardAction, setDiscardAction] = useState<"close" | "exitEdit" | null>(null);
   const detailQuery = trpc.ticket.detail.useQuery({ id: ticketId }, { enabled: open });
 
   const form = useForm<TicketFormValues>({
     resolver: zodResolver(ticketFormSchema),
     defaultValues: EMPTY_FORM,
   });
-  const { dirtyFields, errors, isSubmitting } = form.formState;
+  const { dirtyFields, errors, isSubmitting, isDirty } = form.formState;
 
   const edit = trpc.ticket.edit.useMutation({
     onSuccess: (result) => {
@@ -175,6 +181,34 @@ export function TicketDetailDialog({
     edit.reset();
     form.reset(EMPTY_FORM);
     setEditing(false);
+  };
+
+  // Every dialog-close path (outside click, X, Esc) funnels through Radix's
+  // onOpenChange; 取消 only exits edit mode. Either way a dirty draft diverts
+  // to the 丢弃修改？ confirmation instead of acting immediately.
+  const requestClose = () => {
+    if (busy) return;
+    if (editing && isDirty) {
+      setDiscardAction("close");
+    } else {
+      onOpenChange(false);
+    }
+  };
+  const requestStopEditing = () => {
+    if (busy) return;
+    if (isDirty) {
+      setDiscardAction("exitEdit");
+    } else {
+      stopEditing();
+    }
+  };
+  const confirmDiscard = () => {
+    const action = discardAction;
+    setDiscardAction(null);
+    stopEditing();
+    if (action === "close") {
+      onOpenChange(false);
+    }
   };
 
   const onSubmit = form.handleSubmit((values) => {
@@ -309,12 +343,13 @@ export function TicketDetailDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-        <DialogContent
-          className="flex max-h-[min(720px,90svh)] flex-col gap-0 p-0 sm:max-w-4xl"
-          // A long edit draft: don't discard it on an accidental outside click.
-          onInteractOutside={editing ? (event) => event.preventDefault() : undefined}
-        >
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) requestClose();
+        }}
+      >
+        <DialogContent className="flex max-h-[min(720px,90svh)] flex-col gap-0 p-0 sm:max-w-4xl">
           <DialogHeader className="border-b px-6 py-4">
             <div className="flex flex-wrap items-center gap-3 pr-6">
               <DialogTitle className="text-xl">{ticket?.workOrderNumber ?? "工单详情"}</DialogTitle>
@@ -386,7 +421,12 @@ export function TicketDetailDialog({
                   </Alert>
                 )}
                 <DialogFooter>
-                  <Button type="button" variant="outline" disabled={busy} onClick={stopEditing}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={requestStopEditing}
+                  >
                     取消
                   </Button>
                   <Button type="submit" disabled={busy}>
@@ -403,6 +443,14 @@ export function TicketDetailDialog({
           )}
         </DialogContent>
       </Dialog>
+
+      <DiscardChangesDialog
+        open={discardAction !== null}
+        onOpenChange={(next) => {
+          if (!next) setDiscardAction(null);
+        }}
+        onDiscard={confirmDiscard}
+      />
 
       {ticket && canResolve && (
         <ResolveTicketDialog

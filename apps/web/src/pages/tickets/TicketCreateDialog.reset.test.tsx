@@ -112,9 +112,10 @@ describe("新建工单 打开即见当前时刻 (issue #62)", () => {
     await screen.findByRole("heading", { name: "新建工单" });
     expect(screen.getByText(dateLabel(firstOpen))).toBeInTheDocument();
 
-    // Dirty the form, then close without submitting
+    // Dirty the form, then close without submitting (through the 丢弃修改？ ask)
     fireEvent.change(screen.getByLabelText("客户姓名"), { target: { value: "王小明" } });
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(await screen.findByRole("button", { name: "丢弃修改" }));
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument();
     });

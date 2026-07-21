@@ -281,12 +281,34 @@ describe("in-place edit mode (原地切换)", () => {
 });
 
 describe("取消 and 改动高亮", () => {
-  it("取消 returns to read-only with the draft discarded — no mutation, dialog stays open", async () => {
+  it("取消 with no changes returns straight to read-only — no 丢弃修改？, no mutation", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    await screen.findByLabelText("客户姓名");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(screen.queryByText("丢弃修改？")).not.toBeInTheDocument();
+    expect(calls.some((call) => call.path === "ticket.edit")).toBe(false);
+    await waitFor(() => {
+      expect(screen.queryByLabelText("客户姓名")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
+  });
+
+  it("取消 with changes asks 丢弃修改？ — confirming returns to read-only, dialog stays open", async () => {
     renderDetail();
 
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
     fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    // Still in edit mode behind the confirmation — nothing discarded yet
+    expect(await screen.findByText("丢弃修改？")).toBeInTheDocument();
+    expect(screen.getByLabelText("客户姓名")).toHaveValue("王大明");
+
+    fireEvent.click(screen.getByRole("button", { name: "丢弃修改" }));
 
     expect(calls.some((call) => call.path === "ticket.edit")).toBe(false);
     // Back to the read-only value inside the still-open dialog
@@ -296,7 +318,23 @@ describe("取消 and 改动高亮", () => {
     expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
   });
 
-  it("marks user-changed fields with a 已修改 highlight that clears on 取消", async () => {
+  it("继续编辑 keeps the edit mode and the draft", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "继续编辑" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("丢弃修改？")).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("客户姓名")).toHaveValue("王大明");
+    expect(screen.getByRole("button", { name: "保存修改" })).toBeInTheDocument();
+  });
+
+  it("marks user-changed fields with a 已修改 highlight that clears on discarded 取消", async () => {
     renderDetail();
 
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
@@ -307,6 +345,7 @@ describe("取消 and 改动高亮", () => {
     expect(await screen.findByText("已修改")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    fireEvent.click(await screen.findByRole("button", { name: "丢弃修改" }));
     await waitFor(() => {
       expect(screen.queryByText("已修改")).not.toBeInTheDocument();
     });
@@ -462,6 +501,86 @@ describe("saving in place", () => {
       customerName: "王小明",
       channelId: "ch-baosi",
     });
+  });
+});
+
+describe("弹窗关闭 across modes (issue #116)", () => {
+  it("read-only: an outside click closes back to 工单管理", async () => {
+    renderDetail();
+    await screen.findByRole("button", { name: "编辑" });
+
+    // Radix defers a left-button pointerdown outside until its click lands
+    fireEvent.pointerDown(document.body);
+    fireEvent.click(document.body);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "工单管理" })).toBeInTheDocument();
+  });
+
+  it("edit mode with no changes: Esc closes the whole dialog without asking", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    await screen.findByLabelText("客户姓名");
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("丢弃修改？")).not.toBeInTheDocument();
+  });
+
+  it("edit mode with changes: Esc asks 丢弃修改？, confirming closes onto the list", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    expect(await screen.findByText("丢弃修改？")).toBeInTheDocument();
+    expect(calls.some((call) => call.path === "ticket.edit")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "丢弃修改" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "工单管理" })).toBeInTheDocument();
+  });
+
+  it("edit mode with changes: an outside click asks 丢弃修改？ instead of closing", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
+
+    // Radix defers a left-button pointerdown outside until its click lands
+    fireEvent.pointerDown(document.body);
+    fireEvent.click(document.body);
+
+    expect(await screen.findByText("丢弃修改？")).toBeInTheDocument();
+    expect(screen.getByLabelText("客户姓名")).toHaveValue("王大明");
+  });
+
+  it("edit mode with changes: the X button asks too, 继续编辑 keeps everything", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(await screen.findByText("丢弃修改？")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续编辑" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("丢弃修改？")).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("客户姓名")).toHaveValue("王大明");
   });
 });
 

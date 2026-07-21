@@ -222,6 +222,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // 建单成功留在列表：新建行高亮，直到下一次建单或离开本页
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
@@ -532,7 +534,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 items.map((ticket) => (
                   <TableRow
                     key={ticket.id}
-                    className="cursor-pointer"
+                    data-highlighted={ticket.id === highlightId || undefined}
+                    className="cursor-pointer data-[highlighted]:bg-primary/10 data-[highlighted]:hover:bg-primary/15"
                     // The filter query string rides to the detail and back
                     onClick={() => navigate(`/tickets/${ticket.id}${location.search}`)}
                   >
@@ -648,6 +651,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onOpenChange={(open) => {
             if (!open) navigate("/tickets");
           }}
+          onCreated={(ticket) => setHighlightId(ticket.id)}
         />
       )}
 
