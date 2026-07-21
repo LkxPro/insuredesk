@@ -2,18 +2,20 @@
 
 ## Development
 
-Dev containerizes **only PostgreSQL**; the app runs on the host with hot reload
-(ADR 0007). First run, and whenever you return to a fresh session:
+Dev environment is **fully containerized** (ADR 0012). Host only needs Docker + git + editor.
+First run:
 
 ```bash
-docker compose up -d    # start PostgreSQL (the #1 "forgot to start the DB" gotcha)
-pnpm dev                # auto-runs migrate deploy (+ seed if DB is empty), then api + web
+docker compose up -d    # installs deps, starts db/api/web with hot reload
 ```
 
-`docker compose down -v` drops the data volume for a clean database. Schema
-changes still go through `pnpm db:migrate` (generates + applies the migration
-file). Full dev setup is in `README.md`; production deploy steps and the host
-nginx reverse-proxy config are in `docs/deployment.md`.
+All services run in containers: dependency install (idempotent), PostgreSQL, api (port 3000), 
+web (port 5173). Hot reload works for both api and web. Use `make` commands for common tasks:
+`make test`, `make lint`, `make migrate`, `make shell`. Run `make` (no args) for help.
+
+`docker compose down -v` drops volumes for clean state. Schema changes: `pnpm db:migrate` 
+generates migration files, then `make migrate` (or restart api service) applies them.
+Full dev setup in `README.md`; production deploy in `docs/deployment.md` (unchanged from ADR 0007).
 
 ## Agent skills
 

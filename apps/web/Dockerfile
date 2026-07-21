@@ -1,4 +1,4 @@
-# Node.js base image
+# Node.js base image  
 FROM node:22-alpine AS base
 RUN corepack enable
 WORKDIR /app
