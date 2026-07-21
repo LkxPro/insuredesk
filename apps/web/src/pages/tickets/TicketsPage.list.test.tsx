@@ -1,6 +1,6 @@
 import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -201,6 +201,60 @@ describe("list rendering", () => {
   it("shows an empty state when nothing matches", async () => {
     renderAt("/tickets");
     expect(await screen.findByText("暂无匹配的工单")).toBeInTheDocument();
+  });
+});
+
+describe("保单号列: 首个 + N 徽标", () => {
+  it("单保单号原样展示，无徽标", async () => {
+    canned.items = [listItem({ policyNumbers: ["P-ONLY-001"] })];
+    canned.total = 1;
+    renderAt("/tickets");
+
+    expect(await screen.findByText("P-ONLY-001")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /还有.*个保单号/ })).not.toBeInTheDocument();
+  });
+
+  it("空数组沿用未填写占位，不展示徽标", async () => {
+    canned.items = [listItem({ policyNumbers: [] })];
+    canned.total = 1;
+    renderAt("/tickets");
+
+    await screen.findByText("WO100001");
+    const row = screen.getByText("WO100001").closest("tr") as HTMLTableRowElement;
+    expect(within(row).getByText("—")).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: /还有.*个保单号/ })).not.toBeInTheDocument();
+  });
+
+  it("多保单号只显首个 + N 徽标，点徽标弹出全部", async () => {
+    canned.items = [listItem({ policyNumbers: ["P-FIRST-001", "P-SECOND-002", "P-THIRD-003"] })];
+    canned.total = 1;
+    renderAt("/tickets");
+
+    // 列内只有首个保单号，其余不撑爆列宽
+    expect(await screen.findByText("P-FIRST-001")).toBeInTheDocument();
+    expect(screen.queryByText("P-SECOND-002")).not.toBeInTheDocument();
+
+    // 徽标计的是"还剩几个"，非总数
+    const badge = screen.getByRole("button", { name: "还有 2 个保单号" });
+    expect(badge).toHaveTextContent("+2");
+
+    // 点开 popover 见全部保单号（含首个）
+    fireEvent.click(badge);
+    const popover = await screen.findByRole("dialog");
+    expect(within(popover).getByText("P-FIRST-001")).toBeInTheDocument();
+    expect(within(popover).getByText("P-SECOND-002")).toBeInTheDocument();
+    expect(within(popover).getByText("P-THIRD-003")).toBeInTheDocument();
+  });
+
+  it("点徽标展开保单号不连带打开行详情", async () => {
+    canned.items = [listItem({ policyNumbers: ["P-A-1", "P-B-2"] })];
+    canned.total = 1;
+    renderAt("/tickets");
+
+    fireEvent.click(await screen.findByRole("button", { name: "还有 1 个保单号" }));
+    await screen.findByRole("dialog");
+    // 只应弹出 popover 一个 dialog；若冒泡到行 onClick，详情弹窗会是第二个
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 });
 
