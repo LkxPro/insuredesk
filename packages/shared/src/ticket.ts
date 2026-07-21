@@ -5,7 +5,13 @@ import {
   prioritySchema,
   ticketSourceSchema,
 } from "./enums";
-import { TICKET_COMPLETION_REMARK_LIMIT, TICKET_FIELDS, TICKET_TEXT_LIMITS } from "./ticket-fields";
+import {
+  normalizePolicyNumbers,
+  policyNumbersError,
+  TICKET_COMPLETION_REMARK_LIMIT,
+  TICKET_FIELDS,
+  TICKET_TEXT_LIMITS,
+} from "./ticket-fields";
 import { ticketDisplayStatusSchema } from "./ticket-status";
 
 /**
@@ -36,6 +42,23 @@ const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
     .nullish()
     .transform((value): z.output<T> | null => (value ? value : null));
 
+/**
+ * Optional multi-value text (保单号): items are trimmed, blanks dropped and
+ * duplicates removed (case-sensitive) BEFORE the per-item length / count
+ * limits apply — dedupe is silent, only genuine excess rejects. Absence and
+ * [] both mean 未填写.
+ */
+const optionalPolicyNumbers = z
+  .array(z.string())
+  .nullish()
+  .transform((values) => normalizePolicyNumbers(values ?? []))
+  .superRefine((values, ctx) => {
+    const error = policyNumbersError(values);
+    if (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: error });
+    }
+  });
+
 export const ticketCreateInputSchema = z.object({
   /** 客户实际反馈时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。 */
   feedbackTime: optionalEnum(z.string().datetime({ offset: true, message: "反馈时间格式不正确" })),
@@ -45,7 +68,7 @@ export const ticketCreateInputSchema = z.object({
   brokerageEntity: optionalText(TICKET_TEXT_LIMITS.brokerageEntity),
   paymentChannel: optionalText(TICKET_TEXT_LIMITS.paymentChannel),
   internalOrderNumber: optionalText(TICKET_TEXT_LIMITS.internalOrderNumber),
-  policyNumber: optionalText(TICKET_TEXT_LIMITS.policyNumber),
+  policyNumbers: optionalPolicyNumbers,
   userComplaintChannel: optionalText(TICKET_TEXT_LIMITS.userComplaintChannel),
   /** 我方收到投诉信息的途径（如监管转办、邮箱接收），区别于客户发起侧的用户投诉渠道。 */
   complaintReceiveChannel: optionalText(TICKET_TEXT_LIMITS.complaintReceiveChannel),

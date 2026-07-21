@@ -76,7 +76,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026071000829",
+    policyNumbers: ["P2026071000829"],
     userComplaintChannel: "400热线",
     customerName: "张三",
     phone: "13800000004",
@@ -188,6 +188,30 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const editLog = detail.processLogs.at(-1);
       expect(editLog?.remark).toContain("进线时间: 2026-07-08T13:15:00.000Z→（空）");
       expect(editLog?.remark).toContain("投诉信息接收渠道: 邮箱接收→（空）");
+    });
+
+    it("edits 保单号 multi values with space-joined remark; clearing logs （空）; 等值提交不留痕", async () => {
+      const ticketId = await createTicket();
+
+      const changed = await manager().ticket.edit(
+        editInput(ticketId, { policyNumbers: ["P-A", "P-B"] }),
+      );
+      expect(changed.changedFields).toEqual(["policyNumbers"]);
+      let detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.policyNumbers).toEqual(["P-A", "P-B"]);
+      expect(detail.processLogs.at(-1)?.remark).toBe("保单号: P2026071000829→P-A P-B");
+
+      // 重复项在契约层去重，去重后与现值相同＝无改动
+      const noop = await manager().ticket.edit(
+        editInput(ticketId, { policyNumbers: ["P-A", "P-B", "P-A"] }),
+      );
+      expect(noop.changedFields).toEqual([]);
+
+      const cleared = await manager().ticket.edit(editInput(ticketId, { policyNumbers: [] }));
+      expect(cleared.changedFields).toEqual(["policyNumbers"]);
+      detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.policyNumbers).toEqual([]);
+      expect(detail.processLogs.at(-1)?.remark).toBe("保单号: P-A P-B→（空）");
     });
 
     it("edits a completed ticket without reopening it (终态保持, 完结信息不动)", async () => {
@@ -335,8 +359,8 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     });
 
     it("statistics exclude deleted tickets: the list total drops with the delete", async () => {
-      const keptId = await createTicket({ policyNumber: "P-KEEP-0001" });
-      const droppedId = await createTicket({ policyNumber: "P-KEEP-0001" });
+      const keptId = await createTicket({ policyNumbers: ["P-KEEP-0001"] });
+      const droppedId = await createTicket({ policyNumbers: ["P-KEEP-0001"] });
 
       const before = await admin().ticket.list({ search: "P-KEEP-0001" });
       expect(before.total).toBe(2);

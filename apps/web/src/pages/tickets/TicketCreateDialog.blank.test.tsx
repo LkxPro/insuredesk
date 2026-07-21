@@ -67,7 +67,7 @@ function blankDetailPayload() {
     brokerageEntity: null,
     paymentChannel: null,
     internalOrderNumber: null,
-    policyNumber: null,
+    policyNumbers: [],
     userComplaintChannel: null,
     complaintReceiveChannel: null,
     customerName: null,
@@ -200,10 +200,12 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       expect(calls.some((call) => call.path === "ticket.create")).toBe(true);
     });
     const mutation = calls.find((call) => call.path === "ticket.create");
-    // feedbackTime defaults to the open instant, minute precision (秒归零)
+    // feedbackTime defaults to the open instant, minute precision (秒归零)；
+    // 多值保单号的「未填写」形态是空数组而非 null
     expect(mutation?.input).toEqual({
       ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
       feedbackTime: NOW.toISOString(),
+      policyNumbers: [],
     });
 
     // 建单后留列表 (issue #116): the dialog closes onto 工单管理, no detail opens

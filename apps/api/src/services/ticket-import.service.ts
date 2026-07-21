@@ -1,4 +1,6 @@
 import {
+  policyNumbersError,
+  splitPolicyNumbers,
   TICKET_FIELD_DESCRIPTORS,
   TICKET_IMPORT_HEADERS,
   TICKET_IMPORT_ROW_LIMIT,
@@ -252,6 +254,27 @@ function textColumn(
   };
 }
 
+function textListColumn(
+  descriptor: Extract<TicketFieldDescriptor, { type: "textList" }>,
+): ImportColumnSpec {
+  return {
+    header: descriptor.label,
+    field: descriptor.key,
+    parse: (raw) => {
+      if (raw instanceof Date) {
+        return notText(raw);
+      }
+      // 空白单元格 split 后即空数组（未填写），与其他列的「留空」同义
+      const values = splitPolicyNumbers(raw);
+      const error = policyNumbersError(values);
+      if (error) {
+        return { fail: error };
+      }
+      return { ok: values };
+    },
+  };
+}
+
 function enumColumn(
   descriptor: Extract<TicketFieldDescriptor, { type: "enum" }>,
 ): ImportColumnSpec {
@@ -344,6 +367,8 @@ function toColumnSpec(descriptor: TicketFieldDescriptor): ImportColumnSpec {
   switch (descriptor.type) {
     case "text":
       return textColumn(descriptor);
+    case "textList":
+      return textListColumn(descriptor);
     case "date":
       return wallClockColumn(descriptor);
     case "enum":

@@ -71,7 +71,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900654",
+    policyNumbers: ["P2026070900654"],
     userComplaintChannel: "400热线",
     customerName: "钱跟进",
     phone: "13800000002",

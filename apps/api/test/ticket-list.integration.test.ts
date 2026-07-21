@@ -55,7 +55,7 @@ describe("ticket list (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     userComplaintChannel: "400热线",
     customerName: "王小明",
     phone: "13800000000",
@@ -415,8 +415,8 @@ describe("ticket list (Testcontainers)", () => {
 
   describe("search: 工单号 / 客户姓名 / 保单号", () => {
     it("matches partial work-order number, customer name, and policy number", async () => {
-      const zhang = await makeTicket({ customerName: "张三丰", policyNumber: "PA-88001" });
-      const li = await makeTicket({ customerName: "李四", policyNumber: "PB-99002" });
+      const zhang = await makeTicket({ customerName: "张三丰", policyNumbers: ["PA-88001"] });
+      const li = await makeTicket({ customerName: "李四", policyNumbers: ["PB-99002"] });
 
       const byNumber = await manager().ticket.list({ search: zhang.workOrderNumber });
       expect(byNumber.items.map((t) => t.id)).toEqual([zhang.id]);
@@ -425,7 +425,7 @@ describe("ticket list (Testcontainers)", () => {
       expect(byName.items.map((t) => t.id)).toEqual([zhang.id]);
 
       // All three search fields match case-insensitively (names can be Latin)
-      const alice = await makeTicket({ customerName: "Alice Wang", policyNumber: "PC-77003" });
+      const alice = await makeTicket({ customerName: "Alice Wang", policyNumbers: ["PC-77003"] });
       const byLatinName = await manager().ticket.list({ search: "alice" });
       expect(byLatinName.items.map((t) => t.id)).toEqual([alice.id]);
 
@@ -438,6 +438,23 @@ describe("ticket list (Testcontainers)", () => {
     it("treats blank search as no search", async () => {
       await makeTicket();
       expect((await manager().ticket.list({ search: "   " })).total).toBe(1);
+    });
+
+    it("matches 保单号 by substring across multiple values, in their joined form", async () => {
+      const multi = await makeTicket({ policyNumbers: ["PD-11001", "PE-22002"] });
+      await makeTicket({ policyNumbers: [] });
+
+      // 第二个值的子串，及大小写不敏感
+      expect((await manager().ticket.list({ search: "22002" })).items.map((t) => t.id)).toEqual([
+        multi.id,
+      ]);
+      expect((await manager().ticket.list({ search: "pe-22" })).items.map((t) => t.id)).toEqual([
+        multi.id,
+      ]);
+      // 带空格的搜索词按展示口径（空格连接）跨值命中
+      expect((await manager().ticket.list({ search: "11001 PE" })).items.map((t) => t.id)).toEqual([
+        multi.id,
+      ]);
     });
   });
 
@@ -500,7 +517,7 @@ describe("ticket list (Testcontainers)", () => {
           project: "融盛",
           brokerageEntity: "东方大地",
           paymentChannel: "连连支付",
-          policyNumber: `P-${i}`,
+          policyNumbers: [`P-${i}`],
           userComplaintChannel: "400热线",
           customerName: `压测客户${i}`,
           phone: "13800000000",

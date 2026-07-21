@@ -79,7 +79,7 @@ describe("ticket assignment (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900321",
+    policyNumbers: ["P2026070900321"],
     userComplaintChannel: "400热线",
     customerName: "赵可分",
     phone: "13800000001",

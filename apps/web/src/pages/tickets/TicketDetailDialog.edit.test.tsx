@@ -78,7 +78,7 @@ function detailPayload(overrides: Record<string, unknown> = {}) {
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
     internalOrderNumber: null,
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     userComplaintChannel: "400热线",
     complaintReceiveChannel: "监管转办",
     customerName: "王小明",
@@ -399,7 +399,7 @@ describe("saving in place", () => {
       // Untouched fields ride along unchanged — the server diffs them out
       channelId: "ch-baosi",
       complaintLevel: "一般投诉",
-      policyNumber: "P2026070900123",
+      policyNumbers: ["P2026070900123"],
       feedbackTime: "2026-07-09T01:00:00.000Z",
       complaintReceiveChannel: "监管转办",
       contactTime: null,

@@ -78,7 +78,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026071000728",
+    policyNumbers: ["P2026071000728"],
     userComplaintChannel: "400热线",
     customerName: "孙完结",
     phone: "13800000003",

@@ -132,7 +132,7 @@ describe("ticket export (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     userComplaintChannel: "400热线",
     customerName: "王小明",
     phone: "13800000000",
@@ -254,6 +254,22 @@ describe("ticket export (Testcontainers)", () => {
       expect(body).toContain("支付客户一");
       expect(body).not.toContain("保司客户");
       expect(body).not.toContain("已删除客户");
+    });
+
+    it("exports 多值保单号 as one space-joined cell, [] as an empty cell", async () => {
+      const multi = await makeTicket({ policyNumbers: ["PX-001", "PX-002"] });
+      const blank = await makeTicket({ policyNumbers: [] });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv" });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      const policyIndex = rows[0]?.indexOf("保单号") ?? -1;
+      expect(policyIndex).toBeGreaterThan(-1);
+      const cellByNumber = new Map(rows.slice(1).map((cells) => [cells[0], cells[policyIndex]]));
+      expect(cellByNumber.get(multi.workOrderNumber)).toBe("PX-001 PX-002");
+      expect(cellByNumber.get(blank.workOrderNumber)).toBe("");
     });
 
     it("escapes fields containing commas and quotes per RFC 4180", async () => {

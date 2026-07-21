@@ -206,6 +206,27 @@ describe("role required ticket fields (Testcontainers)", () => {
       expect(detail.hasContacted).toBe(false);
     });
 
+    it("rejects required 保单号 left empty or absent (多值字段空数组＝未填写)", async () => {
+      await prisma.role.update({
+        where: { id: roleWithRequired.id },
+        data: { requiredTicketFields: ["policyNumbers"] },
+      });
+
+      await expect(
+        requiredUser().ticket.create({ ...validInput(), policyNumbers: [] }),
+      ).rejects.toThrow(/以下字段为必填项：保单号/);
+      await expect(requiredUser().ticket.create(validInput())).rejects.toThrow(
+        /以下字段为必填项：保单号/,
+      );
+
+      const result = await requiredUser().ticket.create({
+        ...validInput(),
+        policyNumbers: ["P2026-118"],
+      });
+      const detail = await requiredUser().ticket.detail({ id: result.id });
+      expect(detail.policyNumbers).toEqual(["P2026-118"]);
+    });
+
     it("enforces categoryId as a required field against the catalog shape", async () => {
       await prisma.role.update({
         where: { id: roleWithRequired.id },

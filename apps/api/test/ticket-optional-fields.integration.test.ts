@@ -74,7 +74,12 @@ describe("optional business fields (Testcontainers)", () => {
 
       const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
       for (const column of NULLABLE_COLUMNS) {
-        expect(row[column], column).toBeNull();
+        if (column === "policyNumbers") {
+          // 多值字段没有 null 态：未填写＝空数组
+          expect(row[column], column).toEqual([]);
+        } else {
+          expect(row[column], column).toBeNull();
+        }
       }
       // System-derived fields are unaffected by the blankness
       expect(row.source).toBe("manual");
@@ -237,7 +242,7 @@ describe("optional business fields (Testcontainers)", () => {
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
         customerName: null,
-        policyNumber: null,
+        policyNumbers: [],
         channel: null,
         complaintLevel: null,
         dueAt: null,

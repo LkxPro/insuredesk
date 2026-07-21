@@ -74,7 +74,7 @@ function listItem(
     category: "理赔投诉",
     complaintLevel: "一般投诉",
     customerName: "王小明",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     status,
     displayStatus: status,
     assigneeId: assignee?.id ?? null,

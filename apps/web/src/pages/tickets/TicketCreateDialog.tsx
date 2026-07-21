@@ -21,9 +21,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 import {
   buildTicketFormSchema,
-  localDateTimeToIso,
   TicketFormFields,
   type TicketFormValues,
+  ticketFormValuesToInput,
 } from "./TicketFormFields";
 
 /**
@@ -44,7 +44,7 @@ function createDefaults(): TicketFormValues {
     brokerageEntity: "",
     paymentChannel: "",
     internalOrderNumber: "",
-    policyNumber: "",
+    policyNumbers: "",
     userComplaintChannel: "",
     complaintReceiveChannel: "",
     customerName: "",
@@ -110,13 +110,7 @@ export function TicketCreateDialog({
     },
   });
 
-  const onSubmit = form.handleSubmit((values) =>
-    create.mutate({
-      ...values,
-      feedbackTime: localDateTimeToIso(values.feedbackTime),
-      contactTime: localDateTimeToIso(values.contactTime),
-    }),
-  );
+  const onSubmit = form.handleSubmit((values) => create.mutate(ticketFormValuesToInput(values)));
 
   const busy = isSubmitting || create.isPending;
 

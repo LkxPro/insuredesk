@@ -79,7 +79,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900789",
+    policyNumbers: ["P2026070900789"],
     userComplaintChannel: "400热线",
     customerName: "赵待办",
     phone: "13800000003",

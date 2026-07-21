@@ -69,7 +69,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "SLA2026071000001",
+    policyNumbers: ["SLA2026071000001"],
     userComplaintChannel: "400热线",
     customerName: "王小明",
     phone: "13800000000",

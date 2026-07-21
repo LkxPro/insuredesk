@@ -201,7 +201,7 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ imported: 2 });
 
-    const tickets = await prisma.ticket.findMany({ orderBy: { policyNumber: "asc" } });
+    const tickets = await prisma.ticket.findMany({ orderBy: { workOrderNumber: "asc" } });
     expect(tickets).toHaveLength(2);
     const [leveled, unleveled] = tickets as [(typeof tickets)[0], (typeof tickets)[0]];
 
@@ -219,6 +219,8 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(leveled.feedbackTime?.toISOString()).toBe("2026-07-01T02:00:00.000Z");
     expect(leveled.contactTime?.toISOString()).toBe("2026-06-30T13:15:00.000Z");
     expect(leveled.complaintReceiveChannel).toBe("监管转办");
+    expect(leveled.policyNumbers).toEqual(["P202607010001"]);
+    expect(unleveled.policyNumbers).toEqual(["P202607010002"]);
     expect(leveled.nuclearBodyStatus).toBe("待核实");
     expect(leveled.hasContacted).toBe(true);
     expect(leveled.priority).toBe("urgent");
@@ -258,6 +260,45 @@ describe("ticket import upload (Testcontainers)", () => {
       expect(log.operatorId).toBe(importerUser.id);
       expect(log.operatorName).toBe("导入员一号");
     }
+  });
+
+  it("保单号列：空白分隔多值拆分去重入库，单个超长或超量整批拒绝", async () => {
+    const session = await sessionFor("importer");
+    const ok = await uploadRequest(
+      session,
+      await buildFile([{ 客户姓名: "多保单客户", 保单号: "  P-1   P-2 P-1 " }]),
+    );
+    expect(ok.statusCode).toBe(200);
+    const ticket = await prisma.ticket.findFirstOrThrow({
+      where: { customerName: "多保单客户" },
+    });
+    expect(ticket.policyNumbers).toEqual(["P-1", "P-2"]);
+
+    const tooLong = await uploadRequest(session, await buildFile([{ 保单号: "P".repeat(101) }]));
+    expect(tooLong.statusCode).toBe(400);
+    expect((tooLong.json() as { rowErrors: unknown[] }).rowErrors).toEqual([
+      expect.objectContaining({
+        row: 2,
+        column: "保单号",
+        message: expect.stringContaining("单个保单号超出最大长度"),
+      }),
+    ]);
+
+    const tooMany = await uploadRequest(
+      session,
+      await buildFile([{ 保单号: Array.from({ length: 51 }, (_, i) => `P-${i}`).join(" ") }]),
+    );
+    expect(tooMany.statusCode).toBe(400);
+    expect((tooMany.json() as { rowErrors: unknown[] }).rowErrors).toEqual([
+      expect.objectContaining({
+        row: 2,
+        column: "保单号",
+        message: expect.stringContaining("数量上限"),
+      }),
+    ]);
+
+    // 拒绝的两批零入库
+    expect(await prisma.ticket.count()).toBe(1);
   });
 
   it("lands both-filled 完结 rows as completed, both-empty rows as unassigned, in one batch", async () => {

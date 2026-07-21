@@ -66,7 +66,7 @@ describe("assigned notifications (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900456",
+    policyNumbers: ["P2026070900456"],
     userComplaintChannel: "400热线",
     customerName: "钱通知",
     phone: "13800000002",

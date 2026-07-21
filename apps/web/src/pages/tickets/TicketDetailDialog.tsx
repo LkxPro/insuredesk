@@ -34,7 +34,11 @@ import { DeleteTicketDialog } from "./DeleteTicketDialog";
 import { ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { formDefaults, TicketDetailField } from "./TicketDetailFields";
-import { localDateTimeToIso, type TicketFormValues, ticketFormSchema } from "./TicketFormFields";
+import {
+  type TicketFormValues,
+  ticketFormSchema,
+  ticketFormValuesToInput,
+} from "./TicketFormFields";
 
 /**
  * 工单详情 as a modal over 工单管理, driven by the /tickets/:id route (same
@@ -113,7 +117,7 @@ const EMPTY_FORM: TicketFormValues = {
   brokerageEntity: "",
   paymentChannel: "",
   internalOrderNumber: "",
-  policyNumber: "",
+  policyNumbers: "",
   userComplaintChannel: "",
   complaintReceiveChannel: "",
   customerName: "",
@@ -271,12 +275,7 @@ export function TicketDetailDialog({
 
   const onSubmit = form.handleSubmit((values) => {
     if (!ticket) return;
-    edit.mutate({
-      ticketId: ticket.id,
-      ...values,
-      feedbackTime: localDateTimeToIso(values.feedbackTime),
-      contactTime: localDateTimeToIso(values.contactTime),
-    });
+    edit.mutate({ ticketId: ticket.id, ...ticketFormValuesToInput(values) });
   });
 
   const renderSections = (t: NonNullable<typeof ticket>) => {
@@ -307,7 +306,7 @@ export function TicketDetailDialog({
           {field("brokerageEntity")}
           {field("paymentChannel")}
           {field("internalOrderNumber")}
-          {field("policyNumber")}
+          {field("policyNumbers")}
           {field("userComplaintChannel")}
           {field("complaintReceiveChannel")}
         </Section>

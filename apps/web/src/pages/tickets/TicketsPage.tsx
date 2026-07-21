@@ -2,6 +2,7 @@ import {
   BATCH_ASSIGN_LIMIT,
   COMPLAINT_LEVELS,
   isTicketInFlight,
+  joinPolicyNumbers,
   TICKET_DISPLAY_STATUSES,
   TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
@@ -512,7 +513,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 <TableHead>工单号</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>{TICKET_FIELDS.customerName.label}</TableHead>
-                <TableHead>{TICKET_FIELDS.policyNumber.label}</TableHead>
+                <TableHead>{TICKET_FIELDS.policyNumbers.label}</TableHead>
                 <TableHead>{TICKET_FIELDS.channelId.overrides.listLabel}</TableHead>
                 <TableHead>{TICKET_FIELDS.complaintLevel.label}</TableHead>
                 <TableHead>来源</TableHead>
@@ -581,7 +582,13 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                       <StatusBadge status={ticket.displayStatus} />
                     </TableCell>
                     <TableCell>{ticket.customerName ?? <Unknown />}</TableCell>
-                    <TableCell>{ticket.policyNumber ?? <Unknown />}</TableCell>
+                    <TableCell>
+                      {ticket.policyNumbers.length > 0 ? (
+                        joinPolicyNumbers(ticket.policyNumbers)
+                      ) : (
+                        <Unknown />
+                      )}
+                    </TableCell>
                     <TableCell>{ticket.channel ?? <Unknown />}</TableCell>
                     <TableCell>{ticket.complaintLevel ?? <Unknown />}</TableCell>
                     <TableCell>{TICKET_SOURCE_LABELS[ticket.source]}</TableCell>

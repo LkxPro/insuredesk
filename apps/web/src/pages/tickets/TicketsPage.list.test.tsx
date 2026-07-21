@@ -56,7 +56,7 @@ type ListItem = {
   category: string;
   complaintLevel: string;
   customerName: string;
-  policyNumber: string;
+  policyNumbers: string[];
   status: string;
   displayStatus: string;
   assigneeName: string | null;
@@ -73,7 +73,7 @@ function listItem(overrides: Partial<ListItem> = {}): ListItem {
     category: "投诉-保费收取问题",
     complaintLevel: "一般投诉",
     customerName: "王小明",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     status: "processing",
     displayStatus: "processing",
     assigneeName: "李客服",

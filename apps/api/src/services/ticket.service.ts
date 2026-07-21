@@ -98,9 +98,9 @@ export async function computeSlaStamp(
 }
 
 /**
- * 校验角色建单必填字段集：每项属于清单且值非空（三态字段必须明确选是/否）。
- * 缺失字段一次性全部报出，字段名＝描述表标准名（与表单可见 label 对上）。
- * 读取时忽略未知 key（防御字段改名）。
+ * 校验角色建单必填字段集：每项属于清单且值非空（三态字段必须明确选是/否，
+ * 多值字段的空数组＝未填写）。缺失字段一次性全部报出，字段名＝描述表标准名
+ * （与表单可见 label 对上）。读取时忽略未知 key（防御字段改名）。
  */
 function validateRequiredFields(input: TicketCreateData, requiredFields: string[]): void {
   const missingLabels: string[] = [];
@@ -109,7 +109,7 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
       continue;
     }
     const value = input[field as TicketCreateFieldKey];
-    if (value === null || value === undefined) {
+    if (value === null || value === undefined || (Array.isArray(value) && value.length === 0)) {
       missingLabels.push(TICKET_FIELDS[field as TicketCreateFieldKey].label);
     }
   }
@@ -208,6 +208,23 @@ type TicketListFilters = Pick<
 >;
 
 /**
+ * 保单号搜索支的命中 id 预取。搜索契约是子串、不区分大小写，且以各值的
+ * 空格连接形态整体匹配（带空格的搜索词可跨值命中）；Prisma 的标量数组
+ * 过滤器只有整项精确匹配，表达不了这条谓词，故走 raw SQL。
+ */
+async function searchPolicyNumbersTicketIds(
+  prisma: PrismaClient,
+  search: string,
+): Promise<string[]> {
+  // 直接 %拼接%、不转义 LIKE 元字符——Prisma `contains` 就是这么做的，工单号/
+  // 客户姓名两支同款；这支若单独转义，三支的搜索语义会分叉。
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM tickets WHERE array_to_string("policyNumbers", ' ') ILIKE ${`%${search}%`}
+  `;
+  return rows.map((row) => row.id);
+}
+
+/**
  * The ONE WHERE for "what this viewer's filtered list contains" — shared by
  * the paged list and the export so the two can never disagree. Applies:
  *
@@ -218,11 +235,12 @@ type TicketListFilters = Pick<
  * - the filters, with computed statuses resolved through the single-truth
  *   predicate module rather than restated here
  */
-export function buildTicketListWhere(
+export async function buildTicketListWhere(
+  prisma: PrismaClient,
   viewer: AuthenticatedUser,
   query: TicketListFilters,
   now: Date,
-): Prisma.TicketWhereInput {
+): Promise<Prisma.TicketWhereInput> {
   // Each filter is its own AND element so their inner ORs (base-status
   // predicate, search) can never collide.
   const filters: Prisma.TicketWhereInput[] = [];
@@ -249,7 +267,7 @@ export function buildTicketListWhere(
       OR: [
         { workOrderNumber: { contains: query.search, mode: "insensitive" } },
         { customerName: { contains: query.search, mode: "insensitive" } },
-        { policyNumber: { contains: query.search, mode: "insensitive" } },
+        { id: { in: await searchPolicyNumbersTicketIds(prisma, query.search) } },
       ],
     });
   }
@@ -287,7 +305,7 @@ export async function listTickets(
   query: TicketListQuery,
 ) {
   const now = clock.now();
-  const where = buildTicketListWhere(viewer, query, now);
+  const where = await buildTicketListWhere(prisma, viewer, query, now);
 
   const [rows, total] = await prisma.$transaction([
     prisma.ticket.findMany({
@@ -330,7 +348,7 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
     category: ticket.category?.name ?? null,
     complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     customerName: ticket.customerName,
-    policyNumber: ticket.policyNumber,
+    policyNumbers: ticket.policyNumbers,
     status,
     displayStatus: deriveDisplayStatus(status, ticket.dueAt, now),
     assigneeId: ticket.assigneeId,
@@ -403,7 +421,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     brokerageEntity: ticket.brokerageEntity,
     paymentChannel: ticket.paymentChannel,
     internalOrderNumber: ticket.internalOrderNumber,
-    policyNumber: ticket.policyNumber,
+    policyNumbers: ticket.policyNumbers,
     userComplaintChannel: ticket.userComplaintChannel,
     complaintReceiveChannel: ticket.complaintReceiveChannel,
     customerName: ticket.customerName,

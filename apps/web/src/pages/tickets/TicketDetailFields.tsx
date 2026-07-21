@@ -1,6 +1,7 @@
 import type { ComplaintLevel, NuclearBodyStatus, Priority } from "@insuredesk/shared";
 import {
   COMPLAINT_LEVELS,
+  joinPolicyNumbers,
   NUCLEAR_BODY_STATUSES,
   PRIORITY_LABELS,
   TICKET_FIELDS,
@@ -52,7 +53,7 @@ export interface EditableTicket {
   brokerageEntity: string | null;
   paymentChannel: string | null;
   internalOrderNumber: string | null;
-  policyNumber: string | null;
+  policyNumbers: string[];
   userComplaintChannel: string | null;
   complaintReceiveChannel: string | null;
   customerName: string | null;
@@ -79,7 +80,7 @@ export function formDefaults(ticket: EditableTicket): TicketFormValues {
     brokerageEntity: ticket.brokerageEntity ?? "",
     paymentChannel: ticket.paymentChannel ?? "",
     internalOrderNumber: ticket.internalOrderNumber ?? "",
-    policyNumber: ticket.policyNumber ?? "",
+    policyNumbers: joinPolicyNumbers(ticket.policyNumbers),
     userComplaintChannel: ticket.userComplaintChannel ?? "",
     complaintReceiveChannel: ticket.complaintReceiveChannel ?? "",
     customerName: ticket.customerName ?? "",
@@ -117,13 +118,15 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
       return ticket.priority ? PRIORITY_LABELS[ticket.priority] : null;
     case "customerRequest":
       return <span className="whitespace-pre-wrap">{ticket.customerRequest}</span>;
+    case "policyNumbers":
+      // [] = 未填写，交给调用方的 "—" 兜底
+      return ticket.policyNumbers.length > 0 ? joinPolicyNumbers(ticket.policyNumbers) : null;
     case "nuclearBodyStatus":
     case "complaintLevel":
     case "project":
     case "brokerageEntity":
     case "paymentChannel":
     case "internalOrderNumber":
-    case "policyNumber":
     case "userComplaintChannel":
     case "complaintReceiveChannel":
     case "customerName":

@@ -1,4 +1,5 @@
 import {
+  joinPolicyNumbers,
   PRIORITY_LABELS,
   type Priority,
   TICKET_CREATE_FIELD_KEYS,
@@ -51,12 +52,18 @@ const EDITABLE_FIELD_KEYS: [Exclude<EditableFieldKey, TicketCreateFieldKey>] ext
   ? readonly EditableFieldKey[]
   : never = TICKET_CREATE_FIELD_KEYS;
 
+type EditableValue = string | string[] | boolean | Date | null;
+
 /**
  * One remark-side value. Priorities render their Chinese labels (the stored
  * codes are English); datetimes render the unambiguous ISO instant — the
  * remark is a permanent audit string, so no viewer-local formatting here.
+ * 多值保单号按展示口径空格 join；空数组即未填写。
  */
-function formatValue(key: EditableFieldKey, value: string | boolean | Date | null): string {
+function formatValue(key: EditableFieldKey, value: EditableValue): string {
+  if (Array.isArray(value)) {
+    return value.length === 0 ? "（空）" : joinPolicyNumbers(value);
+  }
   if (value === null || value === "") {
     return "（空）";
   }
@@ -69,7 +76,16 @@ function formatValue(key: EditableFieldKey, value: string | boolean | Date | nul
   return key === "priority" ? PRIORITY_LABELS[value as Priority] : value;
 }
 
-function sameValue(before: string | boolean | Date | null, after: string | boolean | Date | null) {
+function sameValue(before: EditableValue, after: EditableValue) {
+  if (Array.isArray(before) || Array.isArray(after)) {
+    // 顺序参与比较：同一批值换个次序也算改动
+    return (
+      Array.isArray(before) &&
+      Array.isArray(after) &&
+      before.length === after.length &&
+      before.every((value, index) => value === after[index])
+    );
+  }
   if (before instanceof Date || after instanceof Date) {
     return before instanceof Date && after instanceof Date && before.getTime() === after.getTime();
   }

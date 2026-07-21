@@ -81,7 +81,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     userComplaintChannel: "400热线",
     customerName: "王小明",
     phone: "13800000000",
@@ -172,6 +172,50 @@ describe("ticket creation + detail (Testcontainers)", () => {
           data: { name: originalName },
         });
       }
+    });
+  });
+
+  describe("policyNumbers 多值契约（trim/去空/去重与上限）", () => {
+    it("persists multiple values; items are trimmed, blanks dropped, duplicates deduped case-sensitively", async () => {
+      const created = await manager().ticket.create({
+        ...baseInput,
+        policyNumbers: ["  P-001  ", "P-002", "P-001", " ", "p-001"],
+      });
+      const detail = await manager().ticket.detail({ id: created.id });
+      expect(detail.policyNumbers).toEqual(["P-001", "P-002", "p-001"]);
+
+      const listed = await manager().ticket.list({ search: created.workOrderNumber });
+      expect(listed.items[0]?.policyNumbers).toEqual(["P-001", "P-002", "p-001"]);
+    });
+
+    it("empty array and absent field both persist as [] (未填写)", async () => {
+      const explicit = await manager().ticket.create({ ...baseInput, policyNumbers: [] });
+      expect((await manager().ticket.detail({ id: explicit.id })).policyNumbers).toEqual([]);
+
+      const { policyNumbers: _omitted, ...withoutField } = baseInput;
+      const absent = await manager().ticket.create(withoutField);
+      expect((await manager().ticket.detail({ id: absent.id })).policyNumbers).toEqual([]);
+    });
+
+    it("rejects a single value over 100 chars and more than 50 deduped values", async () => {
+      await expect(
+        manager().ticket.create({ ...baseInput, policyNumbers: ["P".repeat(101)] }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      await expect(
+        manager().ticket.create({
+          ...baseInput,
+          policyNumbers: Array.from({ length: 51 }, (_, i) => `P-${i}`),
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      // 上限按去重后计数：50 个不同值加上重复项照常放行
+      const fifty = Array.from({ length: 50 }, (_, i) => `P-${i}`);
+      const created = await manager().ticket.create({
+        ...baseInput,
+        policyNumbers: [...fifty, "P-0"],
+      });
+      expect((await manager().ticket.detail({ id: created.id })).policyNumbers).toEqual(fifty);
     });
   });
 

@@ -59,7 +59,7 @@ export function RequiredFieldsChecklist({
             "brokerageEntity",
             "paymentChannel",
             "internalOrderNumber",
-            "policyNumber",
+            "policyNumbers",
             "userComplaintChannel",
             "complaintReceiveChannel",
           ].map((field) => (
