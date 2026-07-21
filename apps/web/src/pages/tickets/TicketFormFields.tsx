@@ -33,9 +33,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 
 /**
- * The shared basic-info form body: one field set serving both 新建工单 and
- * 编辑工单 — they are the same field list by design (所有基本信息字段均可编辑),
- * so the dialogs share this component instead of two drifting copies.
+ * The 建单 form body: the field set of 新建工单. 详情弹窗的原地编辑不走这里 ——
+ * 同一批字段在详情分区里由 TicketDetailFields 按原位渲染。
  *
  * Every field is optional: a fully blank form submits cleanly and unfilled
  * fields reach the server as null. No label says 选填 — optional is the rule,
@@ -44,7 +43,7 @@ import { trpc } from "@/lib/trpc";
  * held as local datetime strings ("" = unfilled) until submit, when the
  * caller converts them to absolute instants or null.
  *
- * 动态必填：建单表单据用户角色的必填集生成校验，编辑表单不受约束。必填字段标签后显示星号。
+ * 动态必填：建单表单据用户角色的必填集生成校验。必填字段标签后显示星号。
  */
 export function buildTicketFormSchema(requiredFields: readonly string[]) {
   let schema = ticketCreateInputSchema.extend({
@@ -97,10 +96,10 @@ export function localDateTimeToIso(value: string): string | null {
 }
 
 /** Radix Select forbids `value=""` items; stand-in for the "未设置" choice. */
-const UNSET = "__unset__";
+export const UNSET = "__unset__";
 
 /** hasContacted is tri-state (是/否/未知) — a checkbox can't say "unknown". Radix 不收布尔 value，转码为哨兵串。 */
-const HAS_CONTACTED_OPTIONS = TICKET_FIELDS.hasContacted.options.map((option) => ({
+export const HAS_CONTACTED_OPTIONS = TICKET_FIELDS.hasContacted.options.map((option) => ({
   value: option.value ? "yes" : "no",
   label: option.label,
 }));
@@ -117,7 +116,7 @@ export interface CurrentCatalogOption {
  * since-停用 value keeps it as an extra labelled option, so "保持原值" works
  * while other disabled rows stay unselectable.
  */
-function withCurrentOption(
+export function withCurrentOption(
   options: ReadonlyArray<{ id: string; name: string }>,
   current: CurrentCatalogOption | null | undefined,
 ) {

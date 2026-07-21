@@ -1,9 +1,10 @@
 import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Toaster } from "@/components/ui/sonner";
 import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 import { TEST_ROLES } from "@/test/roles";
@@ -11,12 +12,15 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Detail-dialog entry points: 编辑 exists for ticket.edit holders in
- * ANY status (已完结 included) and submits the full basic-info payload —
- * status not among the fields; 删除 exists only for ticket.delete holders,
- * fires nothing until the double-confirmation dialog's destructive confirm,
- * then leaves for the list. Same faked-fetch tRPC pipeline and useAuth-seam
- * mock as the follow-up/resolve tests.
+ * Detail-dialog entry points: 编辑 exists for ticket.edit holders in ANY
+ * status (已完结 included) and switches the SAME dialog to edit mode in
+ * place — editable fields become controls at their read-only positions,
+ * system/SLA sections stay read-only, changed fields carry a 已修改
+ * highlight, and 取消/保存 returns to read-only without ever closing the
+ * dialog. 删除 exists only for ticket.delete holders, fires nothing until
+ * the double-confirmation dialog's destructive confirm, then leaves for the
+ * list. Same faked-fetch tRPC pipeline and useAuth-seam mock as the
+ * follow-up/resolve tests.
  */
 
 const auth = vi.hoisted(() => ({
@@ -131,8 +135,14 @@ function respond(path: string, input: unknown): unknown {
     return detail;
   }
   if (path === "ticket.edit") {
-    const { ticketId } = input as { ticketId: string };
-    return { id: ticketId, workOrderNumber: "WO100001", changedFields: ["customerName"] };
+    const { ticketId, customerName } = input as { ticketId: string; customerName: string };
+    // The server diffs submitted values against the stored row; tests only
+    // ever change 客户姓名, so the canned diff keys off it
+    return {
+      id: ticketId,
+      workOrderNumber: "WO100001",
+      changedFields: customerName === detail.customerName ? [] : ["customerName"],
+    };
   }
   if (path === "ticket.delete") {
     const { ticketId } = input as { ticketId: string };
@@ -189,6 +199,7 @@ function renderDetail() {
           <MemoryRouter initialEntries={["/tickets/t1"]}>
             <AppRoutes />
           </MemoryRouter>
+          <Toaster />
         </ThemeProvider>
       </QueryClientProvider>
     </trpc.Provider>,
@@ -222,8 +233,112 @@ describe("编辑 entry-point gating", () => {
   });
 });
 
-describe("editing from the dialog", () => {
-  it("prefills the current values, submits the full payload, then refetches the detail", async () => {
+describe("in-place edit mode (原地切换)", () => {
+  it("switches the same dialog: editable fields become inputs, system/SLA sections stay read-only text", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+
+    // No second dialog ever opens
+    await screen.findByLabelText("客户姓名");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    const dialog = within(screen.getByRole("dialog"));
+
+    // Editable field at its read-only position, prefilled
+    expect(dialog.getByLabelText("客户姓名")).toHaveValue("王小明");
+    expect(dialog.getByRole("combobox", { name: /客诉类别/ })).toHaveTextContent("理赔投诉");
+
+    // System fields (工单号/创建时间/来源) and SLA fields keep rendering as text
+    expect(dialog.getByText("工单号")).toBeInTheDocument();
+    expect(dialog.getByText("处理时限")).toBeInTheDocument();
+    expect(dialog.queryByLabelText("工单号")).not.toBeInTheDocument();
+    expect(dialog.queryByLabelText("处理时限")).not.toBeInTheDocument();
+
+    // Lifecycle actions stay out of the way while editing
+    expect(dialog.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(dialog.queryByRole("button", { name: "完结工单" })).not.toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: "保存修改" })).toBeInTheDocument();
+  });
+
+  it("keeps 完结信息 read-only in place when editing a completed ticket", async () => {
+    detail = detailPayload({
+      status: "completed",
+      displayStatus: "completed",
+      completionTime: "2026-07-10T02:00:00.000Z",
+      completionStatus: "已解决",
+    });
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+
+    await screen.findByLabelText("客户姓名");
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("完结信息")).toBeInTheDocument();
+    expect(dialog.getByText("已解决")).toBeInTheDocument();
+    expect(dialog.queryByLabelText("完结状态")).not.toBeInTheDocument();
+  });
+});
+
+describe("取消 and 改动高亮", () => {
+  it("取消 returns to read-only with the draft discarded — no mutation, dialog stays open", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.change(await screen.findByLabelText("客户姓名"), { target: { value: "王大明" } });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+
+    expect(calls.some((call) => call.path === "ticket.edit")).toBe(false);
+    // Back to the read-only value inside the still-open dialog
+    expect(await screen.findByText("王小明")).toBeInTheDocument();
+    expect(screen.queryByLabelText("客户姓名")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
+  });
+
+  it("marks user-changed fields with a 已修改 highlight that clears on 取消", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    const nameInput = await screen.findByLabelText("客户姓名");
+    expect(screen.queryByText("已修改")).not.toBeInTheDocument();
+
+    fireEvent.change(nameInput, { target: { value: "王大明" } });
+    expect(await screen.findByText("已修改")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() => {
+      expect(screen.queryByText("已修改")).not.toBeInTheDocument();
+    });
+  });
+
+  it("marks a field cleared back to empty as changed too", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    await screen.findByLabelText("客户姓名");
+    fireEvent.click(screen.getByRole("button", { name: "清空时间" }));
+
+    expect(await screen.findByText("已修改")).toBeInTheDocument();
+  });
+});
+
+describe("saving in place", () => {
+  it("toasts 未修改任何字段 and returns to read-only when nothing changed", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    await screen.findByLabelText("客户姓名");
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    expect(await screen.findByText("未修改任何字段")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByLabelText("客户姓名")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("prefills the current values, submits the full payload, toasts, then refetches the detail", async () => {
     renderDetail();
 
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
@@ -252,6 +367,13 @@ describe("editing from the dialog", () => {
     });
     // status is not an editable field: never part of the payload
     expect(mutation?.input).not.toHaveProperty("status");
+
+    // Success toast, back to read-only, dialog never closed
+    expect(await screen.findByText("工单 WO100001 已更新")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByLabelText("客户姓名")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     // Fields, SLA derivations and the timeline all change server-side → refetch
     await waitFor(() => {

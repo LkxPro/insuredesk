@@ -43,9 +43,8 @@ function createDefaults(): TicketFormValues {
 
 /**
  * Manual ticket creation, presented as a modal dialog over 工单管理 rather
- * than a separate page. The field set and validation live in the shared
- * TicketFormFields (also serving 编辑工单); this dialog owns the blank
- * defaults and the ticket.create submit.
+ * than a separate page. The field set and validation live in TicketFormFields;
+ * this dialog owns the blank defaults and the ticket.create submit.
  */
 export function TicketCreateDialog({
   open,
