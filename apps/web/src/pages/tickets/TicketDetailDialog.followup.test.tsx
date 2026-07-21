@@ -11,7 +11,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 添加跟进 entry point on the detail page: the card exists only for
+ * 添加跟进 entry point in the detail dialog: the card exists only for
  * holders of ticket.process on an in-flight (assigned/processing) ticket —
  * mirroring the API guards — and submitting fires ticket.addComment with the
  * remark, omitting an unset 下次联系时间 as null. Same faked-fetch tRPC
@@ -128,6 +128,17 @@ function respond(path: string, input: unknown): unknown {
   }
   if (path === "ticket.detail") {
     return detail;
+  }
+  // The list renders behind the route-driven detail dialog
+  if (path === "ticket.list") {
+    return { items: [], total: 0, page: 1, pageSize: 20 };
+  }
+  if (
+    path === "channel.filterOptions" ||
+    path === "ticketCategory.filterOptions" ||
+    path === "completionStatus.filterOptions"
+  ) {
+    return [];
   }
   if (path === "ticket.addComment") {
     const { ticketId } = input as { ticketId: string };

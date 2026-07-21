@@ -11,7 +11,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 完结工单 entry point on the detail page: the button exists only for
+ * 完结工单 entry point in the detail dialog: the button exists only for
  * holders of ticket.process on an in-flight (assigned/processing) ticket —
  * mirroring the API guards — and confirming fires ticket.resolve with the
  * mandatory 完结状态目录引用 (options from completionStatus.options, 启用项
@@ -136,6 +136,17 @@ function respond(path: string, input: unknown): unknown {
   }
   if (path === "ticket.detail") {
     return detail;
+  }
+  // The list renders behind the route-driven detail dialog
+  if (path === "ticket.list") {
+    return { items: [], total: 0, page: 1, pageSize: 20 };
+  }
+  if (
+    path === "channel.filterOptions" ||
+    path === "ticketCategory.filterOptions" ||
+    path === "completionStatus.filterOptions"
+  ) {
+    return [];
   }
   if (path === "completionStatus.options") {
     return completionStatusOptions;

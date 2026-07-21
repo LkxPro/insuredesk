@@ -14,7 +14,7 @@ import { ThemeProvider } from "../../components/ThemeProvider";
  * Issue #43 UI regression, adjusted for #62: the 新建工单 form submits with
  * only feedbackTime prefilled (打开对话框的时刻) — no required-field validation
  * errors, every OTHER unfilled field reaching the wire as null — no label
- * carries 选填/非必填 wording, and the detail page renders a null-heavy ticket
+ * carries 选填/非必填 wording, and the detail dialog renders a null-heavy ticket
  * with consistent 未知 placeholders. Clearing feedbackTime restores the null
  * (未填写) semantics #43 relied on. Same faked-fetch tRPC pipeline and
  * useAuth-seam mock as the sibling ticket tests.

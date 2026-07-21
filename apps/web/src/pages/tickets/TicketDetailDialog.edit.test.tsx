@@ -11,7 +11,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Detail-page entry points: 编辑 exists for ticket.edit holders in
+ * Detail-dialog entry points: 编辑 exists for ticket.edit holders in
  * ANY status (已完结 included) and submits the full basic-info payload —
  * status not among the fields; 删除 exists only for ticket.delete holders,
  * fires nothing until the double-confirmation dialog's destructive confirm,
@@ -138,14 +138,18 @@ function respond(path: string, input: unknown): unknown {
     const { ticketId } = input as { ticketId: string };
     return { id: ticketId, workOrderNumber: "WO100001" };
   }
-  // Post-delete navigation target (工单管理) and the picker its toolbar loads
+  // The list renders behind the route-driven detail dialog; the option feeds
+  // serve both its filter toolbar and the edit dialog's pickers
   if (path === "ticket.list") {
     return { items: [], total: 0, page: 1, pageSize: 20 };
   }
   if (
     path === "ticket.assigneeOptions" ||
     path === "ticketCategory.options" ||
-    path === "channel.options"
+    path === "channel.options" ||
+    path === "channel.filterOptions" ||
+    path === "ticketCategory.filterOptions" ||
+    path === "completionStatus.filterOptions"
   ) {
     return [];
   }
@@ -366,7 +370,7 @@ describe("删除 entry-point gating and 二次确认", () => {
       ticketId: "t1",
     });
 
-    // The detail page is gone for good — the success path lands on the list
+    // The deleted ticket's dialog is gone for good — the success path closes it onto the list
     expect(await screen.findByRole("heading", { name: "工单管理" })).toBeInTheDocument();
   });
 

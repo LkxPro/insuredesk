@@ -26,7 +26,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,7 @@ import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
+import { TicketDetailDialog } from "./TicketDetailDialog";
 import { TicketImportDialog } from "./TicketImportDialog";
 import { downloadTicketExport } from "./ticket-export";
 
@@ -80,7 +81,10 @@ import { downloadTicketExport } from "./ticket-export";
  * enforced server-side; this page renders whatever the viewer may see.
  *
  * Creation stays a modal dialog over this page, driven by the /tickets/new
- * route (`createOpen`), shown only to holders of ticket.create.
+ * route (`createOpen`), shown only to holders of ticket.create. The detail
+ * reads the same way: /tickets/:id renders this list with TicketDetailDialog
+ * open, and the filter query string rides along both ways so closing the
+ * dialog lands on the list exactly as it was.
  *
  * Assignment adds two permission-gated entry points: a per-row 分配/改派
  * action (ticket.assign) and multi-select checkboxes feeding 批量分配
@@ -197,6 +201,9 @@ function ListSkeletonRows({ columnCount }: { columnCount: number }) {
 export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
+  // /tickets/:id renders this same page with the detail dialog open
+  const { id: detailId } = useParams<{ id: string }>();
+  const location = useLocation();
   const canCreate = hasPermission("ticket.create");
   const canAssign = hasPermission("ticket.assign");
   const canBatchAssign = hasPermission("ticket.batch_assign");
@@ -526,7 +533,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                   <TableRow
                     key={ticket.id}
                     className="cursor-pointer"
-                    onClick={() => navigate(`/tickets/${ticket.id}`)}
+                    // The filter query string rides to the detail and back
+                    onClick={() => navigate(`/tickets/${ticket.id}${location.search}`)}
                   >
                     {canBatchAssign && (
                       // onClick swallows the row's navigation click; the checkbox inside is keyboard-operable
@@ -541,7 +549,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                     )}
                     <TableCell>
                       <Link
-                        to={`/tickets/${ticket.id}`}
+                        to={`/tickets/${ticket.id}${location.search}`}
                         className="font-medium hover:underline"
                         onClick={(event) => event.stopPropagation()}
                       >
@@ -639,6 +647,16 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           open={createOpen}
           onOpenChange={(open) => {
             if (!open) navigate("/tickets");
+          }}
+        />
+      )}
+
+      {detailId && (
+        <TicketDetailDialog
+          open
+          ticketId={detailId}
+          onOpenChange={(open) => {
+            if (!open) navigate(`/tickets${location.search}`);
           }}
         />
       )}
