@@ -274,13 +274,17 @@ describe("ticket import upload (Testcontainers)", () => {
     });
     expect(ticket.policyNumbers).toEqual(["P-1", "P-2"]);
 
-    const tooLong = await uploadRequest(session, await buildFile([{ 保单号: "P".repeat(101) }]));
+    const offending = `坏单${"9".repeat(100)}`;
+    const tooLong = await uploadRequest(
+      session,
+      await buildFile([{ 保单号: `P-ok ${offending} P-fine` }]),
+    );
     expect(tooLong.statusCode).toBe(400);
     expect((tooLong.json() as { rowErrors: unknown[] }).rowErrors).toEqual([
       expect.objectContaining({
         row: 2,
         column: "保单号",
-        message: expect.stringContaining("单个保单号超出最大长度"),
+        message: expect.stringContaining(offending),
       }),
     ]);
 

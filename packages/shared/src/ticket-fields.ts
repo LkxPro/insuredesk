@@ -297,7 +297,8 @@ export function policyNumbersError(values: readonly string[]): string | null {
   const { maxItemLength, maxItems } = TICKET_FIELDS.policyNumbers;
   const tooLong = values.find((value) => value.length > maxItemLength);
   if (tooLong !== undefined) {
-    return `单个保单号超出最大长度 ${maxItemLength} 字（实际 ${tooLong.length} 字）`;
+    // 单元格里多个空格分隔的保单号，得让用户知道是哪个超长
+    return `保单号「${tooLong}」超出最大长度 ${maxItemLength} 字（实际 ${tooLong.length} 字）`;
   }
   if (values.length > maxItems) {
     return `保单号超出数量上限 ${maxItems} 个（实际 ${values.length} 个）`;
