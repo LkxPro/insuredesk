@@ -20,14 +20,15 @@ export default defineConfig({
     port: 5173,
     // Proxy API calls to the api in dev so the browser talks same-origin
     // (no CORS dance). /trpc carries queries; /api carries the login/logout
-    // REST endpoints (cookie handling). Point at the api's default PORT.
+    // REST endpoints (cookie handling). VITE_API_URL points at the api
+    // compose service; localhost only works when running vite on the host.
     proxy: {
       "/trpc": {
-        target: "http://localhost:3000",
+        target: process.env.VITE_API_URL ?? "http://localhost:3000",
         changeOrigin: true,
       },
       "/api": {
-        target: "http://localhost:3000",
+        target: process.env.VITE_API_URL ?? "http://localhost:3000",
         changeOrigin: true,
       },
     },
