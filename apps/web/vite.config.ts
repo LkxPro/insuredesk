@@ -15,6 +15,12 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["src/test/setup.ts"],
+    // Fork-per-core saturates the dev container's CPUs against the api/db
+    // services and flakes async-heavy suites. Cap concurrency; the waitFor/
+    // findBy polling window is widened separately in setup.ts (asyncUtilTimeout),
+    // and this outer per-test bound must stay above it so it never fires first.
+    maxWorkers: 4,
+    testTimeout: 15000,
   },
   server: {
     port: 5173,
