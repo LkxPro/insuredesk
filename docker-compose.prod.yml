@@ -1,9 +1,10 @@
 # InsureDesk single-machine production deployment (ADR 0007, ADR 0009).
 #
-# Two services: postgres + api. The API serves both the tRPC API and the built
-# web SPA (@fastify/static), and binds only to 127.0.0.1:3000 — the host's
-# existing nginx reverse-proxies public traffic to it (HTTPS/domain live there,
-# not here). No nginx container.
+# Three services: postgres + api + a daily backup sidecar. The API serves both
+# the tRPC API and the built web SPA (@fastify/static), and binds only to
+# 127.0.0.1:3000 — the host's existing nginx reverse-proxies public traffic to
+# it (HTTPS/domain live there, not here). No nginx container. The backup sidecar
+# dumps Postgres to the host on a schedule (ADR 0009); see its service block.
 #
 # The api service runs the release image pinned by IMAGE_TAG in the server-side
 # .env (upgrade = edit IMAGE_TAG, `pull insuredesk-api-prod`, `up -d`). The
@@ -70,6 +71,47 @@ services:
     ports:
       # Bind to loopback only — host nginx reverse-proxies to this. Never 0.0.0.0.
       - "127.0.0.1:3000:3000"
+    depends_on:
+      insuredesk-db-prod:
+        condition: service_healthy
+
+  # Service key is `backup` (not insuredesk-backup-prod like its siblings) so the
+  # documented `docker compose run --rm backup once` works — run/exec address the
+  # service key, and ADR 0009 pins that command. container_name stays on-pattern.
+  backup:
+    # Daily DB backup sidecar (ADR 0009). Same image as db so pg_dump matches the
+    # server Postgres exactly, and busybox brings crond — no bespoke image, no
+    # postgresql-client in the api image. No docker socket: it reaches Postgres
+    # over the compose network (pg_dump -h insuredesk-db-prod), not docker exec.
+    image: postgres:17-alpine
+    container_name: insuredesk-backup-prod
+    restart: unless-stopped
+    # `serve` backs up once on start (self-proof) then runs crond. Kept as the
+    # command (not baked into entrypoint) so `docker compose run --rm backup once`
+    # overrides only the subcommand — the single-shot entry reused for the manual
+    # pre-upgrade backup (docs/releasing.md).
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup-db.sh"]
+    command: ["serve"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # crond reads the 21:30 schedule in local time — must be Asia/Shanghai, not UTC.
+      TZ: Asia/Shanghai
+    volumes:
+      # Host bind mount, not a named volume: `down -v` can't reach it, `ls`/`scp`
+      # see it directly, moving off-box later is just `scp` (ADR 0009).
+      - ${BACKUP_DIR:-${HOME}/backups/insuredesk}:/backups
+      - ./scripts/backup-db.sh:/usr/local/bin/backup-db.sh:ro
+    healthcheck:
+      # Passive visibility only (ADR 0009): asserts a backup file newer than 25h
+      # exists, else `docker compose ps` shows unhealthy. No active alerting.
+      test: ["CMD", "sh", "/usr/local/bin/backup-db.sh", "check"]
+      interval: 1h
+      timeout: 10s
+      retries: 3
+      # First backup runs at startup; don't fail the check before it lands.
+      start_period: 90s
     depends_on:
       insuredesk-db-prod:
         condition: service_healthy

@@ -25,8 +25,8 @@ CalVer:`v<年>.<月>.<序号>`,如 `v2026.07.0`;同月第二次发布为
 ## 升级服务器
 
 ```bash
-# 升级前固定动作:手动备份一次(每日 cron 用的同一脚本)
-./scripts/backup-db.sh
+# 升级前固定动作:手动备份一次(与每日 sidecar 同一脚本、同一目录)
+docker compose -f docker-compose.prod.yml run --rm backup once
 
 # 钉新版本并拉起
 sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=v2026.07.1/' .env
@@ -48,9 +48,10 @@ GHCR 拉不动(受限网络)时走退路:`git fetch --tags && git checkout <tag>
 
 ## 备份
 
-宿主机 cron 每日调 `scripts/backup-db.sh`:`pg_dump` 到本机备份目录,保留
-14 天。cron 配置与恢复步骤见 `docs/deployment.md` → 备份与恢复。**已知
-风险:无异地副本,机器级故障 = 数据全失**(ADR 0009 明确接受)。
+backup sidecar 每日在容器内 `pg_dump` 到宿主机备份目录,保留 14 天(不再依赖
+宿主机 cron)。sidecar 说明、验证、手动备份与恢复步骤见 `docs/deployment.md`
+→ 备份与恢复。**已知风险:无异地副本,机器级故障 = 数据全失**(ADR 0009
+明确接受)。
 
 ## 待实施清单
 

@@ -45,7 +45,7 @@
 - **落盘**:宿主机 bind mount `~/backups/insuredesk`,gzip,保留 14 天。选
   宿主机目录而非具名卷——`down -v` 删不到、`ls`/`scp` 直接可见、日后搬异地
   只是 `scp`;不落 repo 内(`git clean` 会删、且进 `build:` 上下文)。
-- **升级前备份**:`make upgrade` 第一步 `docker compose run --rm backup`
+- **升级前备份**:`make upgrade` 第一步 `docker compose run --rm backup once`
   复用同镜像同脚本 dump 一次,与每日备份同一份逻辑、两个入口。
 - **可见性(仅被动)**:sidecar 带 compose healthcheck,断言 25h 内产出过
   新备份文件(日备周期 + 1h 余量,不在 21:30 边界抖动),否则
@@ -61,7 +61,7 @@
   「备份不依赖外部系统」冲突,不做。
 - **「文件在」≠「可恢复」**:healthcheck 只验证备份文件存在且新鲜,不验证
   能否灌回(大版本格式漂移、编码/扩展缺失等)。唯一凭据是定期恢复演练,
-  属运维流程(`docs/releasing.md` checklist),不做成功能。
+  属运维流程(`docs/deployment.md` 每季度恢复演练 checklist),不做成功能。
 - **绕过升级脚本**:手改 `.env` 的 `IMAGE_TAG` 后直接 `up -d` 会让迁移在
   无备份下执行。`make upgrade` 是唯一 sanctioned 升级路径,手动操作自负。
 
