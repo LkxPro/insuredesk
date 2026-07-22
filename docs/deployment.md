@@ -61,14 +61,17 @@ admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 
 
 升级、回滚的完整操作口径见 `docs/releasing.md`,要点:
 
-- 升级 = 升级前手动备份一次数据库 → 改 `.env` 里的 `IMAGE_TAG` 为新 tag →
-  `pull insuredesk-api-prod` → `up -d`。**只前滚**:镜像回滚仅限新版起不来且迁移未执行的
-  场景,迁移已执行后发现问题一律发 hotfix 版本(ADR 0009)。
+- 升级 = `make upgrade`。一条命令解析最新 CalVer、迁前备份并校验、把 `.env`
+  的 `IMAGE_TAG` 钉成那个具体 tag、`pull` + `up -d`;已是最新则直接退出、无
+  副作用。操作员不手敲版本号,`make upgrade` 是唯一 sanctioned 升级路径——手改
+  `IMAGE_TAG` 后直接 `up -d` 会让迁移无备份执行(ADR 0009 已知风险)。**只前滚**:
+  镜像回滚(把 `.env` 里的 `IMAGE_TAG` 改回上一个 tag 再 `up -d`)仅限新版起不来
+  且迁移未执行的场景,迁移已执行后发现问题一律发 hotfix 版本(ADR 0009)。
 - 数据库迁移随容器启动自动执行,无需手动操作。迁移失败会导致容器起不来
   (fail fast),用 `docker logs insuredesk-api-prod` 排查。
 - 数据不受影响:db 容器镜像未变不会重建,数据持久化在具名卷
   `insuredesk_postgres_data_prod` 中。
-- 新版本若引入新环境变量,先补进服务器上的 `.env` 再拉起(对照
+- 新版本若引入新环境变量,先补进服务器上的 `.env` 再 `make upgrade`(对照
   `.env.example` 的 diff;Release notes 顶部会标注部署注意事项)。
 
 旧镜像会残留,定期 `docker image prune -f` 清理。
@@ -96,13 +99,14 @@ sidecar 随 `up -d` 一起拉起,零手工配置。确认三处:
 
 ### 手动备份一次
 
-升级前先手动跑一次(见 `docs/releasing.md` 的升级步骤);临时需要时也用同一条命令:
+`make upgrade` 已把迁前备份焊进升级流程(自动跑同一条命令并校验产出),无需
+手动。临时需要额外备份时用:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm backup once
 ```
 
-与每日备份同一脚本、同一份逻辑,落同一目录。
+与每日备份、迁前备份同一脚本、同一份逻辑,落同一目录。
 
 ### 从备份恢复
 

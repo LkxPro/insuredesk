@@ -9,6 +9,10 @@ set -e
 # CHECKPOINT_DISABLE kills Prisma's update/telemetry phone-home in CI.
 export CI=true CHECKPOINT_DISABLE=1
 
+# Shell scripts aren't part of the pnpm workspace, so run their POSIX tests
+# here or they never execute in CI. Cheap and dep-free — do it first.
+sh scripts/upgrade.test.sh
+
 # One-shot containers lose corepack's shims and pnpm's config; point the store
 # at the bind-mounted path so the CI cache can persist it across runs.
 corepack enable

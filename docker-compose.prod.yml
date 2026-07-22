@@ -7,8 +7,8 @@
 # dumps Postgres to the host on a schedule (ADR 0009); see its service block.
 #
 # The api service runs the release image pinned by IMAGE_TAG in the server-side
-# .env (upgrade = edit IMAGE_TAG, `pull insuredesk-api-prod`, `up -d`). The
-# build: section is
+# .env. `make upgrade` resolves the latest CalVer, backs up, then rewrites
+# IMAGE_TAG + pulls + `up -d` (ADR 0009). The build: section is
 # the restricted-network fallback: checkout the same tag and `up -d --build`
 # produces the same artifact under the same image name.
 #
@@ -46,8 +46,7 @@ services:
   insuredesk-api-prod:
     # Pinned release image (GHCR is private — `docker login ghcr.io` with a PAT
     # before pulling). With both image: and build: present, Compose only builds
-    # when asked (`--build`); normal upgrades use `pull insuredesk-api-prod` +
-    # `up -d`.
+    # when asked (`--build`); normal upgrades run `make upgrade` (pull + up -d).
     image: ghcr.io/lkxpro/insuredesk-api:${IMAGE_TAG:?set IMAGE_TAG in .env, see docs/releasing.md}
     build:
       context: .

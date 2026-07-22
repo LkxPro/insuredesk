@@ -25,17 +25,20 @@ CalVer:`v<年>.<月>.<序号>`,如 `v2026.07.0`;同月第二次发布为
 ## 升级服务器
 
 ```bash
-# 升级前固定动作:手动备份一次(与每日 sidecar 同一脚本、同一目录)
-docker compose -f docker-compose.prod.yml run --rm backup once
-
-# 钉新版本并拉起
-sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=v2026.07.1/' .env
-docker compose -f docker-compose.prod.yml pull insuredesk-api-prod   # 私有镜像,需先 docker login ghcr.io
-docker compose -f docker-compose.prod.yml up -d
+make upgrade
 ```
 
-GHCR 拉不动(受限网络)时走退路:`git fetch --tags && git checkout <tag>`
-后 `up -d --build`,产物与镜像同源。
+一条命令干完(ADR 0009):脚本用 `git ls-remote --tags` 解析出最新 CalVer
+(与上文「发一个版本」的算号口径一致),当前已是最新则直接退出、无副作用;
+有新版则**迁前备份 → 校验 dump 非空 → 把 `.env` 的 `IMAGE_TAG` 写成那个具体
+tag → `pull` → `up -d`**。操作员不手敲版本号,但服务器 `.env` 始终钉着确定的
+tag,回滚有明确目标。备份是脚本第一步、迁移随容器启动执行,故迁前备份天然
+早于迁移。私有镜像需先 `docker login ghcr.io`(见 `docs/deployment.md`)。
+
+`make upgrade` 是唯一 sanctioned 升级路径。手改 `.env` 的 `IMAGE_TAG` 后直接
+`up -d` 会让迁移在无备份下执行,操作员自负(ADR 0009 已知风险)。GHCR 拉不动
+(受限网络)时走退路:`git fetch --tags && git checkout <tag>` 后
+`up -d --build`,产物与镜像同源。
 
 ## 回滚
 
@@ -63,5 +66,7 @@ backup sidecar 每日在容器内 `pg_dump` 到宿主机备份目录,保留 14 �
       退路;`.env.example` 增补 `IMAGE_TAG`;同步更新 `docs/deployment.md`
       的更新/回滚章节与 GHCR 登录说明
 - [x] 备份 cron 脚本与保留策略,写入部署文档
+- [x] `make upgrade` 一键升级(解析最新 CalVer → 迁前备份 → 钉版本 →
+      `pull` + `up -d`),升级/更新章节改为一条命令
 - [x] CI 增加生产 Dockerfile 构建校验(只构建不推送)
 - [x] 启用 Dependabot(npm + GitHub Actions,按周分组)
