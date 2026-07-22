@@ -50,7 +50,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${API_PORT:-3000}:3000"
     volumes:
       - .:/app
       - pnpm-store:/app/.pnpm-store
@@ -82,7 +82,7 @@ services:
       api:
         condition: service_started
     ports:
-      - "5173:5173"
+      - "${WEB_PORT:-5173}:5173"
     volumes:
       - .:/app
       - pnpm-store:/app/.pnpm-store

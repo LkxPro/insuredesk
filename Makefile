@@ -10,7 +10,7 @@ help:
 	@echo "  make shell    - Open shell in api container"
 
 up:
-	docker compose up -d --build
+	./scripts/dev-up.sh --build
 
 down:
 	docker compose down -v

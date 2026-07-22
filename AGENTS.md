@@ -17,6 +17,12 @@ web (port 5173). Hot reload works for both api and web. Use `make` commands for 
 generates + applies migration files (restarting the api service applies them too).
 Full dev setup in `README.md`; production deploy in `docs/deployment.md`.
 
+**In a git worktree** (`.worktrees/…`), always start the dev env with `scripts/dev-up.sh`
+(or `make up`), never bare `docker compose up`. Bare compose binds the fixed default host
+ports 3000/5173/5432, so parallel worktrees — and the main checkout — collide on them.
+`dev-up.sh` writes a per-worktree `.env` with deterministic, non-overlapping ports derived
+from the compose project name; the main checkout keeps the 3000/5173/5432 defaults.
+
 ## Agent skills
 
 ### Issue tracker

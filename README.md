@@ -29,6 +29,7 @@ make shell    # 进入 api 容器 shell
 - 清库重来：`docker compose down -v` 后重新 `docker compose up -d`。
 - 改 schema：`docker compose exec api pnpm db:migrate` 生成迁移文件并应用到开发库（重启 api 服务也会自动应用）。
 - 受限网络：在根目录创建 `.env` 设置 `NPM_CONFIG_REGISTRY` 和 `PRISMA_ENGINES_MIRROR` 切换镜像源。
+- 并行 worktree（`.worktrees/…`）：一律用 `scripts/dev-up.sh`（或 `make up`）启动，不要直接 `docker compose up`。裸 compose 会绑定固定的 3000/5173/5432，多个 worktree 之间以及和主仓库会抢同一批宿主机端口。`dev-up.sh` 按工程名的稳定哈希生成一份 per-worktree `.env`，把端口错开；主仓库不写 `.env`，沿用 3000/5173/5432。
 
 ## 文档
 
