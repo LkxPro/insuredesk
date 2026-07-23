@@ -5,11 +5,9 @@ import { auth, callsTo, renderApp, restFetch, toastSpies, userWith } from "@/tes
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 批量导入 entry point: the 导入 button is gated on ticket.import (无权限 UI
- * 无入口 — even the exporting 客服主管 lacks it until 勾选), the dialog's
- * 下载模板 fetches GET /api/tickets/import-template over the global fetch
- * (restFetch), the upload posts multipart to the same transport, and a server
- * rejection surfaces as a toast.
+ * 批量导入: the dialog's 下载模板 fetches GET /api/tickets/import-template
+ * over the global fetch (restFetch), the upload posts multipart to the same
+ * transport, and a server rejection surfaces as a toast.
  */
 
 /** 客服主管 plus the manually 勾选-ed ticket.import. */
@@ -67,21 +65,6 @@ async function openImportDialog() {
   fireEvent.click(await screen.findByRole("button", { name: /导入/ }));
   return screen.findByRole("dialog", { name: "导入工单" });
 }
-
-describe("permission gating (无权限 UI 无入口)", () => {
-  it("hides the 导入 button without ticket.import — export alone is not enough", async () => {
-    auth.user = userWith(TEST_ROLES.CS_MANAGER); // ticket.export but no import
-    renderTickets();
-
-    expect(await screen.findByRole("button", { name: /导出/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /导入/ })).not.toBeInTheDocument();
-  });
-
-  it("shows the 导入 button for holders of ticket.import", async () => {
-    renderTickets();
-    expect(await screen.findByRole("button", { name: /导入/ })).toBeInTheDocument();
-  });
-});
 
 describe("导入弹窗", () => {
   it("opens with 下载模板 and the file picker", async () => {

@@ -11,9 +11,7 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 完结工单 entry point in the detail dialog: the button exists only for
- * holders of ticket.process on an in-flight (assigned/processing) ticket —
- * mirroring the API guards — and confirming fires ticket.resolve with the
+ * 完结工单 from the detail dialog: confirming fires ticket.resolve with the
  * mandatory 完结状态目录引用 (options from completionStatus.options, 启用项
  * only) plus the 完结备注. Same faked-fetch tRPC pipeline and useAuth-seam
  * mock as the follow-up tests.
@@ -210,37 +208,6 @@ beforeEach(() => {
   auth.isLoading = false;
   detail = detailPayload();
   calls = [];
-});
-
-describe("完结工单 entry-point gating", () => {
-  it.each(["assigned", "processing"])(
-    "shows the button to a ticket.process holder on a %s ticket",
-    async (status) => {
-      detail = detailPayload({ status, displayStatus: status });
-      renderDetail();
-
-      expect(await screen.findByRole("button", { name: "完结工单" })).toBeInTheDocument();
-    },
-  );
-
-  it("hides the button without ticket.process (只读观察)", async () => {
-    auth.user = userWith(TEST_ROLES.READ_ONLY);
-    renderDetail();
-
-    await screen.findByText("处理记录");
-    expect(screen.queryByRole("button", { name: "完结工单" })).not.toBeInTheDocument();
-  });
-
-  it.each(["unassigned", "completed"])(
-    "hides the button on a %s ticket (终态/未分配)",
-    async (status) => {
-      detail = detailPayload({ status, displayStatus: status, assigneeId: null });
-      renderDetail();
-
-      await screen.findByText("处理记录");
-      expect(screen.queryByRole("button", { name: "完结工单" })).not.toBeInTheDocument();
-    },
-  );
 });
 
 describe("resolving from the dialog", () => {

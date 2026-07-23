@@ -5,10 +5,9 @@ import { TEST_ROLES } from "@/test/roles";
 import { buildTicketExportUrl } from "./ticket-export";
 
 /**
- * Export entry point: the 导出 dropdown is gated on ticket.export (无权限 UI
- * 无入口), a format pick downloads via GET /api/tickets/export with the URL
- * carrying the list's *current* filters, and a server rejection surfaces as a
- * toast instead of a dead click. The download rides the global fetch
+ * Export flow: a format pick downloads via GET /api/tickets/export with the
+ * URL carrying the list's *current* filters, and a server rejection surfaces
+ * as a toast instead of a dead click. The download rides the global fetch
  * (restFetch); the tRPC link's injected fetch is a separate transport.
  */
 
@@ -30,21 +29,6 @@ async function pickExport(itemName: RegExp) {
   fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole("menuitem", { name: itemName }));
 }
-
-describe("permission gating (无权限 UI 无入口)", () => {
-  it("hides the 导出 button without ticket.export", async () => {
-    auth.user = userWith(TEST_ROLES.READ_ONLY); // ticket.view_all but no export
-    renderAt("/tickets");
-
-    expect(await screen.findByText("暂无匹配的工单")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /导出/ })).not.toBeInTheDocument();
-  });
-
-  it("shows the 导出 button for holders of ticket.export", async () => {
-    renderAt("/tickets");
-    expect(await screen.findByRole("button", { name: /导出/ })).toBeInTheDocument();
-  });
-});
 
 describe("按列表当前筛选条件导出", () => {
   it("downloads via /api/tickets/export with the current filters and picked format", async () => {

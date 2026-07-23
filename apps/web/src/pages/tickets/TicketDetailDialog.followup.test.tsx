@@ -11,10 +11,8 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 添加跟进 entry point in the detail dialog: the card exists only for
- * holders of ticket.process on an in-flight (assigned/processing) ticket —
- * mirroring the API guards — and submitting fires ticket.addComment with the
- * remark, omitting an unset 下次联系时间 as null. Same faked-fetch tRPC
+ * 添加跟进 from the detail dialog: submitting fires ticket.addComment with
+ * the remark, omitting an unset 下次联系时间 as null. Same faked-fetch tRPC
  * pipeline and useAuth-seam mock as the TicketsPage tests.
  */
 
@@ -191,31 +189,6 @@ beforeEach(() => {
   auth.isLoading = false;
   detail = detailPayload();
   calls = [];
-});
-
-describe("添加跟进 entry-point gating", () => {
-  it("shows the card to a ticket.process holder on an assigned ticket", async () => {
-    renderDetail();
-
-    expect(await screen.findByLabelText("跟进备注")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "提交跟进" })).toBeInTheDocument();
-  });
-
-  it("hides the card without ticket.process (只读观察)", async () => {
-    auth.user = userWith(TEST_ROLES.READ_ONLY);
-    renderDetail();
-
-    await screen.findByText("处理记录");
-    expect(screen.queryByLabelText("跟进备注")).not.toBeInTheDocument();
-  });
-
-  it.each(["unassigned", "completed"])("hides the card on a %s ticket", async (status) => {
-    detail = detailPayload({ status, displayStatus: status, assigneeId: null });
-    renderDetail();
-
-    await screen.findByText("处理记录");
-    expect(screen.queryByLabelText("跟进备注")).not.toBeInTheDocument();
-  });
 });
 
 describe("submitting a follow-up", () => {

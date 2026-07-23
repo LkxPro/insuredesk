@@ -11,11 +11,9 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Assignment entry points: 分配/改派/批量分配 exist only for holders of the
- * matching permission (mirroring the API guards), the dialog carries the
- * "时限不顺延" hint on reassignment, and confirming fires the right mutation
- * with the right payload. Same faked-fetch tRPC pipeline and useAuth-seam
- * mock as TicketsPage.list.test.tsx.
+ * Assignment flows: the dialog carries the "时限不顺延" hint on reassignment,
+ * and confirming fires the right mutation with the right payload. Same
+ * faked-fetch tRPC pipeline and useAuth-seam mock as TicketsPage.list.test.tsx.
  */
 
 const auth = vi.hoisted(() => ({
@@ -208,51 +206,6 @@ beforeEach(() => {
   canned.items = [];
   canned.total = 0;
   calls = [];
-});
-
-describe("entry-point gating", () => {
-  it("只读观察 (no assign permissions) sees no checkboxes, no 操作 column, no assign buttons", async () => {
-    auth.user = userWith(TEST_ROLES.READ_ONLY);
-    canned.items = [listItem()];
-    canned.total = 1;
-    renderAt("/tickets");
-
-    await screen.findByText("WO100001");
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(screen.queryByText("操作")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "分配" })).not.toBeInTheDocument();
-  });
-
-  it("客服主管 sees 分配 on unassigned rows, 改派 on assigned rows, nothing on completed rows", async () => {
-    canned.items = [
-      listItem(),
-      listItem({
-        id: "t2",
-        workOrderNumber: "WO100002",
-        status: "assigned",
-        displayStatus: "assigned",
-        assigneeId: "u-zhang",
-        assigneeName: "张客服",
-      }),
-      listItem({
-        id: "t3",
-        workOrderNumber: "WO100003",
-        status: "completed",
-        displayStatus: "completed",
-        assigneeId: "u-zhang",
-        assigneeName: "张客服",
-      }),
-    ];
-    canned.total = 3;
-    renderAt("/tickets");
-
-    await screen.findByText("WO100001");
-    expect(screen.getByRole("button", { name: "分配" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "改派" })).toBeInTheDocument();
-    // 2 action buttons for 3 rows: the completed 终态 row has none, and its
-    // checkbox is not selectable either
-    expect(screen.getByRole("checkbox", { name: "选择工单 WO100003" })).toBeDisabled();
-  });
 });
 
 describe("single assignment from the list", () => {

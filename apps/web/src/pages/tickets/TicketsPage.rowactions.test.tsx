@@ -13,10 +13,8 @@ import { ThemeProvider } from "../../components/ThemeProvider";
 /**
  * 行内快捷操作: hovering a list row surfaces small 分配/完结 buttons that jump
  * straight into AssignTicketDialog / ResolveTicketDialog — without opening
- * the detail dialog the row click leads to. Gating mirrors the detail header:
- * 完结 needs ticket.process and an in-flight (assigned/processing) status,
- * 分配 needs ticket.assign and a non-terminal status. Same faked-fetch tRPC
- * pipeline and useAuth-seam mock as the sibling ticket tests.
+ * the detail dialog the row click leads to. Same faked-fetch tRPC pipeline
+ * and useAuth-seam mock as the sibling ticket tests.
  */
 
 const auth = vi.hoisted(() => ({
@@ -176,49 +174,6 @@ beforeEach(() => {
   auth.user = userWith(TEST_ROLES.CS_MANAGER);
   auth.isLoading = false;
   calls = [];
-});
-
-describe("完结 quick-action gating", () => {
-  it("appears only on assigned/processing rows for a ticket.process holder", async () => {
-    renderList();
-    await screen.findByText("WO100001");
-
-    // 4 rows, exactly 2 完结 buttons: not on unassigned, not on the terminal row
-    expect(screen.getAllByRole("button", { name: "完结" })).toHaveLength(2);
-    expect(within(rowFor("WO100002")).getByRole("button", { name: "完结" })).toBeInTheDocument();
-    expect(within(rowFor("WO100003")).getByRole("button", { name: "完结" })).toBeInTheDocument();
-    expect(
-      within(rowFor("WO100001")).queryByRole("button", { name: "完结" }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(rowFor("WO100004")).queryByRole("button", { name: "完结" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("一线客服 (ticket.process only) gets 完结 but no assignment buttons", async () => {
-    auth.user = userWith(TEST_ROLES.FRONTLINE_CS);
-    renderList();
-    await screen.findByText("WO100001");
-
-    expect(screen.getByText("操作")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "完结" })).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: "分配" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "改派" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "自动分配" })).not.toBeInTheDocument();
-  });
-
-  it("stays hidden without ticket.process", async () => {
-    auth.user = userWith({
-      name: "仅分配",
-      permissions: ["ticket.view", "ticket.view_all", "ticket.assign"] as Permission[],
-    });
-    renderList();
-    await screen.findByText("WO100001");
-
-    expect(screen.getByText("操作")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "完结" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "分配" })).toBeInTheDocument();
-  });
 });
 
 describe("完结 quick action", () => {

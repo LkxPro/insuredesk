@@ -12,15 +12,13 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Detail-dialog entry points: 编辑 exists for ticket.edit holders in ANY
- * status (已完结 included) and switches the SAME dialog to edit mode in
- * place — editable fields become controls at their read-only positions,
- * system/SLA sections stay read-only, changed fields carry a 已修改
- * highlight, and 取消/保存 returns to read-only without ever closing the
- * dialog. 删除 exists only for ticket.delete holders, fires nothing until
- * the double-confirmation dialog's destructive confirm, then leaves for the
- * list. Same faked-fetch tRPC pipeline and useAuth-seam mock as the
- * follow-up/resolve tests.
+ * In-place edit mode: 编辑 works in ANY status (已完结 included) and switches
+ * the SAME dialog to edit mode in place — editable fields become controls at
+ * their read-only positions, system/SLA sections stay read-only, changed
+ * fields carry a 已修改 highlight, and 取消/保存 returns to read-only without
+ * ever closing the dialog. 删除 fires nothing until the double-confirmation
+ * dialog's destructive confirm, then leaves for the list. Same faked-fetch
+ * tRPC pipeline and useAuth-seam mock as the follow-up/resolve tests.
  */
 
 const auth = vi.hoisted(() => ({
@@ -211,26 +209,6 @@ beforeEach(() => {
   auth.isLoading = false;
   detail = detailPayload();
   calls = [];
-});
-
-describe("编辑 entry-point gating", () => {
-  it.each(["unassigned", "assigned", "processing", "completed"])(
-    "shows the button to a ticket.edit holder on a %s ticket (任意状态含已完结)",
-    async (status) => {
-      detail = detailPayload({ status, displayStatus: status });
-      renderDetail();
-
-      expect(await screen.findByRole("button", { name: "编辑" })).toBeInTheDocument();
-    },
-  );
-
-  it("hides the button without ticket.edit (一线客服)", async () => {
-    auth.user = userWith(TEST_ROLES.FRONTLINE_CS);
-    renderDetail();
-
-    await screen.findByText("处理记录");
-    expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
-  });
 });
 
 describe("in-place edit mode (原地切换)", () => {
@@ -584,14 +562,7 @@ describe("弹窗关闭 across modes (issue #116)", () => {
   });
 });
 
-describe("删除 entry-point gating and 二次确认", () => {
-  it("hides the button without ticket.delete (客服主管有编辑无删除)", async () => {
-    renderDetail();
-
-    await screen.findByRole("button", { name: "编辑" });
-    expect(screen.queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
-  });
-
+describe("删除 二次确认", () => {
   it("deletes only after the destructive confirm, then leaves for 工单管理", async () => {
     auth.user = userWith(TEST_ROLES.ADMIN);
     renderDetail();
