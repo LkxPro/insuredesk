@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { isCompleteLocalDate, joinLocalDateTime, splitLocalDateTime } from "@/lib/local-date-time";
 
 /**
- * Calendar + native minute input. Controlled around a LOCAL datetime string:
+ * Calendar + explicit 24-hour minute input. Controlled around a LOCAL datetime string:
  * complete `YYYY-MM-DDTHH:mm`, date-only `YYYY-MM-DDT`, time-only `THH:mm`, or
  * `""` when unset. The form validates the pair and owns conversion to an
  * absolute instant.
@@ -70,6 +70,29 @@ export function DateTimePicker({
   const referenceYear = selectedYear ?? referenceYearRef.current;
   const referenceDate = useMemo(() => new Date(referenceYear, 0, 1), [referenceYear]);
   const shortDate = toShortDate(parts.date);
+  const timeMaskOptions = useMemo(
+    () => ({
+      mask: "HH:MM",
+      lazy: true,
+      eager: "append" as const,
+      overwrite: true,
+      blocks: {
+        HH: {
+          mask: MaskedRange,
+          from: 0,
+          to: 23,
+          maxLength: 2,
+        },
+        MM: {
+          mask: MaskedRange,
+          from: 0,
+          to: 59,
+          maxLength: 2,
+        },
+      },
+    }),
+    [],
+  );
   const dateMaskOptions = useMemo(
     () => ({
       mask: Date,
@@ -105,22 +128,37 @@ export function DateTimePicker({
     }),
     [referenceDate],
   );
-  const { ref: dateInputRef, setValue: setMaskedDate } = useIMask<HTMLInputElement>(
-    dateMaskOptions,
-    {
-      defaultValue: shortDate,
-      onAccept: (maskedDate) => {
-        const nextDate = toLocalDate(maskedDate, referenceDate);
-        if (nextDate !== parts.date) {
-          onChange(joinLocalDateTime({ date: nextDate, time: parts.time }));
-        }
-      },
+  const { ref: dateInputRef, maskRef: dateMaskRef } = useIMask<HTMLInputElement>(dateMaskOptions, {
+    defaultValue: shortDate,
+    onAccept: (maskedDate) => {
+      const nextDate = toLocalDate(maskedDate, referenceDate);
+      if (nextDate !== parts.date) {
+        onChange(joinLocalDateTime({ date: nextDate, time: parts.time }));
+      }
     },
-  );
+  });
+  const { ref: timeInputRef, maskRef: timeMaskRef } = useIMask<HTMLInputElement>(timeMaskOptions, {
+    defaultValue: parts.time,
+    onAccept: (maskedTime) => {
+      if (maskedTime !== parts.time) {
+        onChange(joinLocalDateTime({ date: parts.date, time: maskedTime }));
+      }
+    },
+  });
 
   useEffect(() => {
-    setMaskedDate(shortDate);
-  }, [setMaskedDate, shortDate]);
+    const mask = dateMaskRef.current;
+    if (mask && mask.value !== shortDate) {
+      mask.value = shortDate;
+    }
+  }, [dateMaskRef, shortDate]);
+
+  useEffect(() => {
+    const mask = timeMaskRef.current;
+    if (mask && mask.value !== parts.time) {
+      mask.value = parts.time;
+    }
+  }, [parts.time, timeMaskRef]);
 
   useEffect(() => {
     if (selectedYear !== undefined) {
@@ -181,16 +219,15 @@ export function DateTimePicker({
         </InputGroup>
 
         <Input
+          ref={timeInputRef}
           id={`${id}-time`}
-          type="time"
-          step={60}
-          value={parts.time}
+          type="text"
+          inputMode="numeric"
+          placeholder="HH:mm"
+          autoComplete="off"
           aria-label={timeAriaLabel}
           aria-invalid={invalid}
-          onChange={(event) =>
-            onChange(joinLocalDateTime({ date: parts.date, time: event.target.value }))
-          }
-          className="w-28 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none @max-[18rem]/date-time:col-start-1"
+          className="w-28 tabular-nums @max-[18rem]/date-time:col-start-1"
         />
 
         {value ? (

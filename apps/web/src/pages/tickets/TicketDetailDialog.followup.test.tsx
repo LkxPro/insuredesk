@@ -1,6 +1,7 @@
 import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -251,14 +252,13 @@ describe("submitting a follow-up", () => {
   });
 
   it("keeps a half-filled 下次联系时间 local and blocks submission until the pair is complete", async () => {
+    const user = userEvent.setup();
     renderDetail();
 
     fireEvent.change(await screen.findByLabelText("跟进备注"), {
       target: { value: "计划再次联系" },
     });
-    fireEvent.change(screen.getByLabelText("下次联系时间的时分"), {
-      target: { value: "09:30" },
-    });
+    await user.type(screen.getByLabelText("下次联系时间的时分"), "0930");
 
     fireEvent.click(screen.getByRole("button", { name: "提交跟进" }));
 

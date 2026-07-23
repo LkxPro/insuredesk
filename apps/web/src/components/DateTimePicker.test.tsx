@@ -28,7 +28,7 @@ function Harness({ initial }: { initial: string }) {
 }
 
 describe("DateTimePicker 日期 + 分钟输入", () => {
-  it("uses a compact masked date input and native minute-precision time input", () => {
+  it("uses compact masked inputs with an explicit 24-hour time format", () => {
     render(<Harness initial="" />);
 
     const date = screen.getByLabelText("测试日期");
@@ -36,8 +36,9 @@ describe("DateTimePicker 日期 + 分钟输入", () => {
     expect(date).toHaveAttribute("placeholder", "YY-MM-DD");
     expect(date).toHaveAttribute("inputmode", "numeric");
     expect(date.closest('[data-slot="input-group"]')).toHaveClass("w-32");
-    expect(time).toHaveAttribute("type", "time");
-    expect(time).toHaveAttribute("step", "60");
+    expect(time).toHaveAttribute("type", "text");
+    expect(time).toHaveAttribute("inputmode", "numeric");
+    expect(time).toHaveAttribute("placeholder", "HH:mm");
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 
@@ -60,16 +61,38 @@ describe("DateTimePicker 日期 + 分钟输入", () => {
     expect(date).toHaveValue(`${shortYear}-07-15`);
   });
 
-  it("lets the user enter time before date and preserves the partial value", () => {
+  it("lets the user enter time before date and preserves the partial value", async () => {
+    const user = userEvent.setup();
     render(<Harness initial="" />);
 
-    fireEvent.change(screen.getByLabelText("测试时间的时分"), {
-      target: { value: "09:30" },
-    });
+    await user.type(screen.getByLabelText("测试时间的时分"), "0930");
 
     expect(screen.getByTestId("value")).toHaveTextContent("T09:30");
     expect(screen.getByLabelText("测试时间的时分")).toHaveValue("09:30");
   });
+
+  it("accepts evening times as 00:00–23:59 without an AM/PM control", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="" />);
+
+    await user.type(screen.getByLabelText("测试时间的时分"), "2359");
+
+    expect(screen.getByTestId("value")).toHaveTextContent("T23:59");
+    expect(screen.getByLabelText("测试时间的时分")).toHaveValue("23:59");
+    expect(screen.queryByText(/AM|PM/i)).not.toBeInTheDocument();
+  });
+
+  it.each(["2400", "1260"])(
+    "does not silently rewrite invalid 24-hour input %s to a different valid time",
+    async (input) => {
+      const user = userEvent.setup();
+      render(<Harness initial="" />);
+
+      await user.type(screen.getByLabelText("测试时间的时分"), input);
+
+      expect(screen.getByTestId("value").textContent).not.toMatch(/^T(?:[01]\d|2[0-3]):[0-5]\d$/);
+    },
+  );
 
   it("preserves time when a date is picked and closes the calendar", async () => {
     render(<Harness initial="2026-07-15T09:30" />);
@@ -89,7 +112,7 @@ describe("DateTimePicker 日期 + 分钟输入", () => {
     expect(screen.queryByRole("button", { name: "清空时间" })).not.toBeInTheDocument();
   });
 
-  it("shows the clear button when a value is present, and clearing returns to unfilled", () => {
+  it("clears system-prefilled date and time even when the user has not touched either input", () => {
     render(<Harness initial="2026-07-15T09:30" />);
 
     const clear = screen.getByRole("button", { name: "清空时间" });
@@ -98,6 +121,8 @@ describe("DateTimePicker 日期 + 分钟输入", () => {
     fireEvent.click(clear);
 
     expect(screen.getByTestId("value")).toHaveTextContent("");
+    expect(screen.getByLabelText("测试日期")).toHaveValue("");
+    expect(screen.getByLabelText("测试时间的时分")).toHaveValue("");
     expect(screen.queryByRole("button", { name: "清空时间" })).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -482,12 +483,11 @@ describe("saving in place", () => {
   });
 
   it("blocks an edit when only the feedback date remains", async () => {
+    const user = userEvent.setup();
     renderDetail();
 
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
-    fireEvent.change(await screen.findByLabelText("反馈时间的时分"), {
-      target: { value: "" },
-    });
+    await user.clear(await screen.findByLabelText("反馈时间的时分"));
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
 
     expect(await screen.findByText("反馈时间需同时选择日期和时间")).toBeInTheDocument();
