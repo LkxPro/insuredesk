@@ -250,6 +250,8 @@ function EditControl({
               id={name}
               value={field.value}
               onChange={field.onChange}
+              datePickerAriaLabel={`${TICKET_FIELDS[name].label}的日期选择器`}
+              timeAriaLabel={`${TICKET_FIELDS[name].label}的时分`}
               invalid={invalid}
             />
           )}
@@ -346,7 +348,7 @@ export function TicketDetailField({
   const overrides: TicketFieldOverrides | undefined =
     "overrides" in descriptor ? descriptor.overrides : undefined;
   const label = overrides?.detailLabel ?? descriptor.label;
-  // DateTimePicker 的可聚焦主控件是日期按钮
+  // DateTimePicker 的可聚焦主控件是日期输入框
   const controlId = descriptor.type === "date" ? `${name}-date` : name;
 
   return (

@@ -198,7 +198,7 @@ describe("index redirect", () => {
 });
 
 describe("个人资料", () => {
-  it("顶栏用户菜单入口 opens the profile page", async () => {
+  it("侧边栏用户菜单入口 opens the profile page", async () => {
     auth.user = {
       ...userWith(TEST_ROLES.ADMIN),
       email: "admin@insuredesk.local",
@@ -206,7 +206,7 @@ describe("个人资料", () => {
     };
     renderAt("/dashboard");
 
-    const trigger = screen.getByRole("button", { name: "用户菜单" });
+    const trigger = screen.getByRole("button", { name: /测试用户/ });
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
     fireEvent.click(trigger);
     fireEvent.click(await screen.findByRole("menuitem", { name: "个人资料" }));
@@ -244,13 +244,16 @@ describe("shell chrome", () => {
     expect(screen.getByText(/管理员/)).toBeInTheDocument();
   });
 
-  it("logs out via the sidebar button", async () => {
+  it("logs out via the sidebar user menu", async () => {
     auth.user = userWith(TEST_ROLES.ADMIN);
     auth.logout.mockImplementation(async () => {
       auth.user = null;
     });
     renderAt("/dashboard");
-    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    const trigger = screen.getByRole("button", { name: /测试用户/ });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "退出登录" }));
     await waitFor(() => expect(auth.logout).toHaveBeenCalledOnce());
     // After the session is gone we land back on the login form.
     await waitFor(() => expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument());

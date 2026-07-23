@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { format } from "date-fns";
-import { zhCN } from "date-fns/locale";
 import { useState } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -84,9 +83,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** The date-button label the picker renders for `instant`, in the run's own tz. */
-function dateLabel(instant: Date): string {
-  return format(instant, "PPP", { locale: zhCN });
+/** The keyboard-editable date value the picker renders in the run's own tz. */
+function dateValue(instant: Date): string {
+  return format(instant, "yy-MM-dd");
 }
 
 describe("新建工单 打开即见当前时刻 (issue #62)", () => {
@@ -100,7 +99,7 @@ describe("新建工单 打开即见当前时刻 (issue #62)", () => {
 
     // A value is present → the clear affordance shows and the date carries 此刻
     expect(screen.getByRole("button", { name: "清空时间" })).toBeInTheDocument();
-    expect(screen.getByText(dateLabel(open))).toBeInTheDocument();
+    expect(screen.getByLabelText("反馈时间")).toHaveValue(dateValue(open));
   });
 
   it("reopen refreshes the time to the new 此刻 and drops the previous draft", async () => {
@@ -110,7 +109,7 @@ describe("新建工单 打开即见当前时刻 (issue #62)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "打开" }));
     await screen.findByRole("heading", { name: "新建工单" });
-    expect(screen.getByText(dateLabel(firstOpen))).toBeInTheDocument();
+    expect(screen.getByLabelText("反馈时间")).toHaveValue(dateValue(firstOpen));
 
     // Dirty the form, then close without submitting (through the 丢弃修改？ ask)
     fireEvent.change(screen.getByLabelText("客户姓名"), { target: { value: "王小明" } });
@@ -126,8 +125,7 @@ describe("新建工单 打开即见当前时刻 (issue #62)", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开" }));
     await screen.findByRole("heading", { name: "新建工单" });
 
-    expect(screen.getByText(dateLabel(secondOpen))).toBeInTheDocument();
-    expect(screen.queryByText(dateLabel(firstOpen))).not.toBeInTheDocument();
+    expect(screen.getByLabelText("反馈时间")).toHaveValue(dateValue(secondOpen));
     // The cancelled draft is gone
     expect(screen.getByLabelText("客户姓名")).toHaveValue("");
   });

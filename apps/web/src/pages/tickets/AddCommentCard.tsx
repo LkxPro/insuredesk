@@ -5,9 +5,16 @@ import { DateTimePicker } from "@/components/DateTimePicker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  isCompleteLocalDate,
+  isCompleteLocalTime,
+  isPartialLocalDateTime,
+  localDateTimeToIso,
+  splitLocalDateTime,
+} from "@/lib/local-date-time";
 import { trpc } from "@/lib/trpc";
 
 /**
@@ -23,6 +30,7 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
   // Held as a partial LOCAL "YYYY-MM-DDTHH:mm" string until submit, like
   // feedbackTime in the create form; "" = no plan (clears any previous one)
   const [nextContactTime, setNextContactTime] = useState("");
+  const [nextContactTimeError, setNextContactTimeError] = useState("");
 
   const addComment = trpc.ticket.addComment.useMutation({
     onSuccess: (result) => {
@@ -31,6 +39,7 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
       );
       setRemark("");
       setNextContactTime("");
+      setNextContactTimeError("");
       // Status, 联系次数, 处理结果 and the timeline all change server-side
       utils.ticket.detail.invalidate();
       utils.ticket.list.invalidate();
@@ -41,10 +50,21 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
     if (!remark.trim()) {
       return;
     }
+    if (isPartialLocalDateTime(nextContactTime)) {
+      const { date, time } = splitLocalDateTime(nextContactTime);
+      if (date && !isCompleteLocalDate(date)) {
+        setNextContactTimeError("下次联系时间日期格式不正确，请按 YY-MM-DD 输入");
+      } else if (time && !isCompleteLocalTime(time)) {
+        setNextContactTimeError("下次联系时间时间格式不正确");
+      } else {
+        setNextContactTimeError("下次联系时间需同时选择日期和时间");
+      }
+      return;
+    }
     addComment.mutate({
       ticketId,
       remark,
-      nextContactTime: nextContactTime ? new Date(nextContactTime).toISOString() : null,
+      nextContactTime: localDateTimeToIso(nextContactTime),
     });
   }
 
@@ -66,14 +86,23 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
           />
         </Field>
 
-        <Field>
+        <Field data-invalid={!!nextContactTimeError}>
           <FieldLabel htmlFor="next-contact-time-date">下次联系时间（可选）</FieldLabel>
           <DateTimePicker
             id="next-contact-time"
             value={nextContactTime}
-            onChange={setNextContactTime}
+            onChange={(value) => {
+              setNextContactTime(value);
+              if (!isPartialLocalDateTime(value)) {
+                setNextContactTimeError("");
+              }
+            }}
+            datePickerAriaLabel="下次联系时间的日期选择器"
+            timeAriaLabel="下次联系时间的时分"
+            invalid={!!nextContactTimeError}
           />
           <FieldDescription>每次跟进重新设置；留空则清除已有的下次联系时间。</FieldDescription>
+          <FieldError>{nextContactTimeError}</FieldError>
         </Field>
 
         {addComment.error && (

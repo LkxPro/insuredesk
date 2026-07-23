@@ -237,6 +237,19 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
     });
   });
 
+  it("blocks creation when only the default feedback date remains", async () => {
+    renderAt("/tickets/new");
+    await screen.findByRole("heading", { name: "新建工单" });
+
+    fireEvent.change(screen.getByLabelText("反馈时间的时分"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
+
+    expect(await screen.findByText("反馈时间需同时选择日期和时间")).toBeInTheDocument();
+    expect(calls.some((call) => call.path === "ticket.create")).toBe(false);
+  });
+
   it("labels carry no 选填/非必填 wording", async () => {
     renderAt("/tickets/new");
     await screen.findByRole("heading", { name: "新建工单" });
