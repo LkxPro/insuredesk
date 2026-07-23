@@ -1,18 +1,8 @@
-import { CircleUser, LifeBuoy, LogOut } from "lucide-react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { LifeBuoy } from "lucide-react";
+import { NavLink, Outlet, useLocation } from "react-router";
+import { NavUser } from "@/components/NavUser";
 import { NotificationBell } from "@/components/NotificationBell";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { TodoBell } from "@/components/TodoBell";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
@@ -45,17 +35,11 @@ import { visibleNavItems } from "@/lib/navigation";
 const appVersion = import.meta.env.VITE_APP_VERSION || "dev";
 
 function AppSidebar() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const { pathname } = useLocation();
   const { setOpenMobile } = useSidebar();
 
   const items = visibleNavItems(user?.permissions ?? []);
-
-  async function handleLogout() {
-    await logout();
-    navigate("/login", { replace: true });
-  }
 
   return (
     <Sidebar collapsible="icon">
@@ -105,71 +89,13 @@ function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <SidebarMenu>
-          {user && (
-            <SidebarMenuItem>
-              <SidebarMenuButton size="lg" asChild>
-                <div>
-                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-accent text-xs font-medium text-sidebar-accent-foreground">
-                    {user.name.slice(0, 1)}
-                  </div>
-                  <div className="grid flex-1 text-left leading-tight">
-                    <span className="truncate text-sm font-medium">{user.name}</span>
-                    <span className="truncate text-xs text-sidebar-foreground/70">
-                      @{user.username} · {user.roleName}
-                    </span>
-                  </div>
-                </div>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )}
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleLogout} tooltip="退出登录">
-              <LogOut />
-              <span>退出登录</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <NavUser />
         <span className="px-2 text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
           {appVersion}
         </span>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  );
-}
-
-function UserMenu() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-
-  if (!user) {
-    return null;
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full" aria-label="用户菜单">
-          <Avatar className="size-8">
-            <AvatarFallback>{user.name.slice(0, 1)}</AvatarFallback>
-          </Avatar>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel className="grid leading-tight">
-          <span className="truncate text-sm font-medium">{user.name}</span>
-          <span className="truncate text-xs font-normal text-muted-foreground">
-            @{user.username} · {user.roleName}
-          </span>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => navigate("/profile")}>
-          <CircleUser />
-          个人资料
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -184,8 +110,6 @@ export function AppLayout() {
           <div className="flex-1" />
           <TodoBell />
           <NotificationBell />
-          <ThemeToggle />
-          <UserMenu />
         </header>
         <main className="flex min-w-0 flex-1 flex-col p-4 md:p-6">
           <Outlet />
