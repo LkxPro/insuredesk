@@ -1,12 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { Prisma, PrismaClient, Role, User } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import type { Prisma, PrismaClient, User } from "../src/generated/prisma/client";
+import { listTickets } from "../src/services/ticket.service";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -20,47 +16,21 @@ const HOUR_MS = 60 * 60 * 1000;
  * the caller with the system clock.
  */
 describe("ticket list (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let listTickets: typeof import("../src/services/ticket.service").listTickets;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
-  let channelIds: Map<string, string>;
-  let categoryIds: Map<string, string>;
+  let seeded: IntegrationHarness["seeded"];
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "slaPolicies", "channels", "categories"],
+      traceId: "ticket-list-test",
     });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers, ticketService] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-      import("../src/services/ticket.service"),
-    ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    listTickets = ticketService.listTickets;
-
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
-    channelIds = new Map((await seedData.seedChannels(prisma)).map((c) => [c.name, c.id]));
-    categoryIds = new Map((await seedData.seedTicketCategories(prisma)).map((c) => [c.name, c.id]));
+    prisma = harness.prisma;
+    seeded = harness.seeded;
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   // Every test builds its own fixture set from a clean slate, so counts and
@@ -69,59 +39,23 @@ describe("ticket list (Testcontainers)", () => {
     await prisma.ticket.deleteMany();
   });
 
-  function authUserFor(user: User, role: Role) {
-    return {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      email: user.email,
-      roleId: role.id,
-      roleName: role.name,
-      permissions: role.permissions as Permission[],
-      requiredTicketFields: [],
-    };
-  }
-
-  /** Caller with the given seeded user's identity, permissions from their role. */
-  function callerFor(user: User, role: Role) {
-    return appRouter.createCaller({
-      traceId: "ticket-list-test",
-      user: authUserFor(user, role),
-      sessionToken: null,
-    });
-  }
-
   /** Caller with the given user identity and an explicit permission set. */
-  function callerWith(user: User, permissions: Permission[]) {
-    return appRouter.createCaller({
-      traceId: "ticket-list-test",
-      user: { ...authUserFor(user, seeded.roles.frontline), permissions },
-      sessionToken: null,
-    });
-  }
+  const callerWith = (user: User, permissions: Permission[]) =>
+    harness.callerWith(user, seeded.roles.frontline, permissions);
 
-  const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
-  const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
-  const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
+  const manager = () => harness.callerFor(seeded.users.manager, seeded.roles.csManager);
+  const frontline = () => harness.callerFor(seeded.users.cs1, seeded.roles.frontline);
+  const observer = () => harness.callerFor(seeded.users.observer, seeded.roles.readOnly);
 
-  const channelId = (name: string) => {
-    const id = channelIds.get(name);
-    if (!id) throw new Error(`渠道「${name}」未播种`);
-    return id;
-  };
-
-  const categoryId = (name: string) => {
-    const id = categoryIds.get(name);
-    if (!id) throw new Error(`类别「${name}」未播种`);
-    return id;
-  };
+  const channelId = (name: string) => harness.channelId(name);
+  const categoryId = (name: string) => harness.categoryId(name);
 
   const baseInput = {
     feedbackTime: "2026-07-09T02:00:00.000Z",
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     userComplaintChannel: "400热线",
     customerName: "王小明",
     phone: "13800000000",
@@ -287,10 +221,9 @@ describe("ticket list (Testcontainers)", () => {
   describe("computed-status boundaries at exactly 2h / dueAt (fixed clock, PRD §3.1.6)", () => {
     it("agrees with deriveDisplayStatus on both edges of the window", async () => {
       const fixedNow = new Date();
-      const clock = { now: () => fixedNow };
-      const viewer = authUserFor(seeded.users.manager, seeded.roles.csManager);
+      const viewer = harness.authUserFor(seeded.users.manager, seeded.roles.csManager);
       const list = (status: "assigned" | "pending_timeout" | "overdue") =>
-        listTickets({ prisma, clock }, viewer, {
+        listTickets(harness.depsAt(fixedNow), viewer, {
           status,
           sortBy: "createdAt",
           sortOrder: "desc",
@@ -482,8 +415,8 @@ describe("ticket list (Testcontainers)", () => {
 
   describe("search: 工单号 / 客户姓名 / 保单号", () => {
     it("matches partial work-order number, customer name, and policy number", async () => {
-      const zhang = await makeTicket({ customerName: "张三丰", policyNumber: "PA-88001" });
-      const li = await makeTicket({ customerName: "李四", policyNumber: "PB-99002" });
+      const zhang = await makeTicket({ customerName: "张三丰", policyNumbers: ["PA-88001"] });
+      const li = await makeTicket({ customerName: "李四", policyNumbers: ["PB-99002"] });
 
       const byNumber = await manager().ticket.list({ search: zhang.workOrderNumber });
       expect(byNumber.items.map((t) => t.id)).toEqual([zhang.id]);
@@ -492,7 +425,7 @@ describe("ticket list (Testcontainers)", () => {
       expect(byName.items.map((t) => t.id)).toEqual([zhang.id]);
 
       // All three search fields match case-insensitively (names can be Latin)
-      const alice = await makeTicket({ customerName: "Alice Wang", policyNumber: "PC-77003" });
+      const alice = await makeTicket({ customerName: "Alice Wang", policyNumbers: ["PC-77003"] });
       const byLatinName = await manager().ticket.list({ search: "alice" });
       expect(byLatinName.items.map((t) => t.id)).toEqual([alice.id]);
 
@@ -505,6 +438,23 @@ describe("ticket list (Testcontainers)", () => {
     it("treats blank search as no search", async () => {
       await makeTicket();
       expect((await manager().ticket.list({ search: "   " })).total).toBe(1);
+    });
+
+    it("matches 保单号 by substring across multiple values, in their joined form", async () => {
+      const multi = await makeTicket({ policyNumbers: ["PD-11001", "PE-22002"] });
+      await makeTicket({ policyNumbers: [] });
+
+      // 第二个值的子串，及大小写不敏感
+      expect((await manager().ticket.list({ search: "22002" })).items.map((t) => t.id)).toEqual([
+        multi.id,
+      ]);
+      expect((await manager().ticket.list({ search: "pe-22" })).items.map((t) => t.id)).toEqual([
+        multi.id,
+      ]);
+      // 带空格的搜索词按展示口径（空格连接）跨值命中
+      expect((await manager().ticket.list({ search: "11001 PE" })).items.map((t) => t.id)).toEqual([
+        multi.id,
+      ]);
     });
   });
 
@@ -567,7 +517,7 @@ describe("ticket list (Testcontainers)", () => {
           project: "融盛",
           brokerageEntity: "东方大地",
           paymentChannel: "连连支付",
-          policyNumber: `P-${i}`,
+          policyNumbers: [`P-${i}`],
           userComplaintChannel: "400热线",
           customerName: `压测客户${i}`,
           phone: "13800000000",

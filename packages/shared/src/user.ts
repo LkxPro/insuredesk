@@ -18,6 +18,13 @@ export const usernameSchema = z
 /** bcrypt truncates beyond 72 bytes — cap at the algorithm's limit. */
 export const passwordSchema = z.string().min(6, "密码至少 6 位").max(72, "密码最长 72 字符");
 
+/** 自助改密 (profile page) — old credential re-verified server-side. */
+export const changeOwnPasswordInputSchema = z.object({
+  oldPassword: z.string().min(1, "请输入旧密码"),
+  newPassword: passwordSchema,
+});
+export type ChangeOwnPasswordInput = z.infer<typeof changeOwnPasswordInputSchema>;
+
 const displayNameSchema = z.string().trim().min(1, "请输入姓名").max(50, "姓名最长 50 字符");
 
 /** Optional email: empty input means "none", non-empty must be well-formed. */
@@ -47,12 +54,12 @@ export type UserCreateInput = z.input<typeof userCreateInputSchema>;
 export type UserCreateData = z.output<typeof userCreateInputSchema>;
 
 /**
- * Edit basic info (user.edit). username is immutable — it is the login handle
- * and the seed's natural key. Role changes ride user.assignRole (a separate
+ * Edit basic info (user.edit). Role changes ride user.assignRole (a separate
  * permission point); a non-empty password resets it, empty/null keeps it.
  */
 export const userUpdateInputSchema = z.object({
   id: z.string().min(1),
+  username: usernameSchema,
   name: displayNameSchema,
   email: optionalEmailSchema,
   team: optionalTeamSchema,

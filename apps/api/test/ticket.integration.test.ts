@@ -1,18 +1,14 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   COMPLAINT_LEVELS,
   DEFAULT_SLA_POLICIES,
   type Permission,
   type TicketCreateInput,
 } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { appRouter } from "../src/routers/index";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -24,40 +20,18 @@ const HOUR_MS = 60 * 60 * 1000;
  * procedure pipeline (permission middleware included) the HTTP adapter uses.
  */
 describe("ticket creation + detail (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-    ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
+    prisma = harness.prisma;
+    seeded = harness.seeded;
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   /** Caller with the given user identity and an explicit permission set. */
@@ -69,6 +43,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
         username: user.username,
         name: user.name,
         email: user.email,
+        team: user.team,
         roleId: "role-under-test",
         roleName,
         permissions,
@@ -87,6 +62,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
         username: user.username,
         name: user.name,
         email: user.email,
+        team: user.team,
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
@@ -105,7 +81,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     userComplaintChannel: "400热线",
     customerName: "王小明",
     phone: "13800000000",
@@ -196,6 +172,50 @@ describe("ticket creation + detail (Testcontainers)", () => {
           data: { name: originalName },
         });
       }
+    });
+  });
+
+  describe("policyNumbers 多值契约（trim/去空/去重与上限）", () => {
+    it("persists multiple values; items are trimmed, blanks dropped, duplicates deduped case-sensitively", async () => {
+      const created = await manager().ticket.create({
+        ...baseInput,
+        policyNumbers: ["  P-001  ", "P-002", "P-001", " ", "p-001"],
+      });
+      const detail = await manager().ticket.detail({ id: created.id });
+      expect(detail.policyNumbers).toEqual(["P-001", "P-002", "p-001"]);
+
+      const listed = await manager().ticket.list({ search: created.workOrderNumber });
+      expect(listed.items[0]?.policyNumbers).toEqual(["P-001", "P-002", "p-001"]);
+    });
+
+    it("empty array and absent field both persist as [] (未填写)", async () => {
+      const explicit = await manager().ticket.create({ ...baseInput, policyNumbers: [] });
+      expect((await manager().ticket.detail({ id: explicit.id })).policyNumbers).toEqual([]);
+
+      const { policyNumbers: _omitted, ...withoutField } = baseInput;
+      const absent = await manager().ticket.create(withoutField);
+      expect((await manager().ticket.detail({ id: absent.id })).policyNumbers).toEqual([]);
+    });
+
+    it("rejects a single value over 100 chars and more than 50 deduped values", async () => {
+      await expect(
+        manager().ticket.create({ ...baseInput, policyNumbers: ["P".repeat(101)] }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      await expect(
+        manager().ticket.create({
+          ...baseInput,
+          policyNumbers: Array.from({ length: 51 }, (_, i) => `P-${i}`),
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      // 上限按去重后计数：50 个不同值加上重复项照常放行
+      const fifty = Array.from({ length: 50 }, (_, i) => `P-${i}`);
+      const created = await manager().ticket.create({
+        ...baseInput,
+        policyNumbers: [...fifty, "P-0"],
+      });
+      expect((await manager().ticket.detail({ id: created.id })).policyNumbers).toEqual(fifty);
     });
   });
 

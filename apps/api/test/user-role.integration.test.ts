@@ -1,14 +1,13 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { ALL_PERMISSIONS, type Permission } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { ALL_PERMISSIONS, type Permission, POSITIVE_PERMISSIONS } from "@insuredesk/shared";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
+import { DEMO_PASSWORD } from "../prisma/seed-data";
+import { parseEnv } from "../src/env";
+import type { PrismaClient, User } from "../src/generated/prisma/client";
+import { appRouter } from "../src/routers/index";
+import { buildServer } from "../src/server";
 import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * 用户与角色管理 acceptance tests against a real Postgres: 用户管理 (create /
@@ -23,39 +22,17 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * real Fastify app over app.inject — the exact doors the browser uses.
  */
 describe("user + role management (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let app: FastifyInstance;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
-  let demoPassword: string;
+  let seeded: IntegrationHarness["seeded"];
+  const demoPassword = DEMO_PASSWORD;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers, { parseEnv }, { buildServer }] =
-      await Promise.all([
-        import("../src/db"),
-        import("../prisma/seed-data"),
-        import("../src/routers/index"),
-        import("../src/env"),
-        import("../src/server"),
-      ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    demoPassword = seedData.DEMO_PASSWORD;
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers"] });
+    prisma = harness.prisma;
+    seeded = harness.seeded;
+    const databaseUrl = harness.databaseUrl;
 
     app = buildServer(
       parseEnv({
@@ -70,8 +47,7 @@ describe("user + role management (Testcontainers)", () => {
 
   afterAll(async () => {
     await app?.close();
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   function identityOf(user: User, roleName: string, permissions: Permission[]): AuthenticatedUser {
@@ -80,6 +56,7 @@ describe("user + role management (Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: "role-under-test",
       roleName,
       permissions,
@@ -209,6 +186,7 @@ describe("user + role management (Testcontainers)", () => {
 
       await admin().user.update({
         id: member.id,
+        username: member.username,
         name: "改名后",
         email: "renamed@insuredesk.local",
         team: "客服二组",
@@ -226,6 +204,7 @@ describe("user + role management (Testcontainers)", () => {
 
       await admin().user.update({
         id: member.id,
+        username: member.username,
         name: "改名后",
         email: "renamed@insuredesk.local",
         team: "客服二组",
@@ -235,10 +214,93 @@ describe("user + role management (Testcontainers)", () => {
       expect((await login(member.username, "rotated-456")).statusCode).toBe(200);
     });
 
+    it("renames the username: live sessions survive, only the next login needs the new handle", async () => {
+      const member = await makeUser();
+      const token = await loginToken(member.username, member.password);
+      const renamed = `${member.username}-renamed`;
+
+      await admin().user.update({
+        id: member.id,
+        username: renamed,
+        name: "改登录名",
+        email: null,
+        team: null,
+        password: null,
+      });
+
+      const listed = (await admin().user.list()).find((user) => user.id === member.id);
+      expect(listed).toMatchObject({ username: renamed, name: "改登录名" });
+
+      // 会话按 userId 关联:改名不踢在线会话
+      expect((await me(token)).statusCode).toBe(200);
+
+      // 旧名从下一次登录起失效,新名接管
+      expect((await login(member.username, member.password)).statusCode).toBe(401);
+      expect((await login(renamed, member.password)).statusCode).toBe(200);
+    });
+
+    it("renaming to a taken username → CONFLICT, nothing written", async () => {
+      const member = await makeUser();
+
+      await expect(
+        admin().user.update({
+          id: member.id,
+          username: "admin", // seeded
+          name: member.name,
+          email: null,
+          team: null,
+          password: null,
+        }),
+      ).rejects.toMatchObject({ code: "CONFLICT", message: "用户名已存在" });
+
+      const row = await prisma.user.findUniqueOrThrow({ where: { id: member.id } });
+      expect(row.username).toBe(member.username);
+      expect((await login(member.username, member.password)).statusCode).toBe(200);
+    });
+
+    it("a password reset kills the target's live sessions; a no-password edit leaves them alone", async () => {
+      const member = await makeUser();
+      const tokens = [
+        await loginToken(member.username, member.password),
+        await loginToken(member.username, member.password),
+      ];
+
+      // 仅改基础字段:两个会话都继续有效
+      await admin().user.update({
+        id: member.id,
+        username: member.username,
+        name: "改资料",
+        email: null,
+        team: null,
+        password: null,
+      });
+      for (const token of tokens) {
+        expect((await me(token)).statusCode).toBe(200);
+      }
+
+      // 重置密码:全部会话立即失效,行被删除而非仅被忽略
+      await admin().user.update({
+        id: member.id,
+        username: member.username,
+        name: "改资料",
+        email: null,
+        team: null,
+        password: "rotated-789",
+      });
+      for (const token of tokens) {
+        expect((await me(token)).statusCode).toBe(401);
+      }
+      expect(await prisma.session.count({ where: { userId: member.id } })).toBe(0);
+
+      // 新凭据重新登录不受影响
+      expect((await login(member.username, "rotated-789")).statusCode).toBe(200);
+    });
+
     it("update/setActive/assignRole on unknown users → NOT_FOUND", async () => {
       await expect(
         admin().user.update({
           id: "no-such-user",
+          username: "nobody",
           name: "无人",
           email: null,
           team: null,
@@ -487,6 +549,7 @@ describe("user + role management (Testcontainers)", () => {
         run: (caller) =>
           caller.user.update({
             id: "no-such-user",
+            username: "rbac-update-probe",
             name: "探针",
             email: null,
             team: null,
@@ -575,8 +638,8 @@ describe("user + role management (Testcontainers)", () => {
     });
   });
 
-  describe("管理员动态全量权限 (acceptance: 权限不读库,恒为当前代码的全量权限点)", () => {
-    it("清空管理员角色库中的权限数组后,登录仍拥有全部权限", async () => {
+  describe("管理员动态全量权限 (acceptance: 权限不读库,恒为当前代码的全量正向权限点,排除限制类)", () => {
+    it("清空管理员角色库中的权限数组后,登录仍拥有全部正向权限", async () => {
       await prisma.role.update({
         where: { id: seeded.roles.admin.id },
         data: { permissions: [] },
@@ -584,21 +647,21 @@ describe("user + role management (Testcontainers)", () => {
 
       const token = await loginToken("admin", demoPassword);
       const identity = (await me(token)).json().result.data;
-      expect([...identity.permissions].sort()).toEqual([...ALL_PERMISSIONS].sort());
+      expect([...identity.permissions].sort()).toEqual([...POSITIVE_PERMISSIONS].sort());
 
       // 后端守卫与前端菜单同源(auth.me),这里再验一次真实守卫端点
       const guarded = await query("shiftType.list", token);
       expect(guarded.statusCode).toBe(200);
     });
 
-    it("角色页对管理员显示全量权限,而非库中快照", async () => {
+    it("角色页对管理员显示全量正向权限,而非库中快照", async () => {
       await prisma.role.update({
         where: { id: seeded.roles.admin.id },
         data: { permissions: [] },
       });
 
       const listed = (await admin().role.list()).find((role) => role.system);
-      expect(listed?.permissions).toEqual([...ALL_PERMISSIONS]);
+      expect(listed?.permissions).toEqual([...POSITIVE_PERMISSIONS]);
     });
   });
 

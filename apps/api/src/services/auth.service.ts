@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { ALL_PERMISSIONS, type Permission } from "@insuredesk/shared";
+import { type Permission, POSITIVE_PERMISSIONS } from "@insuredesk/shared";
 import * as bcrypt from "bcryptjs";
 import type { PrismaClient } from "../generated/prisma/client";
 
@@ -18,14 +18,67 @@ export function hashPassword(plain: string): Promise<string> {
 
 /**
  * The permission set a role actually grants. 系统角色不受权限配置约束:
- * 不读库中数组,恒为当前代码的全量权限点,新增权限点无需迁移即生效。
+ * 不读库中数组,恒为当前代码的全量正向权限点,新增权限点无需迁移即生效。
+ * 限制类权限(勾选=禁止)必须排除,否则 admin 会被自动禁止对应操作。
  * 判定与展示必须同走这里,不得直接读 role.permissions。
  */
 export function effectivePermissions(role: {
   system: boolean;
   permissions: string[];
 }): Permission[] {
-  return role.system ? [...ALL_PERMISSIONS] : (role.permissions as Permission[]);
+  return role.system ? [...POSITIVE_PERMISSIONS] : (role.permissions as Permission[]);
+}
+
+export class IncorrectOldPasswordError extends Error {
+  constructor() {
+    super("旧密码不正确");
+    this.name = "IncorrectOldPasswordError";
+  }
+}
+
+/** No stored credential (e.g. a future SSO-only account) — nothing to rotate. */
+export class NoPasswordAccountError extends Error {
+  constructor() {
+    super("该账号未设置密码，无法修改密码");
+    this.name = "NoPasswordAccountError";
+  }
+}
+
+/**
+ * 自助改密 (profile page). Verifies the old credential before rotating.
+ * Accounts without a passwordHash are refused — this is a rotation, not a
+ * first-time set. Every OTHER session dies in the same transaction (whoever
+ * held the old password must not keep riding a live session), while the
+ * caller's own session survives — they just proved the credential.
+ */
+export async function changeOwnPassword(
+  prisma: PrismaClient,
+  userId: string,
+  currentSessionToken: SessionToken | null,
+  input: { oldPassword: string; newPassword: string },
+): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { passwordHash: true },
+  });
+  if (!user.passwordHash) {
+    throw new NoPasswordAccountError();
+  }
+  if (!(await bcrypt.compare(input.oldPassword, user.passwordHash))) {
+    throw new IncorrectOldPasswordError();
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+    prisma.session.deleteMany({
+      // A caller without a session token (tests via createCaller) kicks all.
+      where: {
+        userId,
+        ...(currentSessionToken ? { token: { not: currentSessionToken } } : {}),
+      },
+    }),
+  ]);
 }
 
 /**
@@ -156,6 +209,7 @@ export class SessionService {
       username: session.user.username,
       name: session.user.name,
       email: session.user.email,
+      team: session.user.team,
       roleId: session.user.roleId,
       roleName: session.user.role.name,
       permissions: effectivePermissions(session.user.role),
@@ -191,6 +245,7 @@ export interface AuthenticatedUser {
   username: string;
   name: string;
   email: string | null;
+  team: string | null;
   roleId: string;
   roleName: string;
   permissions: Permission[];

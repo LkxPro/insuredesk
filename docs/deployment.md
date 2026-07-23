@@ -54,46 +54,59 @@ API 容器的启动链为 `prisma migrate deploy` → bootstrap(幂等,创建初
 admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 nginx 后
 **立即登录修改 admin 密码**。
 
+`up -d` 同时拉起 backup sidecar,每日备份零手工配置即生效——验证方式见下
+「备份与恢复」。
+
 ## 更新已部署的服务
 
 升级、回滚的完整操作口径见 `docs/releasing.md`,要点:
 
-- 升级 = 升级前手动备份一次数据库 → 改 `.env` 里的 `IMAGE_TAG` 为新 tag →
-  `pull insuredesk-api-prod` → `up -d`。**只前滚**:镜像回滚仅限新版起不来且迁移未执行的
-  场景,迁移已执行后发现问题一律发 hotfix 版本(ADR 0009)。
+- 升级 = `make upgrade`。一条命令解析最新 CalVer、迁前备份并校验、把 `.env`
+  的 `IMAGE_TAG` 钉成那个具体 tag、`pull` + `up -d`;已是最新则直接退出、无
+  副作用。操作员不手敲版本号,`make upgrade` 是唯一 sanctioned 升级路径——手改
+  `IMAGE_TAG` 后直接 `up -d` 会让迁移无备份执行(ADR 0009 已知风险)。**只前滚**:
+  镜像回滚(把 `.env` 里的 `IMAGE_TAG` 改回上一个 tag 再 `up -d`)仅限新版起不来
+  且迁移未执行的场景,迁移已执行后发现问题一律发 hotfix 版本(ADR 0009)。
 - 数据库迁移随容器启动自动执行,无需手动操作。迁移失败会导致容器起不来
   (fail fast),用 `docker logs insuredesk-api-prod` 排查。
 - 数据不受影响:db 容器镜像未变不会重建,数据持久化在具名卷
   `insuredesk_postgres_data_prod` 中。
-- 新版本若引入新环境变量,先补进服务器上的 `.env` 再拉起(对照
+- 新版本若引入新环境变量,先补进服务器上的 `.env` 再 `make upgrade`(对照
   `.env.example` 的 diff;Release notes 顶部会标注部署注意事项)。
 
 旧镜像会残留,定期 `docker image prune -f` 清理。
 
 ## 备份与恢复
 
-每日备份由宿主机 cron 调 `scripts/backup-db.sh` 完成:从 db 容器 `pg_dump`
-后 gzip 存到本机 `~/backups/insuredesk/`,保留 14 天。**已知风险:仅本机
-备份、无异地副本,机器级故障(磁盘损坏、入侵、机房事故)= 数据全失**
-(ADR 0009 明确接受,异地同步留作后续升级项)。
+每日备份由 backup sidecar 完成,不再依赖宿主机 cron:`up -d` 起的
+`postgres:17-alpine` sidecar 经 compose 网络 `pg_dump -h insuredesk-db-prod`,
+gzip 落宿主机 `~/backups/insuredesk/`(可用 `.env` 的 `BACKUP_DIR` 改),保留
+14 天。容器启动即备份一次(自证可用),之后内置 crond 按 `TZ=Asia/Shanghai`
+每晚 21:30 再跑。**已知风险:仅本机备份、无异地副本,机器级故障(磁盘损坏、
+入侵、机房事故)= 数据全失**(ADR 0009 明确接受,异地同步留作后续升级项)。
 
-### 配置每日备份(首次部署后一次性)
+### 验证备份在跑
 
-脚本随仓库分发,服务器上的 clone 目录里即有。先手动跑一次验证(同时建出
-cron 日志要写入的备份目录):输出 `backup ok: …` 且备份目录出现
-`insuredesk-<时间戳>.sql.gz` 即正常。
+sidecar 随 `up -d` 一起拉起,零手工配置。确认三处:
+
+- `docker compose -f docker-compose.prod.yml ps` 中 `backup` 显示 `healthy`
+  ——healthcheck 断言 25h 内产出过新备份文件,`unhealthy` 即备份停摆
+  (sidecar 崩了、或连不上 db)。仅被动可见、不主动告警(ADR 0009 已知风险),
+  故需在登服务器时顺手扫一眼这里。
+- 备份目录出现 `insuredesk-<时间戳>.sql.gz`:`ls -lh ~/backups/insuredesk/`。
+- sidecar 日志:`docker logs insuredesk-backup-prod`——启动备份与每晚 cron
+  的 `backup ok: …` 都在这。
+
+### 手动备份一次
+
+`make upgrade` 已把迁前备份焊进升级流程(自动跑同一条命令并校验产出),无需
+手动。临时需要额外备份时用:
 
 ```bash
-~/insuredesk/scripts/backup-db.sh
+docker compose -f docker-compose.prod.yml run --rm backup once
 ```
 
-然后 `crontab -e` 加一行(路径按实际 clone 位置调整):
-
-```cron
-10 3 * * * /home/deploy/insuredesk/scripts/backup-db.sh >> /home/deploy/backups/insuredesk/backup.log 2>&1
-```
-
-脚本可重复执行,升级前的固定手动备份(见 `docs/releasing.md`)也直接调它。
+与每日备份、迁前备份同一脚本、同一份逻辑,落同一目录。
 
 ### 从备份恢复
 
@@ -119,6 +132,19 @@ docker compose -f docker-compose.prod.yml up -d
 
 `curl -I http://127.0.0.1:3000` 验证存活,再登录抽查数据是否为备份时刻的
 状态。确认无误后按正常升级流程前滚回最新版本。
+
+### 每季度恢复演练(运维流程)
+
+healthcheck 只验「备份文件在且新鲜」,不验「能否灌回」——大版本格式漂移、
+编码/扩展缺失都可能让一份看着正常的备份灌不回去(ADR 0009 已知风险)。唯一
+能证明备份可恢复的凭据是定期演练。每季度一次,拿最近的备份走一遍完整恢复,
+**灌进一次性测试库,切勿灌回生产**:
+
+- [ ] 取最新 `insuredesk-<时间戳>.sql.gz`,`gunzip -t` 先验归档未损坏
+- [ ] 按上节「从备份恢复」灌入一套临时库(可在另一台机或本地 `up` 一个
+      db 容器),psql 全程 `ON_ERROR_STOP=1` 无报错
+- [ ] 抽查关键表:工单数、最新工单时间与备份时刻预期一致
+- [ ] 记录演练日期与所用备份文件名;演练即验证「文件在 → 可恢复」这一环
 
 ## 宿主机 nginx 反代
 

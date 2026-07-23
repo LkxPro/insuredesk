@@ -1,17 +1,16 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   TICKET_IMPORT_HEADERS as EXPECTED_HEADERS,
   TICKET_FIELD_DESCRIPTORS,
 } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DEMO_PASSWORD } from "../prisma/seed-data";
+import { parseEnv } from "../src/env";
 import type { PrismaClient } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { buildServer } from "../src/server";
+import { hashPassword } from "../src/services/auth.service";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * Acceptance tests for the 批量导入 template download, over the real HTTP
@@ -28,36 +27,16 @@ const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  *   完结 pair's 同填同空 rule
  */
 describe("ticket import template (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let app: FastifyInstance;
-  let demoPassword: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "channels", "categories"],
     });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, { parseEnv }, { buildServer }, auth] =
-      await Promise.all([
-        import("../src/db"),
-        import("../prisma/seed-data"),
-        import("../src/env"),
-        import("../src/server"),
-        import("../src/services/auth.service"),
-      ]);
-    prisma = appPrisma;
-    demoPassword = seedData.DEMO_PASSWORD;
-
-    await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedChannels(prisma);
-    await seedData.seedTicketCategories(prisma);
+    prisma = harness.prisma;
+    const databaseUrl = harness.databaseUrl;
 
     // No factory role holds ticket.import (存量角色默认没有、需手动勾选)
     const importerRole = await prisma.role.create({
@@ -69,7 +48,7 @@ describe("ticket import template (Testcontainers)", () => {
         name: "导入员一号",
         email: "importer@example.com",
         roleId: importerRole.id,
-        passwordHash: await auth.hashPassword(seedData.DEMO_PASSWORD),
+        passwordHash: await hashPassword(DEMO_PASSWORD),
         active: true,
       },
     });
@@ -86,8 +65,7 @@ describe("ticket import template (Testcontainers)", () => {
 
   afterAll(async () => {
     await app?.close();
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   /** Log in over the real endpoint; returns the session cookie value. */
@@ -95,7 +73,7 @@ describe("ticket import template (Testcontainers)", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { username, password: demoPassword },
+      payload: { username, password: DEMO_PASSWORD },
     });
     const cookie = res.cookies.find((c) => c.name === "session");
     expect(cookie, `login as ${username}`).toBeDefined();

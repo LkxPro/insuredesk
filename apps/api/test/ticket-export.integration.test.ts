@@ -1,14 +1,14 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { DEMO_PASSWORD } from "../prisma/seed-data";
+import { parseEnv } from "../src/env";
 import type { Prisma, PrismaClient, Role, User } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { appRouter } from "../src/routers/index";
+import { buildServer } from "../src/server";
+import { hashPassword } from "../src/services/auth.service";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -25,46 +25,24 @@ const HOUR_MS = 60 * 60 * 1000;
  * - 导出不产生 ProcessLog
  */
 describe("ticket export (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let app: FastifyInstance;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
   let channelIds: Map<string, string>;
   /** ticket.export WITHOUT ticket.view_all — the 个人档 exporter. */
   let scopedExporter: User;
-  let demoPassword: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "slaPolicies", "channels"],
     });
-    process.env.DATABASE_URL = databaseUrl;
+    prisma = harness.prisma;
+    seeded = harness.seeded;
+    const databaseUrl = harness.databaseUrl;
 
-    const [{ prisma: appPrisma }, seedData, routers, { parseEnv }, { buildServer }, auth] =
-      await Promise.all([
-        import("../src/db"),
-        import("../prisma/seed-data"),
-        import("../src/routers/index"),
-        import("../src/env"),
-        import("../src/server"),
-        import("../src/services/auth.service"),
-      ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    demoPassword = seedData.DEMO_PASSWORD;
-
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
-    channelIds = new Map((await seedData.seedChannels(prisma)).map((c) => [c.name, c.id]));
+    const channels = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
+    channelIds = new Map(channels.map((c) => [c.name, c.id]));
 
     // No factory role holds ticket.export without ticket.view_all, so the
     // data-scope criterion needs a custom role: sees/export own tickets only.
@@ -77,7 +55,7 @@ describe("ticket export (Testcontainers)", () => {
         name: "档内导出员",
         email: "scoped-exporter@example.com",
         roleId: scopedRole.id,
-        passwordHash: await auth.hashPassword(seedData.DEMO_PASSWORD),
+        passwordHash: await hashPassword(DEMO_PASSWORD),
         active: true,
       },
     });
@@ -94,8 +72,7 @@ describe("ticket export (Testcontainers)", () => {
 
   afterAll(async () => {
     await app?.close();
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   beforeEach(async () => {
@@ -107,7 +84,7 @@ describe("ticket export (Testcontainers)", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/auth/login",
-      payload: { username, password: demoPassword },
+      payload: { username, password: DEMO_PASSWORD },
     });
     const cookie = res.cookies.find((c) => c.name === "session");
     expect(cookie, `login as ${username}`).toBeDefined();
@@ -132,6 +109,7 @@ describe("ticket export (Testcontainers)", () => {
         username: user.username,
         name: user.name,
         email: user.email,
+        team: user.team,
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
@@ -154,7 +132,7 @@ describe("ticket export (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     userComplaintChannel: "400热线",
     customerName: "王小明",
     phone: "13800000000",
@@ -276,6 +254,22 @@ describe("ticket export (Testcontainers)", () => {
       expect(body).toContain("支付客户一");
       expect(body).not.toContain("保司客户");
       expect(body).not.toContain("已删除客户");
+    });
+
+    it("exports 多值保单号 as one space-joined cell, [] as an empty cell", async () => {
+      const multi = await makeTicket({ policyNumbers: ["PX-001", "PX-002"] });
+      const blank = await makeTicket({ policyNumbers: [] });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv" });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      const policyIndex = rows[0]?.indexOf("保单号") ?? -1;
+      expect(policyIndex).toBeGreaterThan(-1);
+      const cellByNumber = new Map(rows.slice(1).map((cells) => [cells[0], cells[policyIndex]]));
+      expect(cellByNumber.get(multi.workOrderNumber)).toBe("PX-001 PX-002");
+      expect(cellByNumber.get(blank.workOrderNumber)).toBe("");
     });
 
     it("escapes fields containing commas and quotes per RFC 4180", async () => {

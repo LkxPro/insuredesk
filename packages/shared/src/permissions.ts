@@ -59,14 +59,24 @@ export const SYSTEM_PERMISSIONS = [
   "dictionary.manage", // Manage the dictionary catalogs (admin configuration)
 ] as const;
 
-// All permissions combined
-export const ALL_PERMISSIONS = [
+// Restrictive permissions: checked = forbidden, the inverse of every other
+// point. Kept in their own list so positive-permission consumers (admin
+// expansion, menu gating) can exclude them wholesale.
+export const RESTRICTIVE_PERMISSIONS = [
+  "user.forbid_change_own_password", // Forbid changing one's own password
+] as const;
+
+// All positive (grant-type) permissions — what the 管理员 system role expands
+// to. Must never include restrictive points, or admin would be auto-forbidden.
+export const POSITIVE_PERMISSIONS = [
   ...DASHBOARD_PERMISSIONS,
   ...TICKET_PERMISSIONS,
   ...USER_PERMISSIONS,
   ...ROLE_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
 ] as const;
+
+export const ALL_PERMISSIONS = [...POSITIVE_PERMISSIONS, ...RESTRICTIVE_PERMISSIONS] as const;
 
 export const permissionSchema = z.enum(ALL_PERMISSIONS);
 export type Permission = (typeof ALL_PERMISSIONS)[number];
@@ -108,13 +118,19 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "sla.view": "访问 SLA 策略",
   "sla.edit": "编辑 SLA 策略",
   "dictionary.manage": "管理字典目录",
+  "user.forbid_change_own_password": "禁止修改自己的密码",
 };
 
-/** 权限点清单 checklist grouping, in PRD document order. */
+/**
+ * 权限点清单 checklist grouping, in PRD document order. Restrictive groups
+ * (`restrictive: true`) carry 勾选=禁止 semantics and must be visually marked
+ * as such wherever the checklist renders.
+ */
 export const PERMISSION_GROUPS = [
-  { label: "数据看板", permissions: DASHBOARD_PERMISSIONS },
-  { label: "工单管理", permissions: TICKET_PERMISSIONS },
-  { label: "用户管理", permissions: USER_PERMISSIONS },
-  { label: "角色权限", permissions: ROLE_PERMISSIONS },
-  { label: "系统配置", permissions: SYSTEM_PERMISSIONS },
+  { label: "数据看板", permissions: DASHBOARD_PERMISSIONS, restrictive: false },
+  { label: "工单管理", permissions: TICKET_PERMISSIONS, restrictive: false },
+  { label: "用户管理", permissions: USER_PERMISSIONS, restrictive: false },
+  { label: "角色权限", permissions: ROLE_PERMISSIONS, restrictive: false },
+  { label: "系统配置", permissions: SYSTEM_PERMISSIONS, restrictive: false },
+  { label: "限制类权限", permissions: RESTRICTIVE_PERMISSIONS, restrictive: true },
 ] as const;

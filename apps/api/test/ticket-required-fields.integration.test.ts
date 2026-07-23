@@ -1,60 +1,34 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   type Permission,
   TICKET_CREATE_FIELD_KEYS,
   type TicketCreateInput,
   type TicketEditInput,
 } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { appRouter } from "../src/routers/index";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * 角色建单必填字段集验证（issue #63）：按请求者角色强制必填集，缺失字段一次性报错，
  * 三态字段必须明确选择，编辑不受约束，外部来源不适用，清单外 key 防御性忽略。
  */
 describe("role required ticket fields (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
   let roleWithRequired: Role;
   let userWithRequired: User;
   let channelBaosi: { id: string };
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "slaPolicies", "channels"],
     });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-    ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
-    const channels = await seedData.seedChannels(prisma);
-    const baosi = channels.find((channel) => channel.name === "保司");
-    if (!baosi) throw new Error("渠道「保司」未播种");
-    channelBaosi = baosi;
+    prisma = harness.prisma;
+    seeded = harness.seeded;
+    channelBaosi = { id: harness.channelId("保司") };
 
     roleWithRequired = await prisma.role.create({
       data: {
@@ -75,8 +49,7 @@ describe("role required ticket fields (Testcontainers)", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   function callerFor(user: User, role: Role) {
@@ -87,6 +60,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         username: user.username,
         name: user.name,
         email: user.email,
+        team: user.team,
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
@@ -104,6 +78,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         username: user.username,
         name: user.name,
         email: user.email,
+        team: user.team,
         roleId: user.roleId,
         roleName,
         permissions,
@@ -229,6 +204,27 @@ describe("role required ticket fields (Testcontainers)", () => {
       const result = await requiredUser().ticket.create(input);
       const detail = await requiredUser().ticket.detail({ id: result.id });
       expect(detail.hasContacted).toBe(false);
+    });
+
+    it("rejects required 保单号 left empty or absent (多值字段空数组＝未填写)", async () => {
+      await prisma.role.update({
+        where: { id: roleWithRequired.id },
+        data: { requiredTicketFields: ["policyNumbers"] },
+      });
+
+      await expect(
+        requiredUser().ticket.create({ ...validInput(), policyNumbers: [] }),
+      ).rejects.toThrow(/以下字段为必填项：保单号/);
+      await expect(requiredUser().ticket.create(validInput())).rejects.toThrow(
+        /以下字段为必填项：保单号/,
+      );
+
+      const result = await requiredUser().ticket.create({
+        ...validInput(),
+        policyNumbers: ["P2026-118"],
+      });
+      const detail = await requiredUser().ticket.detail({ id: result.id });
+      expect(detail.policyNumbers).toEqual(["P2026-118"]);
     });
 
     it("enforces categoryId as a required field against the catalog shape", async () => {

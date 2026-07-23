@@ -9,6 +9,7 @@
     "ignoreUnknown": true,
     "includes": [
       "**",
+      "!**/.worktrees",
       "!**/node_modules",
       "!**/dist",
       "!**/build",

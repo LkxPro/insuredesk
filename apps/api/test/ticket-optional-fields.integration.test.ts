@@ -1,17 +1,13 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   type Permission,
   TICKET_CREATE_FIELD_KEYS,
   type TicketCreateInput,
   type TicketEditInput,
 } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { appRouter } from "../src/routers/index";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -27,40 +23,18 @@ const HOUR_MS = 60 * 60 * 1000;
  * all read null-heavy rows without failing.
  */
 describe("optional business fields (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-    ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
+    prisma = harness.prisma;
+    seeded = harness.seeded;
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   /** Caller with the given seeded user's identity, permissions from their role. */
@@ -72,6 +46,7 @@ describe("optional business fields (Testcontainers)", () => {
         username: user.username,
         name: user.name,
         email: user.email,
+        team: user.team,
         roleId: role.id,
         roleName: role.name,
         permissions: role.permissions as Permission[],
@@ -99,7 +74,12 @@ describe("optional business fields (Testcontainers)", () => {
 
       const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
       for (const column of NULLABLE_COLUMNS) {
-        expect(row[column], column).toBeNull();
+        if (column === "policyNumbers") {
+          // 多值字段没有 null 态：未填写＝空数组
+          expect(row[column], column).toEqual([]);
+        } else {
+          expect(row[column], column).toBeNull();
+        }
       }
       // System-derived fields are unaffected by the blankness
       expect(row.source).toBe("manual");
@@ -162,6 +142,7 @@ describe("optional business fields (Testcontainers)", () => {
           username: seeded.users.cs1.username,
           name: seeded.users.cs1.name,
           email: seeded.users.cs1.email,
+          team: seeded.users.cs1.team,
           roleId: seeded.roles.frontline.id,
           roleName: seeded.roles.frontline.name,
           permissions: seeded.roles.frontline.permissions as Permission[],
@@ -261,7 +242,7 @@ describe("optional business fields (Testcontainers)", () => {
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({
         customerName: null,
-        policyNumber: null,
+        policyNumbers: [],
         channel: null,
         complaintLevel: null,
         dueAt: null,
@@ -281,6 +262,7 @@ describe("optional business fields (Testcontainers)", () => {
           username: seeded.users.manager.username,
           name: seeded.users.manager.name,
           email: seeded.users.manager.email,
+          team: seeded.users.manager.team,
           roleId: seeded.roles.csManager.id,
           roleName: seeded.roles.csManager.name,
           permissions: seeded.roles.csManager.permissions as Permission[],

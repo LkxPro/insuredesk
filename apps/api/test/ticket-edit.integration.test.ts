@@ -1,13 +1,9 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Permission, TicketCreateInput, TicketEditInput } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
+import { appRouter } from "../src/routers/index";
 import { effectivePermissions } from "../src/services/auth.service";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -22,36 +18,15 @@ const HOUR_MS = 60 * 60 * 1000;
  * included) the HTTP adapter uses.
  */
 describe("ticket edit + soft delete (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
   let cs2: User;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
-    });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-    ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
+    prisma = harness.prisma;
+    seeded = harness.seeded;
 
     cs2 = await prisma.user.create({
       data: {
@@ -64,8 +39,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   /** Caller with the given user identity and an explicit permission set. */
@@ -77,6 +51,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         username: user.username,
         name: user.name,
         email: user.email,
+        team: user.team,
         roleId: "role-under-test",
         roleName,
         permissions,
@@ -101,7 +76,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026071000829",
+    policyNumbers: ["P2026071000829"],
     userComplaintChannel: "400热线",
     customerName: "张三",
     phone: "13800000004",
@@ -213,6 +188,30 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const editLog = detail.processLogs.at(-1);
       expect(editLog?.remark).toContain("进线时间: 2026-07-08T13:15:00.000Z→（空）");
       expect(editLog?.remark).toContain("投诉信息接收渠道: 邮箱接收→（空）");
+    });
+
+    it("edits 保单号 multi values with space-joined remark; clearing logs （空）; 等值提交不留痕", async () => {
+      const ticketId = await createTicket();
+
+      const changed = await manager().ticket.edit(
+        editInput(ticketId, { policyNumbers: ["P-A", "P-B"] }),
+      );
+      expect(changed.changedFields).toEqual(["policyNumbers"]);
+      let detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.policyNumbers).toEqual(["P-A", "P-B"]);
+      expect(detail.processLogs.at(-1)?.remark).toBe("保单号: P2026071000829→P-A P-B");
+
+      // 重复项在契约层去重，去重后与现值相同＝无改动
+      const noop = await manager().ticket.edit(
+        editInput(ticketId, { policyNumbers: ["P-A", "P-B", "P-A"] }),
+      );
+      expect(noop.changedFields).toEqual([]);
+
+      const cleared = await manager().ticket.edit(editInput(ticketId, { policyNumbers: [] }));
+      expect(cleared.changedFields).toEqual(["policyNumbers"]);
+      detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.policyNumbers).toEqual([]);
+      expect(detail.processLogs.at(-1)?.remark).toBe("保单号: P-A P-B→（空）");
     });
 
     it("edits a completed ticket without reopening it (终态保持, 完结信息不动)", async () => {
@@ -360,8 +359,8 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     });
 
     it("statistics exclude deleted tickets: the list total drops with the delete", async () => {
-      const keptId = await createTicket({ policyNumber: "P-KEEP-0001" });
-      const droppedId = await createTicket({ policyNumber: "P-KEEP-0001" });
+      const keptId = await createTicket({ policyNumbers: ["P-KEEP-0001"] });
+      const droppedId = await createTicket({ policyNumbers: ["P-KEEP-0001"] });
 
       const before = await admin().ticket.list({ search: "P-KEEP-0001" });
       expect(before.total).toBe(2);

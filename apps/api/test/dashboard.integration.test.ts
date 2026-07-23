@@ -1,13 +1,10 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { DASHBOARD_METRIC_KEYS } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Prisma, PrismaClient, Role, User } from "../src/generated/prisma/client";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { appRouter } from "../src/routers/index";
+import { getDashboardStats } from "../src/services/dashboard.service";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -21,47 +18,24 @@ const HOUR_MS = 60 * 60 * 1000;
  * like the list tests.
  */
 describe("dashboard stats (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let getDashboardStats: typeof import("../src/services/dashboard.service").getDashboardStats;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
   let channelRows: { id: string; name: string }[];
   let channelIds: Map<string, string>;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "slaPolicies", "channels"],
     });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers, dashboardService] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-      import("../src/services/dashboard.service"),
-    ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    getDashboardStats = dashboardService.getDashboardStats;
-
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
-    channelRows = await seedData.seedChannels(prisma);
+    prisma = harness.prisma;
+    seeded = harness.seeded;
+    channelRows = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
     channelIds = new Map(channelRows.map((channel) => [channel.name, channel.id]));
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   // Every test builds its own fixture set from a clean slate. Extra users some
@@ -77,6 +51,7 @@ describe("dashboard stats (Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: role.id,
       roleName: role.name,
       permissions: permissions ?? (role.permissions as Permission[]),
@@ -116,7 +91,7 @@ describe("dashboard stats (Testcontainers)", () => {
     project: "融盛",
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     userComplaintChannel: "400热线",
     customerName: "王小明",
     phone: "13800000000",
@@ -156,7 +131,7 @@ describe("dashboard stats (Testcontainers)", () => {
       project: "融盛",
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
-      policyNumber: "BULK",
+      policyNumbers: ["BULK"],
       userComplaintChannel: "400热线",
       customerName: "批量客户",
       phone: "13800000000",

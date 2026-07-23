@@ -1,66 +1,35 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fixedClock } from "../src/clock";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
+import type { PrismaClient, User } from "../src/generated/prisma/client";
+import { appRouter } from "../src/routers/index";
 import type { AuthenticatedUser } from "../src/services/auth.service";
-import type * as ScheduleService from "../src/services/schedule.service";
-import type * as AssignService from "../src/services/ticket-assign.service";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { findOnDutyUserIds } from "../src/services/schedule.service";
+import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * Real Postgres exercises user/day uniqueness, shift JSON, RBAC, assignment
  * transactions, load aggregation, logs, and notification writes together.
  */
 describe("schedule workflow and schedule-based auto assignment (Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let seededChannelId: string | null;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let findOnDutyUserIds: typeof ScheduleService.findOnDutyUserIds;
-  let autoAssignTicketsBySchedule: typeof AssignService.autoAssignTicketsBySchedule;
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "slaPolicies", "shiftTypes", "channels"],
     });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedData, routers, scheduleService, assignService] =
-      await Promise.all([
-        import("../src/db"),
-        import("../prisma/seed-data"),
-        import("../src/routers/index"),
-        import("../src/services/schedule.service"),
-        import("../src/services/ticket-assign.service"),
-      ]);
-    prisma = appPrisma;
-    appRouter = routers.appRouter;
-    findOnDutyUserIds = scheduleService.findOnDutyUserIds;
-    autoAssignTicketsBySchedule = assignService.autoAssignTicketsBySchedule;
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
-    await seedData.seedShiftTypes(prisma);
+    prisma = harness.prisma;
+    seeded = harness.seeded;
     // 渠道只是分类维度：造一张带渠道的单，证明路由对它视而不见
-    seededChannelId = (await seedData.seedChannels(prisma)).at(0)?.id ?? null;
+    seededChannelId = harness.channelId("保司");
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   function identityOf(user: User, roleName: string, permissions: Permission[]): AuthenticatedUser {
@@ -69,6 +38,7 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: "role-under-test",
       roleName,
       permissions,

@@ -33,11 +33,18 @@ describe("ticket import template columns", () => {
   });
 
   it("文本列句式：「文本，最长 N 字」，登记了素材的接「；素材」", () => {
-    const { maxLength } = TICKET_FIELDS.policyNumber;
-    expect(columnOf("policyNumber").note).toBe(`文本，最长 ${maxLength} 字`);
+    const { maxLength } = TICKET_FIELDS.internalOrderNumber;
+    expect(columnOf("internalOrderNumber").note).toBe(`文本，最长 ${maxLength} 字`);
 
     const { maxLength: projectMax, importNoteSuffix } = TICKET_FIELDS.project;
     expect(columnOf("project").note).toBe(`文本，最长 ${projectMax} 字；${importNoteSuffix}`);
+  });
+
+  it("多值文本列句式：空格分隔与单个长度/数量上限", () => {
+    const { maxItemLength, maxItems } = TICKET_FIELDS.policyNumbers;
+    expect(columnOf("policyNumbers").note).toBe(
+      `文本，可填多个（空格分隔，重复自动去重）；单个最长 ${maxItemLength} 字，最多 ${maxItems} 个`,
+    );
   });
 
   it("日期列句式：固定格式示例与留空含义", () => {

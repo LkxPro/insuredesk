@@ -53,7 +53,7 @@ const GOLDEN_DESCRIPTORS = [
     importNoteSuffix: "如：连连支付",
   },
   { type: "text", key: "internalOrderNumber", label: "内部订单号", maxLength: 200 },
-  { type: "text", key: "policyNumber", label: "保单号", maxLength: 100 },
+  { type: "textList", key: "policyNumbers", label: "保单号", maxItemLength: 100, maxItems: 50 },
   {
     type: "text",
     key: "userComplaintChannel",

@@ -1,17 +1,13 @@
-import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   type Permission,
   TICKET_CREATE_FIELD_KEYS,
   type TicketCreateInput,
 } from "@insuredesk/shared";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
+import type { PrismaClient, User } from "../src/generated/prisma/client";
+import { appRouter } from "../src/routers/index";
 import type { AuthenticatedUser } from "../src/services/auth.service";
-
-const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
  * 字典目录 parameterized acceptance tests (issue #93). One canonical suite
@@ -112,43 +108,20 @@ const catalogs: CatalogConfig[] = [
 ];
 
 describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
-  let container: StartedPostgreSqlContainer;
+  let harness: IntegrationHarness;
   let prisma: PrismaClient;
-  let appRouter: typeof import("../src/routers/index").appRouter;
-  let seedData: typeof import("../prisma/seed-data");
-  let seeded: {
-    roles: { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
-    users: { admin: User; manager: User; cs1: User; observer: User };
-  };
+  let seeded: IntegrationHarness["seeded"];
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:17-alpine").start();
-    const databaseUrl = container.getConnectionUri();
-
-    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: "pipe",
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "slaPolicies", "channels", "categories"],
     });
-    process.env.DATABASE_URL = databaseUrl;
-
-    const [{ prisma: appPrisma }, seedModule, routers] = await Promise.all([
-      import("../src/db"),
-      import("../prisma/seed-data"),
-      import("../src/routers/index"),
-    ]);
-    prisma = appPrisma;
-    seedData = seedModule;
-    appRouter = routers.appRouter;
-    seeded = await seedData.seedFactoryRolesAndDemoUsers(prisma);
-    await seedData.seedSlaPolicies(prisma);
-    await seedData.seedChannels(prisma);
-    await seedData.seedTicketCategories(prisma);
+    prisma = harness.prisma;
+    seeded = harness.seeded;
   }, 180_000);
 
   afterAll(async () => {
-    await prisma?.$disconnect();
-    await container?.stop();
+    await harness?.stop();
   });
 
   function callerWith(user: User, permissions: Permission[]) {
@@ -157,6 +130,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
       username: user.username,
       name: user.name,
       email: user.email,
+      team: user.team,
       roleId: "role-under-test",
       roleName: "目录管理员",
       permissions,
@@ -351,6 +325,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
               username: seeded.users.manager.username,
               name: seeded.users.manager.name,
               email: seeded.users.manager.email,
+              team: seeded.users.manager.team,
               roleId: "role-under-test",
               roleName: "目录管理员",
               permissions: ["ticket.view", "ticket.view_all", "ticket.export"],
@@ -420,6 +395,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
               username: seeded.users.manager.username,
               name: seeded.users.manager.name,
               email: seeded.users.manager.email,
+              team: seeded.users.manager.team,
               roleId: "role-under-test",
               roleName: "目录管理员",
               permissions: ["ticket.view", "ticket.view_all", "ticket.export"],

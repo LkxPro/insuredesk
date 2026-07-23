@@ -14,7 +14,7 @@ import { ThemeProvider } from "../../components/ThemeProvider";
  * Issue #43 UI regression, adjusted for #62: the 新建工单 form submits with
  * only feedbackTime prefilled (打开对话框的时刻) — no required-field validation
  * errors, every OTHER unfilled field reaching the wire as null — no label
- * carries 选填/非必填 wording, and the detail page renders a null-heavy ticket
+ * carries 选填/非必填 wording, and the detail dialog renders a null-heavy ticket
  * with consistent 未知 placeholders. Clearing feedbackTime restores the null
  * (未填写) semantics #43 relied on. Same faked-fetch tRPC pipeline and
  * useAuth-seam mock as the sibling ticket tests.
@@ -44,6 +44,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     username: "tester",
     name: "测试用户",
     email: null,
+    team: null,
     roleId: "r1",
     roleName: role.name,
     permissions: [...role.permissions],
@@ -66,7 +67,7 @@ function blankDetailPayload() {
     brokerageEntity: null,
     paymentChannel: null,
     internalOrderNumber: null,
-    policyNumber: null,
+    policyNumbers: [],
     userComplaintChannel: null,
     complaintReceiveChannel: null,
     customerName: null,
@@ -199,14 +200,20 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       expect(calls.some((call) => call.path === "ticket.create")).toBe(true);
     });
     const mutation = calls.find((call) => call.path === "ticket.create");
-    // feedbackTime defaults to the open instant, minute precision (秒归零)
+    // feedbackTime defaults to the open instant, minute precision (秒归零)；
+    // 多值保单号的「未填写」形态是空数组而非 null
     expect(mutation?.input).toEqual({
       ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
       feedbackTime: NOW.toISOString(),
+      policyNumbers: [],
     });
 
-    // Success path is unchanged: straight to the new ticket's detail
-    expect(await screen.findByRole("heading", { name: "WO100001" })).toBeInTheDocument();
+    // 建单后留列表 (issue #116): the dialog closes onto 工单管理, no detail opens
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "工单管理" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "WO100001" })).not.toBeInTheDocument();
   });
 
   it("clearing the prefilled feedbackTime submits it as null (未填写), others still null", async () => {

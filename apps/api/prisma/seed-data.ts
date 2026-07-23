@@ -372,7 +372,7 @@ type DemoTicketPolicyNumber = (typeof DEMO_TICKET_POLICY_NUMBERS)[number];
 type SeededUsersAndRoles = Awaited<ReturnType<typeof seedFactoryRolesAndDemoUsers>>;
 
 interface DemoTicketSpec {
-  policyNumber: DemoTicketPolicyNumber;
+  demoPolicyNumber: DemoTicketPolicyNumber;
   title: string;
   createdHoursAgo: number;
   input: TicketCreateData;
@@ -418,6 +418,7 @@ function authUser(user: User, role: Role): AuthenticatedUser {
     username: user.username,
     name: user.name,
     email: user.email,
+    team: user.team,
     roleId: role.id,
     roleName: role.name,
     permissions: role.permissions as Permission[],
@@ -426,7 +427,7 @@ function authUser(user: User, role: Role): AuthenticatedUser {
 }
 
 function demoInput(
-  policyNumber: DemoTicketPolicyNumber,
+  demoPolicyNumber: DemoTicketPolicyNumber,
   overrides: Partial<TicketCreateData>,
 ): TicketCreateData {
   return {
@@ -435,8 +436,8 @@ function demoInput(
     project: "融盛百万医疗",
     brokerageEntity: "东方大地经纪",
     paymentChannel: "连连支付",
-    internalOrderNumber: `DEMO-ORDER-${policyNumber.slice(-4)}`,
-    policyNumber,
+    internalOrderNumber: `DEMO-ORDER-${demoPolicyNumber.slice(-4)}`,
+    policyNumbers: [demoPolicyNumber],
     userComplaintChannel: "400热线",
     complaintReceiveChannel: null,
     customerName: "演示客户",
@@ -456,7 +457,7 @@ function demoInput(
 
 const demoTicketSpecs: DemoTicketSpec[] = [
   {
-    policyNumber: "DEMO-POL-1001",
+    demoPolicyNumber: "DEMO-POL-1001",
     title: "未分配的新投诉",
     createdHoursAgo: 3,
     channelName: "保司",
@@ -468,7 +469,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     categoryName: "投诉-保费收取问题",
   },
   {
-    policyNumber: "DEMO-POL-1002",
+    demoPolicyNumber: "DEMO-POL-1002",
     title: "待超时未分配",
     createdHoursAgo: 47,
     channelName: "监管",
@@ -482,7 +483,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     categoryName: "监管投诉-引导性",
   },
   {
-    policyNumber: "DEMO-POL-1003",
+    demoPolicyNumber: "DEMO-POL-1003",
     title: "已超时未分配",
     createdHoursAgo: 56,
     channelName: "支付",
@@ -496,7 +497,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     categoryName: "投诉-信息泄露",
   },
   {
-    policyNumber: "DEMO-POL-1004",
+    demoPolicyNumber: "DEMO-POL-1004",
     title: "已分配给一线客服",
     createdHoursAgo: 8,
     assignee: "cs1",
@@ -509,7 +510,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     categoryName: "理赔咨询",
   },
   {
-    policyNumber: "DEMO-POL-1005",
+    demoPolicyNumber: "DEMO-POL-1005",
     title: "待超时且已分配",
     createdHoursAgo: 47,
     assignee: "manager",
@@ -524,7 +525,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     categoryName: "退保投诉",
   },
   {
-    policyNumber: "DEMO-POL-1006",
+    demoPolicyNumber: "DEMO-POL-1006",
     title: "处理中有跟进记录",
     createdHoursAgo: 18,
     assignee: "cs1",
@@ -567,7 +568,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     ],
   },
   {
-    policyNumber: "DEMO-POL-1007",
+    demoPolicyNumber: "DEMO-POL-1007",
     title: "处理中且已超时",
     createdHoursAgo: 54,
     assignee: "manager",
@@ -603,7 +604,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     ],
   },
   {
-    policyNumber: "DEMO-POL-1008",
+    demoPolicyNumber: "DEMO-POL-1008",
     title: "正常完结",
     createdHoursAgo: 40,
     assignee: "cs1",
@@ -636,7 +637,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     ],
   },
   {
-    policyNumber: "DEMO-POL-1009",
+    demoPolicyNumber: "DEMO-POL-1009",
     title: "超时后完结",
     createdHoursAgo: 80,
     assignee: "manager",
@@ -670,7 +671,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     ],
   },
   {
-    policyNumber: "DEMO-POL-1010",
+    demoPolicyNumber: "DEMO-POL-1010",
     title: "特急投诉无处理时限",
     createdHoursAgo: 6,
     assignee: "cs1",
@@ -706,7 +707,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     ],
   },
   {
-    policyNumber: "DEMO-POL-1011",
+    demoPolicyNumber: "DEMO-POL-1011",
     title: "飞书表单导入",
     createdHoursAgo: 12,
     source: "feishu_form",
@@ -720,7 +721,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     categoryName: "产品咨询",
   },
   {
-    policyNumber: "DEMO-POL-1012",
+    demoPolicyNumber: "DEMO-POL-1012",
     title: "社区反馈已分配",
     createdHoursAgo: 24,
     source: "community",
@@ -738,7 +739,7 @@ const demoTicketSpecs: DemoTicketSpec[] = [
 
 async function deleteExistingDemoTickets(prisma: PrismaClient): Promise<number> {
   const existing = await prisma.ticket.findMany({
-    where: { policyNumber: { in: [...DEMO_TICKET_POLICY_NUMBERS] } },
+    where: { policyNumbers: { hasSome: [...DEMO_TICKET_POLICY_NUMBERS] } },
     select: { id: true, workOrderNumber: true },
   });
   if (existing.length === 0) {

@@ -20,6 +20,15 @@ export const TicketStatus = {
   Completed: "completed",
 } as const satisfies Record<string, TicketStatus>;
 
+/**
+ * 已分配未完结 (assigned/processing) — the only states the 处理工单 actions
+ * (添加跟进 / 完结) may act on: unassigned has nobody to act on it, completed
+ * is a 终态.
+ */
+export function isTicketInFlight(status: TicketStatus): boolean {
+  return status === "assigned" || status === "processing";
+}
+
 export const PROCESS_LOG_ACTIONS = [
   "create",
   "assign",

@@ -86,8 +86,10 @@ COPY apps/api/tsconfig.json apps/api/prisma.config.ts apps/api/docker-entrypoint
 COPY packages/shared/src ./packages/shared/src
 COPY packages/shared/tsconfig.json ./packages/shared/
 
-# Regenerate the client into this stage's node_modules (pnpm's hashed virtual
-# store isn't portable across stages), then bring in the prebuilt SPA.
+# The Prisma client generates into the source tree (schema.prisma output =
+# src/generated/prisma), which .dockerignore keeps out of the build context — so
+# the COPY above can't carry it in and it must be generated here. Then bring in
+# the prebuilt SPA.
 RUN retry pnpm --filter @insuredesk/api run db:generate
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 

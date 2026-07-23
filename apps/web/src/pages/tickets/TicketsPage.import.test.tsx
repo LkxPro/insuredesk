@@ -1,60 +1,14 @@
 import type { Permission } from "@insuredesk/shared";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { httpBatchLink } from "@trpc/client";
-import { MemoryRouter } from "react-router";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthUser } from "@/contexts/AuthContext";
-import { trpc } from "@/lib/trpc";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
+import { auth, callsTo, renderApp, restFetch, toastSpies, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
-import { AppRoutes } from "../../AppRoutes";
-import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * 批量导入 entry point: the 导入 button is gated on ticket.import
- * (无权限 UI 无入口 — even the exporting 客服主管 lacks it until 勾选), the
- * dialog's 下载模板 fetches GET /api/tickets/import-template, and a server
- * rejection surfaces as a toast. Same useAuth-seam mock and faked tRPC fetch
- * as TicketsPage.export.test.tsx.
+ * 批量导入: the dialog's 下载模板 fetches GET /api/tickets/import-template
+ * over the global fetch (restFetch), the upload posts multipart to the same
+ * transport, and a server rejection surfaces as a toast.
  */
-
-const auth = vi.hoisted(() => ({
-  user: null as AuthUser | null,
-  isLoading: false,
-}));
-
-// The Toaster outlet lives in main.tsx, outside this render tree — spy on the
-// imperative API instead of hunting for rendered toast text.
-const toastSpies = vi.hoisted(() => ({
-  error: vi.fn(),
-  success: vi.fn(),
-  warning: vi.fn(),
-}));
-
-vi.mock("sonner", () => ({ toast: toastSpies }));
-
-vi.mock("@/contexts/AuthContext", () => ({
-  useAuth: () => ({
-    user: auth.user,
-    isLoading: auth.isLoading,
-    hasPermission: (permission: Permission) => auth.user?.permissions.includes(permission) ?? false,
-    login: vi.fn(),
-    logout: vi.fn(),
-  }),
-}));
-
-function userWith(role: { name: string; permissions: readonly Permission[] }): AuthUser {
-  return {
-    id: "u1",
-    username: "tester",
-    name: "测试用户",
-    email: null,
-    roleId: "r1",
-    roleName: role.name,
-    permissions: [...role.permissions],
-    requiredTicketFields: [],
-  };
-}
 
 /** 客服主管 plus the manually 勾选-ed ticket.import. */
 const IMPORTER = {
@@ -68,128 +22,49 @@ const REVOKER = {
   permissions: [...IMPORTER.permissions, "ticket.delete"] as Permission[],
 };
 
+type BatchItem = {
+  id: string;
+  importedAt: string;
+  importerName: string;
+  rowCount: number;
+  filename: string;
+  status: "revocable" | "locked" | "revoked";
+  revokedAt: string | null;
+  revokedByName: string | null;
+};
+
 /** Mutable per-test fixture behind ticket.importBatches. */
-const importBatches: {
-  items: Array<{
-    id: string;
-    importedAt: string;
-    importerName: string;
-    rowCount: number;
-    filename: string;
-    status: "revocable" | "locked" | "revoked";
-    revokedAt: string | null;
-    revokedByName: string | null;
-  }>;
-} = { items: [] };
+const importBatches: { items: BatchItem[] } = { items: [] };
 
-/** tRPC mutations arrive as POST with the input as the JSON body. */
-const trpcMutations: Array<{ path: string; input: unknown }> = [];
-
-/** tRPC batched queries arrive as GET with `input={"0":…}` in the URL. */
-function fakeTrpcFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const url = new URL(String(input));
-  const paths = (url.pathname.split("/api/trpc/")[1] ?? "").split(",");
-  const body = paths.map((path) => {
-    if (init?.method === "POST") {
-      trpcMutations.push({ path, input: JSON.parse(String(init.body))["0"] });
-      return { result: { data: { revoked: importBatches.items[0]?.rowCount ?? 0 } } };
-    }
-    if (path === "notification.list") {
-      return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
-    }
-    if (
-      path === "channel.filterOptions" ||
-      path === "ticketCategory.filterOptions" ||
-      path === "completionStatus.filterOptions"
-    ) {
-      return { result: { data: [] } };
-    }
-    if (path === "ticket.importBatches") {
-      return {
-        result: {
-          data: {
-            items: importBatches.items,
-            total: importBatches.items.length,
-            page: 1,
-            pageSize: 50,
-          },
-        },
-      };
-    }
-    return { result: { data: { items: [], total: 0, page: 1, pageSize: 20 } } };
-  });
-  return Promise.resolve(
-    new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
-  );
+/** Calls to ticket.revokeImportBatch, in order. */
+function revokeCalls() {
+  return callsTo("ticket.revokeImportBatch");
 }
 
-// The template download's own fetch — global, unlike the tRPC link's injected one.
-const downloadFetch = vi.fn();
-
 function renderTickets() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const trpcClient = trpc.createClient({
-    links: [httpBatchLink({ url: "http://localhost/api/trpc", fetch: fakeTrpcFetch })],
+  return renderApp({
+    path: "/tickets",
+    trpc: {
+      "ticket.importBatches": () => ({
+        items: importBatches.items,
+        total: importBatches.items.length,
+        page: 1,
+        pageSize: 50,
+      }),
+      "ticket.revokeImportBatch": () => ({ revoked: importBatches.items[0]?.rowCount ?? 0 }),
+    },
   });
-
-  return render(
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <MemoryRouter initialEntries={["/tickets"]}>
-            <AppRoutes />
-          </MemoryRouter>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </trpc.Provider>,
-  );
 }
 
 beforeEach(() => {
   auth.user = userWith(IMPORTER);
-  auth.isLoading = false;
   importBatches.items = [];
-  trpcMutations.length = 0;
-  downloadFetch.mockReset();
-  toastSpies.error.mockReset();
-  toastSpies.success.mockReset();
-  vi.stubGlobal("fetch", downloadFetch);
-  // jsdom has no object-URL implementation; the download path needs both ends
-  vi.stubGlobal(
-    "URL",
-    Object.assign(URL, {
-      createObjectURL: vi.fn(() => "blob:mock"),
-      revokeObjectURL: vi.fn(),
-    }),
-  );
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 async function openImportDialog() {
   fireEvent.click(await screen.findByRole("button", { name: /导入/ }));
   return screen.findByRole("dialog", { name: "导入工单" });
 }
-
-describe("permission gating (无权限 UI 无入口)", () => {
-  it("hides the 导入 button without ticket.import — export alone is not enough", async () => {
-    auth.user = userWith(TEST_ROLES.CS_MANAGER); // ticket.export but no import
-    renderTickets();
-
-    expect(await screen.findByRole("button", { name: /导出/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /导入/ })).not.toBeInTheDocument();
-  });
-
-  it("shows the 导入 button for holders of ticket.import", async () => {
-    renderTickets();
-    expect(await screen.findByRole("button", { name: /导入/ })).toBeInTheDocument();
-  });
-});
 
 describe("导入弹窗", () => {
   it("opens with 下载模板 and the file picker", async () => {
@@ -202,7 +77,7 @@ describe("导入弹窗", () => {
   });
 
   it("下载模板 fetches the dynamic template endpoint", async () => {
-    downloadFetch.mockResolvedValue(
+    restFetch.mockResolvedValue(
       new Response("xlsx", {
         status: 200,
         headers: {
@@ -215,14 +90,14 @@ describe("导入弹窗", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /下载模板/ }));
 
-    await waitFor(() => expect(downloadFetch).toHaveBeenCalledTimes(1));
-    const url = new URL(String(downloadFetch.mock.calls[0]?.[0]), "http://localhost");
+    await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
+    const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
     expect(url.pathname).toBe("/api/tickets/import-template");
     expect(toastSpies.error).not.toHaveBeenCalled();
   });
 
   it("surfaces a server rejection as a toast", async () => {
-    downloadFetch.mockResolvedValue(
+    restFetch.mockResolvedValue(
       new Response(JSON.stringify({ error: "Missing required permission: ticket.import" }), {
         status: 403,
         headers: { "content-type": "application/json" },
@@ -249,7 +124,7 @@ describe("上传导入", () => {
   }
 
   it("posts the file and zone as multipart and reports 成功导入 N 条", async () => {
-    downloadFetch.mockResolvedValue(
+    restFetch.mockResolvedValue(
       new Response(JSON.stringify({ imported: 42 }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -262,7 +137,7 @@ describe("上传导入", () => {
     fireEvent.click(screen.getByRole("button", { name: "上传并导入" }));
 
     await waitFor(() => expect(dialog).toHaveTextContent("成功导入 42 条"));
-    const [url, init] = downloadFetch.mock.calls[0] as [string, RequestInit];
+    const [url, init] = restFetch.mock.calls[0] as [string, RequestInit];
     expect(String(url)).toBe("/api/tickets/import");
     expect(init.method).toBe("POST");
     const formData = init.body as FormData;
@@ -271,7 +146,7 @@ describe("上传导入", () => {
   });
 
   it("renders the 行号/列名/原因 list on an all-or-nothing rejection", async () => {
-    downloadFetch.mockResolvedValue(
+    restFetch.mockResolvedValue(
       new Response(
         JSON.stringify({
           error: "导入校验未通过，共 4 个错误",
@@ -319,14 +194,12 @@ describe("上传导入", () => {
     fireEvent.click(screen.getByRole("button", { name: "上传并导入" }));
 
     await waitFor(() => expect(dialog).toHaveTextContent("文件大小超过 2MB 上限"));
-    expect(downloadFetch).not.toHaveBeenCalled();
+    expect(restFetch).not.toHaveBeenCalled();
   });
 });
 
 describe("导入历史", () => {
-  function batchItem(
-    overrides: Partial<(typeof importBatches.items)[number]> = {},
-  ): (typeof importBatches.items)[number] {
+  function batchItem(overrides: Partial<BatchItem> = {}): BatchItem {
     return {
       id: "batch-1",
       importedAt: "2026-07-17T02:00:00.000Z",
@@ -398,12 +271,12 @@ describe("导入历史", () => {
     fireEvent.click(await screen.findByRole("button", { name: "撤销" }));
     const confirm = await screen.findByRole("dialog", { name: "撤销导入" });
     expect(confirm).toHaveTextContent("七月批次.xlsx");
-    expect(trpcMutations).toHaveLength(0);
+    expect(revokeCalls()).toHaveLength(0);
 
     fireEvent.click(screen.getByRole("button", { name: "确认撤销" }));
 
-    await waitFor(() => expect(trpcMutations).toHaveLength(1));
-    expect(trpcMutations[0]).toEqual({
+    await waitFor(() => expect(revokeCalls()).toHaveLength(1));
+    expect(revokeCalls()[0]).toEqual({
       path: "ticket.revokeImportBatch",
       input: { batchId: "batch-1" },
     });

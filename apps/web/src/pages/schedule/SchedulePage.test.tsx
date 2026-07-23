@@ -38,6 +38,7 @@ function userWith(permissions: Permission[]): AuthUser {
     username: "viewer",
     name: "排班测试员",
     email: null,
+    team: null,
     roleId: "role",
     roleName: "排班角色",
     permissions,

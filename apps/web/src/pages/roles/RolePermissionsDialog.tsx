@@ -79,7 +79,7 @@ export function RolePermissionsDialog({
               (canEdit
                 ? `勾选「${role.name}」可用的权限点，保存后自成员下一次请求起生效。`
                 : role.system
-                  ? `「${role.name}」是系统角色，恒为全部权限，不可修改。`
+                  ? `「${role.name}」是系统角色，恒为全部正向权限（不含限制类），不可修改。`
                   : `「${role.name}」的权限清单（无编辑权限，仅可查看）。`)}
           </DialogDescription>
         </DialogHeader>

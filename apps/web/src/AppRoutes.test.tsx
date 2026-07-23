@@ -58,6 +58,12 @@ vi.mock("@/pages/shift-types/ShiftTypesPage", () => ({
   ShiftTypesPage: () => <h1>班次管理</h1>,
 }));
 
+// The 修改密码 block mutates over tRPC — stub it so the profile page's
+// read-only content renders without a provider. Covered in ProfilePage.test.tsx.
+vi.mock("@/pages/profile/ChangePasswordCard", () => ({
+  ChangePasswordCard: () => null,
+}));
+
 // And for the real 用户管理 / 角色权限 pages: they query user.list /
 // role.list on mount. Covered in UsersPage.test.tsx and RolesPage.test.tsx.
 vi.mock("@/pages/users/UsersPage", () => ({
@@ -74,6 +80,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     username: "tester",
     name: "测试用户",
     email: null,
+    team: null,
     roleId: "r1",
     roleName: role.name,
     permissions: [...role.permissions],
@@ -187,6 +194,45 @@ describe("index redirect", () => {
     auth.user = userWith({ name: "空角色", permissions: [] });
     renderAt("/");
     expect(screen.getByText("你没有访问该页面的权限")).toBeInTheDocument();
+  });
+});
+
+describe("个人资料", () => {
+  it("顶栏用户菜单入口 opens the profile page", async () => {
+    auth.user = {
+      ...userWith(TEST_ROLES.ADMIN),
+      email: "admin@insuredesk.local",
+      team: "平台组",
+    };
+    renderAt("/dashboard");
+
+    const trigger = screen.getByRole("button", { name: "用户菜单" });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "个人资料" }));
+
+    const heading = await screen.findByRole("heading", { name: "个人资料" });
+    const page = within(heading.closest("div") as HTMLElement);
+    expect(page.getByText("admin@insuredesk.local")).toBeInTheDocument();
+    expect(page.getByText("平台组")).toBeInTheDocument();
+  });
+
+  it("shows username/name/role, and — for unset email/team", () => {
+    auth.user = userWith(TEST_ROLES.READ_ONLY);
+    renderAt("/profile");
+
+    const heading = screen.getByRole("heading", { name: "个人资料" });
+    const page = within(heading.closest("div") as HTMLElement);
+    expect(page.getByText("tester")).toBeInTheDocument();
+    expect(page.getByText("测试用户")).toBeInTheDocument();
+    expect(page.getByText("只读观察")).toBeInTheDocument();
+    expect(page.getAllByText("—")).toHaveLength(2);
+  });
+
+  it("is open to a role with no page permissions", () => {
+    auth.user = userWith({ name: "空角色", permissions: [] });
+    renderAt("/profile");
+    expect(screen.getByRole("heading", { name: "个人资料" })).toBeInTheDocument();
   });
 });
 

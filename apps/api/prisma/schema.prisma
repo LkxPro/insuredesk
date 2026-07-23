@@ -112,7 +112,8 @@ model Ticket {
   brokerageEntity      String?
   paymentChannel       String?
   internalOrderNumber  String?
-  policyNumber         String?
+  /// 多值保单号；[] = 未填写（数组字段无 null 态）
+  policyNumbers        String[] @default([])
   userComplaintChannel String?
   /// 投诉信息接收渠道（我方收到投诉的途径，区别于客户发起侧的用户投诉渠道）; null = 未填写
   complaintReceiveChannel String?

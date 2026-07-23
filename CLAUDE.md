@@ -4,16 +4,17 @@ When reporting information to me, be extremely concise and sacrifice grammar for
 
 ## Development
 
-Dev containerizes **only PostgreSQL**; the app runs on the host with hot reload
-(ADR 0007). First run, and whenever you return to a fresh session:
+Dev is **fully containerized** (ADR 0007); the host needs only Docker + git +
+an editor. First run, and whenever you return to a fresh session:
 
 ```bash
-docker compose up -d    # start PostgreSQL (the #1 "forgot to start the DB" gotcha)
-pnpm dev                # auto-runs migrate deploy (+ seed if DB is empty), then api + web
+docker compose up -d    # installs deps, then starts db + api (3000) + web (5173), all with hot reload
 ```
 
-`docker compose down -v` drops the data volume for a clean database. Schema
-changes still go through `pnpm db:migrate` (generates + applies the migration
+Checks run in containers too: `make test`, `make lint`, `make migrate`,
+`make shell` (bare `make` lists targets). `docker compose down -v` drops the
+volumes for a clean database. Schema changes go through
+`docker compose exec api pnpm db:migrate` (generates + applies the migration
 file). Full dev setup is in `README.md`; production deploy steps and the host
 nginx reverse-proxy config are in `docs/deployment.md`.
 

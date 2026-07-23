@@ -8,11 +8,11 @@ import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
+import { ProfilePage } from "@/pages/profile/ProfilePage";
 import { RolesPage } from "@/pages/roles/RolesPage";
 import { SchedulePage } from "@/pages/schedule/SchedulePage";
 import { ShiftTypesPage } from "@/pages/shift-types/ShiftTypesPage";
 import { SlaPage } from "@/pages/sla/SlaPage";
-import { TicketDetail } from "@/pages/tickets/TicketDetail";
 import { TicketsPage } from "@/pages/tickets/TicketsPage";
 import { UsersPage } from "@/pages/users/UsersPage";
 
@@ -56,6 +56,9 @@ export function AppRoutes() {
         }
       >
         <Route index element={<IndexRedirect />} />
+        {/* 个人资料: entered from the header user menu, not the sidebar —
+            login is the only guard, so it takes no permission point. */}
+        <Route path="/profile" element={<ProfilePage />} />
         {NAV_ITEMS.map((item) => (
           <Route
             key={item.path}
@@ -67,10 +70,10 @@ export function AppRoutes() {
             }
           />
         ))}
-        {/* Sub-pages of 工单管理: create needs ticket.create; the detail read
-            only ticket.view — data scope is enforced server-side. /tickets/new
-            renders 工单管理 with the creation dialog open, so the modal stays
-            deep-linkable and guarded like a page. */}
+        {/* Sub-pages of 工单管理 are route-driven dialogs over the list, so
+            they stay deep-linkable and guarded like pages: create needs
+            ticket.create; the detail read only ticket.view — data scope is
+            enforced server-side. */}
         <Route
           path="/tickets/new"
           element={
@@ -83,7 +86,7 @@ export function AppRoutes() {
           path="/tickets/:id"
           element={
             <ProtectedRoute requiredPermission="ticket.view">
-              <TicketDetail />
+              <TicketsPage />
             </ProtectedRoute>
           }
         />

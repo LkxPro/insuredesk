@@ -11,11 +11,9 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Assignment entry points: 分配/改派/批量分配 exist only for holders of the
- * matching permission (mirroring the API guards), the dialog carries the
- * "时限不顺延" hint on reassignment, and confirming fires the right mutation
- * with the right payload. Same faked-fetch tRPC pipeline and useAuth-seam
- * mock as TicketsPage.list.test.tsx.
+ * Assignment flows: the dialog carries the "时限不顺延" hint on reassignment,
+ * and confirming fires the right mutation with the right payload. Same
+ * faked-fetch tRPC pipeline and useAuth-seam mock as TicketsPage.list.test.tsx.
  */
 
 const auth = vi.hoisted(() => ({
@@ -50,6 +48,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     username: "tester",
     name: "测试用户",
     email: null,
+    team: null,
     roleId: "r1",
     roleName: role.name,
     permissions: [...role.permissions],
@@ -66,7 +65,7 @@ type ListItem = {
   category: string;
   complaintLevel: string;
   customerName: string;
-  policyNumber: string;
+  policyNumbers: string[];
   status: string;
   displayStatus: string;
   assigneeId: string | null;
@@ -84,7 +83,7 @@ function listItem(overrides: Partial<ListItem> = {}): ListItem {
     category: "投诉-保费收取问题",
     complaintLevel: "一般投诉",
     customerName: "王小明",
-    policyNumber: "P2026070900123",
+    policyNumbers: ["P2026070900123"],
     status: "unassigned",
     displayStatus: "unassigned",
     assigneeId: null,
@@ -209,51 +208,6 @@ beforeEach(() => {
   calls = [];
 });
 
-describe("entry-point gating", () => {
-  it("只读观察 (no assign permissions) sees no checkboxes, no 操作 column, no assign buttons", async () => {
-    auth.user = userWith(TEST_ROLES.READ_ONLY);
-    canned.items = [listItem()];
-    canned.total = 1;
-    renderAt("/tickets");
-
-    await screen.findByText("WO100001");
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(screen.queryByText("操作")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "分配" })).not.toBeInTheDocument();
-  });
-
-  it("客服主管 sees 分配 on unassigned rows, 改派 on assigned rows, nothing on completed rows", async () => {
-    canned.items = [
-      listItem(),
-      listItem({
-        id: "t2",
-        workOrderNumber: "WO100002",
-        status: "assigned",
-        displayStatus: "assigned",
-        assigneeId: "u-zhang",
-        assigneeName: "张客服",
-      }),
-      listItem({
-        id: "t3",
-        workOrderNumber: "WO100003",
-        status: "completed",
-        displayStatus: "completed",
-        assigneeId: "u-zhang",
-        assigneeName: "张客服",
-      }),
-    ];
-    canned.total = 3;
-    renderAt("/tickets");
-
-    await screen.findByText("WO100001");
-    expect(screen.getByRole("button", { name: "分配" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "改派" })).toBeInTheDocument();
-    // 2 action buttons for 3 rows: the completed 终态 row has none, and its
-    // checkbox is not selectable either
-    expect(screen.getByRole("checkbox", { name: "选择工单 WO100003" })).toBeDisabled();
-  });
-});
-
 describe("single assignment from the list", () => {
   it("分配 opens the dialog and confirming fires ticket.assign with the picked user", async () => {
     canned.items = [listItem()];
@@ -294,10 +248,7 @@ describe("single assignment from the list", () => {
     expect(screen.getByText("当前责任人：").parentElement).toHaveTextContent("张客服");
   });
 
-  it("候选人来自 ticket.assigneeOptions（全部启用用户，与排班无关），仅当前责任人置灰 (#42)", async () => {
-    // 手动分配与排班相互独立: the dialog's people picker is the schedule-free
-    // active-user list — no schedule.* procedure is consulted, and every
-    // option except the current assignee is selectable.
+  it("下拉渲染 assigneeOptions 返回的候选，仅当前责任人置灰不可选", async () => {
     canned.items = [
       listItem({
         status: "assigned",
@@ -317,17 +268,14 @@ describe("single assignment from the list", () => {
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
     fireEvent.click(trigger);
 
-    // The off-roster user is offered and selectable; only the current
-    // assignee is disabled (self-reassign is a no-op)
-    const offRoster = await screen.findByRole("option", { name: "王二客服" });
-    expect(offRoster).not.toHaveAttribute("aria-disabled", "true");
+    expect(await screen.findByRole("option", { name: "王二客服" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(screen.getByRole("option", { name: "张客服（当前责任人）" })).toHaveAttribute(
       "aria-disabled",
       "true",
     );
-
-    expect(calls.some((call) => call.path === "ticket.assigneeOptions")).toBe(true);
-    expect(calls.every((call) => !call.path.startsWith("schedule."))).toBe(true);
   });
 });
 

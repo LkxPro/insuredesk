@@ -302,6 +302,21 @@ describe("validateTicketImportRows", () => {
     expect(errors[5]?.message).toContain("50");
   });
 
+  it("splits a 保单号 cell on whitespace, deduping into the array", async () => {
+    const { tickets, errors } = await validate([{ 保单号: "  P-1   P-2 P-1 " }]);
+    expect(errors).toEqual([]);
+    expect(first(tickets).policyNumbers).toEqual(["P-1", "P-2"]);
+  });
+
+  it("names the specific over-length 保单号 among the cell's other valid values", async () => {
+    const offending = `坏保单${"0".repeat(100)}`;
+    const { errors } = await validate([{ 保单号: `P-good ${offending} P-also-good` }]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ row: 2, column: "保单号" });
+    expect(errors[0]?.message).toContain("超出最大长度");
+    expect(errors[0]?.message).toContain(offending);
+  });
+
   it("flags fully identical rows as duplicates of the first occurrence", async () => {
     const row: RowInput = { 客户姓名: "张三", 投诉等级: "一般投诉" };
     const { errors } = await validate([row, { 客户姓名: "张三" }, { ...row }, { ...row }]);

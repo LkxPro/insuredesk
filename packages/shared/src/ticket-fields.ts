@@ -52,6 +52,14 @@ type TicketFieldSpec = {
       /** 拼在「文本，最长 N 字」之后的填写说明补充（示例或跨列规则）。 */
       readonly importNoteSuffix?: string;
     }
+  | {
+      /** 多值自由文本；各表面以空格分隔字符串形态承载数组值。 */
+      readonly type: "textList";
+      /** 单个取值的长度上限。 */
+      readonly maxItemLength: number;
+      /** 单张工单的取值数量上限。 */
+      readonly maxItems: number;
+    }
   | { readonly type: "date" }
   | {
       readonly type: "enum";
@@ -103,7 +111,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     importNoteSuffix: "如：连连支付",
   },
   { type: "text", key: "internalOrderNumber", label: "内部订单号", maxLength: 200 },
-  { type: "text", key: "policyNumber", label: "保单号", maxLength: 100 },
+  { type: "textList", key: "policyNumbers", label: "保单号", maxItemLength: 100, maxItems: 50 },
   {
     type: "text",
     key: "userComplaintChannel",
@@ -254,6 +262,50 @@ export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS
   (descriptor) => descriptor.label,
 );
 
+/**
+ * 保单号的空格分隔字符串形态 ⇄ 数组形态。多值字段各表面（表单输入、详情/
+ * 列表展示、导入单元格、导出单元格）统一走这一对函数；取值经清洗后不含
+ * 空白，join 出的文本总能无损 split 回同一数组。
+ */
+
+/** trim 每项、去空、去重（大小写敏感），保留首次出现的顺序。 */
+export function normalizePolicyNumbers(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const value = raw.trim();
+    if (value) {
+      seen.add(value);
+    }
+  }
+  return [...seen];
+}
+
+export function splitPolicyNumbers(text: string): string[] {
+  return normalizePolicyNumbers(text.split(/\s+/));
+}
+
+/** []（未填写）join 为空串，展示层沿用现有未填写样式。 */
+export function joinPolicyNumbers(values: readonly string[]): string {
+  return values.join(" ");
+}
+
+/**
+ * 清洗后的保单号数组违反上限时的拒绝原因；null = 合法。表单、API 契约与
+ * 导入逐行校验共用同一份文案。
+ */
+export function policyNumbersError(values: readonly string[]): string | null {
+  const { maxItemLength, maxItems } = TICKET_FIELDS.policyNumbers;
+  const tooLong = values.find((value) => value.length > maxItemLength);
+  if (tooLong !== undefined) {
+    // 单元格里多个空格分隔的保单号，得让用户知道是哪个超长
+    return `保单号「${tooLong}」超出最大长度 ${maxItemLength} 字（实际 ${tooLong.length} 字）`;
+  }
+  if (values.length > maxItems) {
+    return `保单号超出数量上限 ${maxItems} 个（实际 ${values.length} 个）`;
+  }
+  return null;
+}
+
 function surfaceLabel(
   descriptor: { readonly label: string; readonly overrides?: TicketFieldOverrides },
   slot: keyof TicketFieldOverrides,
@@ -279,6 +331,8 @@ export function ticketImportFieldNote(descriptor: TicketFieldDescriptor): string
       const suffix = "importNoteSuffix" in descriptor ? descriptor.importNoteSuffix : undefined;
       return suffix ? `${base}；${suffix}` : base;
     }
+    case "textList":
+      return `文本，可填多个（空格分隔，重复自动去重）；单个最长 ${descriptor.maxItemLength} 字，最多 ${descriptor.maxItems} 个`;
     case "date":
       return "格式 yyyy-MM-dd HH:mm（如 2026-07-09 14:30）；留空=未填写";
     case "enum": {

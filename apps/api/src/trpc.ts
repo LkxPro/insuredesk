@@ -1,4 +1,4 @@
-import type { Permission } from "@insuredesk/shared";
+import { PERMISSION_LABELS, type Permission } from "@insuredesk/shared";
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
 import { ZodError } from "zod";
@@ -85,6 +85,22 @@ export function requirePermission(permission: Permission) {
       throw new TRPCError({
         code: "FORBIDDEN",
         message: `Missing required permission: ${permission}`,
+      });
+    }
+    return next({ ctx });
+  });
+}
+
+/**
+ * Restrictive-permission guard (勾选=禁止): holding the point means the
+ * operation is FORBIDDEN — the exact inverse of requirePermission.
+ */
+export function requireNotForbidden(permission: Permission) {
+  return protectedProcedure.use(({ ctx, next }) => {
+    if (ctx.user.permissions.includes(permission)) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `当前角色${PERMISSION_LABELS[permission]}`,
       });
     }
     return next({ ctx });

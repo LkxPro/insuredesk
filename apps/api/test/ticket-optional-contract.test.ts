@@ -14,7 +14,11 @@ import { describe, expect, it } from "vitest";
 describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
   it("accepts a completely empty object and yields all-null data across every create field", () => {
     const data = ticketCreateInputSchema.parse({});
-    expect(data).toEqual(Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])));
+    // 多值保单号的「未填写」形态是空数组而非 null
+    expect(data).toEqual({
+      ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
+      policyNumbers: [],
+    });
   });
 
   it('normalizes "" and whitespace to null across text, enum and datetime fields', () => {

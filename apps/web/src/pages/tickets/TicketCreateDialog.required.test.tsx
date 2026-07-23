@@ -97,6 +97,7 @@ beforeEach(() => {
     username: "tester",
     name: "测试用户",
     email: null,
+    team: null,
     roleId: "r1",
     roleName: TEST_ROLES.CS_MANAGER.name,
     permissions: [...TEST_ROLES.CS_MANAGER.permissions],

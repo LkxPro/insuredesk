@@ -1,6 +1,7 @@
 import {
   BATCH_ASSIGN_LIMIT,
   COMPLAINT_LEVELS,
+  isTicketInFlight,
   TICKET_DISPLAY_STATUSES,
   TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
@@ -26,9 +27,10 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -45,6 +47,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -66,8 +69,10 @@ import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
+import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
+import { TicketDetailDialog } from "./TicketDetailDialog";
 import { TicketImportDialog } from "./TicketImportDialog";
 import { downloadTicketExport } from "./ticket-export";
 
@@ -80,12 +85,21 @@ import { downloadTicketExport } from "./ticket-export";
  * enforced server-side; this page renders whatever the viewer may see.
  *
  * Creation stays a modal dialog over this page, driven by the /tickets/new
- * route (`createOpen`), shown only to holders of ticket.create.
+ * route (`createOpen`), shown only to holders of ticket.create. The detail
+ * reads the same way: /tickets/:id renders this list with TicketDetailDialog
+ * open, and the filter query string rides along both ways so closing the
+ * dialog lands on the list exactly as it was.
  *
  * Assignment adds two permission-gated entry points: a per-row 分配/改派
  * action (ticket.assign) and multi-select checkboxes feeding 批量分配
  * (ticket.batch_assign). Selection is kept as id → AssignTarget so it survives
  * paging; completed tickets are terminal and not selectable.
+ *
+ * The 操作 cell is a hover-revealed quick-action strip: 分配/改派 and 自动分配
+ * (ticket.assign, non-terminal rows) plus 完结 (ticket.process, in-flight
+ * rows) jump straight into their dialogs without opening the detail — the
+ * same gates the detail header applies. The buttons stay in the DOM (and the
+ * strip reveals on focus) so keyboard users reach them too.
  */
 
 const BASE_COLUMN_COUNT = 10;
@@ -125,6 +139,50 @@ const ALL = "all";
 /** The one placeholder for 未填写 cells — unknown, not empty. */
 function Unknown() {
   return <span className="text-muted-foreground">—</span>;
+}
+
+/**
+ * 保单号列：首个保单号 + 多于一个时的 +N 徽标，点徽标弹出全部保单号。徽标只显
+ * 示"还有几个"，列宽由首值决定、不被整串撑爆。空数组沿用 Unknown 未填写样式。
+ */
+function PolicyNumbersCell({ policyNumbers }: { policyNumbers: readonly string[] }) {
+  if (policyNumbers.length === 0) {
+    return <Unknown />;
+  }
+  const [first, ...rest] = policyNumbers;
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap">
+      {first}
+      {rest.length > 0 && (
+        <Popover>
+          {/* stopPropagation: 展开保单号不应顺带打开行详情 */}
+          <PopoverTrigger asChild onClick={(event) => event.stopPropagation()}>
+            <Badge
+              asChild
+              variant="secondary"
+              className="cursor-pointer tabular-nums"
+              aria-label={`还有 ${rest.length} 个保单号`}
+            >
+              <button type="button">+{rest.length}</button>
+            </Badge>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="w-auto max-w-72 p-2"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <ul className="flex flex-col gap-1 text-sm">
+              {policyNumbers.map((policyNumber) => (
+                <li key={policyNumber} className="break-all">
+                  {policyNumber}
+                </li>
+              ))}
+            </ul>
+          </PopoverContent>
+        </Popover>
+      )}
+    </span>
+  );
 }
 
 function FilterSelect({
@@ -197,11 +255,16 @@ function ListSkeletonRows({ columnCount }: { columnCount: number }) {
 export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
+  // /tickets/:id renders this same page with the detail dialog open
+  const { id: detailId } = useParams<{ id: string }>();
+  const location = useLocation();
   const canCreate = hasPermission("ticket.create");
   const canAssign = hasPermission("ticket.assign");
   const canBatchAssign = hasPermission("ticket.batch_assign");
+  const canProcess = hasPermission("ticket.process");
   const canExport = hasPermission("ticket.export");
   const canImport = hasPermission("ticket.import");
+  const canRowActions = canAssign || canProcess;
 
   const [searchParams, setSearchParams] = useSearchParams();
   const query = parseListQuery(searchParams);
@@ -211,10 +274,13 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   // more than the id, and page 2 replaces `items`)
   const [selected, setSelected] = useState<ReadonlyMap<string, AssignTarget>>(new Map());
   const [singleTarget, setSingleTarget] = useState<AssignTarget | null>(null);
+  const [resolveTarget, setResolveTarget] = useState<ResolveTarget | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // 建单成功留在列表：新建行高亮，直到下一次建单或离开本页
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
@@ -256,7 +322,14 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
-  const columnCount = BASE_COLUMN_COUNT + (canBatchAssign ? 1 : 0) + (canAssign ? 1 : 0);
+
+  // QuickLook 键盘浏览: the detail dialog's ↑/↓ walk this page's rows in
+  // their listed (filter + sort) order. Edges stop dead — no page turn — and
+  // a detail deep-linked from outside the current page has no neighbours.
+  const detailIndex = detailId === undefined ? -1 : items.findIndex((t) => t.id === detailId);
+  const prevTicketId = detailIndex > 0 ? (items[detailIndex - 1]?.id ?? null) : null;
+  const nextTicketId = detailIndex === -1 ? null : (items[detailIndex + 1]?.id ?? null);
+  const columnCount = BASE_COLUMN_COUNT + (canBatchAssign ? 1 : 0) + (canRowActions ? 1 : 0);
 
   type ListItem = (typeof items)[number];
 
@@ -485,7 +558,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 <TableHead>工单号</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>{TICKET_FIELDS.customerName.label}</TableHead>
-                <TableHead>{TICKET_FIELDS.policyNumber.label}</TableHead>
+                <TableHead>{TICKET_FIELDS.policyNumbers.label}</TableHead>
                 <TableHead>{TICKET_FIELDS.channelId.overrides.listLabel}</TableHead>
                 <TableHead>{TICKET_FIELDS.complaintLevel.label}</TableHead>
                 <TableHead>来源</TableHead>
@@ -501,7 +574,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 <TableHead>
                   <SortHead field="dueAt" label="处理时限" query={query} onToggle={toggleSort} />
                 </TableHead>
-                {canAssign && <TableHead className="w-40">操作</TableHead>}
+                {canRowActions && <TableHead className="w-40">操作</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -525,8 +598,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                 items.map((ticket) => (
                   <TableRow
                     key={ticket.id}
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/tickets/${ticket.id}`)}
+                    data-highlighted={ticket.id === highlightId || undefined}
+                    className="group cursor-pointer data-[highlighted]:bg-primary/10 data-[highlighted]:hover:bg-primary/15"
+                    // The filter query string rides to the detail and back
+                    onClick={() => navigate(`/tickets/${ticket.id}${location.search}`)}
                   >
                     {canBatchAssign && (
                       // onClick swallows the row's navigation click; the checkbox inside is keyboard-operable
@@ -541,7 +616,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                     )}
                     <TableCell>
                       <Link
-                        to={`/tickets/${ticket.id}`}
+                        to={`/tickets/${ticket.id}${location.search}`}
                         className="font-medium hover:underline"
                         onClick={(event) => event.stopPropagation()}
                       >
@@ -552,7 +627,9 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                       <StatusBadge status={ticket.displayStatus} />
                     </TableCell>
                     <TableCell>{ticket.customerName ?? <Unknown />}</TableCell>
-                    <TableCell>{ticket.policyNumber ?? <Unknown />}</TableCell>
+                    <TableCell>
+                      <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />
+                    </TableCell>
                     <TableCell>{ticket.channel ?? <Unknown />}</TableCell>
                     <TableCell>{ticket.complaintLevel ?? <Unknown />}</TableCell>
                     <TableCell>{TICKET_SOURCE_LABELS[ticket.source]}</TableCell>
@@ -570,34 +647,53 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                         <Unknown />
                       )}
                     </TableCell>
-                    {canAssign && (
+                    {canRowActions && (
                       <TableCell>
-                        {ticket.status !== "completed" && (
-                          <div className="flex items-center whitespace-nowrap">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setSingleTarget(toTarget(ticket));
-                              }}
-                            >
-                              {ticket.assigneeId ? "改派" : "分配"}
-                            </Button>
-                            {ticket.assigneeId === null && (
+                        {/* stopPropagation everywhere: a quick action must
+                            never double as the row's open-detail click */}
+                        <div className="flex items-center whitespace-nowrap opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          {canAssign && ticket.status !== "completed" && (
+                            <>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  setAutoTargets([toTarget(ticket)]);
+                                  setSingleTarget(toTarget(ticket));
                                 }}
                               >
-                                自动分配
+                                {ticket.assigneeId ? "改派" : "分配"}
                               </Button>
-                            )}
-                          </div>
-                        )}
+                              {ticket.assigneeId === null && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setAutoTargets([toTarget(ticket)]);
+                                  }}
+                                >
+                                  自动分配
+                                </Button>
+                              )}
+                            </>
+                          )}
+                          {canProcess && isTicketInFlight(ticket.status) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setResolveTarget({
+                                  id: ticket.id,
+                                  workOrderNumber: ticket.workOrderNumber,
+                                });
+                              }}
+                            >
+                              完结
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -640,6 +736,22 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onOpenChange={(open) => {
             if (!open) navigate("/tickets");
           }}
+          onCreated={(ticket) => setHighlightId(ticket.id)}
+        />
+      )}
+
+      {detailId && (
+        <TicketDetailDialog
+          open
+          ticketId={detailId}
+          prevTicketId={prevTicketId}
+          nextTicketId={nextTicketId}
+          // replace: arrow browsing is transient scanning — Back should return
+          // to wherever the detail was entered from, not replay every stop
+          onNavigate={(id) => navigate(`/tickets/${id}${location.search}`, { replace: true })}
+          onOpenChange={(open) => {
+            if (!open) navigate(`/tickets${location.search}`);
+          }}
         />
       )}
 
@@ -653,6 +765,16 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             if (!open) setSingleTarget(null);
           }}
           targets={[singleTarget]}
+        />
+      )}
+
+      {canProcess && resolveTarget && (
+        <ResolveTicketDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setResolveTarget(null);
+          }}
+          ticket={resolveTarget}
         />
       )}
 
