@@ -480,6 +480,19 @@ describe("saving in place", () => {
       channelId: "ch-baosi",
     });
   });
+
+  it("blocks an edit when only the feedback date remains", async () => {
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.change(await screen.findByLabelText("反馈时间的时分"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    expect(await screen.findByText("反馈时间需同时选择日期和时间")).toBeInTheDocument();
+    expect(calls.some((call) => call.path === "ticket.edit")).toBe(false);
+  });
 });
 
 describe("弹窗关闭 across modes (issue #116)", () => {

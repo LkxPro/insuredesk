@@ -33,6 +33,13 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  isCompleteLocalDate,
+  isCompleteLocalDateTime,
+  isCompleteLocalTime,
+  localDateTimeToIso,
+  splitLocalDateTime,
+} from "@/lib/local-date-time";
 import { trpc } from "@/lib/trpc";
 
 /**
@@ -80,10 +87,47 @@ function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFiel
         ? z.boolean({ error: message })
         : z.string(message).min(1, message);
     case "date":
+      return localDateTimeFieldSchema(descriptor.label, true);
     case "catalog":
-      // date 在表单里是本地时间字符串（"" = 未填），catalog 是目录 id
+      // catalog 在表单里是目录 id
       return z.string(message).min(1, message);
   }
+}
+
+/**
+ * Empty is valid for optional datetime fields. Once either half is present,
+ * both date and minute must be present before the form can submit.
+ */
+function localDateTimeFieldSchema(label: string, required: boolean) {
+  return z.string().superRefine((value, ctx) => {
+    if (!value) {
+      if (required) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${label}为必填项` });
+      }
+      return;
+    }
+    const { date, time } = splitLocalDateTime(value);
+    if (date && !isCompleteLocalDate(date)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${label}日期格式不正确，请按 YY-MM-DD 输入`,
+      });
+      return;
+    }
+    if (time && !isCompleteLocalTime(time)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${label}时间格式不正确`,
+      });
+      return;
+    }
+    if (!isCompleteLocalDateTime(value)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${label}需同时选择日期和时间`,
+      });
+    }
+  });
 }
 
 /**
@@ -98,17 +142,12 @@ const refinePolicyNumbersText = (value: string, ctx: z.RefinementCtx) => {
 };
 
 export const ticketFormSchema = ticketCreateInputSchema.extend({
-  feedbackTime: z.string(),
-  contactTime: z.string(),
+  feedbackTime: localDateTimeFieldSchema(TICKET_FIELDS.feedbackTime.label, false),
+  contactTime: localDateTimeFieldSchema(TICKET_FIELDS.contactTime.label, false),
   policyNumbers: z.string().superRefine(refinePolicyNumbersText),
 });
 
 export type TicketFormValues = z.input<typeof ticketFormSchema>;
-
-/** Local datetime string ("YYYY-MM-DDTHH:mm") → absolute instant; "" stays null (未填写). */
-export function localDateTimeToIso(value: string): string | null {
-  return value ? new Date(value).toISOString() : null;
-}
 
 /**
  * Form values → wire payload：日期字段本地时间转绝对时刻，保单号空格分隔
@@ -206,6 +245,8 @@ export function TicketFormFields({
                   id="feedbackTime"
                   value={field.value}
                   onChange={field.onChange}
+                  datePickerAriaLabel={`${TICKET_FIELDS.feedbackTime.label}的日期选择器`}
+                  timeAriaLabel={`${TICKET_FIELDS.feedbackTime.label}的时分`}
                   invalid={!!errors.feedbackTime}
                 />
               )}
@@ -483,6 +524,8 @@ export function TicketFormFields({
                   id="contactTime"
                   value={field.value}
                   onChange={field.onChange}
+                  datePickerAriaLabel={`${TICKET_FIELDS.contactTime.label}的日期选择器`}
+                  timeAriaLabel={`${TICKET_FIELDS.contactTime.label}的时分`}
                   invalid={!!errors.contactTime}
                 />
               )}

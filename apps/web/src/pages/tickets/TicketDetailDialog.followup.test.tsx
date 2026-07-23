@@ -31,8 +31,8 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-// Radix Select (the picker's 时/分) drives its dropdown with pointer-capture
-// and scroll APIs that jsdom doesn't implement.
+// Radix controls elsewhere in the dialog use pointer-capture and scroll APIs
+// that jsdom doesn't implement.
 beforeAll(() => {
   Object.assign(window.HTMLElement.prototype, {
     scrollIntoView: vi.fn(),
@@ -230,7 +230,7 @@ describe("submitting a follow-up", () => {
     expect(screen.queryByRole("button", { name: "清空时间" })).not.toBeInTheDocument();
 
     // Pick a date to give the field a value, surfacing the clear button
-    fireEvent.click(screen.getByLabelText("下次联系时间（可选）"));
+    fireEvent.click(screen.getByRole("button", { name: "下次联系时间的日期选择器" }));
     const day = await screen.findByRole("button", { name: /15/ });
     fireEvent.click(day);
 
@@ -248,5 +248,22 @@ describe("submitting a follow-up", () => {
       remark: "已电话联系客户",
       nextContactTime: null,
     });
+  });
+
+  it("keeps a half-filled 下次联系时间 local and blocks submission until the pair is complete", async () => {
+    renderDetail();
+
+    fireEvent.change(await screen.findByLabelText("跟进备注"), {
+      target: { value: "计划再次联系" },
+    });
+    fireEvent.change(screen.getByLabelText("下次联系时间的时分"), {
+      target: { value: "09:30" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "提交跟进" }));
+
+    expect(await screen.findByText("下次联系时间需同时选择日期和时间")).toBeInTheDocument();
+    expect(calls.some((call) => call.path === "ticket.addComment")).toBe(false);
+    expect(screen.getByLabelText("下次联系时间的时分")).toHaveValue("09:30");
   });
 });

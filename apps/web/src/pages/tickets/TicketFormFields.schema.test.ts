@@ -81,3 +81,43 @@ describe("buildTicketFormSchema 保单号多值上限（描述表派生）", () 
     ).toBe(true);
   });
 });
+
+describe("buildTicketFormSchema 日期时间成对校验", () => {
+  const optional = buildTicketFormSchema([]);
+
+  it("空值和完整到分钟的本地时间合法", () => {
+    expect(optional.safeParse(BLANK_FORM).success).toBe(true);
+    expect(optional.safeParse({ ...BLANK_FORM, feedbackTime: "2026-07-15T09:30" }).success).toBe(
+      true,
+    );
+  });
+
+  it("只填日期或只填时间都会在提交校验中被拒绝", () => {
+    for (const feedbackTime of ["2026-07-15T", "T09:30"]) {
+      const result = optional.safeParse({ ...BLANK_FORM, feedbackTime });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.find((issue) => issue.path[0] === "feedbackTime")?.message).toBe(
+          "反馈时间需同时选择日期和时间",
+        );
+      }
+    }
+  });
+
+  it("键盘输入不存在的日期时给出日期格式提示", () => {
+    const result = optional.safeParse({
+      ...BLANK_FORM,
+      feedbackTime: "2026-02-31T09:30",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.find((issue) => issue.path[0] === "feedbackTime")?.message).toBe(
+        "反馈时间日期格式不正确，请按 YY-MM-DD 输入",
+      );
+    }
+  });
+
+  it("必填日期时间为空时仍使用标准必填文案", () => {
+    expect(requiredMessage("feedbackTime")).toBe("反馈时间为必填项");
+  });
+});
