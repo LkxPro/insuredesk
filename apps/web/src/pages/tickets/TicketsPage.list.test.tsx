@@ -177,28 +177,6 @@ describe("URL-driven filters (deep-linkable)", () => {
     expect(listInputs()[0]).toMatchObject({ status: "overdue", channelId: "ch-pay" });
   });
 
-  it("按停用渠道筛选：查询带其 id，触发器显示（已停用）标注", async () => {
-    renderAt("/tickets?channel=ch-legacy");
-
-    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]).toMatchObject({ channelId: "ch-legacy" });
-    await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: "渠道" })).toHaveTextContent("旧渠道（已停用）"),
-    );
-  });
-
-  it("按停用完结状态筛选：查询带其 id，触发器显示（已停用）标注", async () => {
-    renderAt("/tickets?completionStatus=cs-legacy");
-
-    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]).toMatchObject({ completionStatusId: "cs-legacy" });
-    await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: "完结状态" })).toHaveTextContent(
-        "旧完结状态（已停用）",
-      ),
-    );
-  });
-
   it("类别筛选：查询串带 category id，入参落到 categoryId", async () => {
     renderAt("/tickets?category=cat-claims");
 
@@ -209,13 +187,37 @@ describe("URL-driven filters (deep-linkable)", () => {
     );
   });
 
-  it("按停用类别筛选：查询带其 id，触发器显示（已停用）标注", async () => {
-    renderAt("/tickets?category=cat-legacy");
+  // 三个目录的筛选器共用同一渲染惯用法 (active ? name : `${name}（已停用）`);
+  // 停用项为何仍在筛选 feed 里、按停用 id 为何还能筛到存量工单, 是服务端规则。
+  it.each([
+    {
+      param: "channel",
+      id: "ch-legacy",
+      inputKey: "channelId",
+      label: "渠道",
+      expectText: "旧渠道（已停用）",
+    },
+    {
+      param: "category",
+      id: "cat-legacy",
+      inputKey: "categoryId",
+      label: "类别",
+      expectText: "旧类别（已停用）",
+    },
+    {
+      param: "completionStatus",
+      id: "cs-legacy",
+      inputKey: "completionStatusId",
+      label: "完结状态",
+      expectText: "旧完结状态（已停用）",
+    },
+  ])("按停用$label筛选：查询带其 id，触发器显示（已停用）标注", async (row) => {
+    renderAt(`/tickets?${row.param}=${row.id}`);
 
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]).toMatchObject({ categoryId: "cat-legacy" });
+    expect(listInputs()[0]).toMatchObject({ [row.inputKey]: row.id });
     await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: "类别" })).toHaveTextContent("旧类别（已停用）"),
+      expect(screen.getByRole("combobox", { name: row.label })).toHaveTextContent(row.expectText),
     );
   });
 
