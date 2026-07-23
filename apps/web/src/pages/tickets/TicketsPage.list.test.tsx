@@ -1,51 +1,13 @@
-import type { Permission } from "@insuredesk/shared";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { httpBatchLink } from "@trpc/client";
-import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthUser } from "@/contexts/AuthContext";
-import { trpc } from "@/lib/trpc";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
+import { auth, callsTo, renderApp, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
-import { AppRoutes } from "../../AppRoutes";
-import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
  * List page: rows render from ticket.list with the computed display status,
  * URL filters reach the query input (deep-linkable like /tickets/new), and
- * search / sort / pagination re-query with the right input. The tRPC link
- * gets a faked `fetch`, so the real procedure pipeline shape is exercised
- * without a server. Same useAuth-seam mock as TicketsPage.test.tsx.
+ * search / sort / pagination re-query with the right input.
  */
-
-const auth = vi.hoisted(() => ({
-  user: null as AuthUser | null,
-  isLoading: false,
-}));
-
-vi.mock("@/contexts/AuthContext", () => ({
-  useAuth: () => ({
-    user: auth.user,
-    isLoading: auth.isLoading,
-    hasPermission: (permission: Permission) => auth.user?.permissions.includes(permission) ?? false,
-    login: vi.fn(),
-    logout: vi.fn(),
-  }),
-}));
-
-function userWith(role: { name: string; permissions: readonly Permission[] }): AuthUser {
-  return {
-    id: "u1",
-    username: "tester",
-    name: "测试用户",
-    email: null,
-    team: null,
-    roleId: "r1",
-    roleName: role.name,
-    permissions: [...role.permissions],
-    requiredTicketFields: [],
-  };
-}
 
 type ListItem = {
   id: string;
@@ -82,95 +44,44 @@ function listItem(overrides: Partial<ListItem> = {}): ListItem {
   };
 }
 
-// Per-test canned list payload + a log of every decoded ticket.list input.
+// Per-test canned list payload behind ticket.list.
 const canned = { items: [] as ListItem[], total: 0 };
-let listInputs: Array<Record<string, unknown>>;
-
-/** tRPC batched queries arrive as GET with `input={"0":…}` in the URL. */
-function fakeFetch(input: RequestInfo | URL): Promise<Response> {
-  const url = new URL(String(input));
-  const raw = url.searchParams.get("input");
-  const batch = raw ? (JSON.parse(raw) as Record<string, Record<string, unknown>>) : {};
-  const paths = (url.pathname.split("/api/trpc/")[1] ?? "").split(",");
-  const body = paths.map((path, index) => {
-    // The AppLayout bell polls notification.list in the same batch;
-    // an empty inbox keeps these tests focused on ticket.list.
-    if (path === "notification.list") {
-      return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
-    }
-    if (path === "channel.filterOptions") {
-      return {
-        result: {
-          data: [
-            { id: "ch-baosi", name: "保司", active: true },
-            { id: "ch-pay", name: "支付", active: true },
-            { id: "ch-legacy", name: "旧渠道", active: false },
-          ],
-        },
-      };
-    }
-    if (path === "ticketCategory.filterOptions") {
-      return {
-        result: {
-          data: [
-            { id: "cat-claims", name: "理赔咨询", active: true },
-            { id: "cat-legacy", name: "旧类别", active: false },
-          ],
-        },
-      };
-    }
-    if (path === "completionStatus.filterOptions") {
-      return {
-        result: {
-          data: [
-            { id: "cs-normal", name: "正常完结", active: true },
-            { id: "cs-legacy", name: "旧完结状态", active: false },
-          ],
-        },
-      };
-    }
-    const procedureInput = batch[String(index)] ?? {};
-    listInputs.push(procedureInput);
-    const page = (procedureInput.page as number | undefined) ?? 1;
-    return {
-      result: {
-        data: { items: canned.items, total: canned.total, page, pageSize: 20 },
-      },
-    };
-  });
-  return Promise.resolve(
-    new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
-  );
-}
 
 function renderAt(path: string) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const trpcClient = trpc.createClient({
-    links: [httpBatchLink({ url: "http://localhost/api/trpc", fetch: fakeFetch })],
+  return renderApp({
+    path,
+    trpc: {
+      "channel.filterOptions": [
+        { id: "ch-baosi", name: "保司", active: true },
+        { id: "ch-pay", name: "支付", active: true },
+        { id: "ch-legacy", name: "旧渠道", active: false },
+      ],
+      "ticketCategory.filterOptions": [
+        { id: "cat-claims", name: "理赔咨询", active: true },
+        { id: "cat-legacy", name: "旧类别", active: false },
+      ],
+      "completionStatus.filterOptions": [
+        { id: "cs-normal", name: "正常完结", active: true },
+        { id: "cs-legacy", name: "旧完结状态", active: false },
+      ],
+      "ticket.list": (input: unknown) => {
+        const page =
+          ((input as Record<string, unknown> | undefined)?.page as number | undefined) ?? 1;
+        return { items: canned.items, total: canned.total, page, pageSize: 20 };
+      },
+    },
   });
+}
 
-  return render(
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <MemoryRouter initialEntries={[path]}>
-            <AppRoutes />
-          </MemoryRouter>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </trpc.Provider>,
-  );
+/** Every decoded ticket.list input, in call order. */
+function listInputs(): Array<Record<string, unknown>> {
+  return callsTo("ticket.list").map((call) => call.input as Record<string, unknown>);
 }
 
 beforeEach(() => {
   auth.user = userWith(TEST_ROLES.CS_MANAGER);
-  auth.isLoading = false;
   canned.items = [];
   canned.total = 0;
-  listInputs = [];
 });
 
 describe("list rendering", () => {
@@ -262,15 +173,15 @@ describe("URL-driven filters (deep-linkable)", () => {
   it("passes status/channel from the query string into ticket.list", async () => {
     renderAt("/tickets?status=overdue&channel=ch-pay");
 
-    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]).toMatchObject({ status: "overdue", channelId: "ch-pay" });
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ status: "overdue", channelId: "ch-pay" });
   });
 
   it("按停用渠道筛选：查询带其 id，触发器显示（已停用）标注", async () => {
     renderAt("/tickets?channel=ch-legacy");
 
-    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]).toMatchObject({ channelId: "ch-legacy" });
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ channelId: "ch-legacy" });
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "渠道" })).toHaveTextContent("旧渠道（已停用）"),
     );
@@ -279,8 +190,8 @@ describe("URL-driven filters (deep-linkable)", () => {
   it("按停用完结状态筛选：查询带其 id，触发器显示（已停用）标注", async () => {
     renderAt("/tickets?completionStatus=cs-legacy");
 
-    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]).toMatchObject({ completionStatusId: "cs-legacy" });
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ completionStatusId: "cs-legacy" });
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "完结状态" })).toHaveTextContent(
         "旧完结状态（已停用）",
@@ -291,8 +202,8 @@ describe("URL-driven filters (deep-linkable)", () => {
   it("类别筛选：查询串带 category id，入参落到 categoryId", async () => {
     renderAt("/tickets?category=cat-claims");
 
-    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]).toMatchObject({ categoryId: "cat-claims" });
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ categoryId: "cat-claims" });
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "类别" })).toHaveTextContent("理赔咨询"),
     );
@@ -301,8 +212,8 @@ describe("URL-driven filters (deep-linkable)", () => {
   it("按停用类别筛选：查询带其 id，触发器显示（已停用）标注", async () => {
     renderAt("/tickets?category=cat-legacy");
 
-    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]).toMatchObject({ categoryId: "cat-legacy" });
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ categoryId: "cat-legacy" });
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "类别" })).toHaveTextContent("旧类别（已停用）"),
     );
@@ -311,29 +222,29 @@ describe("URL-driven filters (deep-linkable)", () => {
   it("ignores an invalid query string and lists with defaults", async () => {
     renderAt("/tickets?status=nonsense&page=x");
 
-    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]?.status).toBeUndefined();
-    expect(listInputs[0]).toMatchObject({ page: 1 });
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]?.status).toBeUndefined();
+    expect(listInputs()[0]).toMatchObject({ page: 1 });
   });
 
   it("keeps valid filters when a neighbouring param is malformed", async () => {
     renderAt("/tickets?status=overdue&page=x");
 
-    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]).toMatchObject({ status: "overdue", page: 1 });
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ status: "overdue", page: 1 });
   });
 });
 
 describe("search / sort / pagination re-query", () => {
   it("submitting the search box queries with the entered text", async () => {
     renderAt("/tickets");
-    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
 
     const searchBox = screen.getByRole("searchbox");
     fireEvent.change(searchBox, { target: { value: "三丰" } });
     fireEvent.submit(searchBox.closest("form") as HTMLFormElement);
 
-    await waitFor(() => expect(listInputs.at(-1)).toMatchObject({ search: "三丰" }));
+    await waitFor(() => expect(listInputs().at(-1)).toMatchObject({ search: "三丰" }));
   });
 
   it("clicking 创建时间 flips to ascending; clicking 处理时限 sorts by dueAt soonest-first", async () => {
@@ -344,12 +255,12 @@ describe("search / sort / pagination re-query", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /创建时间/ }));
     await waitFor(() =>
-      expect(listInputs.at(-1)).toMatchObject({ sortBy: "createdAt", sortOrder: "asc" }),
+      expect(listInputs().at(-1)).toMatchObject({ sortBy: "createdAt", sortOrder: "asc" }),
     );
 
     fireEvent.click(screen.getByRole("button", { name: /处理时限/ }));
     await waitFor(() =>
-      expect(listInputs.at(-1)).toMatchObject({ sortBy: "dueAt", sortOrder: "asc" }),
+      expect(listInputs().at(-1)).toMatchObject({ sortBy: "dueAt", sortOrder: "asc" }),
     );
   });
 
@@ -361,6 +272,6 @@ describe("search / sort / pagination re-query", () => {
     expect(screen.getByText(/共 45 条/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-    await waitFor(() => expect(listInputs.at(-1)).toMatchObject({ page: 2 }));
+    await waitFor(() => expect(listInputs().at(-1)).toMatchObject({ page: 2 }));
   });
 });
