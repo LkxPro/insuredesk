@@ -112,7 +112,7 @@ describe("DateTimePicker 日期 + 分钟输入", () => {
     expect(screen.queryByRole("button", { name: "清空时间" })).not.toBeInTheDocument();
   });
 
-  it("shows the clear button when a value is present, and clearing returns to unfilled", () => {
+  it("clears system-prefilled date and time even when the user has not touched either input", () => {
     render(<Harness initial="2026-07-15T09:30" />);
 
     const clear = screen.getByRole("button", { name: "清空时间" });
@@ -121,6 +121,8 @@ describe("DateTimePicker 日期 + 分钟输入", () => {
     fireEvent.click(clear);
 
     expect(screen.getByTestId("value")).toHaveTextContent("");
+    expect(screen.getByLabelText("测试日期")).toHaveValue("");
+    expect(screen.getByLabelText("测试时间的时分")).toHaveValue("");
     expect(screen.queryByRole("button", { name: "清空时间" })).not.toBeInTheDocument();
   });
 });

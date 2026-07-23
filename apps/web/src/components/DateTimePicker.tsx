@@ -128,37 +128,37 @@ export function DateTimePicker({
     }),
     [referenceDate],
   );
-  const { ref: dateInputRef, setValue: setMaskedDate } = useIMask<HTMLInputElement>(
-    dateMaskOptions,
-    {
-      defaultValue: shortDate,
-      onAccept: (maskedDate) => {
-        const nextDate = toLocalDate(maskedDate, referenceDate);
-        if (nextDate !== parts.date) {
-          onChange(joinLocalDateTime({ date: nextDate, time: parts.time }));
-        }
-      },
+  const { ref: dateInputRef, maskRef: dateMaskRef } = useIMask<HTMLInputElement>(dateMaskOptions, {
+    defaultValue: shortDate,
+    onAccept: (maskedDate) => {
+      const nextDate = toLocalDate(maskedDate, referenceDate);
+      if (nextDate !== parts.date) {
+        onChange(joinLocalDateTime({ date: nextDate, time: parts.time }));
+      }
     },
-  );
-  const { ref: timeInputRef, setValue: setMaskedTime } = useIMask<HTMLInputElement>(
-    timeMaskOptions,
-    {
-      defaultValue: parts.time,
-      onAccept: (maskedTime) => {
-        if (maskedTime !== parts.time) {
-          onChange(joinLocalDateTime({ date: parts.date, time: maskedTime }));
-        }
-      },
+  });
+  const { ref: timeInputRef, maskRef: timeMaskRef } = useIMask<HTMLInputElement>(timeMaskOptions, {
+    defaultValue: parts.time,
+    onAccept: (maskedTime) => {
+      if (maskedTime !== parts.time) {
+        onChange(joinLocalDateTime({ date: parts.date, time: maskedTime }));
+      }
     },
-  );
+  });
 
   useEffect(() => {
-    setMaskedDate(shortDate);
-  }, [setMaskedDate, shortDate]);
+    const mask = dateMaskRef.current;
+    if (mask && mask.value !== shortDate) {
+      mask.value = shortDate;
+    }
+  }, [dateMaskRef, shortDate]);
 
   useEffect(() => {
-    setMaskedTime(parts.time);
-  }, [parts.time, setMaskedTime]);
+    const mask = timeMaskRef.current;
+    if (mask && mask.value !== parts.time) {
+      mask.value = parts.time;
+    }
+  }, [parts.time, timeMaskRef]);
 
   useEffect(() => {
     if (selectedYear !== undefined) {
