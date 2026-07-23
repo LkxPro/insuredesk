@@ -248,10 +248,7 @@ describe("single assignment from the list", () => {
     expect(screen.getByText("当前责任人：").parentElement).toHaveTextContent("张客服");
   });
 
-  it("候选人来自 ticket.assigneeOptions（全部启用用户，与排班无关），仅当前责任人置灰 (#42)", async () => {
-    // 手动分配与排班相互独立: the dialog's people picker is the schedule-free
-    // active-user list — no schedule.* procedure is consulted, and every
-    // option except the current assignee is selectable.
+  it("下拉渲染 assigneeOptions 返回的候选，仅当前责任人置灰不可选", async () => {
     canned.items = [
       listItem({
         status: "assigned",
@@ -271,17 +268,14 @@ describe("single assignment from the list", () => {
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
     fireEvent.click(trigger);
 
-    // The off-roster user is offered and selectable; only the current
-    // assignee is disabled (self-reassign is a no-op)
-    const offRoster = await screen.findByRole("option", { name: "王二客服" });
-    expect(offRoster).not.toHaveAttribute("aria-disabled", "true");
+    expect(await screen.findByRole("option", { name: "王二客服" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(screen.getByRole("option", { name: "张客服（当前责任人）" })).toHaveAttribute(
       "aria-disabled",
       "true",
     );
-
-    expect(calls.some((call) => call.path === "ticket.assigneeOptions")).toBe(true);
-    expect(calls.every((call) => !call.path.startsWith("schedule."))).toBe(true);
   });
 });
 

@@ -2,6 +2,7 @@ import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
 import { appRouter } from "../src/routers/index";
+import { localDateTimeParts } from "../src/services/schedule.service";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
@@ -20,7 +21,9 @@ describe("ticket assignment (Testcontainers)", () => {
   let inactiveUser: User;
 
   beforeAll(async () => {
-    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "slaPolicies", "shiftTypes"],
+    });
     prisma = harness.prisma;
     seeded = harness.seeded;
 
@@ -451,6 +454,24 @@ describe("ticket assignment (Testcontainers)", () => {
           username: expect.any(String),
         });
       }
+    });
+
+    it("stays schedule-free: someone on duty today does not narrow the list", async () => {
+      const early = await prisma.shiftType.findUniqueOrThrow({ where: { name: "早班" } });
+      await prisma.schedule.create({
+        data: {
+          date: localDateTimeParts(new Date()).date,
+          userId: seeded.users.cs1.id,
+          shiftId: early.id,
+        },
+      });
+
+      const options = await manager().ticket.assigneeOptions();
+      const ids = options.map((option) => option.id);
+      expect(ids).toContain(seeded.users.cs1.id);
+      // cs2 无排班记录，仍须可选
+      expect(ids).toContain(cs2.id);
+      expect(ids).not.toContain(inactiveUser.id);
     });
   });
 
