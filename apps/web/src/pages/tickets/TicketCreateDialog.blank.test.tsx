@@ -241,7 +241,7 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
     renderAt("/tickets/new");
     await screen.findByRole("heading", { name: "新建工单" });
 
-    fireEvent.change(screen.getByLabelText("反馈时间的时分"), {
+    fireEvent.input(screen.getByLabelText("反馈时间的时分"), {
       target: { value: "" },
     });
     fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
