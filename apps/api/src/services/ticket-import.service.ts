@@ -62,7 +62,17 @@ function cellToRaw(cell: ExcelJS.Cell): ImportCellValue {
     return value;
   }
   if (typeof value === "object") {
-    return cell.text.trim();
+    // Hyperlink cells can carry rich text; exceljs then returns the richText
+    // model object from cell.text instead of a string.
+    const text = cell.text;
+    if (typeof text === "string") {
+      return text.trim();
+    }
+    const richText = (value as { text?: { richText?: { text: string }[] } }).text?.richText;
+    if (richText) {
+      return richText.map((run) => run.text).join("").trim();
+    }
+    return String(text ?? "").trim();
   }
   return String(value).trim();
 }
