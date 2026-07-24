@@ -213,6 +213,45 @@ describe("ticket export (Testcontainers)", () => {
     });
   });
 
+  describe("逗号分隔多选参数 (querystring 是扁平字符串)", () => {
+    it("splits comma-joined filters and exports the union", async () => {
+      await makeTicket({ channelId: channelId("支付"), customerName: "支付客户" });
+      await makeTicket({ channelId: channelId("监管"), customerName: "监管客户" });
+      await makeTicket({ channelId: channelId("保司"), customerName: "保司客户" });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, {
+        format: "csv",
+        channelId: `${channelId("支付")},${channelId("监管")}`,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain("支付客户");
+      expect(res.body).toContain("监管客户");
+      expect(res.body).not.toContain("保司客户");
+    });
+
+    it("source 缺省排除归档单；空值参数 = 不过滤、归档单随导出", async () => {
+      await makeTicket({ customerName: "活跃客户" });
+      await makeTicket({ customerName: "归档客户" }, { source: "file_import" });
+
+      const session = await sessionFor("manager");
+      const defaulted = await exportRequest(session, { format: "csv" });
+      expect(defaulted.statusCode).toBe(200);
+      expect(defaulted.body).toContain("活跃客户");
+      expect(defaulted.body).not.toContain("归档客户");
+
+      // 与列表页"清空来源筛选"下传的标记一致：空值覆盖缺省
+      const cleared = await exportRequest(session, { format: "csv", source: "" });
+      expect(cleared.statusCode).toBe(200);
+      expect(cleared.body).toContain("归档客户");
+
+      const explicit = await exportRequest(session, { format: "csv", source: "file_import" });
+      expect(explicit.statusCode).toBe(200);
+      expect(explicit.body).toContain("归档客户");
+      expect(explicit.body).not.toContain("活跃客户");
+    });
+  });
+
   describe("按列表当前筛选条件导出 (CSV)", () => {
     it("exports exactly the rows ticket.list returns for the same filters, soft-deletes excluded", async () => {
       const payment1 = await makeTicket({

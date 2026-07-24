@@ -70,7 +70,10 @@ function cellToRaw(cell: ExcelJS.Cell): ImportCellValue {
     }
     const richText = (value as { text?: { richText?: { text: string }[] } }).text?.richText;
     if (richText) {
-      return richText.map((run) => run.text).join("").trim();
+      return richText
+        .map((run) => run.text)
+        .join("")
+        .trim();
     }
     return String(text ?? "").trim();
   }

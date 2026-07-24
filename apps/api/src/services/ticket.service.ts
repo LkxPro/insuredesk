@@ -244,23 +244,24 @@ export async function buildTicketListWhere(
   // Each filter is its own AND element so their inner ORs (base-status
   // predicate, search) can never collide.
   const filters: Prisma.TicketWhereInput[] = [];
-  if (query.status) {
-    filters.push(displayStatusTicketWhere(query.status, now));
+  if (query.status && query.status.length > 0) {
+    // 多选状态取并集：单状态谓词恰好互斥划分全量工单，OR 后不重不漏
+    filters.push({ OR: query.status.map((status) => displayStatusTicketWhere(status, now)) });
   }
-  if (query.channelId) {
-    filters.push({ channelId: query.channelId });
+  if (query.channelId && query.channelId.length > 0) {
+    filters.push({ channelId: { in: query.channelId } });
   }
-  if (query.categoryId) {
-    filters.push({ categoryId: query.categoryId });
+  if (query.categoryId && query.categoryId.length > 0) {
+    filters.push({ categoryId: { in: query.categoryId } });
   }
-  if (query.completionStatusId) {
-    filters.push({ completionStatusId: query.completionStatusId });
+  if (query.completionStatusId && query.completionStatusId.length > 0) {
+    filters.push({ completionStatusId: { in: query.completionStatusId } });
   }
-  if (query.complaintLevel) {
-    filters.push({ complaintLevel: query.complaintLevel });
+  if (query.complaintLevel && query.complaintLevel.length > 0) {
+    filters.push({ complaintLevel: { in: query.complaintLevel } });
   }
-  if (query.source) {
-    filters.push({ source: query.source });
+  if (query.source && query.source.length > 0) {
+    filters.push({ source: { in: query.source } });
   }
   if (query.search) {
     filters.push({

@@ -1,6 +1,7 @@
 import {
   type Permission,
   TICKET_CREATE_FIELD_KEYS,
+  TICKET_SOURCES,
   type TicketCreateInput,
   type TicketEditInput,
 } from "@insuredesk/shared";
@@ -270,6 +271,7 @@ describe("optional business fields (Testcontainers)", () => {
         },
         {
           format: "csv",
+          source: [...TICKET_SOURCES],
           search: created.workOrderNumber,
           sortBy: "createdAt",
           sortOrder: "desc",

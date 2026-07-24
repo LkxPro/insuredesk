@@ -69,6 +69,17 @@ export const ticketSourceSchema = z.enum(TICKET_SOURCES);
 export type TicketSource = (typeof TICKET_SOURCES)[number];
 
 /**
+ * 来源筛选缺省值：导入入口只用于历史归档（纯留痕，不再处理），其工单按
+ * createdAt 排序会压在整个列表最前，故列表/导出默认排除 file_import；显式
+ * 筛选（含清空来源筛选 = 不过滤）时仍可见。
+ */
+export const DEFAULT_TICKET_SOURCE_FILTER: readonly TicketSource[] = [
+  "feishu_form",
+  "manual",
+  "community",
+];
+
+/**
  * Display labels per source. For external sources this label IS the derived
  * "由谁创建"; for creator-backed sources the creator's current name wins.
  */

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   complaintLevelSchema,
+  DEFAULT_TICKET_SOURCE_FILTER,
   nuclearBodyStatusSchema,
   prioritySchema,
   ticketSourceSchema,
@@ -268,20 +269,27 @@ export type TicketSortField = (typeof TICKET_SORT_FIELDS)[number];
 
 /**
  * Ticket-list query contract, shared by the list page's filter state and the
- * API input — one schema, both ends. The 状态 filter accepts all 6 display
- * statuses: computed ones are resolved to SQL predicates server-side, never
- * stored.
+ * API input — one schema, both ends. All filters are multi-select: 空数组 =
+ * 不过滤. The 状态 filter accepts all 6 display statuses: computed ones are
+ * resolved to SQL predicates server-side, never stored. Each filter tolerates
+ * a legacy single value (old `?source=manual` links) by wrapping it.
  */
+
+/** 多选筛选字段：数组为正，宽容接受旧链接的单值并包成单元素数组。 */
+const multiFilter = <T extends z.ZodTypeAny>(schema: T) =>
+  z.array(schema).or(schema.transform((value): z.output<T>[] => [value]));
+
 export const ticketListInputSchema = z.object({
-  status: ticketDisplayStatusSchema.optional(),
+  status: multiFilter(ticketDisplayStatusSchema).optional(),
   /** 渠道目录引用筛选；停用渠道也可选，仍能查到其存量工单。 */
-  channelId: z.string().min(1).optional(),
+  channelId: multiFilter(z.string().min(1)).optional(),
   /** 类别目录引用筛选；停用类别也可选，仍能查到其存量工单。 */
-  categoryId: z.string().min(1).optional(),
+  categoryId: multiFilter(z.string().min(1)).optional(),
   /** 完结状态目录引用筛选；停用状态也可选，仍能查到其存量工单。 */
-  completionStatusId: z.string().min(1).optional(),
-  complaintLevel: complaintLevelSchema.optional(),
-  source: ticketSourceSchema.optional(),
+  completionStatusId: multiFilter(z.string().min(1)).optional(),
+  complaintLevel: multiFilter(complaintLevelSchema).optional(),
+  /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */
+  source: multiFilter(ticketSourceSchema).default([...DEFAULT_TICKET_SOURCE_FILTER]),
   /** 工单号 / 客户姓名 / 保单号；空白输入等同未搜索。 */
   search: z
     .string()

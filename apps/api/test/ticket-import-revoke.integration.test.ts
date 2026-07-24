@@ -1,4 +1,8 @@
-import { TICKET_IMPORT_HEADERS as HEADERS, type Permission } from "@insuredesk/shared";
+import {
+  TICKET_IMPORT_HEADERS as HEADERS,
+  type Permission,
+  TICKET_SOURCES,
+} from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient, User } from "../src/generated/prisma/client";
@@ -170,6 +174,7 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       expect(stats.metrics.total).toBe(0);
       const file = await exportTickets(deps(), authUser(supervisor, SUPERVISOR_PERMISSIONS), {
         format: "csv",
+        source: [...TICKET_SOURCES],
         sortBy: "createdAt",
         sortOrder: "desc",
       });
