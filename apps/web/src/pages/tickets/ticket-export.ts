@@ -24,11 +24,26 @@ export function buildTicketExportUrl(
     sortOrder: query.sortOrder,
     timeZone,
   });
-  for (const key of ["status", "channelId", "complaintLevel", "source", "search"] as const) {
+  // 多选筛选以逗号连接；空数组 = 不过滤，来源除外（缺省排除归档单，空选须
+  // 显式下传覆盖缺省）
+  for (const key of [
+    "status",
+    "channelId",
+    "categoryId",
+    "completionStatusId",
+    "complaintLevel",
+    "source",
+  ] as const) {
     const value = query[key];
-    if (value) {
-      params.set(key, value);
+    if (value === undefined) {
+      continue;
     }
+    if (value.length > 0 || key === "source") {
+      params.set(key, value.join(","));
+    }
+  }
+  if (query.search) {
+    params.set("search", query.search);
   }
   return `/api/tickets/export?${params.toString()}`;
 }

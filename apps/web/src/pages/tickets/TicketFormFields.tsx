@@ -303,7 +303,7 @@ export function TicketFormFields({
             </FieldLabel>
             <Input
               id="project"
-              placeholder="如：融盛、泰康"
+              placeholder="如：融盛、泰康（填写简称即可）"
               aria-invalid={!!errors.project}
               {...register("project")}
             />
@@ -316,7 +316,7 @@ export function TicketFormFields({
             </FieldLabel>
             <Input
               id="brokerageEntity"
-              placeholder="如：东方大地"
+              placeholder="如：凯森、东方大地（填写简称即可）"
               aria-invalid={!!errors.brokerageEntity}
               {...register("brokerageEntity")}
             />
@@ -329,7 +329,7 @@ export function TicketFormFields({
             </FieldLabel>
             <Input
               id="paymentChannel"
-              placeholder="如：连连支付"
+              placeholder="如：连连、银商、易宝、京东"
               aria-invalid={!!errors.paymentChannel}
               {...register("paymentChannel")}
             />
@@ -366,7 +366,7 @@ export function TicketFormFields({
             </FieldLabel>
             <Input
               id="userComplaintChannel"
-              placeholder="如：飞书投诉、400热线"
+              placeholder="如：监管引导件、网微投诉、黑猫投诉"
               aria-invalid={!!errors.userComplaintChannel}
               {...register("userComplaintChannel")}
             />
@@ -379,7 +379,7 @@ export function TicketFormFields({
             </FieldLabel>
             <Input
               id="complaintReceiveChannel"
-              placeholder="如：监管转办、邮箱接收"
+              placeholder="接受投诉信息的群名、邮箱"
               aria-invalid={!!errors.complaintReceiveChannel}
               {...register("complaintReceiveChannel")}
             />

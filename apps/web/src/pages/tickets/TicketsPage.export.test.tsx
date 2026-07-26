@@ -35,7 +35,9 @@ describe("按列表当前筛选条件导出", () => {
     restFetch.mockResolvedValue(
       new Response("csv", { status: 200, headers: { "content-type": "text/csv" } }),
     );
-    renderAt("/tickets?status=overdue&channel=ch-pay&q=三丰&sortBy=dueAt&sortOrder=asc&page=3");
+    renderAt(
+      "/tickets?status=overdue,completed&channel=ch-pay,ch-bank&q=三丰&sortBy=dueAt&sortOrder=asc&page=3",
+    );
 
     await pickExport(/CSV/);
 
@@ -43,14 +45,25 @@ describe("按列表当前筛选条件导出", () => {
     const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
     expect(url.pathname).toBe("/api/tickets/export");
     expect(url.searchParams.get("format")).toBe("csv");
-    expect(url.searchParams.get("status")).toBe("overdue");
-    expect(url.searchParams.get("channelId")).toBe("ch-pay");
+    expect(url.searchParams.get("status")).toBe("overdue,completed");
+    expect(url.searchParams.get("channelId")).toBe("ch-pay,ch-bank");
     expect(url.searchParams.get("search")).toBe("三丰");
     expect(url.searchParams.get("sortBy")).toBe("dueAt");
     expect(url.searchParams.get("sortOrder")).toBe("asc");
     expect(url.searchParams.get("timeZone")).toBeTruthy();
     // an export always covers every matching row — pagination never rides along
     expect(url.searchParams.get("page")).toBeNull();
+  });
+
+  it("默认筛选下导出同样排除归档单（来源缺省跟随下传）", async () => {
+    restFetch.mockResolvedValue(new Response("x", { status: 200 }));
+    renderAt("/tickets");
+
+    await pickExport(/CSV/);
+
+    await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
+    const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
+    expect(url.searchParams.get("source")).toBe("feishu_form,manual,community");
   });
 
   it("requests xlsx when Excel is picked", async () => {
@@ -85,10 +98,12 @@ describe("buildTicketExportUrl", () => {
   it("omits unset filters and keeps set ones, with an explicit zone", () => {
     const url = buildTicketExportUrl(
       {
-        status: "processing",
+        status: ["processing"],
         channelId: undefined,
-        complaintLevel: "特急投诉",
-        source: undefined,
+        categoryId: undefined,
+        completionStatusId: undefined,
+        complaintLevel: ["特急投诉"],
+        source: ["manual"],
         search: undefined,
         sortBy: "createdAt",
         sortOrder: "desc",
@@ -102,10 +117,35 @@ describe("buildTicketExportUrl", () => {
     expect(params.get("status")).toBe("processing");
     expect(params.get("complaintLevel")).toBe("特急投诉");
     expect(params.get("channelId")).toBeNull();
-    expect(params.get("source")).toBeNull();
+    expect(params.get("source")).toBe("manual");
     expect(params.get("search")).toBeNull();
     expect(params.get("timeZone")).toBe("Asia/Shanghai");
     expect(params.get("page")).toBeNull();
     expect(params.get("pageSize")).toBeNull();
+  });
+
+  it("joins multi-selections with commas; 空选来源显式下传空值以覆盖服务端缺省", () => {
+    const url = buildTicketExportUrl(
+      {
+        status: ["overdue", "completed"],
+        channelId: ["ch-pay", "ch-bank"],
+        categoryId: undefined,
+        completionStatusId: undefined,
+        complaintLevel: undefined,
+        source: [],
+        search: "三丰",
+        sortBy: "dueAt",
+        sortOrder: "asc",
+        page: 1,
+        pageSize: 20,
+      },
+      "csv",
+      "UTC",
+    );
+    const params = new URL(url, "http://localhost").searchParams;
+    expect(params.get("status")).toBe("overdue,completed");
+    expect(params.get("channelId")).toBe("ch-pay,ch-bank");
+    expect(params.get("source")).toBe("");
+    expect(params.get("search")).toBe("三丰");
   });
 });

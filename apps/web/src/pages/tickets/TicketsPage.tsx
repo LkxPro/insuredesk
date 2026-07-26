@@ -1,6 +1,7 @@
 import {
   BATCH_ASSIGN_LIMIT,
   COMPLAINT_LEVELS,
+  DEFAULT_TICKET_SOURCE_FILTER,
   isTicketInFlight,
   TICKET_DISPLAY_STATUSES,
   TICKET_FIELDS,
@@ -48,13 +49,6 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -69,6 +63,7 @@ import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
+import { MultiSelectFilter } from "./MultiSelectFilter";
 import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
@@ -107,16 +102,20 @@ const BASE_COLUMN_COUNT = 10;
 /**
  * URL query string → validated list query. Each param is salvaged on its own,
  * so one malformed value (a hand-edited page, say) falls back to its default
- * without silently dropping the other filters.
+ * without silently dropping the other filters. Filter params carry
+ * comma-separated multi-selections; a param's absence means 默认（状态等不过
+ * 滤，来源按 schema 缺省排除归档单）。
  */
 function parseListQuery(params: URLSearchParams): TicketListQuery {
+  const multi = (key: string) =>
+    params.has(key) ? params.get(key)?.split(",").filter(Boolean) : undefined;
   const candidate = {
-    status: params.get("status") ?? undefined,
-    channelId: params.get("channel") ?? undefined,
-    categoryId: params.get("category") ?? undefined,
-    completionStatusId: params.get("completionStatus") ?? undefined,
-    complaintLevel: params.get("level") ?? undefined,
-    source: params.get("source") ?? undefined,
+    status: multi("status"),
+    channelId: multi("channel"),
+    categoryId: multi("category"),
+    completionStatusId: multi("completionStatus"),
+    complaintLevel: multi("level"),
+    source: multi("source"),
     search: params.get("q") ?? undefined,
     sortBy: params.get("sortBy") ?? undefined,
     sortOrder: params.get("sortOrder") ?? undefined,
@@ -133,8 +132,19 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
   );
 }
 
-/** Radix Select rejects empty item values, so 全部 rides a sentinel. */
-const ALL = "all";
+/** Selection → URL value; null removes the param (回到默认). */
+function serializeSelection(
+  values: readonly string[],
+  defaultValues: readonly string[],
+): string | null {
+  if (values.length === 0) {
+    // 空选 = 全部：对无默认的维度即默认态，不写入；对来源偏离默认，写空值标记
+    return defaultValues.length === 0 ? null : "";
+  }
+  const sameSet =
+    values.length === defaultValues.length && values.every((v) => defaultValues.includes(v));
+  return sameSet ? null : values.join(",");
+}
 
 /** The one placeholder for 未填写 cells — unknown, not empty. */
 function Unknown() {
@@ -182,34 +192,6 @@ function PolicyNumbersCell({ policyNumbers }: { policyNumbers: readonly string[]
         </Popover>
       )}
     </span>
-  );
-}
-
-function FilterSelect({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string | undefined;
-  options: ReadonlyArray<{ value: string; label: string }>;
-  onChange: (value: string | null) => void;
-}) {
-  return (
-    <Select value={value ?? ALL} onValueChange={(next) => onChange(next === ALL ? null : next)}>
-      <SelectTrigger className="w-[130px]" aria-label={label} size="sm">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={ALL}>全部{label}</SelectItem>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 
@@ -431,56 +413,59 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <FilterSelect
+        <MultiSelectFilter
           label="状态"
-          value={query.status}
+          values={query.status ?? []}
           options={TICKET_DISPLAY_STATUSES.map((status) => ({
             value: status,
             label: TICKET_STATUS_LABELS[status],
           }))}
-          onChange={(value) => setParam("status", value)}
+          onChange={(values) => setParam("status", serializeSelection(values, []))}
         />
-        <FilterSelect
+        <MultiSelectFilter
           label={TICKET_FIELDS.channelId.overrides.listLabel}
-          value={query.channelId}
+          values={query.channelId ?? []}
           options={channelOptions.map((channel) => ({
             value: channel.id,
             label: channel.active ? channel.name : `${channel.name}（已停用）`,
           }))}
-          onChange={(value) => setParam("channel", value)}
+          onChange={(values) => setParam("channel", serializeSelection(values, []))}
         />
-        <FilterSelect
+        <MultiSelectFilter
           label={TICKET_FIELDS.categoryId.overrides.listLabel}
-          value={query.categoryId}
+          values={query.categoryId ?? []}
           options={categoryOptions.map((category) => ({
             value: category.id,
             label: category.active ? category.name : `${category.name}（已停用）`,
           }))}
-          onChange={(value) => setParam("category", value)}
+          onChange={(values) => setParam("category", serializeSelection(values, []))}
         />
-        <FilterSelect
+        <MultiSelectFilter
           label={TICKET_FIELDS.completionStatusId.label}
-          value={query.completionStatusId}
+          values={query.completionStatusId ?? []}
           options={completionStatusOptions.map((status) => ({
             value: status.id,
             label: status.active ? status.name : `${status.name}（已停用）`,
           }))}
-          onChange={(value) => setParam("completionStatus", value)}
+          onChange={(values) => setParam("completionStatus", serializeSelection(values, []))}
         />
-        <FilterSelect
+        <MultiSelectFilter
           label={TICKET_FIELDS.complaintLevel.label}
-          value={query.complaintLevel}
+          values={query.complaintLevel ?? []}
           options={COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }))}
-          onChange={(value) => setParam("level", value)}
+          onChange={(values) => setParam("level", serializeSelection(values, []))}
         />
-        <FilterSelect
+        {/* 来源有缺省（排除归档单）：全选四个来源 ≠ 缺省，仍写入 URL */}
+        <MultiSelectFilter
           label="来源"
-          value={query.source}
+          values={query.source}
           options={TICKET_SOURCES.map((source) => ({
             value: source,
             label: TICKET_SOURCE_LABELS[source],
           }))}
-          onChange={(value) => setParam("source", value)}
+          onChange={(values) =>
+            setParam("source", serializeSelection(values, DEFAULT_TICKET_SOURCE_FILTER))
+          }
         />
         <form
           className="relative"

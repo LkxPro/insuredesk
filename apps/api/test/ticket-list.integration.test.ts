@@ -1,4 +1,5 @@
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
+import { TICKET_SOURCES } from "@insuredesk/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Prisma, PrismaClient, User } from "../src/generated/prisma/client";
 import { listTickets } from "../src/services/ticket.service";
@@ -224,7 +225,8 @@ describe("ticket list (Testcontainers)", () => {
       const viewer = harness.authUserFor(seeded.users.manager, seeded.roles.csManager);
       const list = (status: "assigned" | "pending_timeout" | "overdue") =>
         listTickets(harness.depsAt(fixedNow), viewer, {
-          status,
+          status: [status],
+          source: [...TICKET_SOURCES],
           sortBy: "createdAt",
           sortOrder: "desc",
           page: 1,
@@ -307,6 +309,89 @@ describe("ticket list (Testcontainers)", () => {
       const result = await manager().ticket.list({ source: "feishu_form" });
       expect(result.items.map((t) => t.id)).toEqual([feishu.id]);
       expect(result.items[0]?.source).toBe("feishu_form");
+    });
+  });
+
+  describe("multi-select filters", () => {
+    it("multi-value filters take the union within a dimension, intersect across dimensions", async () => {
+      const payHigh = await makeTicket({
+        channelId: channelId("支付"),
+        complaintLevel: "高级投诉",
+      });
+      const regulatorHigh = await makeTicket({
+        channelId: channelId("监管"),
+        complaintLevel: "高级投诉",
+      });
+      const payLow = await makeTicket({ channelId: channelId("支付"), complaintLevel: "一般投诉" });
+      await makeTicket({ channelId: channelId("保司"), complaintLevel: "一般投诉" });
+
+      const channels = await manager().ticket.list({
+        channelId: [channelId("支付"), channelId("监管")],
+      });
+      expect(channels.items.map((t) => t.id).sort()).toEqual(
+        [payHigh.id, regulatorHigh.id, payLow.id].sort(),
+      );
+
+      const levels = await manager().ticket.list({
+        complaintLevel: ["高级投诉", "一般投诉"],
+        channelId: [channelId("支付")],
+      });
+      expect(levels.items.map((t) => t.id).sort()).toEqual([payHigh.id, payLow.id].sort());
+    });
+
+    it("multi-select 状态 takes the union of each status's predicate", async () => {
+      const now = Date.now();
+      const overdue = await makeTicket(
+        {},
+        { status: "processing", dueAt: new Date(now - HOUR_MS) },
+      );
+      const done = await makeTicket(
+        {},
+        { status: "completed", completionTime: new Date(now - HOUR_MS / 2) },
+      );
+      await makeTicket({}); // unassigned, due in 48h — selected by neither
+
+      const result = await manager().ticket.list({ status: ["overdue", "completed"] });
+      expect(result.items.map((t) => t.id).sort()).toEqual([overdue.id, done.id].sort());
+    });
+
+    it("empty selection arrays filter nothing", async () => {
+      await makeTicket();
+      await makeTicket();
+
+      const result = await manager().ticket.list({ status: [], channelId: [], complaintLevel: [] });
+      expect(result.total).toBe(2);
+    });
+
+    it("旧单值参数仍被宽容接受 — single values behave as one-element selections", async () => {
+      await makeTicket({ channelId: channelId("保司") });
+      const payment = await makeTicket({ channelId: channelId("支付") });
+
+      const result = await manager().ticket.list({ channelId: channelId("支付") as never });
+      expect(result.items.map((t) => t.id)).toEqual([payment.id]);
+    });
+  });
+
+  describe("归档工单 (source=file_import) 默认隐藏", () => {
+    it("default query excludes file_import rows, explicit source selections include them", async () => {
+      const active = await makeTicket();
+      const archived = await makeTicket({}, { source: "file_import" });
+
+      // 缺省 = 排除 file_import；导出复用同一 WHERE，同样不含归档单
+      const defaulted = await manager().ticket.list({});
+      expect(defaulted.items.map((t) => t.id)).toEqual([active.id]);
+
+      // 显式筛选归档来源可见
+      const explicit = await manager().ticket.list({ source: ["file_import"] });
+      expect(explicit.items.map((t) => t.id)).toEqual([archived.id]);
+
+      // 空选 = 不过滤：归档单回落到可见
+      const cleared = await manager().ticket.list({ source: [] });
+      expect(cleared.items.map((t) => t.id).sort()).toEqual([active.id, archived.id].sort());
+
+      // 显式全选四种来源同样可见
+      const all = await manager().ticket.list({ source: [...TICKET_SOURCES] });
+      expect(all.total).toBe(2);
     });
   });
 

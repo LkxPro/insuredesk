@@ -12,6 +12,28 @@ import { exportTickets } from "../services/ticket-export.service";
  * middlewares: 401 unauthenticated, 403 without ticket.export (UI 无入口、
  * API 拒绝), 400 on a query the shared schema rejects.
  */
+
+/** Querystring 是扁平字符串：多选筛选按列表页 URL 约定以逗号分隔，拆分后交给 schema。 */
+const MULTI_VALUE_PARAMS = [
+  "status",
+  "channelId",
+  "categoryId",
+  "completionStatusId",
+  "complaintLevel",
+  "source",
+] as const;
+
+function splitMultiValueParams(query: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...query };
+  for (const key of MULTI_VALUE_PARAMS) {
+    const value = result[key];
+    if (typeof value === "string") {
+      result[key] = value.split(",").filter(Boolean);
+    }
+  }
+  return result;
+}
+
 export function registerTicketExportRoute(app: FastifyInstance) {
   app.get("/api/tickets/export", async (req, reply) => {
     const user = req.authenticatedUser;
@@ -22,7 +44,9 @@ export function registerTicketExportRoute(app: FastifyInstance) {
       return reply.code(403).send({ error: "Missing required permission: ticket.export" });
     }
 
-    const parsed = ticketExportInputSchema.safeParse(req.query);
+    const parsed = ticketExportInputSchema.safeParse(
+      splitMultiValueParams(req.query as Record<string, unknown>),
+    );
     if (!parsed.success) {
       return reply
         .code(400)

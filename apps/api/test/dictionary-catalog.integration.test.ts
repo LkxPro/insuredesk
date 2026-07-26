@@ -1,6 +1,7 @@
 import {
   type Permission,
   TICKET_CREATE_FIELD_KEYS,
+  TICKET_SOURCES,
   type TicketCreateInput,
 } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -333,6 +334,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
             },
             {
               format: "csv",
+              source: [...TICKET_SOURCES],
               search: detail.workOrderNumber,
               sortBy: "createdAt",
               sortOrder: "desc",
@@ -403,6 +405,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
             },
             {
               format: "csv",
+              source: [...TICKET_SOURCES],
               search: ticket.workOrderNumber,
               sortBy: "createdAt",
               sortOrder: "desc",

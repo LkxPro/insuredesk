@@ -225,7 +225,7 @@ describe("deep link /tickets/:id", () => {
 
     await screen.findByRole("dialog");
     await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
-    expect(listInputs[0]).toMatchObject({ status: "overdue" });
+    expect(listInputs[0]).toMatchObject({ status: ["overdue"] });
   });
 });
 
@@ -242,6 +242,6 @@ describe("row click → dialog → close", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "工单管理" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "状态" })).toHaveTextContent("已超时");
+    expect(screen.getByRole("button", { name: "状态" })).toHaveTextContent("1");
   });
 });

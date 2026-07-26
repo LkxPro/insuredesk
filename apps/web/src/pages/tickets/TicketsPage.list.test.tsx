@@ -174,16 +174,26 @@ describe("URL-driven filters (deep-linkable)", () => {
     renderAt("/tickets?status=overdue&channel=ch-pay");
 
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]).toMatchObject({ status: "overdue", channelId: "ch-pay" });
+    expect(listInputs()[0]).toMatchObject({ status: ["overdue"], channelId: ["ch-pay"] });
   });
 
-  it("类别筛选：查询串带 category id，入参落到 categoryId", async () => {
+  it("逗号分隔的多值参数解析为数组", async () => {
+    renderAt("/tickets?status=overdue,completed&level=一般投诉,高级投诉");
+
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({
+      status: ["overdue", "completed"],
+      complaintLevel: ["一般投诉", "高级投诉"],
+    });
+  });
+
+  it("类别筛选：查询串带 category id，入参落到 categoryId，触发器挂计数徽标", async () => {
     renderAt("/tickets?category=cat-claims");
 
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]).toMatchObject({ categoryId: "cat-claims" });
+    expect(listInputs()[0]).toMatchObject({ categoryId: ["cat-claims"] });
     await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: "类别" })).toHaveTextContent("理赔咨询"),
+      expect(screen.getByRole("button", { name: "类别" })).toHaveTextContent("1"),
     );
   });
 
@@ -195,30 +205,31 @@ describe("URL-driven filters (deep-linkable)", () => {
       id: "ch-legacy",
       inputKey: "channelId",
       label: "渠道",
-      expectText: "旧渠道（已停用）",
+      name: "旧渠道（已停用）",
     },
     {
       param: "category",
       id: "cat-legacy",
       inputKey: "categoryId",
       label: "类别",
-      expectText: "旧类别（已停用）",
+      name: "旧类别（已停用）",
     },
     {
       param: "completionStatus",
       id: "cs-legacy",
       inputKey: "completionStatusId",
       label: "完结状态",
-      expectText: "旧完结状态（已停用）",
+      name: "旧完结状态（已停用）",
     },
-  ])("按停用$label筛选：查询带其 id，触发器显示（已停用）标注", async (row) => {
+  ])("按停用$label筛选：查询带其 id，弹层选项带（已停用）标注且已勾选", async (row) => {
     renderAt(`/tickets?${row.param}=${row.id}`);
 
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]).toMatchObject({ [row.inputKey]: row.id });
-    await waitFor(() =>
-      expect(screen.getByRole("combobox", { name: row.label })).toHaveTextContent(row.expectText),
-    );
+    expect(listInputs()[0]).toMatchObject({ [row.inputKey]: [row.id] });
+
+    fireEvent.click(screen.getByRole("button", { name: row.label }));
+    const option = await screen.findByRole("checkbox", { name: row.name });
+    expect(option).toBeChecked();
   });
 
   it("ignores an invalid query string and lists with defaults", async () => {
@@ -233,7 +244,109 @@ describe("URL-driven filters (deep-linkable)", () => {
     renderAt("/tickets?status=overdue&page=x");
 
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]).toMatchObject({ status: "overdue", page: 1 });
+    expect(listInputs()[0]).toMatchObject({ status: ["overdue"], page: 1 });
+  });
+});
+
+describe("归档工单默认隐藏（来源缺省）", () => {
+  it("无 source 参数时 ticket.list 入参缺省排除 file_import", async () => {
+    renderAt("/tickets");
+
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]?.source).toEqual(["feishu_form", "manual", "community"]);
+    // 来源触发器常驻显示缺省计数（3 = 排除归档单后的选中数）
+    expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("3");
+  });
+
+  it("清空来源 → 空值参数下传，服务端按不过滤处理", async () => {
+    renderAt("/tickets");
+
+    fireEvent.click(screen.getByRole("button", { name: "来源" }));
+    fireEvent.click(await screen.findByRole("button", { name: "清空" }));
+
+    await waitFor(() => expect(listInputs().at(-1)?.source).toEqual([]));
+  });
+
+  it("勾选文件导入后归档单进入筛选集", async () => {
+    renderAt("/tickets");
+
+    fireEvent.click(screen.getByRole("button", { name: "来源" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "文件导入" }));
+
+    await waitFor(() =>
+      expect(listInputs().at(-1)?.source).toEqual([
+        "feishu_form",
+        "manual",
+        "community",
+        "file_import",
+      ]),
+    );
+  });
+});
+
+describe("多选交互与 URL 序列化", () => {
+  /** 勾选项后在最新一次 ticket.list 入参上断言。 */
+  async function toggleOption(filterLabel: string, optionName: string) {
+    fireEvent.click(screen.getByRole("button", { name: filterLabel }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: optionName }));
+  }
+
+  it("勾选多个状态 → 数组入参 + 触发器计数徽标", async () => {
+    renderAt("/tickets?status=overdue");
+    await waitFor(() =>
+      expect(listInputs().some((input) => Array.isArray(input.status))).toBe(true),
+    );
+
+    // 深链已带一项
+    await toggleOption("状态", "已完结");
+    await waitFor(() => expect(listInputs().at(-1)?.status).toEqual(["overdue", "completed"]));
+    expect(screen.getByRole("button", { name: "状态" })).toHaveTextContent("2");
+  });
+
+  it("清空 = 回到全部：参数移除，入参不过滤", async () => {
+    renderAt("/tickets?status=overdue,completed");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole("button", { name: "状态" }));
+    fireEvent.click(await screen.findByRole("button", { name: "清空" }));
+
+    await waitFor(() => expect(listInputs().at(-1)?.status).toBeUndefined());
+    expect(screen.getByRole("button", { name: "状态" })).not.toHaveTextContent(/\d/);
+  });
+
+  it("全选写入完整选项集", async () => {
+    renderAt("/tickets");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole("button", { name: "投诉等级" }));
+    fireEvent.click(await screen.findByRole("button", { name: "全选" }));
+
+    await waitFor(() =>
+      expect(listInputs().at(-1)?.complaintLevel).toEqual([
+        "一般投诉",
+        "高级投诉",
+        "加急投诉",
+        "特急投诉",
+      ]),
+    );
+  });
+
+  it("再次点击已勾选项取消选择", async () => {
+    renderAt("/tickets?level=一般投诉");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+
+    await toggleOption("投诉等级", "一般投诉");
+    await waitFor(() => expect(listInputs().at(-1)?.complaintLevel).toBeUndefined());
+  });
+
+  it("筛选变更后 URL 落在地址栏（深链可分享），并重置页码", async () => {
+    renderAt("/tickets?status=overdue&page=2");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+
+    await toggleOption("状态", "已完结");
+
+    await waitFor(() => expect(listInputs().at(-1)?.status).toEqual(["overdue", "completed"]));
+    expect(listInputs().at(-1)).toMatchObject({ page: 1 });
   });
 });
 

@@ -253,10 +253,10 @@ describe("↑/↓ QuickLook switching", () => {
     expect(detailIds).toEqual(["t2", "t3", "t2", "t1"]);
 
     // The carried filter survived the arrow browsing: closing lands on the
-    // list with 状态=已超时 still applied
+    // list with the 状态 filter still applied (count badge rides the trigger)
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(screen.getByRole("combobox", { name: "状态" })).toHaveTextContent("已超时");
+    expect(screen.getByRole("button", { name: "状态" })).toHaveTextContent("1");
   });
 
   it("↑ on the first row and ↓ on the last row do nothing — no page turn, no error", async () => {
