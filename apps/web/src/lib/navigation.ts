@@ -1,6 +1,7 @@
 import type { Permission } from "@insuredesk/shared";
 import type { LucideIcon } from "lucide-react";
 import {
+  Building2,
   CalendarClock,
   CalendarDays,
   LayoutDashboard,
@@ -29,6 +30,12 @@ export const NAV_ITEMS = [
   { path: "/dashboard", label: "数据看板", permission: "dashboard.view", icon: LayoutDashboard },
   { path: "/tickets", label: "工单管理", permission: "ticket.view", icon: Ticket },
   { path: "/users", label: "用户管理", permission: "user.view", icon: Users },
+  {
+    path: "/external-orgs",
+    label: "外部机构管理",
+    permission: "external_org.manage",
+    icon: Building2,
+  },
   { path: "/roles", label: "角色权限", permission: "role.view", icon: ShieldCheck },
   { path: "/schedule", label: "排班表", permission: "schedule.view", icon: CalendarDays },
   {

@@ -4,6 +4,7 @@ export * from "./completion-status";
 export * from "./dashboard";
 export * from "./dictionary-catalog";
 export * from "./enums";
+export * from "./external-org";
 export * from "./health";
 export * from "./notification";
 export * from "./permissions";

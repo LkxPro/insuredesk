@@ -5,6 +5,7 @@ import { channelRouter } from "./channel.router";
 import { completionStatusRouter } from "./completion-status.router";
 import { dashboardRouter } from "./dashboard.router";
 import { demoRouter } from "./demo.router";
+import { externalOrgRouter } from "./external-org.router";
 import { notificationRouter } from "./notification.router";
 import { roleRouter } from "./role.router";
 import { scheduleRouter } from "./schedule.router";
@@ -74,6 +75,11 @@ export const appRouter = router({
    * SLA 策略配置 - 按投诉等级编辑首响/超时/提醒规则，限管理员
    */
   sla: slaRouter,
+
+  /**
+   * 外部机构管理 - CRUD + 字段可见性配置
+   */
+  externalOrg: externalOrgRouter,
 });
 
 export type AppRouter = typeof appRouter;

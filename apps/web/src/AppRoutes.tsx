@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
+import { ExternalOrgManagePage } from "@/pages/external-orgs/ExternalOrgManagePage";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
@@ -28,6 +29,7 @@ const PAGES: Record<NavPath, ReactElement> = {
   "/dashboard": <DashboardPage />,
   "/tickets": <TicketsPage />,
   "/users": <UsersPage />,
+  "/external-orgs": <ExternalOrgManagePage />,
   "/roles": <RolesPage />,
   "/schedule": <SchedulePage />,
   "/shift-types": <ShiftTypesPage />,
