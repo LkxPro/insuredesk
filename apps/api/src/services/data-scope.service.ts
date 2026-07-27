@@ -73,3 +73,14 @@ export function applyTicketDataScope(user: AuthenticatedUser | null): Record<str
 export function applyDashboardDataScope(user: AuthenticatedUser | null): Record<string, unknown> {
   return applyDataScope(user, "dashboard.view_all", (userId) => ({ assigneeId: userId }));
 }
+
+/**
+ * External org data scope: external users see only tickets from their org.
+ * Internal users (externalOrgId = null) see everything — no restriction.
+ */
+export function applyExternalOrgDataScope(user: AuthenticatedUser): Record<string, unknown> {
+  if (user.externalOrgId) {
+    return { externalOrgId: user.externalOrgId };
+  }
+  return {};
+}

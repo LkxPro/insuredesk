@@ -43,6 +43,7 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
       roleName,
       permissions,
       requiredTicketFields: [],
+      externalOrgId: null,
     };
   }
 

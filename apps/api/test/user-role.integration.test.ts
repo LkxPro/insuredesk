@@ -61,6 +61,7 @@ describe("user + role management (Testcontainers)", () => {
       roleName,
       permissions,
       requiredTicketFields: [],
+      externalOrgId: null,
     };
   }
 

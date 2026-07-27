@@ -29,6 +29,7 @@ describe("ExternalOrg management (Testcontainers)", () => {
       roleName: "测试角色",
       permissions,
       requiredTicketFields: [],
+      externalOrgId: null,
     };
     return appRouter.createCaller({
       traceId: "external-org-test",

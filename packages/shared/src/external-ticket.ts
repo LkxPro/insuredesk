@@ -1,0 +1,32 @@
+import { z } from "zod";
+import { ticketStatusSchema } from "./enums";
+
+/**
+ * 外部工单提交输入：外部用户提交工单原文的唯一必填字段。
+ */
+export const externalTicketSubmitInputSchema = z.object({
+  submissionText: z.string().trim().min(1, "提交内容不能为空").max(2000, "提交内容不能超过 2000 字符"),
+});
+
+export type ExternalTicketSubmitInput = z.infer<typeof externalTicketSubmitInputSchema>;
+
+/**
+ * 外部工单列表输入：支持按状态筛选、搜索、分页。
+ */
+export const externalTicketListInputSchema = z.object({
+  status: z.array(ticketStatusSchema).optional(),
+  search: z.string().trim().optional(),
+  offset: z.number().int().min(0).default(0),
+  limit: z.number().int().min(1).max(100).default(20),
+});
+
+export type ExternalTicketListInput = z.infer<typeof externalTicketListInputSchema>;
+
+/**
+ * 外部工单详情输入：仅需工单 ID。
+ */
+export const externalTicketDetailInputSchema = z.object({
+  ticketId: z.string().min(1),
+});
+
+export type ExternalTicketDetailInput = z.infer<typeof externalTicketDetailInputSchema>;

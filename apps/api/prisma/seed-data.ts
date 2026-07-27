@@ -442,6 +442,7 @@ function authUser(user: User, role: Role): AuthenticatedUser {
     roleName: role.name,
     permissions: role.permissions as Permission[],
     requiredTicketFields: role.requiredTicketFields,
+    externalOrgId: user.externalOrgId,
   };
 }
 

@@ -214,6 +214,7 @@ export class SessionService {
       roleName: session.user.role.name,
       permissions: effectivePermissions(session.user.role),
       requiredTicketFields: session.user.role.requiredTicketFields,
+      externalOrgId: session.user.externalOrgId,
     };
   }
 
@@ -250,6 +251,7 @@ export interface AuthenticatedUser {
   roleName: string;
   permissions: Permission[];
   requiredTicketFields: string[];
+  externalOrgId: string | null;
 }
 
 export function hasPermission(user: AuthenticatedUser, permission: Permission): boolean {

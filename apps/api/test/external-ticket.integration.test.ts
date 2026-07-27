@@ -1,0 +1,399 @@
+import { DEFAULT_EXTERNAL_VISIBLE_FIELDS, type Permission } from "@insuredesk/shared";
+import { TRPCError } from "@trpc/server";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { ExternalOrg, PrismaClient, Role, User } from "../src/generated/prisma/client";
+import { appRouter } from "../src/routers/index";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+
+/**
+ * External ticket API integration tests: submit/list/detail with data-scope,
+ * field visibility filtering, ProcessLog filtering, and notification writing.
+ */
+describe("external ticket API (Testcontainers)", () => {
+  let harness: IntegrationHarness;
+  let prisma: PrismaClient;
+  let seeded: IntegrationHarness["seeded"];
+  let externalOrg1: ExternalOrg;
+  let externalOrg2: ExternalOrg;
+  let externalUser1: User;
+  let externalUser2: User;
+  let externalRole: Role;
+
+  beforeAll(async () => {
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "channels"] });
+    prisma = harness.prisma;
+    seeded = harness.seeded;
+
+    externalRole = await prisma.role.create({
+      data: {
+        name: "外部用户",
+        permissions: ["ticket.create_external", "ticket.process_external"],
+        system: false,
+        requiredTicketFields: [],
+      },
+    });
+
+    const channel = await prisma.channel.findFirst({ where: { name: "保司" } });
+
+    externalOrg1 = await prisma.externalOrg.create({
+      data: {
+        name: "外包客服 A",
+        channelId: channel?.id ?? null,
+        visibleTicketFields: JSON.stringify([
+          "workOrderNumber",
+          "feedbackTime",
+          "status",
+          "processingResult",
+        ]),
+        active: true,
+      },
+    });
+
+    externalOrg2 = await prisma.externalOrg.create({
+      data: {
+        name: "合作伙伴 B",
+        channelId: null,
+        visibleTicketFields: null,
+        active: true,
+      },
+    });
+
+    externalUser1 = await prisma.user.create({
+      data: {
+        username: "external1",
+        name: "外部用户1",
+        passwordHash: "dummy",
+        roleId: externalRole.id,
+        externalOrgId: externalOrg1.id,
+        active: true,
+      },
+    });
+
+    externalUser2 = await prisma.user.create({
+      data: {
+        username: "external2",
+        name: "外部用户2",
+        passwordHash: "dummy",
+        roleId: externalRole.id,
+        externalOrgId: externalOrg2.id,
+        active: true,
+      },
+    });
+  }, 180_000);
+
+  afterAll(async () => {
+    await harness?.stop();
+  });
+
+  function callerFor(user: User, role: Role, externalOrgId: string | null = null) {
+    return appRouter.createCaller({
+      traceId: "external-ticket-test",
+      user: {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
+        team: user.team,
+        roleId: role.id,
+        roleName: role.name,
+        permissions: role.permissions as Permission[],
+        requiredTicketFields: [],
+        externalOrgId,
+      },
+      sessionToken: null,
+    });
+  }
+
+  const externalCaller1 = () => callerFor(externalUser1, externalRole, externalOrg1.id);
+  const externalCaller2 = () => callerFor(externalUser2, externalRole, externalOrg2.id);
+
+  describe("submit", () => {
+    it("creates ticket with source=external_channel and correct metadata", async () => {
+      const caller = externalCaller1();
+      const result = await caller.externalTicket.submit({
+        submissionText: "客户反馈无法登录系统，需要重置密码",
+      });
+
+      expect(result.id).toBeDefined();
+      expect(result.workOrderNumber).toMatch(/^WO\d+$/);
+
+      const ticket = await prisma.ticket.findUnique({ where: { id: result.id } });
+      expect(ticket).toBeDefined();
+      expect(ticket?.source).toBe("external_channel");
+      expect(ticket?.submissionText).toBe("客户反馈无法登录系统，需要重置密码");
+      expect(ticket?.externalOrgId).toBe(externalOrg1.id);
+      expect(ticket?.creatorId).toBe(externalUser1.id);
+      expect(ticket?.channelId).toBe(externalOrg1.channelId);
+      expect(ticket?.status).toBe("unassigned");
+    });
+
+    it("writes action=create ProcessLog", async () => {
+      const caller = externalCaller1();
+      const result = await caller.externalTicket.submit({
+        submissionText: "测试工单",
+      });
+
+      const logs = await prisma.processLog.findMany({
+        where: { ticketId: result.id, action: "create" },
+      });
+
+      expect(logs).toHaveLength(1);
+      const createLog = logs[0];
+      if (!createLog) throw new Error("create log not found");
+      expect(createLog.operatorId).toBe(externalUser1.id);
+    });
+
+    it("broadcasts external_submitted notification to users with ticket.assign", async () => {
+      const caller = externalCaller1();
+      const result = await caller.externalTicket.submit({
+        submissionText: "需要通知的工单",
+      });
+
+      const notifications = await prisma.appNotification.findMany({
+        where: { ticketId: result.id, type: "external_submitted" },
+      });
+
+      expect(notifications.length).toBeGreaterThan(0);
+      const firstNotification = notifications[0];
+      if (!firstNotification) throw new Error("notification not found");
+
+      expect(firstNotification.title).toBe("外部工单提交");
+      expect(firstNotification.content).toContain(externalOrg1.name);
+      expect(firstNotification.content).toContain(result.workOrderNumber);
+    });
+
+    it("rejects if submissionText is missing", async () => {
+      const caller = externalCaller1();
+      await expect(
+        caller.externalTicket.submit({ submissionText: "" }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects if submissionText exceeds 2000 characters", async () => {
+      const caller = externalCaller1();
+      const longText = "a".repeat(2001);
+      await expect(
+        caller.externalTicket.submit({ submissionText: longText }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects if external org is inactive", async () => {
+      await prisma.externalOrg.update({
+        where: { id: externalOrg1.id },
+        data: { active: false },
+      });
+
+      const caller = externalCaller1();
+      await expect(
+        caller.externalTicket.submit({ submissionText: "测试" }),
+      ).rejects.toThrow("外部机构已停用");
+
+      await prisma.externalOrg.update({
+        where: { id: externalOrg1.id },
+        data: { active: true },
+      });
+    });
+  });
+
+  describe("list", () => {
+    it("shows only tickets from user's org", async () => {
+      const caller1 = externalCaller1();
+      const caller2 = externalCaller2();
+
+      const ticket1 = await caller1.externalTicket.submit({
+        submissionText: "机构1的工单",
+      });
+      const ticket2 = await caller2.externalTicket.submit({
+        submissionText: "机构2的工单",
+      });
+
+      const list1 = await caller1.externalTicket.list({ offset: 0, limit: 20 });
+      const list2 = await caller2.externalTicket.list({ offset: 0, limit: 20 });
+
+      expect(list1.items.some((t) => t.id === ticket1.id)).toBe(true);
+      expect(list1.items.some((t) => t.id === ticket2.id)).toBe(false);
+
+      expect(list2.items.some((t) => t.id === ticket2.id)).toBe(true);
+      expect(list2.items.some((t) => t.id === ticket1.id)).toBe(false);
+    });
+
+    it("filters fields by org's whitelist", async () => {
+      const caller = externalCaller1();
+      const result = await caller.externalTicket.submit({
+        submissionText: "测试字段可见性",
+      });
+
+      await prisma.ticket.update({
+        where: { id: result.id },
+        data: {
+          customerName: "敏感客户名",
+          phone: "13800000000",
+          processingResult: "处理结果",
+        },
+      });
+
+      const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
+      const ticket = list.items.find((t) => t.id === result.id);
+
+      expect(ticket).toBeDefined();
+      if (!ticket) throw new Error("ticket not found");
+
+      expect(ticket.workOrderNumber).toBe(result.workOrderNumber);
+      expect(ticket.processingResult).toBe("处理结果");
+      expect(ticket.customerName).toBeNull();
+      expect(ticket.phone).toBeNull();
+    });
+
+    it("uses default whitelist when org has null visibleTicketFields", async () => {
+      const caller = externalCaller2();
+      const result = await caller.externalTicket.submit({
+        submissionText: "测试默认白名单",
+      });
+
+      await prisma.ticket.update({
+        where: { id: result.id },
+        data: {
+          customerName: "敏感客户名",
+          processingResult: "处理结果",
+        },
+      });
+
+      const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
+      const ticket = list.items.find((t) => t.id === result.id);
+
+      expect(ticket).toBeDefined();
+      expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("workOrderNumber");
+      expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("status");
+      expect(ticket?.customerName).toBeNull();
+    });
+
+    it("excludes soft-deleted tickets", async () => {
+      const caller = externalCaller1();
+      const result = await caller.externalTicket.submit({
+        submissionText: "将被删除的工单",
+      });
+
+      await prisma.ticket.update({
+        where: { id: result.id },
+        data: { deletedAt: new Date() },
+      });
+
+      const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
+      expect(list.items.some((t) => t.id === result.id)).toBe(false);
+    });
+  });
+
+  describe("detail", () => {
+    it("returns 404 for ticket from different org", async () => {
+      const caller1 = externalCaller1();
+      const caller2 = externalCaller2();
+
+      const ticket1 = await caller1.externalTicket.submit({
+        submissionText: "机构1的工单",
+      });
+
+      await expect(
+        caller2.externalTicket.detail({ ticketId: ticket1.id }),
+      ).rejects.toThrow(TRPCError);
+    });
+
+    it("filters ProcessLog to show only allowed actions", async () => {
+      const caller = externalCaller1();
+
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "测试 ProcessLog 过滤",
+      });
+
+      await prisma.processLog.createMany({
+        data: [
+          {
+            ticketId: ticket.id,
+            action: "comment",
+            internalOnly: false,
+            remark: "可见跟进",
+            operatorId: seeded.users.manager.id,
+            operatorName: seeded.users.manager.name,
+            at: new Date(),
+          },
+          {
+            ticketId: ticket.id,
+            action: "comment",
+            internalOnly: true,
+            remark: "内部跟进",
+            operatorId: seeded.users.manager.id,
+            operatorName: seeded.users.manager.name,
+            at: new Date(),
+          },
+          {
+            ticketId: ticket.id,
+            action: "assign",
+            operatorId: seeded.users.manager.id,
+            operatorName: seeded.users.manager.name,
+            remark: "",
+            at: new Date(),
+          },
+          {
+            ticketId: ticket.id,
+            action: "external_note",
+            remark: "外部留言",
+            operatorId: externalUser1.id,
+            operatorName: externalUser1.name,
+            at: new Date(),
+          },
+        ],
+      });
+
+      const detail = await caller.externalTicket.detail({ ticketId: ticket.id });
+
+      const actions = detail.processLogs.map((log) => log.action);
+      expect(actions).toContain("create");
+      expect(actions).toContain("comment");
+      expect(actions).toContain("external_note");
+      expect(actions).not.toContain("assign");
+
+      const remarks = detail.processLogs.map((log) => log.remark).filter(Boolean);
+      expect(remarks).toContain("可见跟进");
+      expect(remarks).toContain("外部留言");
+      expect(remarks).not.toContain("内部跟进");
+    });
+
+    it("filters ticket fields by whitelist", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "测试详情字段过滤",
+      });
+
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: {
+          customerName: "敏感客户名",
+          phone: "13800000000",
+          processingResult: "处理结果",
+        },
+      });
+
+      const detail = await caller.externalTicket.detail({ ticketId: ticket.id });
+
+      expect(detail.ticket.workOrderNumber).toBe(ticket.workOrderNumber);
+      expect(detail.ticket.processingResult).toBe("处理结果");
+      expect(detail.ticket.customerName).toBeNull();
+      expect(detail.ticket.phone).toBeNull();
+    });
+
+    it("returns 404 for soft-deleted ticket", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "将被删除的工单",
+      });
+
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { deletedAt: new Date() },
+      });
+
+      await expect(
+        caller.externalTicket.detail({ ticketId: ticket.id }),
+      ).rejects.toThrow(TRPCError);
+    });
+  });
+});

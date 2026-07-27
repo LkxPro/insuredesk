@@ -48,6 +48,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
         roleName,
         permissions,
         requiredTicketFields: [],
+      externalOrgId: null,
       },
       sessionToken: null,
     });
@@ -67,6 +68,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
         roleName: role.name,
         permissions: role.permissions as Permission[],
         requiredTicketFields: [],
+      externalOrgId: null,
       },
       sessionToken: null,
     });

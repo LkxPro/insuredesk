@@ -98,6 +98,52 @@ export async function writeAssignedNotification(
 }
 
 /**
+ * Pure message builder for the `external_submitted` notification.
+ */
+export function buildExternalSubmittedNotification(params: {
+  orgName: string;
+  workOrderNumber: string;
+}) {
+  return {
+    title: "外部工单提交",
+    content: `${params.orgName} 提交了新工单 ${params.workOrderNumber}`,
+  };
+}
+
+/**
+ * Bulk write notifications to multiple users. Used for broadcasting events
+ * like external submissions to all users with a specific permission.
+ */
+export async function writeBulkNotifications(
+  tx: Prisma.TransactionClient,
+  params: {
+    type: string;
+    title: string;
+    content: string;
+    ticketId: string;
+    workOrderNumber: string;
+    targetUserIds: string[];
+    now: Date;
+  },
+) {
+  if (params.targetUserIds.length === 0) {
+    return;
+  }
+
+  await tx.appNotification.createMany({
+    data: params.targetUserIds.map((targetUserId) => ({
+      type: params.type,
+      title: params.title,
+      content: params.content,
+      ticketId: params.ticketId,
+      workOrderNumber: params.workOrderNumber,
+      targetUserId,
+      createdAt: params.now,
+    })),
+  });
+}
+
+/**
  * The bell's poll payload: the viewer's latest notifications plus their total
  * unread count, in one request (one 30s poll). Notifications
  * are strictly personal — targetUserId is pinned to the viewer, no data-scope

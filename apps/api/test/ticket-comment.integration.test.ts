@@ -52,6 +52,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
         roleName,
         permissions,
         requiredTicketFields: [],
+      externalOrgId: null,
       },
       sessionToken: null,
     });

@@ -6,6 +6,7 @@ import { completionStatusRouter } from "./completion-status.router";
 import { dashboardRouter } from "./dashboard.router";
 import { demoRouter } from "./demo.router";
 import { externalOrgRouter } from "./external-org.router";
+import { externalTicketRouter } from "./external-ticket.router";
 import { notificationRouter } from "./notification.router";
 import { roleRouter } from "./role.router";
 import { scheduleRouter } from "./schedule.router";
@@ -80,6 +81,11 @@ export const appRouter = router({
    * 外部机构管理 - CRUD + 字段可见性配置
    */
   externalOrg: externalOrgRouter,
+
+  /**
+   * 外部工单 API - 提交/列表/详情，限外部用户
+   */
+  externalTicket: externalTicketRouter,
 });
 
 export type AppRouter = typeof appRouter;

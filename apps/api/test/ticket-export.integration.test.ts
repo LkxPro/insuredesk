@@ -114,6 +114,7 @@ describe("ticket export (Testcontainers)", () => {
         roleName: role.name,
         permissions: role.permissions as Permission[],
         requiredTicketFields: [],
+      externalOrgId: null,
       },
       sessionToken: null,
     });

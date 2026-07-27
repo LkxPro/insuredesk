@@ -34,6 +34,7 @@ describe("TicketCategory filter options (Testcontainers)", () => {
       roleName: "目录管理员",
       permissions,
       requiredTicketFields: [],
+      externalOrgId: null,
     };
     return appRouter.createCaller({
       traceId: "ticket-category-filter-options-test",

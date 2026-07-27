@@ -136,6 +136,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
       roleName: "目录管理员",
       permissions,
       requiredTicketFields: [],
+      externalOrgId: null,
     };
     return appRouter.createCaller({
       traceId: "catalog-test",
@@ -333,6 +334,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
               roleName: "目录管理员",
               permissions: ["ticket.view", "ticket.view_all", "ticket.export"],
               requiredTicketFields: [],
+      externalOrgId: null,
             },
             {
               format: "csv",
@@ -405,6 +407,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
               roleName: "目录管理员",
               permissions: ["ticket.view", "ticket.view_all", "ticket.export"],
               requiredTicketFields: [],
+      externalOrgId: null,
             },
             {
               format: "csv",

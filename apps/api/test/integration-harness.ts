@@ -156,6 +156,7 @@ export async function startIntegrationHarness(
       roleName: role.name,
       permissions: permissions ?? effectivePermissions(role),
       requiredTicketFields: role.requiredTicketFields,
+      externalOrgId: user.externalOrgId,
     });
 
     const caller = (user: AuthenticatedUser): Caller =>

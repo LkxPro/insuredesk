@@ -53,6 +53,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
         roleName,
         permissions,
         requiredTicketFields: [],
+      externalOrgId: null,
       },
       sessionToken: null,
     });
