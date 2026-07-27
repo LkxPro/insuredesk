@@ -97,17 +97,23 @@ describe("ticket-field-visibility", () => {
       expect(result.customerName).toBeNull();
     });
 
-    it("handles empty whitelist by filtering everything except preserving types", () => {
+    it("handles empty whitelist by filtering everything except system fields", () => {
       const ticket = {
+        id: "ticket-123",
         workOrderNumber: "WO100001",
         status: "unassigned",
+        createdAt: new Date("2024-01-01"),
         policyNumbers: ["POL123"],
       };
 
       const result = filterVisibleFields(ticket, []);
 
+      // System fields always preserved
+      expect(result.id).toBe("ticket-123");
+      expect(result.status).toBe("unassigned");
+      expect(result.createdAt).toEqual(new Date("2024-01-01"));
+      // Non-system fields filtered
       expect(result.workOrderNumber).toBeNull();
-      expect(result.status).toBeNull();
       expect(result.policyNumbers).toEqual([]);
     });
 

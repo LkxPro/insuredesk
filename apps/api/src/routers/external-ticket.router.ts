@@ -239,6 +239,7 @@ export const externalTicketRouter = router({
         where: {
           ticketId: ticket.id,
           OR: [
+            { action: "create" },
             { action: "external_note" },
             { action: "resolve" },
             {

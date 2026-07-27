@@ -40,10 +40,27 @@ export const DEFAULT_EXTERNAL_VISIBLE_FIELDS: readonly string[] = [
 ] as const;
 
 /**
+ * System fields that must always survive filtering for API functionality:
+ * id for matching/linking, timestamps for sorting/pagination, status for display,
+ * source/externalOrgId/creatorId for internal logic.
+ */
+const SYSTEM_FIELDS = [
+  "id",
+  "createdAt",
+  "updatedAt",
+  "status",
+  "source",
+  "externalOrgId",
+  "creatorId",
+  "submissionText",
+] as const;
+
+/**
  * 按白名单裁剪工单对象：白名单外字段设为 null/[]/undefined，白名单内字段保留
  * 原值。返回新对象，不修改输入。
  *
  * 敏感字段即使在白名单内也强制过滤（防御配置错误）。
+ * 系统字段（id/createdAt/status 等）始终保留，确保 API 响应可用。
  *
  * 保留原始 undefined：白名单外或敏感字段，若原值为 undefined 则保持 undefined，
  * 不强制为 null，以便客户端区分"字段存在但被过滤"与"字段从未存在"。
@@ -60,7 +77,11 @@ export function filterVisibleFields<T extends Record<string, unknown>>(
   const result = { ...ticket } as Record<string, unknown>;
 
   for (const key of Object.keys(result)) {
-    const shouldFilter = SENSITIVE_TICKET_FIELDS.includes(key) || !whitelistSet.has(key);
+    const isSystemField = SYSTEM_FIELDS.includes(key as any);
+    const isInWhitelist = whitelistSet.has(key);
+    const isSensitive = SENSITIVE_TICKET_FIELDS.includes(key);
+
+    const shouldFilter = isSensitive || (!isSystemField && !isInWhitelist);
 
     if (shouldFilter) {
       const originalValue = result[key];
