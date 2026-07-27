@@ -243,6 +243,10 @@ export const ticketAddCommentInputSchema = z.object({
     .datetime({ offset: true, message: "下次联系时间格式不正确" })
     .nullish()
     .transform((value) => (value ? value : null)),
+  /**
+   * 仅内部可见标记：true = 外部查询时过滤掉该跟进记录。
+   */
+  internalOnly: z.boolean().optional().default(false),
 });
 
 /** Form-side shape (before transforms) — what the follow-up form holds. */

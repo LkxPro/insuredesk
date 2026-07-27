@@ -111,6 +111,19 @@ export function buildExternalSubmittedNotification(params: {
 }
 
 /**
+ * Pure message builder for the `external_note` notification.
+ */
+export function buildExternalNoteNotification(params: {
+  userName: string;
+  workOrderNumber: string;
+}) {
+  return {
+    title: "外部留言",
+    content: `${params.userName} 在工单 ${params.workOrderNumber} 添加了留言`,
+  };
+}
+
+/**
  * Bulk write notifications to multiple users. Used for broadcasting events
  * like external submissions to all users with a specific permission.
  */

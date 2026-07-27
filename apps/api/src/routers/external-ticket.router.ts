@@ -1,5 +1,6 @@
 import {
   DEFAULT_EXTERNAL_VISIBLE_FIELDS,
+  externalTicketAddNoteInputSchema,
   externalTicketDetailInputSchema,
   externalTicketListInputSchema,
   externalTicketSubmitInputSchema,
@@ -11,6 +12,7 @@ import { prisma } from "../db";
 import type { Prisma } from "../generated/prisma/client";
 import { applyExternalOrgDataScope } from "../services/data-scope.service";
 import {
+  buildExternalNoteNotification,
   buildExternalSubmittedNotification,
   writeBulkNotifications,
 } from "../services/notification.service";
@@ -266,5 +268,104 @@ export const externalTicketRouter = router({
           operatorName: log.operatorName,
         })),
       };
+    }),
+
+  /**
+   * AddNote: external user adds a note to a ticket.
+   * Writes action=external_note ProcessLog, does NOT modify contactCount/processingResult/nextContactTime.
+   * Notifies current assignee (or broadcasts to ticket.assign holders if unassigned).
+   */
+  addNote: requirePermission("ticket.process_external")
+    .input(externalTicketAddNoteInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const user = ctx.user;
+
+      if (!user.externalOrgId) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "外部留言需要关联外部机构",
+        });
+      }
+
+      const ticket = await prisma.ticket.findFirst({
+        where: {
+          id: input.ticketId,
+          ...applyExternalOrgDataScope(user),
+          deletedAt: null,
+        },
+        select: { id: true, workOrderNumber: true, status: true, assigneeId: true },
+      });
+
+      if (!ticket) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "工单不存在或无权访问",
+        });
+      }
+
+      if (ticket.status === "completed") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "工单已完结，不能添加留言",
+        });
+      }
+
+      const now = deps.clock.now();
+
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.processLog.create({
+          data: {
+            ticketId: ticket.id,
+            action: "external_note",
+            operatorId: user.id,
+            operatorName: user.name,
+            remark: input.content,
+            at: now,
+          },
+        });
+
+        const { title, content } = buildExternalNoteNotification({
+          userName: user.name,
+          workOrderNumber: ticket.workOrderNumber,
+        });
+
+        if (ticket.assigneeId) {
+          await tx.appNotification.create({
+            data: {
+              type: "external_note",
+              title,
+              content,
+              ticketId: ticket.id,
+              workOrderNumber: ticket.workOrderNumber,
+              targetUserId: ticket.assigneeId,
+              createdAt: now,
+            },
+          });
+        } else {
+          const assignableUsers = await tx.user.findMany({
+            where: {
+              active: true,
+              role: {
+                permissions: {
+                  has: "ticket.assign",
+                },
+              },
+            },
+            select: { id: true },
+          });
+
+          await writeBulkNotifications(tx, {
+            type: "external_note",
+            title,
+            content,
+            ticketId: ticket.id,
+            workOrderNumber: ticket.workOrderNumber,
+            targetUserIds: assignableUsers.map((u) => u.id),
+            now,
+          });
+        }
+      });
+
+      return { success: true };
     }),
 });

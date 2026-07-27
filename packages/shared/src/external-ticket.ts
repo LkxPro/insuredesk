@@ -30,3 +30,13 @@ export const externalTicketDetailInputSchema = z.object({
 });
 
 export type ExternalTicketDetailInput = z.infer<typeof externalTicketDetailInputSchema>;
+
+/**
+ * 外部留言输入：外部用户在工单里添加留言。
+ */
+export const externalTicketAddNoteInputSchema = z.object({
+  ticketId: z.string().min(1),
+  content: z.string().trim().min(1, "留言内容不能为空").max(2000, "留言内容不能超过 2000 字符"),
+});
+
+export type ExternalTicketAddNoteInput = z.infer<typeof externalTicketAddNoteInputSchema>;

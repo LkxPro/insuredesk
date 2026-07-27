@@ -396,4 +396,251 @@ describe("external ticket API (Testcontainers)", () => {
       ).rejects.toThrow(TRPCError);
     });
   });
+
+  describe("addNote", () => {
+    it("adds external_note ProcessLog without modifying ticket fields", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "测试外部留言",
+      });
+
+      const beforeTicket = await prisma.ticket.findUnique({
+        where: { id: ticket.id },
+        select: { contactCount: true, processingResult: true, nextContactTime: true },
+      });
+
+      const result = await caller.externalTicket.addNote({
+        ticketId: ticket.id,
+        content: "请问处理进度如何？",
+      });
+
+      expect(result.success).toBe(true);
+
+      const logs = await prisma.processLog.findMany({
+        where: { ticketId: ticket.id, action: "external_note" },
+      });
+
+      expect(logs).toHaveLength(1);
+      const noteLog = logs[0];
+      if (!noteLog) throw new Error("external_note log not found");
+      expect(noteLog.remark).toBe("请问处理进度如何？");
+      expect(noteLog.operatorId).toBe(externalUser1.id);
+
+      const afterTicket = await prisma.ticket.findUnique({
+        where: { id: ticket.id },
+        select: { contactCount: true, processingResult: true, nextContactTime: true },
+      });
+
+      expect(afterTicket?.contactCount).toBe(beforeTicket?.contactCount);
+      expect(afterTicket?.processingResult).toBe(beforeTicket?.processingResult);
+      expect(afterTicket?.nextContactTime).toEqual(beforeTicket?.nextContactTime);
+    });
+
+    it("notifies assignee when ticket is assigned", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "测试通知已分配工单",
+      });
+
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { assigneeId: seeded.users.cs1.id, status: "assigned" },
+      });
+
+      await caller.externalTicket.addNote({
+        ticketId: ticket.id,
+        content: "需要补充信息",
+      });
+
+      const notifications = await prisma.appNotification.findMany({
+        where: {
+          ticketId: ticket.id,
+          type: "external_note",
+          targetUserId: seeded.users.cs1.id,
+        },
+      });
+
+      expect(notifications).toHaveLength(1);
+      const notification = notifications[0];
+      if (!notification) throw new Error("notification not found");
+      expect(notification.title).toBe("外部留言");
+      expect(notification.content).toContain(externalUser1.name);
+      expect(notification.content).toContain(ticket.workOrderNumber);
+    });
+
+    it("broadcasts to ticket.assign holders when ticket is unassigned", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "测试通知未分配工单",
+      });
+
+      await caller.externalTicket.addNote({
+        ticketId: ticket.id,
+        content: "尽快处理",
+      });
+
+      const notifications = await prisma.appNotification.findMany({
+        where: { ticketId: ticket.id, type: "external_note" },
+      });
+
+      expect(notifications.length).toBeGreaterThan(0);
+      const firstNotification = notifications[0];
+      if (!firstNotification) throw new Error("notification not found");
+      expect(firstNotification.title).toBe("外部留言");
+    });
+
+    it("rejects addNote for completed ticket", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "将被完结的工单",
+      });
+
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { status: "completed" },
+      });
+
+      await expect(
+        caller.externalTicket.addNote({
+          ticketId: ticket.id,
+          content: "尝试留言",
+        }),
+      ).rejects.toThrow("工单已完结");
+    });
+
+    it("returns 404 for ticket from different org", async () => {
+      const caller1 = externalCaller1();
+      const caller2 = externalCaller2();
+
+      const ticket1 = await caller1.externalTicket.submit({
+        submissionText: "机构1的工单",
+      });
+
+      await expect(
+        caller2.externalTicket.addNote({
+          ticketId: ticket1.id,
+          content: "尝试留言",
+        }),
+      ).rejects.toThrow(TRPCError);
+    });
+
+    it("rejects if content is empty", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "测试空留言",
+      });
+
+      await expect(
+        caller.externalTicket.addNote({
+          ticketId: ticket.id,
+          content: "",
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects if content exceeds 2000 characters", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "测试长留言",
+      });
+
+      const longContent = "a".repeat(2001);
+      await expect(
+        caller.externalTicket.addNote({
+          ticketId: ticket.id,
+          content: longContent,
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("internalOnly flag", () => {
+    it("internal comment with internalOnly=true is filtered in external detail", async () => {
+      const internalCaller = callerFor(
+        seeded.users.manager,
+        seeded.roles.csManager,
+        null,
+      );
+      const externalCaller = externalCaller1();
+
+      const ticket = await externalCaller.externalTicket.submit({
+        submissionText: "测试 internalOnly 过滤",
+      });
+
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { assigneeId: seeded.users.cs1.id, status: "assigned" },
+      });
+
+      await internalCaller.ticket.addComment({
+        ticketId: ticket.id,
+        remark: "内部敏感判断",
+        internalOnly: true,
+      });
+
+      await internalCaller.ticket.addComment({
+        ticketId: ticket.id,
+        remark: "外部可见跟进",
+        internalOnly: false,
+      });
+
+      const detail = await externalCaller.externalTicket.detail({ ticketId: ticket.id });
+
+      const remarks = detail.processLogs.map((log) => log.remark).filter(Boolean);
+      expect(remarks).toContain("外部可见跟进");
+      expect(remarks).not.toContain("内部敏感判断");
+    });
+
+    it("internal comment with internalOnly=true is visible to internal users", async () => {
+      const internalCaller = callerFor(
+        seeded.users.manager,
+        seeded.roles.csManager,
+        null,
+      );
+
+      const manualTicket = await internalCaller.ticket.create({
+        feedbackTime: new Date().toISOString(),
+        channelId: null,
+        project: null,
+        brokerageEntity: null,
+        paymentChannel: null,
+        internalOrderNumber: null,
+        policyNumbers: [],
+        userComplaintChannel: null,
+        complaintReceiveChannel: null,
+        customerName: null,
+        phone: null,
+        contactPhone: null,
+        customerRequest: "测试内部可见",
+        nuclearBodyStatus: null,
+        hasContacted: null,
+        contactTime: null,
+        contactId: null,
+        categoryId: null,
+        complaintLevel: null,
+        priority: null,
+      });
+
+      await prisma.ticket.update({
+        where: { id: manualTicket.id },
+        data: { assigneeId: seeded.users.cs1.id, status: "assigned" },
+      });
+
+      await internalCaller.ticket.addComment({
+        ticketId: manualTicket.id,
+        remark: "内部敏感判断",
+        internalOnly: true,
+      });
+
+      const internalAgentCaller = callerFor(
+        seeded.users.cs1,
+        seeded.roles.frontline,
+        null,
+      );
+      const detail = await internalAgentCaller.ticket.detail({ id: manualTicket.id });
+
+      const remarks = detail.processLogs.map((log: { remark: string }) => log.remark).filter(Boolean);
+      expect(remarks).toContain("内部敏感判断");
+    });
+  });
 });
