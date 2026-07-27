@@ -442,6 +442,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,
     customerRequest: ticket.customerRequest,
+    submissionText: ticket.submissionText,
     nuclearBodyStatus: parseNullable(nuclearBodyStatusSchema, ticket.nuclearBodyStatus),
     hasContacted: ticket.hasContacted,
     contactTime: ticket.contactTime?.toISOString() ?? null,

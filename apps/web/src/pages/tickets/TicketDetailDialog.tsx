@@ -320,6 +320,13 @@ export function TicketDetailDialog({
           {field("contactTime")}
           {field("contactId")}
           <div className="sm:col-span-3">{field("customerRequest")}</div>
+          {t.submissionText != null && t.submissionText !== "" && (
+            <div className="sm:col-span-3">
+              <Item label="工单原文">
+                <pre className="whitespace-pre-wrap text-sm">{t.submissionText}</pre>
+              </Item>
+            </div>
+          )}
         </Section>
 
         <Section title="分类与等级">
