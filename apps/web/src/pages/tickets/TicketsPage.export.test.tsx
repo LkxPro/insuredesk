@@ -66,6 +66,22 @@ describe("按列表当前筛选条件导出", () => {
     expect(url.searchParams.get("source")).toBe("feishu_form,manual,community");
   });
 
+  it("创建时间区间随导出下传（导出口径 = 列表口径）", async () => {
+    restFetch.mockResolvedValue(new Response("x", { status: 200 }));
+    const from = "2026-07-06T00:00:00.000Z";
+    const to = "2026-07-12T23:59:59.999Z";
+    renderAt(
+      `/tickets?createdFrom=${encodeURIComponent(from)}&createdTo=${encodeURIComponent(to)}`,
+    );
+
+    await pickExport(/CSV/);
+
+    await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
+    const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
+    expect(url.searchParams.get("createdFrom")).toBe(from);
+    expect(url.searchParams.get("createdTo")).toBe(to);
+  });
+
   it("requests xlsx when Excel is picked", async () => {
     restFetch.mockResolvedValue(new Response("x", { status: 200 }));
     renderAt("/tickets");

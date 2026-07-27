@@ -45,6 +45,13 @@ export function buildTicketExportUrl(
   if (query.search) {
     params.set("search", query.search);
   }
+  // 创建时间区间随导出下传；缺省（全部）不写参数
+  for (const key of ["createdFrom", "createdTo"] as const) {
+    const value = query[key];
+    if (value !== undefined) {
+      params.set(key, value);
+    }
+  }
   return `/api/tickets/export?${params.toString()}`;
 }
 

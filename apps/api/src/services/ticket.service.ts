@@ -203,6 +203,8 @@ type TicketListFilters = Pick<
   | "complaintLevel"
   | "source"
   | "search"
+  | "createdFrom"
+  | "createdTo"
   | "sortBy"
   | "sortOrder"
 >;
@@ -262,6 +264,15 @@ export async function buildTicketListWhere(
   }
   if (query.source && query.source.length > 0) {
     filters.push({ source: { in: query.source } });
+  }
+  // 创建时间区间左闭右闭；边界已是绝对时刻，日界口径由调用方（前端）算定
+  if (query.createdFrom !== undefined || query.createdTo !== undefined) {
+    filters.push({
+      createdAt: {
+        ...(query.createdFrom !== undefined && { gte: new Date(query.createdFrom) }),
+        ...(query.createdTo !== undefined && { lte: new Date(query.createdTo) }),
+      },
+    });
   }
   if (query.search) {
     filters.push({

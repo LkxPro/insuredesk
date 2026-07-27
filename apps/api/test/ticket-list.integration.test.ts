@@ -538,7 +538,12 @@ describe("ticket list (Testcontainers)", () => {
         policyNumbers: [],
         contactPhone: "17600000000",
       });
-      await makeTicket({ customerName: "无电话", phone: null, policyNumbers: [], contactPhone: null });
+      await makeTicket({
+        customerName: "无电话",
+        phone: null,
+        policyNumbers: [],
+        contactPhone: null,
+      });
 
       const byPhone = await manager().ticket.list({ search: "138" });
       expect(byPhone.items.map((t) => t.id)).toEqual([withPhone.id]);
@@ -617,6 +622,94 @@ describe("ticket list (Testcontainers)", () => {
       expect((await manager().ticket.list({ search: "11001 PE" })).items.map((t) => t.id)).toEqual([
         multi.id,
       ]);
+    });
+  });
+
+  describe("创建时间区间筛选 (左闭右闭绝对时刻)", () => {
+    /** 三张单分别落在区间前一毫秒、起始边界、结束边界与其后一毫秒。 */
+    async function rangeFixture() {
+      const from = new Date("2026-07-06T00:00:00.000Z");
+      const to = new Date("2026-07-12T23:59:59.999Z");
+      return {
+        from,
+        to,
+        before: await makeTicket({}, { createdAt: new Date(from.getTime() - 1) }),
+        atFrom: await makeTicket({}, { createdAt: from }),
+        atTo: await makeTicket({}, { createdAt: to }),
+        after: await makeTicket({}, { createdAt: new Date(to.getTime() + 1) }),
+      };
+    }
+
+    it("includes both edges and excludes the instants just outside them", async () => {
+      const f = await rangeFixture();
+
+      const result = await manager().ticket.list({
+        createdFrom: f.from.toISOString(),
+        createdTo: f.to.toISOString(),
+      });
+      expect(result.items.map((t) => t.id).sort()).toEqual([f.atFrom.id, f.atTo.id].sort());
+    });
+
+    it("accepts an open-ended range on either side", async () => {
+      const f = await rangeFixture();
+
+      const fromOnly = await manager().ticket.list({ createdFrom: f.from.toISOString() });
+      expect(fromOnly.items.map((t) => t.id).sort()).toEqual(
+        [f.atFrom.id, f.atTo.id, f.after.id].sort(),
+      );
+
+      const toOnly = await manager().ticket.list({ createdTo: f.to.toISOString() });
+      expect(toOnly.items.map((t) => t.id).sort()).toEqual(
+        [f.before.id, f.atFrom.id, f.atTo.id].sort(),
+      );
+    });
+
+    it("无区间参数 = 不按创建时间筛选", async () => {
+      const f = await rangeFixture();
+      expect((await manager().ticket.list({})).total).toBe(4);
+      expect(f.before.id).toBeTruthy();
+    });
+
+    it("与其余筛选维度、搜索、排序、分页叠加取交集", async () => {
+      const from = new Date("2026-07-06T00:00:00.000Z");
+      const to = new Date("2026-07-12T23:59:59.999Z");
+      const inRangePay = await makeTicket(
+        { channelId: channelId("支付"), customerName: "区间内" },
+        { createdAt: new Date("2026-07-08T02:00:00.000Z") },
+      );
+      // 同渠道同名但在区间外
+      await makeTicket(
+        { channelId: channelId("支付"), customerName: "区间内" },
+        { createdAt: new Date("2026-07-20T02:00:00.000Z") },
+      );
+      // 区间内但另一渠道
+      await makeTicket(
+        { channelId: channelId("保司"), customerName: "区间内" },
+        { createdAt: new Date("2026-07-09T02:00:00.000Z") },
+      );
+
+      const result = await manager().ticket.list({
+        createdFrom: from.toISOString(),
+        createdTo: to.toISOString(),
+        channelId: [channelId("支付")],
+        search: "区间内",
+        sortBy: "createdAt",
+        sortOrder: "asc",
+        page: 1,
+        pageSize: 20,
+      });
+      expect(result.items.map((t) => t.id)).toEqual([inRangePay.id]);
+      expect(result.total).toBe(1);
+    });
+
+    it("起晚于止的区间选出空集，而不是报错", async () => {
+      await makeTicket({}, { createdAt: new Date("2026-07-08T02:00:00.000Z") });
+
+      const result = await manager().ticket.list({
+        createdFrom: "2026-07-12T00:00:00.000Z",
+        createdTo: "2026-07-06T00:00:00.000Z",
+      });
+      expect(result.total).toBe(0);
     });
   });
 

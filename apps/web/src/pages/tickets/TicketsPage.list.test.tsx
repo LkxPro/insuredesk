@@ -368,7 +368,8 @@ describe("search / sort / pagination re-query", () => {
     renderAt("/tickets");
     await screen.findByText("WO100001");
 
-    fireEvent.click(screen.getByRole("button", { name: /创建时间/ }));
+    // 同名的创建时间筛选器也在页面上，排序表头按精确名字定位
+    fireEvent.click(screen.getByRole("button", { name: "创建时间" }));
     await waitFor(() =>
       expect(listInputs().at(-1)).toMatchObject({ sortBy: "createdAt", sortOrder: "asc" }),
     );
