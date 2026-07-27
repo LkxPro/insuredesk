@@ -70,7 +70,7 @@ export const userUpdateInputSchema = z.object({
 export type UserUpdateInput = z.input<typeof userUpdateInputSchema>;
 export type UserUpdateData = z.output<typeof userUpdateInputSchema>;
 
-/** 禁用/启用 (the PRD's user.delete). Disabling kills the user's sessions. */
+/** 禁用/启用, gated by user.delete. Disabling kills the user's sessions. */
 export const userSetActiveInputSchema = z.object({
   id: z.string().min(1),
   active: z.boolean(),

@@ -155,7 +155,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       expect(detail.nextContactTime).toBeNull();
     });
 
-    it("does not move dueAt or assignedAt (ADR 0002: SLA anchored at creation)", async () => {
+    it("does not move dueAt or assignedAt (SLA anchored at creation)", async () => {
       const ticketId = await createAssignedTicket();
       const before = await manager().ticket.detail({ id: ticketId });
 

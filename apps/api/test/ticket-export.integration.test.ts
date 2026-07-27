@@ -382,7 +382,7 @@ describe("ticket export (Testcontainers)", () => {
     });
   });
 
-  describe("数据范围 (PRD §5.2)", () => {
+  describe("数据范围", () => {
     it("个人档只能导出本人名下 — no ticket.view_all pins the export to own tickets", async () => {
       await makeTicket({ customerName: "无人认领" }); // unassigned pool
       const own = await makeTicket(
@@ -482,7 +482,7 @@ describe("ticket export (Testcontainers)", () => {
     });
   });
 
-  describe("导出不产生 ProcessLog (PRD §3.2)", () => {
+  describe("导出不产生 ProcessLog", () => {
     it("leaves the ProcessLog table untouched across both formats", async () => {
       await makeTicket();
       await makeTicket({ customerName: "第二单" });

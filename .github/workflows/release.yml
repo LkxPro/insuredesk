@@ -1,6 +1,6 @@
 name: Release
 
-# 一键发版（ADR 0009）：手动触发即算出下一个 CalVer 号、构建推送生产镜像、
+# 一键发版：手动触发即算出下一个 CalVer 号、构建推送生产镜像、
 # 打 tag 并创建 GitHub Release。操作手册见 docs/releasing.md。
 on:
   workflow_dispatch:

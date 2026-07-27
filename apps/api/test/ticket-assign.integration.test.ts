@@ -149,7 +149,7 @@ describe("ticket assignment (Testcontainers)", () => {
   });
 
   describe("reassignment (改派)", () => {
-    it("updates assigneeId only — dueAt and assignedAt unchanged (ADR 0002) — and logs one assign entry 从谁到谁", async () => {
+    it("updates assigneeId only — dueAt and assignedAt unchanged — and logs one assign entry 从谁到谁", async () => {
       const ticketId = await createTicket();
       await manager().ticket.assign({ ticketId, assigneeId: seeded.users.cs1.id });
       const first = await manager().ticket.detail({ id: ticketId });

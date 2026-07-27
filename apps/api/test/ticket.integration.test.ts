@@ -91,7 +91,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
     complaintLevel: "一般投诉",
   } satisfies TicketCreateInput;
 
-  it("seeds exactly one SLAPolicy per complaint level with the PRD §3.8 defaults", async () => {
+  it("seeds exactly one SLAPolicy per complaint level with the expected defaults", async () => {
     const policies = await prisma.slaPolicy.findMany();
     expect(policies).toHaveLength(COMPLAINT_LEVELS.length);
 
@@ -154,7 +154,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(log?.at).toBe(detail.createdAt);
     });
 
-    it("derives 由谁创建 from the creator's CURRENT name, while the log keeps the snapshot (PRD §3.1.8)", async () => {
+    it("derives 由谁创建 from the creator's CURRENT name, while the log keeps the snapshot", async () => {
       const created = await manager().ticket.create(baseInput);
 
       const originalName = seeded.users.manager.name;
@@ -219,7 +219,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
     });
   });
 
-  describe("dueAt per complaint level (PRD §9.2)", () => {
+  describe("dueAt per complaint level", () => {
     it("加急投诉 → createdAt + 72h", async () => {
       const created = await manager().ticket.create({ ...baseInput, complaintLevel: "加急投诉" });
       const detail = await manager().ticket.detail({ id: created.id });
@@ -238,7 +238,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
     });
   });
 
-  it("concurrent creations never collide on workOrderNumber (PRD §9.3)", async () => {
+  it("concurrent creations never collide on workOrderNumber", async () => {
     const created = await Promise.all(
       Array.from({ length: 10 }, () => manager().ticket.create(baseInput)),
     );

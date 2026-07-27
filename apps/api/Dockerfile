@@ -1,4 +1,4 @@
-# Multi-stage build for the InsureDesk API (ADR 0007). The API runs straight
+# Multi-stage build for the InsureDesk API. The API runs straight
 # from TypeScript source via tsx (no compile step), so the runtime stage carries
 # source + production deps rather than a JS bundle. It also serves the built web
 # SPA (apps/web/dist) via @fastify/static.

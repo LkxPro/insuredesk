@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 生产升级（ADR 0009）：一条 `make upgrade` 干完，操作员只表达「升到最新」，
+# 生产升级：一条 `make upgrade` 干完，操作员只表达「升到最新」，
 # 不手敲版本号。跑在宿主机（需 git + docker + 服务器 .env），不进容器。
 #
 # 顺序：解析最新 CalVer → 已是最新则直接退出（不备份、不重启）→ 迁前备份
@@ -8,7 +8,7 @@
 # 随容器启动执行，故迁前备份天然早于迁移。
 #
 # make upgrade 是唯一 sanctioned 升级路径：手改 IMAGE_TAG 后直接 up 会让迁移
-# 无备份执行，操作员自负（ADR 0009 已知风险）。
+# 无备份执行，操作员自负（已知风险）。
 
 # 「最新」的排序口径必须与发版 workflow (.github/workflows/release.yml) 一致，
 # 否则两处算出的「最新」会打架。stdin 收 `git ls-remote --tags` 的原始输出，
@@ -66,7 +66,7 @@ main() {
   backup_before_upgrade
 
   echo "upgrade: 钉版本 $latest 并拉起…"
-  # 写回具体 tag（非 latest）：回滚有明确目标、stray up -d 不跳版本（ADR 0009）。
+  # 写回具体 tag（非 latest）：回滚有明确目标、stray up -d 不跳版本。
   # BSD/GNU sed 的 -i 参数不同，用临时文件改写规避。
   sed "s/^IMAGE_TAG=.*/IMAGE_TAG=\"$latest\"/" "$ENV_FILE" >"$ENV_FILE.tmp"
   mv "$ENV_FILE.tmp" "$ENV_FILE"

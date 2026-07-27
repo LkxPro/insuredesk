@@ -59,7 +59,7 @@ export function RoleCreateDialog({
       <DialogContent className="flex max-h-[min(720px,90svh)] flex-col sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>新增角色</DialogTitle>
-          <DialogDescription>按 PRD §5.1 权限点清单勾选该角色可用的权限。</DialogDescription>
+          <DialogDescription>在权限点清单中勾选该角色可用的权限。</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 overflow-y-auto pr-1">

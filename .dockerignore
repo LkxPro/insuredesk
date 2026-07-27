@@ -1,4 +1,4 @@
-# Docker build context excludes (ADR 0007). Keeps the image lean and the build
+# Docker build context excludes. Keeps the image lean and the build
 # reproducible: host node_modules, build artifacts, secrets, VCS, and tests
 # never enter the image. The Dockerfile rebuilds the web bundle and installs
 # fresh deps from the lockfile.

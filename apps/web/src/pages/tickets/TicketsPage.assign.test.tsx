@@ -229,7 +229,7 @@ describe("single assignment from the list", () => {
     );
   });
 
-  it("改派 shows the current assignee with the ADR 0002 non-extension hint", async () => {
+  it("改派 shows the current assignee with the deadline non-extension hint", async () => {
     canned.items = [
       listItem({
         status: "assigned",

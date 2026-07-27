@@ -412,7 +412,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     });
   });
 
-  describe("轨道合并 (ADR 0004 送达: 一次请求)", () => {
+  describe("轨道合并 (送达: 一次请求)", () => {
     it("notification.list 同时携带轨 1 收件箱与轨 2 待办", async () => {
       const owner = await createAssignee();
       const ticket = await createTicket();
