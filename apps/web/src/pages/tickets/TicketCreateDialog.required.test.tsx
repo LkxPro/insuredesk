@@ -102,6 +102,7 @@ beforeEach(() => {
     roleName: TEST_ROLES.CS_MANAGER.name,
     permissions: [...TEST_ROLES.CS_MANAGER.permissions],
     requiredTicketFields: ["phone", "channelId", "hasContacted"],
+    externalOrgId: null,
   };
   auth.isLoading = false;
   calls = [];

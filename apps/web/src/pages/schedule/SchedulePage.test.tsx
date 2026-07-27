@@ -43,6 +43,7 @@ function userWith(permissions: Permission[]): AuthUser {
     roleName: "排班角色",
     permissions,
     requiredTicketFields: [],
+    externalOrgId: null,
   };
 }
 

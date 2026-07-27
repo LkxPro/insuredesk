@@ -164,17 +164,13 @@ describe("external ticket API (Testcontainers)", () => {
 
     it("rejects if submissionText is missing", async () => {
       const caller = externalCaller1();
-      await expect(
-        caller.externalTicket.submit({ submissionText: "" }),
-      ).rejects.toThrow();
+      await expect(caller.externalTicket.submit({ submissionText: "" })).rejects.toThrow();
     });
 
     it("rejects if submissionText exceeds 2000 characters", async () => {
       const caller = externalCaller1();
       const longText = "a".repeat(2001);
-      await expect(
-        caller.externalTicket.submit({ submissionText: longText }),
-      ).rejects.toThrow();
+      await expect(caller.externalTicket.submit({ submissionText: longText })).rejects.toThrow();
     });
 
     it("rejects if external org is inactive", async () => {
@@ -184,9 +180,9 @@ describe("external ticket API (Testcontainers)", () => {
       });
 
       const caller = externalCaller1();
-      await expect(
-        caller.externalTicket.submit({ submissionText: "测试" }),
-      ).rejects.toThrow("外部机构已停用");
+      await expect(caller.externalTicket.submit({ submissionText: "测试" })).rejects.toThrow(
+        "外部机构已停用",
+      );
 
       await prisma.externalOrg.update({
         where: { id: externalOrg1.id },
@@ -240,8 +236,9 @@ describe("external ticket API (Testcontainers)", () => {
 
       expect(ticket.workOrderNumber).toBe(result.workOrderNumber);
       expect(ticket.processingResult).toBe("处理结果");
-      expect(ticket.customerName).toBeNull();
-      expect(ticket.phone).toBeNull();
+      // 敏感字段不在外部 wire shape 里，连键都不存在
+      expect(ticket).not.toHaveProperty("customerName");
+      expect(ticket).not.toHaveProperty("phone");
     });
 
     it("uses default whitelist when org has null visibleTicketFields", async () => {
@@ -264,7 +261,41 @@ describe("external ticket API (Testcontainers)", () => {
       expect(ticket).toBeDefined();
       expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("workOrderNumber");
       expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("status");
-      expect(ticket?.customerName).toBeNull();
+      expect(list.visibleFields).toEqual([...DEFAULT_EXTERNAL_VISIBLE_FIELDS]);
+      expect(ticket).not.toHaveProperty("customerName");
+    });
+
+    it("keeps 工单号/状态 visible even when the org's whitelist omits them", async () => {
+      // 管理员界面的候选清单由建单字段推导，勾不到工单号与状态 —— 任何配过一次
+      // 的机构白名单都不含它们，但工单号是外部方唯一的工单标识，必须还在
+      const org = await prisma.externalOrg.create({
+        data: {
+          name: "只配业务字段的机构",
+          visibleTicketFields: JSON.stringify(["feedbackTime", "priority"]),
+          active: true,
+        },
+      });
+      const user = await prisma.user.create({
+        data: {
+          username: `ext-narrow-${Date.now()}`,
+          passwordHash: "x",
+          name: "窄白名单用户",
+          roleId: externalRole.id,
+          externalOrgId: org.id,
+          active: true,
+        },
+      });
+      const caller = callerFor(user, externalRole, org.id);
+
+      const created = await caller.externalTicket.submit({ submissionText: "窄白名单" });
+      const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
+
+      expect(list.visibleFields).toEqual(["workOrderNumber", "status", "feedbackTime", "priority"]);
+      const ticket = list.items.find((t) => t.id === created.id);
+      expect(ticket?.workOrderNumber).toBe(created.workOrderNumber);
+      expect(ticket?.status).toBe("unassigned");
+      // 未配的业务字段仍然被裁掉
+      expect(ticket?.customerRequest).toBeNull();
     });
 
     it("excludes soft-deleted tickets", async () => {
@@ -292,9 +323,9 @@ describe("external ticket API (Testcontainers)", () => {
         submissionText: "机构1的工单",
       });
 
-      await expect(
-        caller2.externalTicket.detail({ ticketId: ticket1.id }),
-      ).rejects.toThrow(TRPCError);
+      await expect(caller2.externalTicket.detail({ ticketId: ticket1.id })).rejects.toThrow(
+        TRPCError,
+      );
     });
 
     it("filters ProcessLog to show only allowed actions", async () => {
@@ -376,8 +407,8 @@ describe("external ticket API (Testcontainers)", () => {
 
       expect(detail.ticket.workOrderNumber).toBe(ticket.workOrderNumber);
       expect(detail.ticket.processingResult).toBe("处理结果");
-      expect(detail.ticket.customerName).toBeNull();
-      expect(detail.ticket.phone).toBeNull();
+      expect(detail.ticket).not.toHaveProperty("customerName");
+      expect(detail.ticket).not.toHaveProperty("phone");
     });
 
     it("returns 404 for soft-deleted ticket", async () => {
@@ -391,9 +422,9 @@ describe("external ticket API (Testcontainers)", () => {
         data: { deletedAt: new Date() },
       });
 
-      await expect(
-        caller.externalTicket.detail({ ticketId: ticket.id }),
-      ).rejects.toThrow(TRPCError);
+      await expect(caller.externalTicket.detail({ ticketId: ticket.id })).rejects.toThrow(
+        TRPCError,
+      );
     });
   });
 
@@ -556,11 +587,7 @@ describe("external ticket API (Testcontainers)", () => {
 
   describe("internalOnly flag", () => {
     it("internal comment with internalOnly=true is filtered in external detail", async () => {
-      const internalCaller = callerFor(
-        seeded.users.manager,
-        seeded.roles.csManager,
-        null,
-      );
+      const internalCaller = callerFor(seeded.users.manager, seeded.roles.csManager, null);
       const externalCaller = externalCaller1();
 
       const ticket = await externalCaller.externalTicket.submit({
@@ -592,11 +619,7 @@ describe("external ticket API (Testcontainers)", () => {
     });
 
     it("internal comment with internalOnly=true is visible to internal users", async () => {
-      const internalCaller = callerFor(
-        seeded.users.manager,
-        seeded.roles.csManager,
-        null,
-      );
+      const internalCaller = callerFor(seeded.users.manager, seeded.roles.csManager, null);
 
       const manualTicket = await internalCaller.ticket.create({
         feedbackTime: new Date().toISOString(),
@@ -632,14 +655,12 @@ describe("external ticket API (Testcontainers)", () => {
         internalOnly: true,
       });
 
-      const internalAgentCaller = callerFor(
-        seeded.users.cs1,
-        seeded.roles.frontline,
-        null,
-      );
+      const internalAgentCaller = callerFor(seeded.users.cs1, seeded.roles.frontline, null);
       const detail = await internalAgentCaller.ticket.detail({ id: manualTicket.id });
 
-      const remarks = detail.processLogs.map((log: { remark: string }) => log.remark).filter(Boolean);
+      const remarks = detail.processLogs
+        .map((log: { remark: string }) => log.remark)
+        .filter(Boolean);
       expect(remarks).toContain("内部敏感判断");
     });
   });

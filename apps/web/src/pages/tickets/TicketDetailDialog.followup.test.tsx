@@ -54,6 +54,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     roleName: role.name,
     permissions: [...role.permissions],
     requiredTicketFields: [],
+    externalOrgId: null,
   };
 }
 
@@ -211,6 +212,8 @@ describe("submitting a follow-up", () => {
       ticketId: "t1",
       remark: "已电话联系客户",
       nextContactTime: null,
+      // 未勾选 仅内部可见 → 跟进对外可见
+      internalOnly: false,
     });
 
     // The card stays for the next follow-up, with the draft cleared
@@ -248,6 +251,33 @@ describe("submitting a follow-up", () => {
       ticketId: "t1",
       remark: "已电话联系客户",
       nextContactTime: null,
+      internalOnly: false,
+    });
+  });
+
+  it("仅内部可见 checked → internalOnly: true, and the box resets after submit (issue #151)", async () => {
+    renderDetail();
+
+    fireEvent.change(await screen.findByLabelText("跟进备注"), {
+      target: { value: "内部判断，暂不外告" },
+    });
+    const checkbox = screen.getByRole("checkbox", { name: "仅内部可见" });
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "提交跟进" }));
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === "ticket.addComment")).toBe(true);
+    });
+    expect(calls.find((call) => call.path === "ticket.addComment")?.input).toEqual({
+      ticketId: "t1",
+      remark: "内部判断，暂不外告",
+      nextContactTime: null,
+      internalOnly: true,
+    });
+
+    // 下一条跟进默认回到对外可见，不继承上一条的选择
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: "仅内部可见" })).not.toBeChecked();
     });
   });
 

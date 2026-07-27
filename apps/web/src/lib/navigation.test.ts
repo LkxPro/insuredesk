@@ -14,9 +14,10 @@ function visiblePaths(permissions: readonly Permission[]): string[] {
 }
 
 describe("NAV_ITEMS", () => {
-  it("covers the nine page permissions, one menu entry each", () => {
+  it("covers the ten page permissions, one menu entry each", () => {
     expect(NAV_ITEMS.map((item) => item.permission)).toEqual([
       "dashboard.view",
+      "ticket.create_external",
       "ticket.view",
       "user.view",
       "external_org.manage",
@@ -66,5 +67,32 @@ describe("visibleNavItems", () => {
 
   it("ignores non-page permissions", () => {
     expect(visiblePaths(["ticket.process", "schedule.edit"])).toEqual([]);
+  });
+});
+
+/**
+ * 内外部二分靠 externalOrgId，不靠权限点：管理员展开后同样持有
+ * ticket.create_external，却必须看到 工单管理 而不是 我的工单。
+ */
+describe("外部账号的菜单", () => {
+  const externalPermissions: Permission[] = ["ticket.create_external", "ticket.process_external"];
+
+  it("外部账号 sees 我的工单 only", () => {
+    expect(visibleNavItems(externalPermissions, "org-1").map((item) => item.path)).toEqual([
+      "/external-tickets",
+    ]);
+  });
+
+  it("外部账号 with ticket.view still never gets 工单管理", () => {
+    const paths = visibleNavItems([...externalPermissions, "ticket.view"], "org-1").map(
+      (item) => item.path,
+    );
+    expect(paths).toEqual(["/external-tickets"]);
+  });
+
+  it("管理员 holding the external permission stays on 工单管理", () => {
+    const paths = visibleNavItems(TEST_ROLES.ADMIN.permissions, null).map((item) => item.path);
+    expect(paths).toContain("/tickets");
+    expect(paths).not.toContain("/external-tickets");
   });
 });

@@ -7,6 +7,8 @@ import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
 import { ExternalOrgManagePage } from "@/pages/external-orgs/ExternalOrgManagePage";
+import { ExternalTicketDetailPage } from "@/pages/external-tickets/ExternalTicketDetailPage";
+import { ExternalTicketListPage } from "@/pages/external-tickets/ExternalTicketListPage";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
@@ -27,6 +29,7 @@ import { UsersPage } from "@/pages/users/UsersPage";
 // Record<NavPath, …> makes "menu entry without a page" a compile error.
 const PAGES: Record<NavPath, ReactElement> = {
   "/dashboard": <DashboardPage />,
+  "/external-tickets": <ExternalTicketListPage />,
   "/tickets": <TicketsPage />,
   "/users": <UsersPage />,
   "/external-orgs": <ExternalOrgManagePage />,
@@ -40,7 +43,7 @@ const PAGES: Record<NavPath, ReactElement> = {
 /** `/` lands on the first menu page the user may see; no page permissions → 403. */
 function IndexRedirect() {
   const { user } = useAuth();
-  const first = visibleNavItems(user?.permissions ?? [])[0];
+  const first = visibleNavItems(user?.permissions ?? [], user?.externalOrgId ?? null)[0];
   return <Navigate to={first?.path ?? "/403"} replace />;
 }
 
@@ -89,6 +92,16 @@ export function AppRoutes() {
           element={
             <ProtectedRoute requiredPermission="ticket.view">
               <TicketsPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* 外部详情是独立页面（不是列表上的弹窗）：外部方的工单少、停留久，
+            留言与时间线值得整屏。守卫与列表同一个权限点，数据范围在服务端。 */}
+        <Route
+          path="/external-tickets/:id"
+          element={
+            <ProtectedRoute requiredPermission="ticket.create_external">
+              <ExternalTicketDetailPage />
             </ProtectedRoute>
           }
         />

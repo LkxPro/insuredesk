@@ -57,6 +57,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     roleName: role.name,
     permissions: [...role.permissions],
     requiredTicketFields: [],
+    externalOrgId: null,
   };
 }
 

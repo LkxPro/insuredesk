@@ -5,7 +5,14 @@ import { DateTimePicker } from "@/components/DateTimePicker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -31,6 +38,8 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
   // feedbackTime in the create form; "" = no plan (clears any previous one)
   const [nextContactTime, setNextContactTime] = useState("");
   const [nextContactTimeError, setNextContactTimeError] = useState("");
+  // 默认不勾：跟进对外可见是常态，仅内部可见是坐席的显式决定
+  const [internalOnly, setInternalOnly] = useState(false);
 
   const addComment = trpc.ticket.addComment.useMutation({
     onSuccess: (result) => {
@@ -40,6 +49,7 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
       setRemark("");
       setNextContactTime("");
       setNextContactTimeError("");
+      setInternalOnly(false);
       // Status, 联系次数, 处理结果 and the timeline all change server-side
       utils.ticket.detail.invalidate();
       utils.ticket.list.invalidate();
@@ -65,6 +75,7 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
       ticketId,
       remark,
       nextContactTime: localDateTimeToIso(nextContactTime),
+      internalOnly,
     });
   }
 
@@ -103,6 +114,21 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
           />
           <FieldDescription>每次跟进重新设置；留空则清除已有的下次联系时间。</FieldDescription>
           <FieldError>{nextContactTimeError}</FieldError>
+        </Field>
+
+        <Field orientation="horizontal">
+          <Checkbox
+            id="internal-only"
+            checked={internalOnly}
+            onCheckedChange={(checked) => setInternalOnly(checked === true)}
+            disabled={addComment.isPending}
+          />
+          <FieldContent>
+            <FieldLabel htmlFor="internal-only" className="font-normal">
+              仅内部可见
+            </FieldLabel>
+            <FieldDescription>勾选后本条跟进不出现在外部方的工单详情里。</FieldDescription>
+          </FieldContent>
         </Field>
 
         {addComment.error && (

@@ -5,6 +5,9 @@ import {
   externalTicketListInputSchema,
   externalTicketSubmitInputSchema,
   filterVisibleFields,
+  prioritySchema,
+  processLogActionSchema,
+  ticketStatusSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock";
@@ -26,6 +29,73 @@ const deps = { prisma, clock: systemClock };
  * Field visibility: tickets are filtered by org's visibleTicketFields whitelist.
  * ProcessLog filtering: only comment (non-internal) + external_note + resolve.
  */
+
+/** 目录名随查询 JOIN 出来，裁剪后按引用是否可见决定是否给出名字。 */
+const catalogInclude = {
+  channel: { select: { name: true } },
+  category: { select: { name: true } },
+  completionStatus: { select: { name: true } },
+} as const;
+
+type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclude }>;
+
+/**
+ * Wire shape for the external surface: dates as ISO-8601 strings (no
+ * transformer on the tRPC link) and 目录引用 paired with the名字 the外部方 can
+ * actually read — an id is useless to them, and they may not query the catalogs.
+ * 名字只在对应 id 通过白名单时给出，否则跟着 id 一起消失。
+ */
+function serializeExternalTicket(ticket: TicketWithCatalogs, whitelist: readonly string[]) {
+  const visible = filterVisibleFields(ticket, whitelist);
+  return {
+    id: visible.id,
+    workOrderNumber: visible.workOrderNumber,
+    // Re-narrow through the shared schema so the wire type carries the union
+    status: ticketStatusSchema.parse(visible.status),
+    submissionText: visible.submissionText,
+    createdAt: visible.createdAt.toISOString(),
+    feedbackTime: visible.feedbackTime?.toISOString() ?? null,
+    channelId: visible.channelId,
+    channelName: visible.channelId ? (ticket.channel?.name ?? null) : null,
+    project: visible.project,
+    brokerageEntity: visible.brokerageEntity,
+    paymentChannel: visible.paymentChannel,
+    userComplaintChannel: visible.userComplaintChannel,
+    complaintReceiveChannel: visible.complaintReceiveChannel,
+    nuclearBodyStatus: visible.nuclearBodyStatus,
+    customerRequest: visible.customerRequest,
+    hasContacted: visible.hasContacted,
+    contactTime: visible.contactTime?.toISOString() ?? null,
+    categoryId: visible.categoryId,
+    categoryName: visible.categoryId ? (ticket.category?.name ?? null) : null,
+    complaintLevel: visible.complaintLevel,
+    priority: visible.priority === null ? null : prioritySchema.parse(visible.priority),
+    processingResult: visible.processingResult,
+    completionStatusId: visible.completionStatusId,
+    completionStatusName: visible.completionStatusId
+      ? (ticket.completionStatus?.name ?? null)
+      : null,
+    completionTime: visible.completionTime?.toISOString() ?? null,
+  };
+}
+
+/**
+ * 工单号与状态是工单对外的身份与当前进展，不是可配的业务字段：
+ * EXTERNAL_VISIBLE_FIELD_OPTIONS 由建单字段推导，两者都不在其中，所以管理员
+ * 在界面上根本勾不到——若只信任显式白名单，任何配过一次的机构都会丢掉工单号列
+ * 与详情标题。这里补齐，让白名单只表达"业务字段给不给看"。
+ */
+const ALWAYS_VISIBLE_FIELDS = ["workOrderNumber", "status"] as const;
+
+/** 机构白名单：显式配置优先，未配置走系统默认；两种情况都补上恒可见字段。 */
+function resolveWhitelist(visibleTicketFields: string | null): string[] {
+  const configured: string[] = visibleTicketFields
+    ? JSON.parse(visibleTicketFields)
+    : [...DEFAULT_EXTERNAL_VISIBLE_FIELDS];
+  const missing = ALWAYS_VISIBLE_FIELDS.filter((key) => !configured.includes(key));
+  // 恒可见字段排在前：白名单顺序就是列表列顺序
+  return [...missing, ...configured];
+}
 
 export const externalTicketRouter = router({
   /**
@@ -67,7 +137,9 @@ export const externalTicketRouter = router({
       const now = deps.clock.now();
 
       const ticket = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const nextSeq = await tx.$queryRaw<[{ nextval: bigint }]>`SELECT nextval('work_order_number_seq')`;
+        const nextSeq = await tx.$queryRaw<
+          [{ nextval: bigint }]
+        >`SELECT nextval('work_order_number_seq')`;
         const workOrderNumber = `WO${nextSeq[0].nextval}`;
 
         const newTicket = await tx.ticket.create({
@@ -159,9 +231,7 @@ export const externalTicketRouter = router({
         });
       }
 
-      const whitelist = externalOrg.visibleTicketFields
-        ? JSON.parse(externalOrg.visibleTicketFields)
-        : DEFAULT_EXTERNAL_VISIBLE_FIELDS;
+      const whitelist = resolveWhitelist(externalOrg.visibleTicketFields);
 
       const where: Prisma.TicketWhereInput = {
         ...applyExternalOrgDataScope(user),
@@ -180,6 +250,7 @@ export const externalTicketRouter = router({
       const [tickets, total] = await Promise.all([
         prisma.ticket.findMany({
           where,
+          include: catalogInclude,
           orderBy: { createdAt: "desc" },
           skip: input.offset,
           take: input.limit,
@@ -188,8 +259,10 @@ export const externalTicketRouter = router({
       ]);
 
       return {
-        items: tickets.map((ticket) => filterVisibleFields(ticket, whitelist)),
+        items: tickets.map((ticket) => serializeExternalTicket(ticket, whitelist)),
         total,
+        // 列表列与详情卡片都按机构白名单渲染，客户端没有别的途径读到它
+        visibleFields: whitelist,
       };
     }),
 
@@ -228,6 +301,7 @@ export const externalTicketRouter = router({
           ...applyExternalOrgDataScope(user),
           deletedAt: null,
         },
+        include: catalogInclude,
       });
 
       if (!ticket) {
@@ -253,15 +327,15 @@ export const externalTicketRouter = router({
         orderBy: { at: "asc" },
       });
 
-      const whitelist = externalOrg.visibleTicketFields
-        ? JSON.parse(externalOrg.visibleTicketFields)
-        : DEFAULT_EXTERNAL_VISIBLE_FIELDS;
+      const whitelist = resolveWhitelist(externalOrg.visibleTicketFields);
 
       return {
-        ticket: filterVisibleFields(ticket, whitelist),
+        ticket: serializeExternalTicket(ticket, whitelist),
+        visibleFields: whitelist,
         processLogs: processLogs.map((log) => ({
           id: log.id,
-          action: log.action,
+          // Re-narrowed so the web renders the action label without a cast
+          action: processLogActionSchema.parse(log.action),
           remark: log.remark,
           createdAt: log.at.toISOString(),
           operatorId: log.operatorId,

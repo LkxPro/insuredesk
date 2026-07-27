@@ -44,4 +44,12 @@ export const TEST_ROLES = {
       "ticket.view_all",
     ] as Permission[],
   },
+  /**
+   * 外部机构账号：只有提交与留言两个权限点。内外部之分另由 externalOrgId
+   * 决定（见 renderApp 的 externalOrgId 参数），权限集只是必要条件。
+   */
+  EXTERNAL: {
+    name: "外部机构用户",
+    permissions: ["ticket.create_external", "ticket.process_external"] as Permission[],
+  },
 } as const;

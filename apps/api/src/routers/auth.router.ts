@@ -25,6 +25,8 @@ const meOutputSchema = z.object({
   roleName: z.string(),
   permissions: z.array(z.string()),
   requiredTicketFields: z.array(z.string()),
+  /** 非空 = 外部账号；导航菜单按此二分内外部视图，不靠权限点反推。 */
+  externalOrgId: z.string().nullable(),
 });
 
 /** Domain error → transport code. */
@@ -60,6 +62,7 @@ export const authRouter = router({
       roleName: ctx.user.roleName,
       permissions: ctx.user.permissions,
       requiredTicketFields: ctx.user.requiredTicketFields,
+      externalOrgId: ctx.user.externalOrgId,
     };
   }),
 

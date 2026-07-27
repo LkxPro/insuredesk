@@ -54,7 +54,7 @@ vi.mock("@/contexts/AuthContext", () => ({
 
 export type TestRole = { name: string; permissions: readonly Permission[] };
 
-export function userWith(role: TestRole): AuthUser {
+export function userWith(role: TestRole, externalOrgId: string | null = null): AuthUser {
   return {
     id: "u1",
     username: "tester",
@@ -65,6 +65,7 @@ export function userWith(role: TestRole): AuthUser {
     roleName: role.name,
     permissions: [...role.permissions],
     requiredTicketFields: [],
+    externalOrgId,
   };
 }
 
@@ -123,9 +124,15 @@ function fakeTrpcFetch(overrides: TrpcOverrides) {
 // fetch; the tRPC link gets its own injected one, so the two never cross.
 export const restFetch = vi.fn();
 
-export function renderApp(options: { path: string; role?: TestRole; trpc?: TrpcOverrides }) {
+export function renderApp(options: {
+  path: string;
+  role?: TestRole;
+  /** 非空 = 外部账号，与 auth.me 的语义一致。 */
+  externalOrgId?: string | null;
+  trpc?: TrpcOverrides;
+}) {
   if (options.role) {
-    auth.user = userWith(options.role);
+    auth.user = userWith(options.role, options.externalOrgId ?? null);
   }
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const trpcClient = trpc.createClient({
