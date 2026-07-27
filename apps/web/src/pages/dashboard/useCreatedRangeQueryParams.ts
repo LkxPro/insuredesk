@@ -42,7 +42,7 @@ function parseISOParam(value: string | null): string | undefined {
   if (!value) return undefined;
   try {
     const parsed = new Date(value);
-    return isNaN(parsed.getTime()) ? undefined : value;
+    return Number.isNaN(parsed.getTime()) ? undefined : value;
   } catch {
     return undefined;
   }

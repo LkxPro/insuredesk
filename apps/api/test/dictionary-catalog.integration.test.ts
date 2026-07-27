@@ -255,14 +255,15 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
             remark: "第二单完结",
           });
         } else {
+          if (!cfg.ticketFieldId) throw new Error("ticketFieldId required");
           const first = await manager().ticket.create({
             ...blankTicketInput(),
-            [cfg.ticketFieldId!]: referenced.id,
+            [cfg.ticketFieldId]: referenced.id,
           });
           firstTicketId = first.id;
           const second = await manager().ticket.create({
             ...blankTicketInput(),
-            [cfg.ticketFieldId!]: referenced.id,
+            [cfg.ticketFieldId]: referenced.id,
           });
           secondTicketId = second.id;
         }
@@ -279,7 +280,8 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
         if (cfg.referencedViaResolve) {
           expect(kept.completionStatusId).toBe(referenced.id);
         } else {
-          expect(kept[cfg.ticketFieldId!]).toBe(referenced.id);
+          if (!cfg.ticketFieldId) throw new Error("ticketFieldId required");
+          expect(kept[cfg.ticketFieldId]).toBe(referenced.id);
         }
       });
 
@@ -359,22 +361,23 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
         });
       } else {
         it("ticket creation requires an existing, active item; rename shows through everywhere", async () => {
+          if (!cfg.ticketFieldId) throw new Error("ticketFieldId required");
           const router = manager()[cfg.routerKey];
           const item = await router.create({ name: "创建用", displayOrder: 230 });
 
           await expect(
-            manager().ticket.create({ ...blankTicketInput(), [cfg.ticketFieldId!]: "no-such-id" }),
+            manager().ticket.create({ ...blankTicketInput(), [cfg.ticketFieldId]: "no-such-id" }),
           ).rejects.toMatchObject({ code: "BAD_REQUEST", message: cfg.labels.missingMessage });
 
           const disabled = await router.create({ name: "停用中", displayOrder: 231 });
           await router.setActive({ id: disabled.id, active: false });
           await expect(
-            manager().ticket.create({ ...blankTicketInput(), [cfg.ticketFieldId!]: disabled.id }),
+            manager().ticket.create({ ...blankTicketInput(), [cfg.ticketFieldId]: disabled.id }),
           ).rejects.toMatchObject({ code: "BAD_REQUEST", message: cfg.labels.disabledMessage });
 
           const ticket = await manager().ticket.create({
             ...blankTicketInput(),
-            [cfg.ticketFieldId!]: item.id,
+            [cfg.ticketFieldId]: item.id,
           });
 
           await router.update({ id: item.id, name: "创建用（新名）", displayOrder: 230 });
@@ -415,11 +418,12 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
         });
 
         it("filtering by a disabled item still returns its 存量工单", async () => {
+          if (!cfg.ticketFieldId) throw new Error("ticketFieldId required");
           const router = manager()[cfg.routerKey];
           const item = await router.create({ name: "停用后筛选", displayOrder: 235 });
           const ticket = await manager().ticket.create({
             ...blankTicketInput(),
-            [cfg.ticketFieldId!]: item.id,
+            [cfg.ticketFieldId]: item.id,
           });
           await router.setActive({ id: item.id, active: false });
 
@@ -430,12 +434,13 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
         });
 
         it("editing keeps a disabled item, forbids newly selecting one, and snapshots names in the log", async () => {
+          if (!cfg.ticketFieldId) throw new Error("ticketFieldId required");
           const router = manager()[cfg.routerKey];
           const oldItem = await router.create({ name: "旧项", displayOrder: 240 });
           const newItem = await router.create({ name: "新项", displayOrder: 241 });
           const ticket = await manager().ticket.create({
             ...blankTicketInput(),
-            [cfg.ticketFieldId!]: oldItem.id,
+            [cfg.ticketFieldId]: oldItem.id,
           });
           await router.setActive({ id: oldItem.id, active: false });
 
@@ -443,7 +448,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           const kept = await manager().ticket.edit({
             ...blankTicketInput(),
             ticketId: ticket.id,
-            [cfg.ticketFieldId!]: oldItem.id,
+            [cfg.ticketFieldId]: oldItem.id,
             customerName: "改个名字",
           });
           expect(kept.changedFields).toEqual(["customerName"]);
@@ -455,7 +460,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
             manager().ticket.edit({
               ...blankTicketInput(),
               ticketId: ticket.id,
-              [cfg.ticketFieldId!]: otherDisabled.id,
+              [cfg.ticketFieldId]: otherDisabled.id,
             }),
           ).rejects.toMatchObject({ code: "BAD_REQUEST", message: cfg.labels.disabledMessage });
 
@@ -463,7 +468,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           await manager().ticket.edit({
             ...blankTicketInput(),
             ticketId: ticket.id,
-            [cfg.ticketFieldId!]: newItem.id,
+            [cfg.ticketFieldId]: newItem.id,
           });
           // … that survive later renames (处理记录保留操作当时的字面快照).
           await router.update({ id: newItem.id, name: "新项改名", displayOrder: 241 });
@@ -480,9 +485,9 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           const cleared = await manager().ticket.edit({
             ...blankTicketInput(),
             ticketId: ticket.id,
-            [cfg.ticketFieldId!]: null,
+            [cfg.ticketFieldId]: null,
           });
-          expect(cleared.changedFields).toContain(cfg.ticketFieldId!);
+          expect(cleared.changedFields).toContain(cfg.ticketFieldId);
         });
       }
 

@@ -594,14 +594,8 @@ describe("dashboard stats (Testcontainers)", () => {
   describe("创建时间筛选", () => {
     it("默认「全部」：空入参与改动前行为一致", async () => {
       const now = new Date("2026-07-20T10:00:00Z");
-      await makeTicket(
-        { customerName: "旧单" },
-        { createdAt: new Date("2026-07-01T00:00:00Z") },
-      );
-      await makeTicket(
-        { customerName: "新单" },
-        { createdAt: new Date("2026-07-20T08:00:00Z") },
-      );
+      await makeTicket({ customerName: "旧单" }, { createdAt: new Date("2026-07-01T00:00:00Z") });
+      await makeTicket({ customerName: "新单" }, { createdAt: new Date("2026-07-20T08:00:00Z") });
 
       const stats = await statsAt(now);
       expect(stats.metrics.total).toBe(2);
