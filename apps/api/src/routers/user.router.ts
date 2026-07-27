@@ -12,7 +12,12 @@ import {
   createUser,
   DuplicateEmailError,
   DuplicateUsernameError,
+  ExternalOrgOptionNotFoundError,
+  ExternalRoleRequiresOrgError,
+  InactiveExternalOrgError,
+  InternalRoleCannotHaveOrgError,
   LastAdminError,
+  listExternalOrgOptions,
   listRoleOptions,
   listUsers,
   RoleOptionNotFoundError,
@@ -36,7 +41,14 @@ function toTRPCError(error: unknown): never {
   if (error instanceof DuplicateUsernameError || error instanceof DuplicateEmailError) {
     throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
-  if (error instanceof RoleOptionNotFoundError || error instanceof SelfDisableError) {
+  if (
+    error instanceof RoleOptionNotFoundError ||
+    error instanceof SelfDisableError ||
+    error instanceof ExternalOrgOptionNotFoundError ||
+    error instanceof ExternalRoleRequiresOrgError ||
+    error instanceof InternalRoleCannotHaveOrgError ||
+    error instanceof InactiveExternalOrgError
+  ) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
   if (error instanceof LastAdminError) {
@@ -78,5 +90,13 @@ export const userRouter = router({
    */
   roleOptions: requireAnyPermission(["user.create", "user.assign_role"]).query(() =>
     listRoleOptions(deps),
+  ),
+
+  /**
+   * 外部机构 picker for the same dialogs — re-guarded on the user-management
+   * points rather than external_org.manage, which gates the 机构管理 page.
+   */
+  externalOrgOptions: requireAnyPermission(["user.create", "user.edit", "user.assign_role"]).query(
+    () => listExternalOrgOptions(deps),
   ),
 });

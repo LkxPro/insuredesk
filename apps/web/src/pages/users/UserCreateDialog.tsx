@@ -26,9 +26,11 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
+import { ExternalOrgField, isExternalRoleOption } from "./ExternalOrgField";
 
 /**
- * 新增用户 (user.create): account basics + initial password + role. The field
+ * 新增用户 (user.create): account basics + initial password + role, plus the
+ * 所属外部机构 picker once the picked role is an 外部角色. The field
  * contract is the shared userCreateInputSchema — the exact schema the API
  * parses.
  */
@@ -43,7 +45,15 @@ export function UserCreateDialog({
 
   const form = useForm<UserCreateInput>({
     resolver: zodResolver(userCreateInputSchema),
-    defaultValues: { username: "", password: "", name: "", email: "", team: "", roleId: "" },
+    defaultValues: {
+      username: "",
+      password: "",
+      name: "",
+      email: "",
+      team: "",
+      roleId: "",
+      externalOrgId: "",
+    },
   });
 
   useEffect(() => {
@@ -53,6 +63,8 @@ export function UserCreateDialog({
   }, [open, form]);
 
   const roleOptions = trpc.user.roleOptions.useQuery(undefined, { enabled: open });
+
+  const isExternal = isExternalRoleOption(roleOptions.data, form.watch("roleId"));
 
   const create = trpc.user.create.useMutation({
     onSuccess: (result) => {
@@ -113,7 +125,15 @@ export function UserCreateDialog({
               control={form.control}
               name="roleId"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                <Select
+                  value={field.value}
+                  onValueChange={(next) => {
+                    field.onChange(next);
+                    if (!isExternalRoleOption(roleOptions.data, next)) {
+                      form.setValue("externalOrgId", "");
+                    }
+                  }}
+                >
                   <SelectTrigger id="user-role" className="w-full" disabled={roleOptions.isLoading}>
                     <SelectValue placeholder="请选择角色" />
                   </SelectTrigger>
@@ -130,6 +150,21 @@ export function UserCreateDialog({
             />
             {errors.roleId && <FieldError>{errors.roleId.message}</FieldError>}
           </Field>
+
+          {isExternal && (
+            <Controller
+              control={form.control}
+              name="externalOrgId"
+              render={({ field }) => (
+                <ExternalOrgField
+                  id="user-external-org"
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  error={errors.externalOrgId?.message}
+                />
+              )}
+            />
+          )}
 
           {create.error && (
             <Alert variant="destructive">

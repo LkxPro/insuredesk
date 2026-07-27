@@ -130,6 +130,11 @@ export function UsersPage() {
                     <Badge variant={user.roleSystem ? "secondary" : "outline"}>
                       {user.roleName}
                     </Badge>
+                    {user.externalOrgName && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {user.externalOrgName}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     {user.active ? (

@@ -43,6 +43,28 @@ export const EXTERNAL_ORG_PERMISSIONS = [
   "external_org.manage", // Manage external organizations (admin permission)
 ] as const;
 
+/**
+ * Points that mark a role as belonging to an 外部机构 account rather than an
+ * internal one — holding either binds the role's users to exactly one org.
+ */
+export const EXTERNAL_ROLE_PERMISSIONS = [
+  "ticket.create_external",
+  "ticket.process_external",
+] as const;
+
+/**
+ * 外部角色判定. Never feed this the expanded permission set of a system role:
+ * 管理员 expands to every positive point (external ones included) yet is an
+ * internal account — pass the role's stored array, and treat system roles as
+ * internal outright.
+ */
+export function isExternalRole(role: { system: boolean; permissions: readonly string[] }): boolean {
+  if (role.system) {
+    return false;
+  }
+  return EXTERNAL_ROLE_PERMISSIONS.some((permission) => role.permissions.includes(permission));
+}
+
 // Role permissions
 export const ROLE_PERMISSIONS = [
   "role.view", // Access role management (page permission)

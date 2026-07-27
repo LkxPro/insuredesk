@@ -40,6 +40,17 @@ const optionalTeamSchema = z
   .nullish()
   .transform((value) => (value ? value : null));
 
+/**
+ * 所属外部机构. Empty means "internal account" — the service pairs it with the
+ * role's permission points: an 外部角色 must carry one, an internal role must
+ * not.
+ */
+const optionalExternalOrgIdSchema = z
+  .string()
+  .trim()
+  .nullish()
+  .transform((value) => (value ? value : null));
+
 export const userCreateInputSchema = z.object({
   username: usernameSchema,
   password: passwordSchema,
@@ -47,6 +58,7 @@ export const userCreateInputSchema = z.object({
   email: optionalEmailSchema,
   team: optionalTeamSchema,
   roleId: z.string().min(1, "请选择角色"),
+  externalOrgId: optionalExternalOrgIdSchema,
 });
 /** Form-side shape (before transforms). */
 export type UserCreateInput = z.input<typeof userCreateInputSchema>;
@@ -66,6 +78,7 @@ export const userUpdateInputSchema = z.object({
   password: z
     .union([passwordSchema, z.literal(""), z.null(), z.undefined()])
     .transform((value) => (value ? value : null)),
+  externalOrgId: optionalExternalOrgIdSchema,
 });
 export type UserUpdateInput = z.input<typeof userUpdateInputSchema>;
 export type UserUpdateData = z.output<typeof userUpdateInputSchema>;
@@ -77,8 +90,16 @@ export const userSetActiveInputSchema = z.object({
 });
 export type UserSetActiveInput = z.infer<typeof userSetActiveInputSchema>;
 
+/**
+ * 分配角色. Carries the org because role and org must move together: 编辑用户
+ * refuses an org while the old internal role is still in place, so an internal
+ * account could never reach an 外部角色 otherwise. Empty means "internal" and
+ * clears any org the target held.
+ */
 export const userAssignRoleInputSchema = z.object({
   id: z.string().min(1),
   roleId: z.string().min(1, "请选择角色"),
+  externalOrgId: optionalExternalOrgIdSchema,
 });
-export type UserAssignRoleInput = z.infer<typeof userAssignRoleInputSchema>;
+export type UserAssignRoleInput = z.input<typeof userAssignRoleInputSchema>;
+export type UserAssignRoleData = z.output<typeof userAssignRoleInputSchema>;
