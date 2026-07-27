@@ -2,6 +2,7 @@ import {
   type ComplaintLevel,
   DASHBOARD_TOP_ASSIGNEE_LIMIT,
   type DashboardMetricKey,
+  type DashboardStatsInput,
   TicketStatus,
 } from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client";
@@ -59,12 +60,24 @@ export interface DashboardStats {
 export async function getDashboardStats(
   { prisma, clock }: TicketServiceDeps,
   viewer: AuthenticatedUser,
+  input: DashboardStatsInput,
 ): Promise<DashboardStats> {
   // One instant serves every predicate in the read, so the 预警 and 超时 cards
   // can never disagree with each other about the same ticket.
   const now = clock.now();
   const scoped = applyDashboardDataScope(viewer);
-  const base: Prisma.TicketWhereInput = { deletedAt: null, ...scoped };
+  const createdAt: Prisma.DateTimeFilter = {};
+  if (input.createdFrom !== undefined) {
+    createdAt.gte = new Date(input.createdFrom);
+  }
+  if (input.createdTo !== undefined) {
+    createdAt.lte = new Date(input.createdTo);
+  }
+  const base: Prisma.TicketWhereInput = {
+    deletedAt: null,
+    ...scoped,
+    ...(Object.keys(createdAt).length > 0 && { createdAt }),
+  };
   // Composed via AND so fragments can never clobber the scope's assigneeId pin.
   const and = (...filters: Prisma.TicketWhereInput[]): Prisma.TicketWhereInput => ({
     AND: [base, ...filters],
