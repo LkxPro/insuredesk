@@ -25,6 +25,8 @@ export const TICKET_PERMISSIONS = [
   "ticket.export", // Export tickets (operation permission)
   "ticket.import", // Batch import tickets (operation permission)
   "ticket.delete", // Delete ticket - dangerous (operation permission)
+  "ticket.create_external", // Create external channel ticket (external user permission)
+  "ticket.process_external", // Add external note to ticket (external user permission)
 ] as const;
 
 // User management permissions
@@ -34,6 +36,11 @@ export const USER_PERMISSIONS = [
   "user.edit", // Edit user (operation permission)
   "user.delete", // Delete user (operation permission)
   "user.assign_role", // Assign role to user (operation permission)
+] as const;
+
+// External organization permissions
+export const EXTERNAL_ORG_PERMISSIONS = [
+  "external_org.manage", // Manage external organizations (admin permission)
 ] as const;
 
 // Role permissions
@@ -73,6 +80,7 @@ export const POSITIVE_PERMISSIONS = [
   ...USER_PERMISSIONS,
   ...ROLE_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
+  ...EXTERNAL_ORG_PERMISSIONS,
 ] as const;
 
 export const ALL_PERMISSIONS = [...POSITIVE_PERMISSIONS, ...RESTRICTIVE_PERMISSIONS] as const;
@@ -100,6 +108,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "ticket.export": "导出工单",
   "ticket.import": "导入工单",
   "ticket.delete": "删除工单",
+  "ticket.create_external": "提交外部工单",
+  "ticket.process_external": "添加外部留言",
   "user.view": "访问用户管理",
   "user.create": "新增用户",
   "user.edit": "编辑用户",
@@ -116,6 +126,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "sla.view": "访问 SLA 策略",
   "sla.edit": "编辑 SLA 策略",
   "dictionary.manage": "管理字典目录",
+  "external_org.manage": "管理外部机构",
   "user.forbid_change_own_password": "禁止修改自己的密码",
 };
 
@@ -130,5 +141,6 @@ export const PERMISSION_GROUPS = [
   { label: "用户管理", permissions: USER_PERMISSIONS, restrictive: false },
   { label: "角色权限", permissions: ROLE_PERMISSIONS, restrictive: false },
   { label: "系统配置", permissions: SYSTEM_PERMISSIONS, restrictive: false },
+  { label: "外部机构", permissions: EXTERNAL_ORG_PERMISSIONS, restrictive: false },
   { label: "限制类权限", permissions: RESTRICTIVE_PERMISSIONS, restrictive: true },
 ] as const;

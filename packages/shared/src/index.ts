@@ -13,6 +13,7 @@ export * from "./shift-type";
 export * from "./sla";
 export * from "./ticket";
 export * from "./ticket-category";
+export * from "./ticket-field-visibility";
 export * from "./ticket-fields";
 export * from "./ticket-status";
 export * from "./time-range";

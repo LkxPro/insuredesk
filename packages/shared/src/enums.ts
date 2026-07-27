@@ -37,6 +37,7 @@ export const PROCESS_LOG_ACTIONS = [
   "upload",
   "resolve",
   "edit",
+  "external_note",
 ] as const;
 export const processLogActionSchema = z.enum(PROCESS_LOG_ACTIONS);
 export type ProcessLogAction = (typeof PROCESS_LOG_ACTIONS)[number];
@@ -50,6 +51,7 @@ export const PROCESS_LOG_ACTION_LABELS: Record<ProcessLogAction, string> = {
   upload: "上传材料",
   resolve: "确认完结",
   edit: "编辑工单",
+  external_note: "外部留言",
 };
 
 export const SHIFTS = ["day", "night"] as const;
@@ -64,7 +66,13 @@ export type ReminderRuleType = (typeof REMINDER_RULE_TYPES)[number];
 // Ticket source — how the ticket entered the system; doubles as the "who
 // created it" discriminator. `manual` and `file_import` are live; the external
 // sources ship with the Feishu/community integrations.
-export const TICKET_SOURCES = ["feishu_form", "manual", "community", "file_import"] as const;
+export const TICKET_SOURCES = [
+  "feishu_form",
+  "manual",
+  "community",
+  "file_import",
+  "external_channel",
+] as const;
 export const ticketSourceSchema = z.enum(TICKET_SOURCES);
 export type TicketSource = (typeof TICKET_SOURCES)[number];
 
@@ -77,6 +85,7 @@ export const DEFAULT_TICKET_SOURCE_FILTER: readonly TicketSource[] = [
   "feishu_form",
   "manual",
   "community",
+  "external_channel",
 ];
 
 /**
@@ -88,14 +97,19 @@ export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   manual: "手工录入",
   community: "社区",
   file_import: "文件导入",
+  external_channel: "外部渠道",
 };
 
 /**
- * Sources whose tickets carry a creatorId (手工录入的建单人 / 文件导入的导入者).
- * Their "由谁创建" derives from the creator's current name, and the
- * non-view_all data scope reaches them through creatorId.
+ * Sources whose tickets carry a creatorId (手工录入的建单人 / 文件导入的导入者 /
+ * 外部渠道的提交者). Their "由谁创建" derives from the creator's current name,
+ * and the non-view_all data scope reaches them through creatorId.
  */
-export const CREATOR_BACKED_SOURCES: readonly TicketSource[] = ["manual", "file_import"];
+export const CREATOR_BACKED_SOURCES: readonly TicketSource[] = [
+  "manual",
+  "file_import",
+  "external_channel",
+];
 export function isCreatorBackedSource(source: TicketSource): boolean {
   return CREATOR_BACKED_SOURCES.includes(source);
 }

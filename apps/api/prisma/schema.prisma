@@ -33,9 +33,11 @@ model User {
   createdAt    DateTime  @default(now()) @db.Timestamptz
   updatedAt    DateTime  @updatedAt @db.Timestamptz
 
-  roleId   String
-  role     Role      @relation(fields: [roleId], references: [id])
-  sessions Session[]
+  roleId        String
+  role          Role         @relation(fields: [roleId], references: [id])
+  externalOrgId String?
+  externalOrg   ExternalOrg? @relation(fields: [externalOrgId], references: [id], onDelete: Restrict)
+  sessions      Session[]
 
   /// Tickets currently assigned to this user (tickets.assigneeId)
   assignedTickets Ticket[] @relation("TicketAssignee")
@@ -51,6 +53,7 @@ model User {
   schedules       Schedule[]
 
   @@index([roleId])
+  @@index([externalOrgId])
   @@map("users")
 }
 
@@ -177,12 +180,19 @@ model Ticket {
   /// 撤销 — revoking a batch soft-deletes every ticket carrying its id.
   importBatchId String?
 
+  /// 外部提交原文; source=external_channel 时必填，创建后不可编辑
+  submissionText String?
+  /// 创建时写入的机构快照; null for non-external tickets. Not updated when org
+  /// changes name/channel — ticket stores the org reference, not derived values.
+  externalOrgId String?
+
   assignee         User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
   creator          User?              @relation("TicketCreator", fields: [creatorId], references: [id])
   category         TicketCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   channel          Channel?           @relation(fields: [channelId], references: [id], onDelete: Restrict)
   completionStatus CompletionStatus?  @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
   importBatch      TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  externalOrg      ExternalOrg?       @relation(fields: [externalOrgId], references: [id], onDelete: SetNull)
   processLogs      ProcessLog[]
 
   @@index([assigneeId])
@@ -198,6 +208,7 @@ model Ticket {
   @@index([dueAt])
   @@index([deletedAt])
   @@index([importBatchId])
+  @@index([externalOrgId])
   @@map("tickets")
 }
 
@@ -243,6 +254,8 @@ model ProcessLog {
   /// After-value; same conventions as `from`
   to             String?
   remark         String
+  /// 仅内部可见标志; true = 外部查询时过滤
+  internalOnly   Boolean  @default(false)
   at             DateTime @db.Timestamptz
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
@@ -303,7 +316,8 @@ model Channel {
   createdAt    DateTime @default(now()) @db.Timestamptz
   updatedAt    DateTime @updatedAt @db.Timestamptz
 
-  tickets Ticket[]
+  tickets      Ticket[]
+  externalOrgs ExternalOrg[]
 
   @@map("channels")
 }
@@ -363,6 +377,29 @@ model Schedule {
   @@unique([date, userId])
   @@index([date])
   @@map("schedules")
+}
+
+// ============================================================================
+// External organizations (Issue #146)
+// ============================================================================
+
+/// 外部协作方机构。管理员维护，外部用户归属某一机构，外部提交的工单关联机构。
+model ExternalOrg {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  /// 关联反馈渠道，外部提交时自动写入工单 channelId
+  channelId String?
+  /// 字段可见性白名单 (JSON 编码字符串数组); null = 使用系统默认白名单
+  visibleTicketFields String?
+  active   Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  channel Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  users   User[]
+  tickets Ticket[]
+
+  @@map("external_orgs")
 }
 
 // ============================================================================
