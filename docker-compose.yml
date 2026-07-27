@@ -1,5 +1,5 @@
-# InsureDesk fully containerized development environment
-# Supersedes ADR 0007 dev half - everything runs in containers
+# InsureDesk fully containerized development environment — everything (deps,
+# db, api, web) runs in containers; the host only needs Docker.
 # Usage: docker compose up (first time will install deps, migrate, seed)
 
 services:

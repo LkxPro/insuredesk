@@ -46,10 +46,9 @@ export const ROLE_PERMISSIONS = [
 ] as const;
 
 // System configuration permissions
-// sla.view / sla.edit / dictionary.manage are absent from the PRD permission
-// matrix; they exist because SLA policies and the dictionary catalogs need
-// their own pages + operation points. Out of the factory only 管理员
-// holds them.
+// sla.view / sla.edit / dictionary.manage exist because SLA policies and the
+// dictionary catalogs need their own pages + operation points. Out of the
+// factory only 管理员 holds them.
 export const SYSTEM_PERMISSIONS = [
   "schedule.view", // Access schedule configuration (page permission)
   "schedule.edit", // Edit schedule (operation permission)
@@ -83,10 +82,9 @@ export type Permission = (typeof ALL_PERMISSIONS)[number];
 
 /**
  * Human-readable labels for the 权限点清单, used by the 角色权限 checklist UI.
- * Wording follows the PRD except user.delete: the PRD names the point
- * "删除用户" but its operation is 禁用/启用 — accounts are never hard deleted
- * (they anchor tickets, logs, and rosters), so the label says what the
- * permission actually grants.
+ * user.delete is labelled 禁用/启用 rather than "删除用户": accounts are never
+ * hard deleted (they anchor tickets, logs, and rosters), so the label says what
+ * the permission actually grants.
  */
 export const PERMISSION_LABELS: Record<Permission, string> = {
   "dashboard.view": "访问数据看板",
@@ -122,7 +120,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
 };
 
 /**
- * 权限点清单 checklist grouping, in PRD document order. Restrictive groups
+ * 权限点清单 checklist grouping and display order. Restrictive groups
  * (`restrictive: true`) carry 勾选=禁止 semantics and must be visually marked
  * as such wherever the checklist renders.
  */

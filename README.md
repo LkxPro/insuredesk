@@ -14,7 +14,7 @@ pnpm monorepo（`apps/api`、`apps/web`、`packages/shared`）。
 docker compose up -d    # 首次会自动安装依赖、迁移数据库、seed、启动服务
 ```
 
-全容器化开发环境（ADR 0007）：依赖安装、PostgreSQL、api（3000）、web（5173）
+全容器化开发环境：依赖安装、PostgreSQL、api（3000）、web（5173）
 全部运行在容器内，支持热重载。浏览器访问 <http://localhost:5173>。
 
 常用命令（Makefile 封装）：
@@ -36,4 +36,3 @@ make shell    # 进入 api 容器 shell
 - [部署](docs/deployment.md) — 生产部署、备份恢复与 nginx 反代
 - [发版](docs/releasing.md) — CalVer 发版与升级操作手册
 - [领域词汇表](CONTEXT.md) — 核心概念与业务口径
-- [ADR](docs/adr/) — 关键架构决策

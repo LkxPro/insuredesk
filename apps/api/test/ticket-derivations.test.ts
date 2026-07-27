@@ -33,7 +33,7 @@ describe("formatFollowUpFrequency", () => {
   });
 });
 
-describe("deriveDisplayStatus (PRD §3.1.6 computed statuses)", () => {
+describe("deriveDisplayStatus (computed statuses)", () => {
   const dueAt = new Date("2026-07-11T10:00:00Z");
   const msBeforeDue = (ms: number) => new Date(dueAt.getTime() - ms);
   const HOUR = 60 * 60 * 1000;
@@ -52,7 +52,7 @@ describe("deriveDisplayStatus (PRD §3.1.6 computed statuses)", () => {
     expect(deriveDisplayStatus("unassigned", dueAt, dueAt)).toBe("pending_timeout");
   });
 
-  it("shows overdue strictly past dueAt — unassigned tickets are on the clock too (ADR 0002)", () => {
+  it("shows overdue strictly past dueAt — unassigned tickets are on the clock too", () => {
     expect(deriveDisplayStatus("unassigned", dueAt, msBeforeDue(-1))).toBe("overdue");
     expect(deriveDisplayStatus("processing", dueAt, msBeforeDue(-HOUR))).toBe("overdue");
   });

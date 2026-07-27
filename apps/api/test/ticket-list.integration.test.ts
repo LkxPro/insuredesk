@@ -121,7 +121,7 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
-  describe("status filter with computed statuses (ADR 0001)", () => {
+  describe("status filter with computed statuses", () => {
     it("resolves pending_timeout / overdue as read-time predicates without touching stored status", async () => {
       const now = Date.now();
       const overdue = await makeTicket(
@@ -219,7 +219,7 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
-  describe("computed-status boundaries at exactly 2h / dueAt (fixed clock, PRD §3.1.6)", () => {
+  describe("computed-status boundaries at exactly 2h / dueAt (fixed clock)", () => {
     it("agrees with deriveDisplayStatus on both edges of the window", async () => {
       const fixedNow = new Date();
       const viewer = harness.authUserFor(seeded.users.manager, seeded.roles.csManager);
@@ -421,7 +421,7 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
-  describe("数据范围隔离 (PRD §5.2)", () => {
+  describe("数据范围隔离", () => {
     it("without ticket.view_all the list is pinned to own tickets — the unassigned pool is invisible", async () => {
       await makeTicket({ customerName: "无人认领" }); // unassigned pool
       const own = await makeTicket(
@@ -591,7 +591,7 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
-  describe("performance (PRD §6.1)", () => {
+  describe("performance", () => {
     it("loads 100 rows in under 1 second", async () => {
       const now = Date.now();
       await prisma.ticket.createMany({

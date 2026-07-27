@@ -36,7 +36,7 @@ jobs:
 
   # Build the production image with the same context/Dockerfile as the Release
   # workflow, but never push: a broken image turns the PR red instead of
-  # surfacing at release time (ADR 0009).
+  # surfacing at release time.
   docker-build:
     runs-on: ubuntu-latest
     steps:

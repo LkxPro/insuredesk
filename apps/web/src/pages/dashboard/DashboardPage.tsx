@@ -227,8 +227,8 @@ export function DashboardPage() {
                   </Table>
                 )}
                 <p className="mt-3 text-xs text-muted-foreground">
-                  超时单数为历史追责口径：含超时完结与在途超时，与"已超时"卡的实时口径不同（ADR
-                  0003）；超时率 = 超时单数 / 名下工单数。
+                  超时单数为历史追责口径：含超时完结与在途超时，与"已超时"卡的实时口径不同；超时率 =
+                  超时单数 / 名下工单数。
                 </p>
               </CardContent>
             </Card>

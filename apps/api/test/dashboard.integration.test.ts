@@ -145,7 +145,7 @@ describe("dashboard stats (Testcontainers)", () => {
     };
   }
 
-  describe("8 张指标卡 (PRD §2.2)", () => {
+  describe("8 张指标卡", () => {
     it("counts stored statuses, time overlays and 特急 — one ticket can sit on several cards", async () => {
       const now = new Date();
       const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
@@ -199,7 +199,7 @@ describe("dashboard stats (Testcontainers)", () => {
       );
     });
 
-    it("agrees with the list predicates on the 2h / dueAt boundaries (ADR 0001 single truth)", async () => {
+    it("agrees with the list predicates on the 2h / dueAt boundaries (single truth)", async () => {
       const now = new Date();
       await makeTicket(
         { customerName: "整两小时" },
@@ -238,7 +238,7 @@ describe("dashboard stats (Testcontainers)", () => {
     });
   });
 
-  describe("两种超时口径有意不同 (ADR 0003)", () => {
+  describe("两种超时口径有意不同", () => {
     it("看板已超时 counts only in-flight; 考核超时单数 adds 超时完结 on top", async () => {
       const now = new Date();
       const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
@@ -471,7 +471,7 @@ describe("dashboard stats (Testcontainers)", () => {
     });
   });
 
-  describe("数据范围: 无 dashboard.view_all 收窄为本人名下 (PRD §5.2)", () => {
+  describe("数据范围: 无 dashboard.view_all 收窄为本人名下", () => {
     it("frontline sees own-only numbers and scope=own; view_all roles see everything", async () => {
       const now = new Date();
       await makeTicket({ customerName: "无主单", channelId: channelId("监管") }); // unassigned pool
@@ -548,7 +548,7 @@ describe("dashboard stats (Testcontainers)", () => {
     });
   });
 
-  describe("性能 (PRD §6.1)", () => {
+  describe("性能", () => {
     it("computes the full dashboard over 3000 tickets in under 2 seconds", async () => {
       const now = Date.now();
       const assignees = [

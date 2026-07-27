@@ -98,7 +98,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     }
   });
 
-  it("sla.list returns all four levels in fixed order with the PRD §3.8 defaults", async () => {
+  it("sla.list returns all four levels in fixed order with the seeded defaults", async () => {
     const policies = await admin().sla.list();
     expect(policies.map((policy) => policy.complaintLevel)).toEqual([...COMPLAINT_LEVELS]);
     for (const policy of policies) {

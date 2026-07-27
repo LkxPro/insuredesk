@@ -351,7 +351,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
     });
   });
 
-  describe("完结后移出超时/预警口径 (实时运营视角, ADR 0003)", () => {
+  describe("完结后移出超时/预警口径 (实时运营视角)", () => {
     /** The ticket's list rows under each display-status filter, pinned by 工单号. */
     async function listUnder(status: "pending_timeout" | "overdue" | "completed", search: string) {
       const { items } = await manager().ticket.list({ status, search });

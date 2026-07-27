@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Domain enum constants, single-sourced here and imported by both apps so the
  * database, API, and UI can never drift apart on the allowed values. Enums the
- * PRD defines with Chinese literals (complaint level, 核身 status, …) keep
+ * business defines with Chinese literals (complaint level, 核身 status, …) keep
  * those literals as the canonical stored values — inventing English codes
  * here would be exactly the drift this file exists to prevent.
  */

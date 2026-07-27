@@ -1,9 +1,9 @@
 # 部署
 
-单机部署（ADR 0007）:compose 起 Postgres + API 两个容器,API 同时托管构建好的
+单机部署:compose 起 Postgres + API 两个容器,API 同时托管构建好的
 前端 SPA(`@fastify/static`),只绑 `127.0.0.1:3000`,由宿主机既有 nginx 反代并
 负责 HTTPS 与域名。API 跑 GHCR 上的发版镜像,版本由 `.env` 的 `IMAGE_TAG`
-钉定(ADR 0009,操作手册见 `docs/releasing.md`)。
+钉定(操作手册见 `docs/releasing.md`)。
 
 开发环境见根目录 `README.md`。
 
@@ -64,9 +64,9 @@ admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 
 - 升级 = `make upgrade`。一条命令解析最新 CalVer、迁前备份并校验、把 `.env`
   的 `IMAGE_TAG` 钉成那个具体 tag、`pull` + `up -d`;已是最新则直接退出、无
   副作用。操作员不手敲版本号,`make upgrade` 是唯一 sanctioned 升级路径——手改
-  `IMAGE_TAG` 后直接 `up -d` 会让迁移无备份执行(ADR 0009 已知风险)。**只前滚**:
+  `IMAGE_TAG` 后直接 `up -d` 会让迁移无备份执行(已知风险)。**只前滚**:
   镜像回滚(把 `.env` 里的 `IMAGE_TAG` 改回上一个 tag 再 `up -d`)仅限新版起不来
-  且迁移未执行的场景,迁移已执行后发现问题一律发 hotfix 版本(ADR 0009)。
+  且迁移未执行的场景,迁移已执行后发现问题一律发 hotfix 版本。
 - 数据库迁移随容器启动自动执行,无需手动操作。迁移失败会导致容器起不来
   (fail fast),用 `docker logs insuredesk-api-prod` 排查。
 - 数据不受影响:db 容器镜像未变不会重建,数据持久化在具名卷
@@ -83,7 +83,7 @@ admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 
 gzip 落宿主机 `~/backups/insuredesk/`(可用 `.env` 的 `BACKUP_DIR` 改),保留
 14 天。容器启动即备份一次(自证可用),之后内置 crond 按 `TZ=Asia/Shanghai`
 每晚 21:30 再跑。**已知风险:仅本机备份、无异地副本,机器级故障(磁盘损坏、
-入侵、机房事故)= 数据全失**(ADR 0009 明确接受,异地同步留作后续升级项)。
+入侵、机房事故)= 数据全失**(已明确接受,异地同步留作后续升级项)。
 
 ### 验证备份在跑
 
@@ -91,7 +91,7 @@ sidecar 随 `up -d` 一起拉起,零手工配置。确认三处:
 
 - `docker compose -f docker-compose.prod.yml ps` 中 `backup` 显示 `healthy`
   ——healthcheck 断言 25h 内产出过新备份文件,`unhealthy` 即备份停摆
-  (sidecar 崩了、或连不上 db)。仅被动可见、不主动告警(ADR 0009 已知风险),
+  (sidecar 崩了、或连不上 db)。仅被动可见、不主动告警(已知风险),
   故需在登服务器时顺手扫一眼这里。
 - 备份目录出现 `insuredesk-<时间戳>.sql.gz`:`ls -lh ~/backups/insuredesk/`。
 - sidecar 日志:`docker logs insuredesk-backup-prod`——启动备份与每晚 cron
@@ -110,7 +110,7 @@ docker compose -f docker-compose.prod.yml run --rm backup once
 
 ### 从备份恢复
 
-适用于灾难性故障(ADR 0009"只前滚"策略的最后兜底)。**恢复会把数据库
+适用于灾难性故障(「只前滚」策略的最后兜底)。**恢复会把数据库
 整体回退到备份时刻,备份之后的数据全部丢失。**
 
 ```bash
@@ -136,7 +136,7 @@ docker compose -f docker-compose.prod.yml up -d
 ### 每季度恢复演练(运维流程)
 
 healthcheck 只验「备份文件在且新鲜」,不验「能否灌回」——大版本格式漂移、
-编码/扩展缺失都可能让一份看着正常的备份灌不回去(ADR 0009 已知风险)。唯一
+编码/扩展缺失都可能让一份看着正常的备份灌不回去(已知风险)。唯一
 能证明备份可恢复的凭据是定期演练。每季度一次,拿最近的备份走一遍完整恢复,
 **灌进一次性测试库,切勿灌回生产**:
 

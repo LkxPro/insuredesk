@@ -4,7 +4,7 @@ When reporting information to me, be extremely concise and sacrifice grammar for
 
 ## Development
 
-Dev is **fully containerized** (ADR 0007); the host needs only Docker + git +
+Dev is **fully containerized**; the host needs only Docker + git +
 an editor. First run, and whenever you return to a fresh session:
 
 ```bash
@@ -41,4 +41,4 @@ Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: one `CONTEXT.md` at the repo root. See `docs/agents/domain.md`.

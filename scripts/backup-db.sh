@@ -1,5 +1,5 @@
 #!/bin/sh
-# 生产数据库备份（ADR 0009）。跑在 backup sidecar 容器内（postgres:17-alpine，
+# 生产数据库备份。跑在 backup sidecar 容器内（postgres:17-alpine，
 # 与 db 同镜像 → pg_dump 版本与服务器 Postgres 精确匹配），经 compose 网络
 # pg_dump，gzip 落宿主机 bind mount（挂进容器的 /backups），保留 14 天。
 #
@@ -10,7 +10,7 @@
 #   check  compose healthcheck 调用：断言备份目录里有 25h 内的新文件。
 #
 # 仅本机备份、无异地副本，且 healthcheck 只验「文件在且新鲜」不验「能灌回」，
-# 均为 ADR 0009 主动接受的已知风险；恢复步骤见 docs/deployment.md。
+# 均为主动接受的已知风险；恢复步骤见 docs/deployment.md。
 set -eu
 # pg_dump 的失败必须穿过 gzip 传出，否则截断的转储会被当成完整备份改名。
 # 仅在 sidecar 的 busybox ash 里跑，pipefail 受支持；POSIX sh 未定义此选项。

@@ -2,7 +2,7 @@
 
 ## Development
 
-Dev environment is **fully containerized** (ADR 0007). Host only needs Docker + git + editor.
+Dev environment is **fully containerized**. Host only needs Docker + git + editor.
 First run:
 
 ```bash
@@ -35,4 +35,4 @@ Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: one `CONTEXT.md` at the repo root. See `docs/agents/domain.md`.
