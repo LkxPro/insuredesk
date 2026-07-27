@@ -73,7 +73,7 @@ import { downloadTicketExport } from "./ticket-export";
 
 /**
  * 工单管理 list: filters (状态 incl. the computed statuses, 渠道, 完结状态,
- * 投诉等级, 来源), 工单号/客户姓名/保单号 search, 创建时间/处理时限 sort, and
+ * 投诉等级, 来源), 工单号/客户姓名/保单号/电话 search, 创建时间/处理时限 sort, and
  * pagination. All list state lives in the URL — same deep-link treatment as
  * /tickets/new — and is parsed through the shared ticketListInputSchema, so an
  * edited query string degrades to defaults instead of crashing. Data scope is
@@ -479,7 +479,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             type="search"
             value={searchDraft}
             onChange={(event) => setSearchDraft(event.target.value)}
-            placeholder="工单号 / 客户姓名 / 保单号"
+            placeholder="工单号 / 客户姓名 / 保单号 / 电话"
             className="h-8 w-60 pl-8"
           />
         </form>

@@ -498,7 +498,7 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
-  describe("search: 工单号 / 客户姓名 / 保单号", () => {
+  describe("search: 工单号 / 客户姓名 / 保单号 / 电话", () => {
     it("matches partial work-order number, customer name, and policy number", async () => {
       const zhang = await makeTicket({ customerName: "张三丰", policyNumbers: ["PA-88001"] });
       const li = await makeTicket({ customerName: "李四", policyNumbers: ["PB-99002"] });
@@ -518,6 +518,83 @@ describe("ticket list (Testcontainers)", () => {
       expect(byPolicy.items.map((t) => t.id)).toEqual([li.id]);
 
       expect((await manager().ticket.list({ search: "毫无匹配" })).total).toBe(0);
+    });
+
+    it("matches phone (客户电话) and contactPhone (联系人电话) by substring", async () => {
+      const withPhone = await makeTicket({
+        customerName: "有客户电话",
+        phone: "138-0000-0000",
+        policyNumbers: [],
+      });
+      const withContact = await makeTicket({
+        customerName: "有联系人电话",
+        phone: null,
+        policyNumbers: [],
+        contactPhone: "13900001111",
+      });
+      const withBoth = await makeTicket({
+        customerName: "两电话都有",
+        phone: "15800000000",
+        policyNumbers: [],
+        contactPhone: "17600000000",
+      });
+      await makeTicket({ customerName: "无电话", phone: null, policyNumbers: [], contactPhone: null });
+
+      const byPhone = await manager().ticket.list({ search: "138" });
+      expect(byPhone.items.map((t) => t.id)).toEqual([withPhone.id]);
+
+      const byContact = await manager().ticket.list({ search: "1390" });
+      expect(byContact.items.map((t) => t.id)).toEqual([withContact.id]);
+
+      const byBothPhone = await manager().ticket.list({ search: "158" });
+      expect(byBothPhone.items.map((t) => t.id)).toEqual([withBoth.id]);
+
+      const byBothContact = await manager().ticket.list({ search: "176" });
+      expect(byBothContact.items.map((t) => t.id)).toEqual([withBoth.id]);
+
+      expect((await manager().ticket.list({ search: "13800000000" })).total).toBe(0);
+
+      expect((await manager().ticket.list({ search: "99999999" })).total).toBe(0);
+    });
+
+    it("联系人电话含多个号码时，搜其中任一个都能命中", async () => {
+      const multiContact = await makeTicket({
+        customerName: "多联系号码",
+        phone: null,
+        policyNumbers: [],
+        contactPhone: "13900001111, 17600000000",
+      });
+
+      expect((await manager().ticket.list({ search: "1390" })).items.map((t) => t.id)).toEqual([
+        multiContact.id,
+      ]);
+      expect((await manager().ticket.list({ search: "1760" })).items.map((t) => t.id)).toEqual([
+        multiContact.id,
+      ]);
+    });
+
+    it("电话搜索可与其他筛选维度叠加（交集）", async () => {
+      const paymentWithPhone = await makeTicket({
+        channelId: channelId("支付"),
+        phone: "13800000000",
+        policyNumbers: [],
+      });
+      await makeTicket({
+        channelId: channelId("保司"),
+        phone: "13800000000",
+        policyNumbers: [],
+      });
+      await makeTicket({
+        channelId: channelId("支付"),
+        phone: "15900000000",
+        policyNumbers: [],
+      });
+
+      const filtered = await manager().ticket.list({
+        search: "138",
+        channelId: [channelId("支付")],
+      });
+      expect(filtered.items.map((t) => t.id)).toEqual([paymentWithPhone.id]);
     });
 
     it("treats blank search as no search", async () => {

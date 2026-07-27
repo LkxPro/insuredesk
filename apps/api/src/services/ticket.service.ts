@@ -269,6 +269,8 @@ export async function buildTicketListWhere(
         { workOrderNumber: { contains: query.search, mode: "insensitive" } },
         { customerName: { contains: query.search, mode: "insensitive" } },
         { id: { in: await searchPolicyNumbersTicketIds(prisma, query.search) } },
+        { phone: { contains: query.search, mode: "insensitive" } },
+        { contactPhone: { contains: query.search, mode: "insensitive" } },
       ],
     });
   }
