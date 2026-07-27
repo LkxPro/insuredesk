@@ -110,6 +110,27 @@ describe("ticket-field-visibility", () => {
       expect(result.status).toBeNull();
       expect(result.policyNumbers).toEqual([]);
     });
+
+    it("preserves undefined for fields that were undefined in input", () => {
+      const ticket = {
+        workOrderNumber: "WO100001",
+        customerName: undefined,
+        phone: undefined,
+        project: "融盛",
+        policyNumbers: ["POL123"],
+      };
+
+      const result = filterVisibleFields(ticket, ["workOrderNumber"]);
+
+      expect(result.workOrderNumber).toBe("WO100001");
+      // customerName and phone are sensitive, originally undefined → stay undefined
+      expect(result.customerName).toBeUndefined();
+      expect(result.phone).toBeUndefined();
+      // project is not whitelisted, has value → null
+      expect(result.project).toBeNull();
+      // policyNumbers is sensitive array → []
+      expect(result.policyNumbers).toEqual([]);
+    });
   });
 
   describe("constants", () => {

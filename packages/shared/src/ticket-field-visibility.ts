@@ -45,6 +45,9 @@ export const DEFAULT_EXTERNAL_VISIBLE_FIELDS: readonly string[] = [
  *
  * 敏感字段即使在白名单内也强制过滤（防御配置错误）。
  *
+ * 保留原始 undefined：白名单外或敏感字段，若原值为 undefined 则保持 undefined，
+ * 不强制为 null，以便客户端区分"字段存在但被过滤"与"字段从未存在"。
+ *
  * @param ticket - 原始工单对象
  * @param whitelist - 可见字段 key 数组
  * @returns 裁剪后的工单对象
@@ -57,19 +60,14 @@ export function filterVisibleFields<T extends Record<string, unknown>>(
   const result = { ...ticket } as Record<string, unknown>;
 
   for (const key of Object.keys(result)) {
-    // 强制过滤敏感字段，即使在白名单内
-    if (SENSITIVE_TICKET_FIELDS.includes(key)) {
-      if (Array.isArray(result[key])) {
-        result[key] = [];
-      } else {
-        result[key] = null;
-      }
-      continue;
-    }
+    const shouldFilter = SENSITIVE_TICKET_FIELDS.includes(key) || !whitelistSet.has(key);
 
-    // 白名单外字段设为 null 或 []
-    if (!whitelistSet.has(key)) {
-      if (Array.isArray(result[key])) {
+    if (shouldFilter) {
+      const originalValue = result[key];
+      // 保留 undefined，数组设为 []，其他设为 null
+      if (originalValue === undefined) {
+        result[key] = undefined;
+      } else if (Array.isArray(originalValue)) {
         result[key] = [];
       } else {
         result[key] = null;

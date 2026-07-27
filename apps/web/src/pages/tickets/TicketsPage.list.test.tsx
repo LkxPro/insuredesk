@@ -253,9 +253,9 @@ describe("归档工单默认隐藏（来源缺省）", () => {
     renderAt("/tickets");
 
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]?.source).toEqual(["feishu_form", "manual", "community"]);
-    // 来源触发器常驻显示缺省计数（3 = 排除归档单后的选中数）
-    expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("3");
+    expect(listInputs()[0]?.source).toEqual(["feishu_form", "manual", "community", "external_channel"]);
+    // 来源触发器常驻显示缺省计数（4 = 排除归档单后的选中数）
+    expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("4");
   });
 
   it("清空来源 → 空值参数下传，服务端按不过滤处理", async () => {
@@ -278,6 +278,7 @@ describe("归档工单默认隐藏（来源缺省）", () => {
         "feishu_form",
         "manual",
         "community",
+        "external_channel",
         "file_import",
       ]),
     );

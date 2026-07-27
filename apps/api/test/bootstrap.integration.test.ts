@@ -36,7 +36,7 @@ describe("bootstrapSystemData (Testcontainers)", () => {
 
     const roles = await prisma.role.findMany();
     expect(roles.map((role) => role.name).sort()).toEqual(
-      ["一线客服", "只读观察", "客服主管", "管理员"].sort(),
+      ["一线客服", "只读观察", "外部用户", "客服主管", "管理员"].sort(),
     );
     // 管理员 is the one and only system role
     expect(roles.filter((role) => role.system).map((role) => role.name)).toEqual(["管理员"]);
@@ -114,7 +114,7 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     expect(result.adminCreated).toBe(false);
 
     const roles = await prisma.role.findMany();
-    expect(roles.map((role) => role.name).sort()).toEqual(["一线客服", "管理员", "运营主管"]);
+    expect(roles.map((role) => role.name).sort()).toEqual(["一线客服", "外部用户", "管理员", "运营主管"]);
     const renamed = roles.find((role) => role.name === "运营主管");
     expect(renamed?.permissions).toEqual(["ticket.view"]);
   });
@@ -171,6 +171,7 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     // Recreating the admin still repairs nothing else: roles stay as edited
     expect((await prisma.role.findMany()).map((role) => role.name).sort()).toEqual([
       "一线客服",
+      "外部用户",
       "管理员",
       "运营主管",
     ]);

@@ -32,15 +32,3 @@ ALTER TABLE "tickets" ADD CONSTRAINT "tickets_externalOrgId_fkey" FOREIGN KEY ("
 
 -- AlterTable: process_logs - add internalOnly
 ALTER TABLE "process_logs" ADD COLUMN "internalOnly" BOOLEAN NOT NULL DEFAULT false;
-
--- Seed: external user role
-INSERT INTO "roles" ("id", "name", "permissions", "system", "requiredTicketFields", "createdAt", "updatedAt")
-VALUES (
-    'external_user_role_seed',
-    '外部用户',
-    ARRAY['ticket.create_external', 'ticket.process_external']::TEXT[],
-    false,
-    ARRAY[]::TEXT[],
-    CURRENT_TIMESTAMP,
-    CURRENT_TIMESTAMP
-);
