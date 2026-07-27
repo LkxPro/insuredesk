@@ -25,3 +25,6 @@ coverage/
 # Editor
 .idea/
 .vscode/
+
+# Per-issue agent worktrees (see AGENTS.md)
+.worktrees/
