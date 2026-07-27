@@ -73,10 +73,16 @@ describe("dashboard stats (Testcontainers)", () => {
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
 
   /** Fixed-clock service read for 口径 cases that must pin "now". */
-  function statsAt(now: Date, viewer: User = seeded.users.manager, role?: Role) {
+  function statsAt(
+    now: Date,
+    viewer: User = seeded.users.manager,
+    role?: Role,
+    input: { createdFrom?: string; createdTo?: string } = {},
+  ) {
     return getDashboardStats(
       { prisma, clock: { now: () => now } },
       authUserFor(viewer, role ?? seeded.roles.csManager),
+      input,
     );
   }
 
@@ -379,7 +385,7 @@ describe("dashboard stats (Testcontainers)", () => {
       await makeTicket({ channelId: channelId("支付") });
       await makeTicket({ channelId: channelId("监管") });
 
-      const stats = await manager().dashboard.stats();
+      const stats = await manager().dashboard.stats({});
 
       expect(stats.channels.map((row) => row.name)).toEqual(["保司", "经纪", "支付", "监管"]);
       expect(stats.channels.map((row) => row.count)).toEqual([2, 0, 1, 1]);
@@ -392,7 +398,7 @@ describe("dashboard stats (Testcontainers)", () => {
         data: { name: "第三方支付" },
       });
       try {
-        const stats = await manager().dashboard.stats();
+        const stats = await manager().dashboard.stats({});
         expect(stats.channels.find((row) => row.channelId === channelId("支付"))?.name).toBe(
           "第三方支付",
         );
@@ -437,7 +443,7 @@ describe("dashboard stats (Testcontainers)", () => {
       }
       await prisma.ticket.createMany({ data: rows });
 
-      const stats = await manager().dashboard.stats();
+      const stats = await manager().dashboard.stats({});
 
       expect(stats.assignees).toHaveLength(10);
       expect(stats.assignees.map((row) => row.completedCount)).toEqual([
@@ -455,7 +461,7 @@ describe("dashboard stats (Testcontainers)", () => {
         { status: "processing", assigneeId: seeded.users.cs1.id },
       );
 
-      const stats = await manager().dashboard.stats();
+      const stats = await manager().dashboard.stats({});
 
       expect(stats.assignees).toEqual([
         {
@@ -500,7 +506,7 @@ describe("dashboard stats (Testcontainers)", () => {
         },
       );
 
-      const own = await frontline().dashboard.stats();
+      const own = await frontline().dashboard.stats({});
       expect(own.scope).toBe("own");
       expect(own.metrics.total).toBe(2); // the unassigned pool and 主管's ticket are invisible
       expect(own.metrics.unassigned).toBe(0);
@@ -511,7 +517,7 @@ describe("dashboard stats (Testcontainers)", () => {
       expect(own.assignees.map((row) => row.assigneeId)).toEqual([seeded.users.cs1.id]);
 
       for (const caller of [manager(), observer()]) {
-        const all = await caller.dashboard.stats();
+        const all = await caller.dashboard.stats({});
         expect(all.scope).toBe("all");
         expect(all.metrics.total).toBe(4);
         expect(all.metrics.unassigned).toBe(1);
@@ -534,7 +540,7 @@ describe("dashboard stats (Testcontainers)", () => {
         },
       );
 
-      const own = await frontline().dashboard.stats();
+      const own = await frontline().dashboard.stats({});
       expect(own.scope).toBe("own");
       expect(own.metrics.total).toBe(0);
       expect(own.assignees).toEqual([]);
@@ -544,7 +550,7 @@ describe("dashboard stats (Testcontainers)", () => {
   describe("权限", () => {
     it("rejects callers without dashboard.view", async () => {
       const caller = callerFor(seeded.users.cs1, seeded.roles.frontline, ["ticket.view"]);
-      await expect(caller.dashboard.stats()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.dashboard.stats({})).rejects.toMatchObject({ code: "FORBIDDEN" });
     });
   });
 
@@ -577,11 +583,249 @@ describe("dashboard stats (Testcontainers)", () => {
       });
 
       const startedAt = performance.now();
-      const stats = await manager().dashboard.stats();
+      const stats = await manager().dashboard.stats({});
       const elapsedMs = performance.now() - startedAt;
 
       expect(stats.metrics.total).toBe(3000);
       expect(elapsedMs).toBeLessThan(2000);
+    });
+  });
+
+  describe("创建时间筛选", () => {
+    it("默认「全部」：空入参与改动前行为一致", async () => {
+      const now = new Date("2026-07-20T10:00:00Z");
+      await makeTicket(
+        { customerName: "旧单" },
+        { createdAt: new Date("2026-07-01T00:00:00Z") },
+      );
+      await makeTicket(
+        { customerName: "新单" },
+        { createdAt: new Date("2026-07-20T08:00:00Z") },
+      );
+
+      const stats = await statsAt(now);
+      expect(stats.metrics.total).toBe(2);
+    });
+
+    it("选中区间后，8 张指标卡、渠道统计、考核 Top 10 全部只统计该区间内创建的工单", async () => {
+      const now = new Date("2026-07-20T10:00:00Z");
+      const rangeStart = "2026-07-15T00:00:00Z";
+      const rangeEnd = "2026-07-20T23:59:59.999Z";
+
+      await makeTicket(
+        { customerName: "区间前", channelId: channelId("保司") },
+        {
+          createdAt: new Date("2026-07-14T23:59:59Z"),
+          status: "completed",
+          assigneeId: seeded.users.cs1.id,
+          completionTime: new Date("2026-07-15T01:00:00Z"),
+        },
+      );
+      await makeTicket(
+        { customerName: "区间起点", channelId: channelId("保司") },
+        {
+          createdAt: new Date(rangeStart),
+          status: "assigned",
+          assigneeId: seeded.users.cs1.id,
+        },
+      );
+      await makeTicket(
+        { customerName: "区间内超时", channelId: channelId("监管"), complaintLevel: "特急投诉" },
+        {
+          createdAt: new Date("2026-07-16T10:00:00Z"),
+          status: "processing",
+          assigneeId: seeded.users.cs1.id,
+          dueAt: new Date(now.getTime() - HOUR_MS),
+        },
+      );
+      await makeTicket(
+        { customerName: "区间末点", channelId: channelId("支付") },
+        {
+          createdAt: new Date(rangeEnd),
+          status: "completed",
+          assigneeId: seeded.users.manager.id,
+          completionTime: new Date("2026-07-21T00:00:00Z"),
+        },
+      );
+      await makeTicket(
+        { customerName: "区间后", channelId: channelId("经纪") },
+        { createdAt: new Date("2026-07-21T00:00:00Z") },
+      );
+
+      const stats = await statsAt(now, seeded.users.manager, undefined, {
+        createdFrom: rangeStart,
+        createdTo: rangeEnd,
+      });
+
+      expect(stats.metrics.total).toBe(3);
+      expect(stats.metrics.unassigned).toBe(0);
+      expect(stats.metrics.assigned).toBe(1);
+      expect(stats.metrics.processing).toBe(1);
+      expect(stats.metrics.completed).toBe(1);
+      expect(stats.metrics.overdue).toBe(1);
+      expect(stats.metrics.urgent).toBe(1);
+
+      expect(stats.channels.find((ch) => ch.name === "保司")?.count).toBe(1);
+      expect(stats.channels.find((ch) => ch.name === "经纪")?.count).toBe(0);
+      expect(stats.channels.find((ch) => ch.name === "支付")?.count).toBe(1);
+      expect(stats.channels.find((ch) => ch.name === "监管")?.count).toBe(1);
+
+      expect(stats.assignees).toHaveLength(2);
+      const cs1Row = stats.assignees.find((a) => a.assigneeId === seeded.users.cs1.id);
+      expect(cs1Row?.totalCount).toBe(2);
+      expect(cs1Row?.completedCount).toBe(0);
+      expect(cs1Row?.overdueCount).toBe(1);
+      const managerRow = stats.assignees.find((a) => a.assigneeId === seeded.users.manager.id);
+      expect(managerRow?.totalCount).toBe(1);
+      expect(managerRow?.completedCount).toBe(1);
+    });
+
+    it("预警/超时在区间内仍以当下时刻判定，与列表同名筛选一致", async () => {
+      const now = new Date("2026-07-20T10:00:00Z");
+      const rangeStart = "2026-07-15T00:00:00Z";
+      const rangeEnd = "2026-07-20T23:59:59.999Z";
+
+      await makeTicket(
+        { customerName: "昨天创建今天超时" },
+        {
+          createdAt: new Date("2026-07-14T10:00:00Z"),
+          status: "assigned",
+          assigneeId: seeded.users.cs1.id,
+          dueAt: new Date(now.getTime() - HOUR_MS),
+        },
+      );
+      await makeTicket(
+        { customerName: "区间内创建当下超时" },
+        {
+          createdAt: new Date("2026-07-18T10:00:00Z"),
+          status: "processing",
+          assigneeId: seeded.users.cs1.id,
+          dueAt: new Date(now.getTime() - 10 * 60 * 1000),
+        },
+      );
+      await makeTicket(
+        { customerName: "区间内创建当下预警" },
+        {
+          createdAt: new Date("2026-07-19T10:00:00Z"),
+          status: "assigned",
+          assigneeId: seeded.users.cs1.id,
+          dueAt: new Date(now.getTime() + HOUR_MS),
+        },
+      );
+
+      const stats = await statsAt(now, seeded.users.manager, undefined, {
+        createdFrom: rangeStart,
+        createdTo: rangeEnd,
+      });
+
+      expect(stats.metrics.total).toBe(2);
+      expect(stats.metrics.overdue).toBe(1);
+      expect(stats.metrics.pendingTimeout).toBe(1);
+    });
+
+    it("考核 Top 10 按创建时间落区间，排序与上限规则不变", async () => {
+      const rangeStart = "2026-07-15T00:00:00Z";
+      const rangeEnd = "2026-07-20T23:59:59.999Z";
+
+      await makeTicket(
+        { customerName: "区间前完结" },
+        {
+          createdAt: new Date("2026-07-14T10:00:00Z"),
+          status: "completed",
+          assigneeId: seeded.users.cs1.id,
+          completionTime: new Date("2026-07-18T10:00:00Z"),
+        },
+      );
+      await makeTicket(
+        { customerName: "区间内完结" },
+        {
+          createdAt: new Date("2026-07-16T10:00:00Z"),
+          status: "completed",
+          assigneeId: seeded.users.cs1.id,
+          completionTime: new Date("2026-07-18T10:00:00Z"),
+        },
+      );
+      await makeTicket(
+        { customerName: "区间内未完结" },
+        {
+          createdAt: new Date("2026-07-17T10:00:00Z"),
+          status: "assigned",
+          assigneeId: seeded.users.cs1.id,
+        },
+      );
+
+      const stats = await statsAt(
+        new Date("2026-07-20T10:00:00Z"),
+        seeded.users.manager,
+        undefined,
+        { createdFrom: rangeStart, createdTo: rangeEnd },
+      );
+
+      expect(stats.assignees).toHaveLength(1);
+      expect(stats.assignees[0]?.totalCount).toBe(2);
+      expect(stats.assignees[0]?.completedCount).toBe(1);
+    });
+
+    it("数据范围权限与时间区间叠加正确", async () => {
+      const rangeStart = "2026-07-15T00:00:00Z";
+      const rangeEnd = "2026-07-20T23:59:59.999Z";
+
+      await makeTicket(
+        { customerName: "小张·区间内" },
+        {
+          createdAt: new Date("2026-07-18T10:00:00Z"),
+          status: "assigned",
+          assigneeId: seeded.users.cs1.id,
+        },
+      );
+      await makeTicket(
+        { customerName: "小张·区间外" },
+        {
+          createdAt: new Date("2026-07-14T10:00:00Z"),
+          status: "completed",
+          assigneeId: seeded.users.cs1.id,
+          completionTime: new Date("2026-07-15T10:00:00Z"),
+        },
+      );
+      await makeTicket(
+        { customerName: "主管·区间内" },
+        {
+          createdAt: new Date("2026-07-19T10:00:00Z"),
+          status: "processing",
+          assigneeId: seeded.users.manager.id,
+        },
+      );
+
+      const own = await frontline().dashboard.stats({
+        createdFrom: rangeStart,
+        createdTo: rangeEnd,
+      });
+      expect(own.scope).toBe("own");
+      expect(own.metrics.total).toBe(1);
+      expect(own.assignees[0]?.assigneeId).toBe(seeded.users.cs1.id);
+
+      const all = await manager().dashboard.stats({
+        createdFrom: rangeStart,
+        createdTo: rangeEnd,
+      });
+      expect(all.scope).toBe("all");
+      expect(all.metrics.total).toBe(2);
+    });
+
+    it("单边区间正确生效：只约束有值的那端", async () => {
+      const now = new Date("2026-07-20T10:00:00Z");
+      await makeTicket({ customerName: "旧单" }, { createdAt: new Date("2026-07-01T00:00:00Z") });
+      await makeTicket({ customerName: "新单" }, { createdAt: new Date("2026-07-19T10:00:00Z") });
+
+      const fromOnly = await statsAt(now, seeded.users.manager, undefined, {
+        createdFrom: "2026-07-10T00:00:00Z",
+      });
+      expect(fromOnly.metrics.total).toBe(1);
+
+      const toOnly = await statsAt(now, seeded.users.manager, undefined, {
+        createdTo: "2026-07-10T23:59:59.999Z",
+      });
+      expect(toOnly.metrics.total).toBe(1);
     });
   });
 });

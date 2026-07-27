@@ -252,6 +252,37 @@ describe("ticket export (Testcontainers)", () => {
     });
   });
 
+  describe("创建时间区间随导出下传", () => {
+    it("exports only the rows inside the range, both edges included", async () => {
+      const from = new Date("2026-07-06T00:00:00.000Z");
+      const to = new Date("2026-07-12T23:59:59.999Z");
+      await makeTicket({ customerName: "区间前" }, { createdAt: new Date(from.getTime() - 1) });
+      await makeTicket({ customerName: "起边界" }, { createdAt: from });
+      await makeTicket({ customerName: "止边界" }, { createdAt: to });
+      await makeTicket({ customerName: "区间后" }, { createdAt: new Date(to.getTime() + 1) });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, {
+        format: "csv",
+        createdFrom: from.toISOString(),
+        createdTo: to.toISOString(),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain("起边界");
+      expect(res.body).toContain("止边界");
+      expect(res.body).not.toContain("区间前");
+      expect(res.body).not.toContain("区间后");
+    });
+
+    it("rejects a malformed range with 400 instead of exporting everything", async () => {
+      await makeTicket({ customerName: "任意客户" });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv", createdFrom: "昨天" });
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
   describe("按列表当前筛选条件导出 (CSV)", () => {
     it("exports exactly the rows ticket.list returns for the same filters, soft-deletes excluded", async () => {
       const payment1 = await makeTicket({

@@ -15,5 +15,6 @@ export * from "./ticket";
 export * from "./ticket-category";
 export * from "./ticket-fields";
 export * from "./ticket-status";
+export * from "./time-range";
 export * from "./todo";
 export * from "./user";

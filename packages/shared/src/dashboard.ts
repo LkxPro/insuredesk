@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { createdRangeFields } from "./time-range";
+
 /**
  * 数据看板 contract: the 8 metric-card keys and their display labels,
  * single-sourced so the API payload shape, the web card grid, and the
@@ -34,3 +37,6 @@ export const DASHBOARD_METRIC_LABELS: Record<DashboardMetricKey, string> = {
 
 /** 跟进人考核表条目上限. */
 export const DASHBOARD_TOP_ASSIGNEE_LIMIT = 10;
+
+export const dashboardStatsInputSchema = z.object(createdRangeFields);
+export type DashboardStatsInput = z.infer<typeof dashboardStatsInputSchema>;

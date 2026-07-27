@@ -170,7 +170,7 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       // 列表、看板与导出即刻不可见 — the importer's own scope included
       expect((await supervisorCaller().ticket.list({})).total).toBe(0);
       expect((await importerCaller().ticket.list({})).total).toBe(0);
-      const stats = await supervisorCaller().dashboard.stats();
+      const stats = await supervisorCaller().dashboard.stats({});
       expect(stats.metrics.total).toBe(0);
       const file = await exportTickets(deps(), authUser(supervisor, SUPERVISOR_PERMISSIONS), {
         format: "csv",

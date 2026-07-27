@@ -1,6 +1,7 @@
 import {
   BATCH_ASSIGN_LIMIT,
   COMPLAINT_LEVELS,
+  type CreatedRangeQuery,
   DEFAULT_TICKET_SOURCE_FILTER,
   isTicketInFlight,
   TICKET_DISPLAY_STATUSES,
@@ -63,6 +64,7 @@ import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
+import { CreatedRangeFilter } from "./CreatedRangeFilter";
 import { MultiSelectFilter } from "./MultiSelectFilter";
 import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
@@ -117,6 +119,8 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
     complaintLevel: multi("level"),
     source: multi("source"),
     search: params.get("q") ?? undefined,
+    createdFrom: params.get("createdFrom") ?? undefined,
+    createdTo: params.get("createdTo") ?? undefined,
     sortBy: params.get("sortBy") ?? undefined,
     sortOrder: params.get("sortOrder") ?? undefined,
     page: params.has("page") ? Number(params.get("page")) : undefined,
@@ -282,6 +286,23 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       if (resetPage) {
         next.delete("page");
       }
+      return next;
+    });
+  }
+
+  /** 创建时间区间是一对参数，须同进同出，否则中间态会筛出半开区间。 */
+  function setCreatedRange(range: CreatedRangeQuery) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const key of ["createdFrom", "createdTo"] as const) {
+        const value = range[key];
+        if (value === undefined) {
+          next.delete(key);
+        } else {
+          next.set(key, value);
+        }
+      }
+      next.delete("page");
       return next;
     });
   }
@@ -466,6 +487,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           onChange={(values) =>
             setParam("source", serializeSelection(values, DEFAULT_TICKET_SOURCE_FILTER))
           }
+        />
+        <CreatedRangeFilter
+          range={{ createdFrom: query.createdFrom, createdTo: query.createdTo }}
+          onChange={setCreatedRange}
         />
         <form
           className="relative"

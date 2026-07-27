@@ -23,9 +23,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { createdRangeLabel } from "@/lib/created-range";
 import { formatDurationMs } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { CreatedRangeFilter } from "../tickets/CreatedRangeFilter";
+import { useCreatedRangeQueryParams } from "./useCreatedRangeQueryParams";
 
 /**
  * 数据看板: 8 metric cards, the channel distribution, and the Top-10
@@ -91,9 +94,11 @@ const percentFormat = new Intl.NumberFormat("zh-CN", {
 });
 
 export function DashboardPage() {
-  const statsQuery = trpc.dashboard.stats.useQuery();
+  const [createdRange, setCreatedRange] = useCreatedRangeQueryParams();
+  const statsQuery = trpc.dashboard.stats.useQuery(createdRange);
   const stats = statsQuery.data;
   const channelTotal = stats?.channels.reduce((sum, row) => sum + row.count, 0) ?? 0;
+  const hasRange = createdRange.createdFrom !== undefined || createdRange.createdTo !== undefined;
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -102,7 +107,15 @@ export function DashboardPage() {
           <h1 className="text-2xl font-semibold tracking-tight">数据看板</h1>
           <p className="text-sm text-muted-foreground">客诉工单运营全貌，一屏呈现。</p>
         </div>
-        {stats?.scope === "own" && <Badge variant="secondary">仅统计我名下的工单</Badge>}
+        <div className="flex items-center gap-2">
+          <CreatedRangeFilter range={createdRange} onChange={setCreatedRange} />
+          {hasRange && (
+            <Badge variant="outline" className="tabular-nums">
+              {createdRangeLabel(createdRange)}
+            </Badge>
+          )}
+          {stats?.scope === "own" && <Badge variant="secondary">仅统计我名下的工单</Badge>}
+        </div>
       </div>
 
       {statsQuery.error ? (

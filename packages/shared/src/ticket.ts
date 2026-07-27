@@ -14,6 +14,7 @@ import {
   TICKET_TEXT_LIMITS,
 } from "./ticket-fields";
 import { ticketDisplayStatusSchema } from "./ticket-status";
+import { createdRangeFields } from "./time-range";
 
 /**
  * Manual ticket-creation contract, shared by the web form (react-hook-form
@@ -297,6 +298,7 @@ export const ticketListInputSchema = z.object({
     .max(100)
     .transform((value) => (value ? value : undefined))
     .optional(),
+  ...createdRangeFields,
   sortBy: ticketSortFieldSchema.default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
   page: z.number().int().min(1).default(1),
