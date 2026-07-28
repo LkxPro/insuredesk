@@ -5,6 +5,7 @@ import {
   DEMO_PASSWORD,
   seedChannels,
   seedDemoTickets,
+  seedExternalUserRole,
   seedFactoryRolesAndDemoUsers,
   seedShiftTypes,
   seedSlaPolicies,
@@ -36,6 +37,9 @@ async function main() {
   for (const user of Object.values(users)) {
     console.log(`✓ User: ${user.username} (${user.name})`);
   }
+
+  const externalRole = await seedExternalUserRole(prisma);
+  console.log(`✓ External role: ${externalRole.name}`);
 
   const policies = await seedSlaPolicies(prisma);
   for (const policy of policies) {

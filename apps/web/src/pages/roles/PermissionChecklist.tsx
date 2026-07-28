@@ -1,14 +1,17 @@
-import { PERMISSION_GROUPS, PERMISSION_LABELS, type Permission } from "@insuredesk/shared";
+import {
+  MANAGEMENT_PERMISSION_GROUPS,
+  PERMISSION_LABELS,
+  type Permission,
+} from "@insuredesk/shared";
 import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * The 权限点清单 as grouped checkboxes — the single configuration surface
- * for 角色权限. Groups follow PERMISSION_GROUPS; each entry shows the Chinese
- * label plus the raw
- * permission point. Restrictive groups carry 勾选=禁止 semantics — the inverse
- * of every other checkbox — so they must stay visually marked. Renders
- * read-only for the 管理员 system role and for viewers without
- * role.edit_permission.
+ * for 角色权限. Groups follow MANAGEMENT_PERMISSION_GROUPS (external permissions
+ * filtered out); each entry shows the Chinese label plus the raw permission point.
+ * Restrictive groups carry 勾选=禁止 semantics — the inverse of every other
+ * checkbox — so they must stay visually marked. Renders read-only for the 管理员
+ * system role and for viewers without role.edit_permission.
  */
 export function PermissionChecklist({
   value,
@@ -36,7 +39,7 @@ export function PermissionChecklist({
 
   return (
     <div className="flex flex-col gap-5">
-      {PERMISSION_GROUPS.map((group) => (
+      {MANAGEMENT_PERMISSION_GROUPS.map((group) => (
         <fieldset key={group.label} className="flex flex-col gap-2">
           <legend className="mb-2 text-sm font-medium">
             {group.label}

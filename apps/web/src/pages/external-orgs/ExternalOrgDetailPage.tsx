@@ -22,7 +22,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { ExternalOrgEditDialog, FIELD_LABELS } from "./ExternalOrgEditDialog";
-import { OrgUserAssignRoleDialog } from "./OrgUserAssignRoleDialog";
 import { OrgUserCreateDialog } from "./OrgUserCreateDialog";
 import { OrgUserDisableDialog } from "./OrgUserDisableDialog";
 import { OrgUserEditDialog } from "./OrgUserEditDialog";
@@ -45,7 +44,6 @@ export function ExternalOrgDetailPage() {
   const [editing, setEditing] = useState(false);
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [editUserTarget, setEditUserTarget] = useState<OrgUserRow | null>(null);
-  const [assignRoleTarget, setAssignRoleTarget] = useState<OrgUserRow | null>(null);
   const [disableTarget, setDisableTarget] = useState<OrgUserRow | null>(null);
 
   const setActive = trpc.externalOrg.setActive.useMutation({
@@ -185,7 +183,6 @@ export function ExternalOrgDetailPage() {
                         <TableHead>姓名</TableHead>
                         <TableHead>用户名</TableHead>
                         <TableHead>邮箱</TableHead>
-                        <TableHead>角色</TableHead>
                         <TableHead>状态</TableHead>
                         <TableHead>创建时间</TableHead>
                         <TableHead className="text-right">操作</TableHead>
@@ -195,7 +192,7 @@ export function ExternalOrgDetailPage() {
                       {usersQuery.isLoading &&
                         [1, 2].map((row) => (
                           <TableRow key={row}>
-                            {[1, 2, 3, 4, 5, 6, 7].map((cell) => (
+                            {[1, 2, 3, 4, 5, 6].map((cell) => (
                               <TableCell key={cell}>
                                 <Skeleton className="h-5 w-full max-w-24" />
                               </TableCell>
@@ -204,7 +201,7 @@ export function ExternalOrgDetailPage() {
                         ))}
                       {!usersQuery.isLoading && orgUsers.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                          <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                             暂无账号
                           </TableCell>
                         </TableRow>
@@ -215,9 +212,6 @@ export function ExternalOrgDetailPage() {
                           <TableCell className="text-muted-foreground">{user.username}</TableCell>
                           <TableCell className="text-muted-foreground">
                             {user.email ?? "—"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{user.roleName}</Badge>
                           </TableCell>
                           <TableCell>
                             {user.active ? (
@@ -237,13 +231,6 @@ export function ExternalOrgDetailPage() {
                                 onClick={() => setEditUserTarget(user)}
                               >
                                 编辑
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setAssignRoleTarget(user)}
-                              >
-                                换角色
                               </Button>
                               {/* 自禁用会当场锁死操作者，服务端同样拒绝 */}
                               {user.id !== me?.id &&
@@ -293,12 +280,6 @@ export function ExternalOrgDetailPage() {
             orgId={org.id}
             onOpenChange={(open) => {
               if (!open) setEditUserTarget(null);
-            }}
-          />
-          <OrgUserAssignRoleDialog
-            user={assignRoleTarget}
-            onOpenChange={(open) => {
-              if (!open) setAssignRoleTarget(null);
             }}
           />
           <OrgUserDisableDialog

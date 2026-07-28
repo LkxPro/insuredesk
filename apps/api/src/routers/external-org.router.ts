@@ -3,7 +3,6 @@ import {
   externalOrgGetInputSchema,
   externalOrgSetActiveInputSchema,
   externalOrgUpdateInputSchema,
-  externalOrgUserAssignRoleInputSchema,
   externalOrgUserCreateInputSchema,
   externalOrgUserListInputSchema,
   externalOrgUserSetActiveInputSchema,
@@ -23,17 +22,14 @@ import {
   updateExternalOrg,
 } from "../services/external-org.service";
 import {
-  assignOrgUserRole,
   createOrgUser,
   DuplicateEmailError,
   DuplicateUsernameError,
   ExternalAccountOnlyError,
   ExternalOrgOptionNotFoundError,
-  ExternalRoleOnlyError,
+  ExternalRoleNotUniqueError,
   InactiveExternalOrgError,
-  listExternalRoleOptions,
   listOrgUsers,
-  RoleOptionNotFoundError,
   SelfDisableError,
   setOrgUserActive,
   UserNotFoundError,
@@ -44,8 +40,8 @@ import { requirePermission, router } from "../trpc";
 /**
  * 机构管理 + 机构账号管理, all behind the single external_org.manage point —
  * holding it manages orgs AND their accounts without any user.* point. The
- * account procedures parallel the user.* ones but are fenced to 外部账号/
- * 外部角色 in the service layer.
+ * account procedures parallel the user.* ones but are fenced to 外部账号 in the
+ * service layer.
  */
 
 const deps = { prisma, clock: systemClock };
@@ -60,14 +56,16 @@ function toTRPCError(error: unknown): never {
   }
   if (
     error instanceof InvalidVisibleFieldError ||
-    error instanceof RoleOptionNotFoundError ||
     error instanceof ExternalOrgOptionNotFoundError ||
     error instanceof InactiveExternalOrgError ||
     error instanceof ExternalAccountOnlyError ||
-    error instanceof ExternalRoleOnlyError ||
     error instanceof SelfDisableError
   ) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  // 库里外部角色数量不对是部署/种子层面的坏账,不是操作者能改的输入
+  if (error instanceof ExternalRoleNotUniqueError) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message, cause: error });
   }
   if (error instanceof OrgNotFoundError || error instanceof UserNotFoundError) {
     throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
@@ -113,14 +111,4 @@ export const externalOrgRouter = router({
   setUserActive: requirePermission("external_org.manage")
     .input(externalOrgUserSetActiveInputSchema)
     .mutation(({ ctx, input }) => setOrgUserActive(deps, ctx.user, input).catch(toTRPCError)),
-
-  /** 换角色 within 外部角色; the org binding stays put. */
-  assignUserRole: requirePermission("external_org.manage")
-    .input(externalOrgUserAssignRoleInputSchema)
-    .mutation(({ input }) => assignOrgUserRole(deps, input).catch(toTRPCError)),
-
-  /** Role picker for the account dialogs — 外部角色 only. */
-  externalRoleOptions: requirePermission("external_org.manage").query(() =>
-    listExternalRoleOptions(deps),
-  ),
 });

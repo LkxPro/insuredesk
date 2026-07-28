@@ -166,3 +166,21 @@ export const PERMISSION_GROUPS = [
   { label: "外部机构", permissions: EXTERNAL_ORG_PERMISSIONS, restrictive: false },
   { label: "限制类权限", permissions: RESTRICTIVE_PERMISSIONS, restrictive: true },
 ] as const;
+
+/**
+ * Management-surface permission groups: PERMISSION_GROUPS minus the two
+ * external permission points. 角色管理 uses this to hide ticket.create_external
+ * and ticket.process_external from the checklist, preventing new external
+ * roles from being created through the UI.
+ */
+export const MANAGEMENT_PERMISSION_GROUPS = PERMISSION_GROUPS.map((group) => {
+  if (group.label === "工单管理") {
+    return {
+      ...group,
+      permissions: group.permissions.filter(
+        (p) => !EXTERNAL_ROLE_PERMISSIONS.includes(p as (typeof EXTERNAL_ROLE_PERMISSIONS)[number]),
+      ),
+    };
+  }
+  return group;
+});

@@ -214,6 +214,17 @@ describe("configuring roles", () => {
     );
   });
 
+  it("新增角色 dialog does not show external permissions", async () => {
+    renderRolesPage();
+    fireEvent.click(await screen.findByRole("button", { name: "新增角色" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/提交外部工单/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/添加外部留言/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/ticket.create_external/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/ticket.process_external/)).not.toBeInTheDocument();
+  });
+
   it("配置权限 starts from the role's current set and saves the delta", async () => {
     renderRolesPage();
     await screen.findByText("质检专员");
@@ -279,5 +290,19 @@ describe("configuring roles", () => {
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
     expect(await screen.findByRole("button", { name: "确认删除" })).toBeDisabled();
     expect(screen.getByText(/仍有 3 个用户/)).toBeInTheDocument();
+  });
+
+  it("external permissions do not appear in the permission checklist", async () => {
+    renderRolesPage();
+    await screen.findByText("质检专员");
+
+    fireEvent.click(screen.getByRole("button", { name: "配置权限" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // External permissions should not be in the checklist
+    expect(within(dialog).queryByText(/提交外部工单/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/添加外部留言/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/ticket.create_external/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/ticket.process_external/)).not.toBeInTheDocument();
   });
 });

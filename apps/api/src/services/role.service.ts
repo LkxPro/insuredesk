@@ -5,6 +5,7 @@ import type {
   RoleUpdatePermissionsData,
   RoleUpdateRequiredFieldsData,
 } from "@insuredesk/shared";
+import { EXTERNAL_ROLE_PERMISSIONS, isExternalRole } from "@insuredesk/shared";
 import { Prisma } from "../generated/prisma/client";
 import { effectivePermissions } from "./auth.service";
 import type { TicketServiceDeps } from "./ticket.service";
@@ -41,6 +42,20 @@ export class SystemRoleProtectedError extends Error {
   }
 }
 
+export class ExternalRoleProtectedError extends Error {
+  constructor() {
+    super("外部角色不可通过管理界面修改或删除");
+    this.name = "ExternalRoleProtectedError";
+  }
+}
+
+export class ExternalPermissionForbiddenError extends Error {
+  constructor() {
+    super("不可通过管理界面配置外部权限点");
+    this.name = "ExternalPermissionForbiddenError";
+  }
+}
+
 /** Deleting a role someone still holds would strand those accounts. */
 export class RoleInUseError extends Error {
   constructor(userCount: number) {
@@ -53,36 +68,39 @@ function isDuplicateName(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
-/** Load a role for mutation, enforcing existence + the system-role lock. */
 async function findMutableRole(prisma: TicketServiceDeps["prisma"], id: string) {
-  const role = await prisma.role.findUnique({ where: { id }, select: { id: true, system: true } });
+  const role = await prisma.role.findUnique({
+    where: { id },
+    select: { id: true, system: true, permissions: true },
+  });
   if (!role) {
     throw new RoleNotFoundError();
   }
   if (role.system) {
     throw new SystemRoleProtectedError();
   }
+  if (isExternalRole(role)) {
+    throw new ExternalRoleProtectedError();
+  }
   return role;
 }
 
-/**
- * Every role with its full permission set and holder count — the 角色权限
- * page's one read. 管理员 first, then the rest by age.
- */
 export async function listRoles({ prisma }: TicketServiceDeps) {
   const rows = await prisma.role.findMany({
     include: { _count: { select: { users: true } } },
     orderBy: [{ system: "desc" }, { createdAt: "asc" }, { id: "asc" }],
   });
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    permissions: effectivePermissions(row),
-    system: row.system,
-    userCount: row._count.users,
-    requiredTicketFields: row.requiredTicketFields,
-    createdAt: row.createdAt.toISOString(),
-  }));
+  return rows
+    .filter((row) => !isExternalRole(row))
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      permissions: effectivePermissions(row),
+      system: row.system,
+      userCount: row._count.users,
+      requiredTicketFields: row.requiredTicketFields,
+      createdAt: row.createdAt.toISOString(),
+    }));
 }
 
 /** New role from the 权限点清单 checkboxes; names are unique. */
@@ -118,15 +136,17 @@ export async function renameRole({ prisma }: TicketServiceDeps, input: RoleRenam
   }
 }
 
-/**
- * Replace a role's permission set (role.edit_permission); 管理员 refuses.
- * Every holder is re-judged on their next request — nothing to invalidate.
- */
 export async function updateRolePermissions(
   { prisma }: TicketServiceDeps,
   input: RoleUpdatePermissionsData,
 ) {
   await findMutableRole(prisma, input.id);
+  const hasExternalPermission = input.permissions.some((p) =>
+    EXTERNAL_ROLE_PERMISSIONS.includes(p as (typeof EXTERNAL_ROLE_PERMISSIONS)[number]),
+  );
+  if (hasExternalPermission) {
+    throw new ExternalPermissionForbiddenError();
+  }
   return prisma.role.update({
     where: { id: input.id },
     data: { permissions: input.permissions },
@@ -150,20 +170,11 @@ export async function updateRoleRequiredFields(
   });
 }
 
-/** Delete a role (role.delete); 管理员 and roles with holders refuse. */
 export async function deleteRole({ prisma }: TicketServiceDeps, input: RoleDeleteInput) {
-  const role = await prisma.role.findUnique({
-    where: { id: input.id },
-    select: { id: true, system: true, _count: { select: { users: true } } },
-  });
-  if (!role) {
-    throw new RoleNotFoundError();
-  }
-  if (role.system) {
-    throw new SystemRoleProtectedError();
-  }
-  if (role._count.users > 0) {
-    throw new RoleInUseError(role._count.users);
+  await findMutableRole(prisma, input.id);
+  const userCount = await prisma.user.count({ where: { roleId: input.id } });
+  if (userCount > 0) {
+    throw new RoleInUseError(userCount);
   }
   await prisma.role.delete({ where: { id: input.id } });
   return { id: input.id };

@@ -12,6 +12,8 @@ import {
   createRole,
   DuplicateRoleNameError,
   deleteRole,
+  ExternalPermissionForbiddenError,
+  ExternalRoleProtectedError,
   listRoles,
   RoleInUseError,
   RoleNotFoundError,
@@ -35,7 +37,11 @@ function toTRPCError(error: unknown): never {
   if (error instanceof DuplicateRoleNameError || error instanceof RoleInUseError) {
     throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
-  if (error instanceof SystemRoleProtectedError) {
+  if (
+    error instanceof SystemRoleProtectedError ||
+    error instanceof ExternalRoleProtectedError ||
+    error instanceof ExternalPermissionForbiddenError
+  ) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message, cause: error });
   }
   if (error instanceof RoleNotFoundError) {

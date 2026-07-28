@@ -53,7 +53,6 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
       password: "initial-pass-1",
       name: `外部成员${seq}`,
       email: null,
-      roleId: externalRole.id,
     });
   }
 

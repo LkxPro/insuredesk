@@ -33,8 +33,7 @@ import type { OrgUserRow } from "./ExternalOrgDetailPage";
 
 /**
  * 编辑机构账号 (external_org.manage): basic info + optional password reset +
- * 所属机构 migration. 停用机构不作为新迁入目标，已绑定者可保持原值; 角色请走
- * 「换角色」。
+ * 所属机构 migration. 停用机构不作为新迁入目标，已绑定者可保持原值。
  */
 export function OrgUserEditDialog({
   user,
@@ -93,9 +92,7 @@ export function OrgUserEditDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>编辑账号</DialogTitle>
-          <DialogDescription>
-            修改用户名后该账号下次登录需用新用户名；角色请通过「换角色」调整。
-          </DialogDescription>
+          <DialogDescription>修改用户名后该账号下次登录需用新用户名。</DialogDescription>
         </DialogHeader>
 
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
