@@ -253,7 +253,12 @@ describe("归档工单默认隐藏（来源缺省）", () => {
     renderAt("/tickets");
 
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
-    expect(listInputs()[0]?.source).toEqual(["feishu_form", "manual", "community", "external_channel"]);
+    expect(listInputs()[0]?.source).toEqual([
+      "feishu_form",
+      "manual",
+      "community",
+      "external_channel",
+    ]);
     // 来源触发器常驻显示缺省计数（4 = 排除归档单后的选中数）
     expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("4");
   });

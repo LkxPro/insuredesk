@@ -65,7 +65,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         roleName: role.name,
         permissions: role.permissions as Permission[],
         requiredTicketFields: [],
-      externalOrgId: null,
+        externalOrgId: null,
       },
       sessionToken: null,
     });
@@ -84,7 +84,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         roleName,
         permissions,
         requiredTicketFields: [],
-      externalOrgId: null,
+        externalOrgId: null,
       },
       sessionToken: null,
     });
