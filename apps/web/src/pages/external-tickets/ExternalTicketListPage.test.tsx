@@ -54,7 +54,17 @@ function renderList(overrides: Record<string, unknown> = {}) {
     path: "/external-tickets",
     role: TEST_ROLES.EXTERNAL,
     externalOrgId: ORG,
-    trpc: { "externalTicket.list": listPayload([ticket()]), ...overrides },
+    trpc: {
+      "externalTicket.list": listPayload([ticket()]),
+      // 行点击用例会真的切到详情路由；给详情一个合法响应，免得它拿
+      // 默认空壳渲染崩掉（unhandled error 会让整个 vitest 进程判败）
+      "externalTicket.detail": {
+        ticket: ticket(),
+        visibleFields: VISIBLE_FIELDS,
+        processLogs: [],
+      },
+      ...overrides,
+    },
   });
 }
 
@@ -112,7 +122,9 @@ describe("筛选与分页", () => {
 
     const box = screen.getByPlaceholderText("工单号 / 工单原文");
     fireEvent.change(box, { target: { value: "WO100001" } });
-    fireEvent.submit(box);
+    // React 19 的 onSubmit 会拿 event.target 构造 FormData，
+    // 直接 submit input 会在 jsdom 里抛 uncaught exception
+    fireEvent.submit(box.closest("form") as HTMLFormElement);
 
     await waitFor(() => {
       const last = callsTo("externalTicket.list").at(-1)?.input as { search?: string };

@@ -1,10 +1,10 @@
-import { describe, it, expect } from "vitest";
 import {
+  DEFAULT_EXTERNAL_VISIBLE_FIELDS,
+  EXTERNAL_VISIBLE_FIELD_OPTIONS,
   filterVisibleFields,
   SENSITIVE_TICKET_FIELDS,
-  EXTERNAL_VISIBLE_FIELD_OPTIONS,
-  DEFAULT_EXTERNAL_VISIBLE_FIELDS,
 } from "@insuredesk/shared";
+import { describe, expect, it } from "vitest";
 
 describe("ticket-field-visibility", () => {
   describe("filterVisibleFields", () => {

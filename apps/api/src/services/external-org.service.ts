@@ -1,14 +1,11 @@
 import type {
   ExternalOrgCreateInput,
+  ExternalOrgGetInput,
   ExternalOrgListItem,
   ExternalOrgSetActiveInput,
   ExternalOrgUpdateInput,
 } from "@insuredesk/shared";
-import {
-  DEFAULT_EXTERNAL_VISIBLE_FIELDS,
-  EXTERNAL_VISIBLE_FIELD_OPTIONS,
-  SENSITIVE_TICKET_FIELDS,
-} from "@insuredesk/shared";
+import { EXTERNAL_VISIBLE_FIELD_OPTIONS, SENSITIVE_TICKET_FIELDS } from "@insuredesk/shared";
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
 
 export interface ExternalOrgServiceDeps {
@@ -72,42 +69,73 @@ function throwOnDuplicateName(error: unknown): never {
   throw error;
 }
 
+/** 数据库存 JSON 字符串；null 或损坏值都归一为 null（= 系统默认白名单）。 */
+function parseVisibleFields(raw: string | null): string[] | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+const orgListInclude = {
+  channel: { select: { name: true } },
+  _count: { select: { users: true } },
+} as const;
+
+function toListItem(org: {
+  id: string;
+  name: string;
+  channelId: string | null;
+  visibleTicketFields: string | null;
+  active: boolean;
+  channel: { name: string } | null;
+  _count: { users: number };
+}): ExternalOrgListItem {
+  return {
+    id: org.id,
+    name: org.name,
+    channelId: org.channelId,
+    channelName: org.channel?.name ?? null,
+    visibleTicketFields: parseVisibleFields(org.visibleTicketFields),
+    userCount: org._count.users,
+    active: org.active,
+  };
+}
+
 export async function listExternalOrgs(
   deps: ExternalOrgServiceDeps,
 ): Promise<ExternalOrgListItem[]> {
   const { prisma } = deps;
 
   const orgs = await prisma.externalOrg.findMany({
-    include: {
-      channel: { select: { name: true } },
-      _count: { select: { users: true } },
-    },
+    include: orgListInclude,
     orderBy: { createdAt: "desc" },
   });
 
-  return orgs.map((org) => {
-    let visibleFieldCount = 0;
-    if (org.visibleTicketFields) {
-      try {
-        const parsed = JSON.parse(org.visibleTicketFields);
-        visibleFieldCount = Array.isArray(parsed) ? parsed.length : 0;
-      } catch {
-        visibleFieldCount = 0;
-      }
-    } else {
-      visibleFieldCount = DEFAULT_EXTERNAL_VISIBLE_FIELDS.length;
-    }
+  return orgs.map(toListItem);
+}
 
-    return {
-      id: org.id,
-      name: org.name,
-      channelId: org.channelId,
-      channelName: org.channel?.name ?? null,
-      visibleFieldCount,
-      userCount: org._count.users,
-      active: org.active,
-    };
+export async function getExternalOrg(
+  deps: ExternalOrgServiceDeps,
+  input: ExternalOrgGetInput,
+): Promise<ExternalOrgListItem> {
+  const { prisma } = deps;
+
+  const org = await prisma.externalOrg.findUnique({
+    where: { id: input.id },
+    include: orgListInclude,
   });
+
+  if (!org) {
+    throw new OrgNotFoundError();
+  }
+
+  return toListItem(org);
 }
 
 export async function createExternalOrg(

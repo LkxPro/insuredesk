@@ -18,12 +18,11 @@ export const SENSITIVE_TICKET_FIELDS: readonly string[] = [
  * 外部机构可配置的字段候选清单 = 全部建单字段 - 敏感字段 - 导入专属字段。
  * 管理员在外部机构编辑弹窗的"可见字段"多选框中看到这个清单。
  */
-export const EXTERNAL_VISIBLE_FIELD_OPTIONS: readonly string[] =
-  TICKET_FIELD_DESCRIPTORS.filter(
-    (descriptor) =>
-      !("importOnly" in descriptor && descriptor.importOnly === true) &&
-      !SENSITIVE_TICKET_FIELDS.includes(descriptor.key),
-  ).map((descriptor) => descriptor.key);
+export const EXTERNAL_VISIBLE_FIELD_OPTIONS: readonly string[] = TICKET_FIELD_DESCRIPTORS.filter(
+  (descriptor) =>
+    !("importOnly" in descriptor && descriptor.importOnly === true) &&
+    !SENSITIVE_TICKET_FIELDS.includes(descriptor.key),
+).map((descriptor) => descriptor.key);
 
 /**
  * 外部机构未配置 visibleTicketFields（null）时使用的系统默认白名单。

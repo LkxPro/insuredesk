@@ -114,7 +114,12 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     expect(result.adminCreated).toBe(false);
 
     const roles = await prisma.role.findMany();
-    expect(roles.map((role) => role.name).sort()).toEqual(["一线客服", "外部用户", "管理员", "运营主管"]);
+    expect(roles.map((role) => role.name).sort()).toEqual([
+      "一线客服",
+      "外部用户",
+      "管理员",
+      "运营主管",
+    ]);
     const renamed = roles.find((role) => role.name === "运营主管");
     expect(renamed?.permissions).toEqual(["ticket.view"]);
   });

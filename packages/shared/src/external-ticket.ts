@@ -5,7 +5,11 @@ import { ticketStatusSchema } from "./enums";
  * 外部工单提交输入：外部用户提交工单原文的唯一必填字段。
  */
 export const externalTicketSubmitInputSchema = z.object({
-  submissionText: z.string().trim().min(1, "提交内容不能为空").max(2000, "提交内容不能超过 2000 字符"),
+  submissionText: z
+    .string()
+    .trim()
+    .min(1, "提交内容不能为空")
+    .max(2000, "提交内容不能超过 2000 字符"),
 });
 
 export type ExternalTicketSubmitInput = z.infer<typeof externalTicketSubmitInputSchema>;

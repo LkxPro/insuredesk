@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
+import { ExternalOrgDetailPage } from "@/pages/external-orgs/ExternalOrgDetailPage";
 import { ExternalOrgManagePage } from "@/pages/external-orgs/ExternalOrgManagePage";
 import { ExternalTicketDetailPage } from "@/pages/external-tickets/ExternalTicketDetailPage";
 import { ExternalTicketListPage } from "@/pages/external-tickets/ExternalTicketListPage";
@@ -102,6 +103,14 @@ export function AppRoutes() {
           element={
             <ProtectedRoute requiredPermission="ticket.create_external">
               <ExternalTicketDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/external-orgs/:id"
+          element={
+            <ProtectedRoute requiredPermission="external_org.manage">
+              <ExternalOrgDetailPage />
             </ProtectedRoute>
           }
         />

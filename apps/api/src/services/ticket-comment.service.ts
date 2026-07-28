@@ -102,7 +102,12 @@ export async function addTicketComment(
     };
 
     await tx.processLog.create({
-      data: { ...operator, action: "comment", remark: input.remark, internalOnly: input.internalOnly },
+      data: {
+        ...operator,
+        action: "comment",
+        remark: input.remark,
+        internalOnly: input.internalOnly,
+      },
     });
 
     if (claimedTransition) {

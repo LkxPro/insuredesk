@@ -1,4 +1,9 @@
 import type {
+  ExternalOrgUserAssignRoleInput,
+  ExternalOrgUserCreateData,
+  ExternalOrgUserListInput,
+  ExternalOrgUserSetActiveInput,
+  ExternalOrgUserUpdateData,
   UserAssignRoleData,
   UserCreateData,
   UserSetActiveInput,
@@ -8,6 +13,7 @@ import { isExternalRole } from "@insuredesk/shared";
 import { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { hashPassword } from "./auth.service";
+import { OrgNotFoundError } from "./external-org.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
@@ -411,4 +417,223 @@ export async function listRoleOptions({ prisma }: TicketServiceDeps) {
     system: role.system,
     external: isExternalRole(role),
   }));
+}
+
+/*
+ * 机构账号管理 — the org detail page's account operations, all behind the
+ * single external_org.manage point (no user.* required). Every entry below is
+ * fenced to 外部账号/外部角色: without that fence the point would double as a
+ * general user-management backdoor onto internal accounts.
+ */
+
+/** The target of an org-account operation is not an 外部账号. */
+export class ExternalAccountOnlyError extends Error {
+  constructor() {
+    super("该用户不是外部机构账号");
+    this.name = "ExternalAccountOnlyError";
+  }
+}
+
+/** 机构账号 can only hold 外部角色 — an internal role would drop the org binding. */
+export class ExternalRoleOnlyError extends Error {
+  constructor() {
+    super("只能选择外部角色");
+    this.name = "ExternalRoleOnlyError";
+  }
+}
+
+/** Judged on the stored permission array, so 管理员 (system) counts as internal. */
+async function loadExternalAccount(prisma: TicketServiceDeps["prisma"], id: string) {
+  const target = await prisma.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      externalOrgId: true,
+      role: { select: { system: true, permissions: true } },
+    },
+  });
+  if (!target) {
+    throw new UserNotFoundError();
+  }
+  if (!isExternalRole(target.role)) {
+    throw new ExternalAccountOnlyError();
+  }
+  return target;
+}
+
+/** The org detail page's account table — no team column, accounts have none. */
+export async function listOrgUsers({ prisma }: TicketServiceDeps, input: ExternalOrgUserListInput) {
+  const org = await prisma.externalOrg.findUnique({
+    where: { id: input.orgId },
+    select: { id: true },
+  });
+  if (!org) {
+    throw new OrgNotFoundError();
+  }
+  const rows = await prisma.user.findMany({
+    where: { externalOrgId: input.orgId },
+    include: { role: { select: { name: true } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    username: row.username,
+    name: row.name,
+    email: row.email,
+    active: row.active,
+    roleId: row.roleId,
+    roleName: row.role.name,
+    createdAt: row.createdAt.toISOString(),
+  }));
+}
+
+/** New 机构账号, anchored to the page's org — a 停用 org takes on no new accounts. */
+export async function createOrgUser(
+  { prisma }: TicketServiceDeps,
+  input: ExternalOrgUserCreateData,
+) {
+  const role = await loadRoleForOrgPairing(prisma, input.roleId);
+  if (!isExternalRole(role)) {
+    throw new ExternalRoleOnlyError();
+  }
+  const externalOrgId = await resolveExternalOrg(prisma, role, input.orgId);
+
+  const passwordHash = await hashPassword(input.password);
+  try {
+    const created = await prisma.user.create({
+      data: {
+        username: input.username,
+        name: input.name,
+        email: input.email,
+        team: null,
+        roleId: input.roleId,
+        externalOrgId,
+        passwordHash,
+        active: true,
+      },
+    });
+    return { id: created.id, name: created.name };
+  } catch (error) {
+    throwOnDuplicateIdentity(error);
+  }
+}
+
+/**
+ * Edit a 机构账号: basic info, optional password reset (kills the target's
+ * sessions, same as updateUser), and org migration — a 停用 org is refused as
+ * a new destination but an existing binding to one survives.
+ */
+export async function updateOrgUser(
+  { prisma }: TicketServiceDeps,
+  input: ExternalOrgUserUpdateData,
+) {
+  const target = await loadExternalAccount(prisma, input.id);
+  const externalOrgId = await resolveExternalOrg(
+    prisma,
+    target.role,
+    input.externalOrgId,
+    target.externalOrgId,
+  );
+
+  const data: Prisma.UserUncheckedUpdateInput = {
+    username: input.username,
+    name: input.name,
+    email: input.email,
+    externalOrgId,
+  };
+  if (input.password !== null) {
+    data.passwordHash = await hashPassword(input.password);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    let updated: { id: string; name: string };
+    try {
+      updated = await tx.user.update({
+        where: { id: input.id },
+        data,
+        select: { id: true, name: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        throw new UserNotFoundError();
+      }
+      throwOnDuplicateIdentity(error);
+    }
+    if (input.password !== null) {
+      await tx.session.deleteMany({ where: { userId: input.id } });
+    }
+    return updated;
+  });
+}
+
+/**
+ * 禁用/启用 a 机构账号 — same semantics as setUserActive (disable kills live
+ * sessions), minus the last-admin check: an 外部账号 is never the system role.
+ */
+export async function setOrgUserActive(
+  { prisma }: TicketServiceDeps,
+  actor: AuthenticatedUser,
+  input: ExternalOrgUserSetActiveInput,
+) {
+  if (input.id === actor.id && !input.active) {
+    throw new SelfDisableError();
+  }
+  await loadExternalAccount(prisma, input.id);
+
+  return prisma.$transaction(async (tx) => {
+    let updated: { id: string; name: string; active: boolean };
+    try {
+      updated = await tx.user.update({
+        where: { id: input.id },
+        data: { active: input.active },
+        select: { id: true, name: true, active: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        throw new UserNotFoundError();
+      }
+      throw error;
+    }
+    if (!input.active) {
+      await tx.session.deleteMany({ where: { userId: input.id } });
+    }
+    return updated;
+  });
+}
+
+/** 换角色 within 外部角色 only; the org binding stays put, 停用 org included. */
+export async function assignOrgUserRole(
+  { prisma }: TicketServiceDeps,
+  input: ExternalOrgUserAssignRoleInput,
+) {
+  const target = await loadExternalAccount(prisma, input.id);
+  const role = await loadRoleForOrgPairing(prisma, input.roleId);
+  if (!isExternalRole(role)) {
+    throw new ExternalRoleOnlyError();
+  }
+
+  try {
+    const updated = await prisma.user.update({
+      where: { id: input.id },
+      data: { roleId: input.roleId, externalOrgId: target.externalOrgId },
+      select: { id: true, name: true },
+    });
+    return { ...updated, roleName: role.name };
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      throw new UserNotFoundError();
+    }
+    throw error;
+  }
+}
+
+/** Role picker for the org detail page's dialogs — 外部角色 only. */
+export async function listExternalRoleOptions({ prisma }: TicketServiceDeps) {
+  const roles = await prisma.role.findMany({
+    select: { id: true, name: true, system: true, permissions: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  return roles
+    .filter((role) => isExternalRole(role))
+    .map((role) => ({ id: role.id, name: role.name }));
 }

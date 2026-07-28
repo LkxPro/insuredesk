@@ -63,7 +63,7 @@ describe("ticket assignment (Testcontainers)", () => {
         roleName,
         permissions,
         requiredTicketFields: [],
-      externalOrgId: null,
+        externalOrgId: null,
       },
       sessionToken: null,
     });
