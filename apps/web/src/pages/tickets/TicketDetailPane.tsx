@@ -15,6 +15,7 @@ import { AssignTicketDialog } from "./AssignTicketDialog";
 import { DeleteTicketDialog } from "./DeleteTicketDialog";
 import { ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
+import { SubmissionTextPane } from "./SubmissionTextPane";
 import { formDefaults } from "./TicketDetailFields";
 import {
   type TicketFormValues,
@@ -34,6 +35,10 @@ import type { TicketDetail } from "./ticket-detail";
  * edit 留痕（投诉等级变更时服务端按新等级重算 dueAt 与跟进/首响要求）。取消与
  * 保存都回只读、不离开分栏。有未保存改动时三个出口——关闭详情、↑/↓ 或点窄列切
  * 单、取消——都先过「丢弃修改？」。
+ *
+ * 右栏随模式自动切换：只读态显示时间线；编辑态下外部件（source=external_channel
+ * 携带 submissionText）右栏自动切为工单原文对照（客服一边看原文一边补全左栏
+ * 表单），非外部件编辑态右栏保持时间线。
  */
 
 /** 未保存改动被拦下时，确认后要继续做的事。 */
@@ -179,10 +184,17 @@ export function TicketDetailPane({
             )}
             <TicketInfoColumn ticket={ticket} editing={editing} form={form} />
           </div>
-          <TicketTimelineColumn
-            ticket={ticket}
-            canComment={hasPermission("ticket.process") && isTicketInFlight(ticket.status)}
-          />
+          {editing &&
+          ticket.source === "external_channel" &&
+          ticket.submissionText != null &&
+          ticket.submissionText !== "" ? (
+            <SubmissionTextPane text={ticket.submissionText} />
+          ) : (
+            <TicketTimelineColumn
+              ticket={ticket}
+              canComment={hasPermission("ticket.process") && isTicketInFlight(ticket.status)}
+            />
+          )}
         </div>
       )}
 
