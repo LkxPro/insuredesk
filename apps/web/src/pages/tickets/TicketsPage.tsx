@@ -23,6 +23,7 @@ import {
   Download,
   Plus,
   Search,
+  SlidersHorizontal,
   Ticket,
   Upload,
   UserPlus,
@@ -62,6 +63,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
 import { CreatedRangeFilter } from "./CreatedRangeFilter";
@@ -69,8 +71,9 @@ import { MultiSelectFilter } from "./MultiSelectFilter";
 import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
-import { TicketDetailDialog } from "./TicketDetailDialog";
+import { TicketDetailPane } from "./TicketDetailPane";
 import { TicketImportDialog } from "./TicketImportDialog";
+import { TicketNarrowList } from "./TicketNarrowList";
 import { downloadTicketExport } from "./ticket-export";
 
 /**
@@ -81,11 +84,16 @@ import { downloadTicketExport } from "./ticket-export";
  * edited query string degrades to defaults instead of crashing. Data scope is
  * enforced server-side; this page renders whatever the viewer may see.
  *
+ * 两态主从分栏 (issue #164): /tickets 是默认态——全宽表格，筛选/批量操作/导入
+ * 导出原样在位。/tickets/:id 是处理态——同一份列表数据压缩成左侧窄列（客户名/
+ * 状态/处理时限），右侧 ~75% 是 TicketDetailPane。压缩态下筛选器收起为一行摘要
+ * ＋展开按钮（筛选值仍在 URL 里，切态不丢），批量选择与导入导出退场：处理态的
+ * 屏幕预算属于详情。窄屏 (<1024px) 降级为详情覆盖窄列，桌面优先。
+ *
  * Creation stays a modal dialog over this page, driven by the /tickets/new
- * route (`createOpen`), shown only to holders of ticket.create. The detail
- * reads the same way: /tickets/:id renders this list with TicketDetailDialog
- * open, and the filter query string rides along both ways so closing the
- * dialog lands on the list exactly as it was.
+ * route (`createOpen`), shown only to holders of ticket.create. The filter
+ * query string rides along into /tickets/:id and back, so closing the detail
+ * lands on the list exactly as it was.
  *
  * Assignment adds two permission-gated entry points: a per-row 分配/改派
  * action (ticket.assign) and multi-select checkboxes feeding 批量分配
@@ -267,6 +275,20 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [importOpen, setImportOpen] = useState(false);
   // 建单成功留在列表：新建行高亮，直到下一次建单或离开本页
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  // 处理态的筛选器折叠：默认收起（屏幕预算给详情），展开后保持展开
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const detailOpen = detailId !== undefined;
+  /** 收起态摘要用的「有几个筛选条件在生效」——搜索词与创建时间区间各算一个。 */
+  const activeFilterCount = [
+    query.status?.length,
+    query.channelId?.length,
+    query.categoryId?.length,
+    query.completionStatusId?.length,
+    query.complaintLevel?.length,
+    query.search ? 1 : 0,
+    query.createdFrom || query.createdTo ? 1 : 0,
+  ].filter((count) => (count ?? 0) > 0).length;
 
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
@@ -391,11 +413,14 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className={cn("flex min-w-0 flex-1 flex-col", detailOpen ? "min-h-0 gap-3" : "gap-6")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">工单管理</h1>
-          <p className="text-sm text-muted-foreground">客诉工单的创建、分配与跟进。</p>
+          {/* 处理态把这行纵向预算让给详情 */}
+          {!detailOpen && (
+            <p className="text-sm text-muted-foreground">客诉工单的创建、分配与跟进。</p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {canExport && (
@@ -433,84 +458,105 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <MultiSelectFilter
-          label="状态"
-          values={query.status ?? []}
-          options={TICKET_DISPLAY_STATUSES.map((status) => ({
-            value: status,
-            label: TICKET_STATUS_LABELS[status],
-          }))}
-          onChange={(values) => setParam("status", serializeSelection(values, []))}
-        />
-        <MultiSelectFilter
-          label={TICKET_FIELDS.channelId.overrides.listLabel}
-          values={query.channelId ?? []}
-          options={channelOptions.map((channel) => ({
-            value: channel.id,
-            label: channel.active ? channel.name : `${channel.name}（已停用）`,
-          }))}
-          onChange={(values) => setParam("channel", serializeSelection(values, []))}
-        />
-        <MultiSelectFilter
-          label={TICKET_FIELDS.categoryId.overrides.listLabel}
-          values={query.categoryId ?? []}
-          options={categoryOptions.map((category) => ({
-            value: category.id,
-            label: category.active ? category.name : `${category.name}（已停用）`,
-          }))}
-          onChange={(values) => setParam("category", serializeSelection(values, []))}
-        />
-        <MultiSelectFilter
-          label={TICKET_FIELDS.completionStatusId.label}
-          values={query.completionStatusId ?? []}
-          options={completionStatusOptions.map((status) => ({
-            value: status.id,
-            label: status.active ? status.name : `${status.name}（已停用）`,
-          }))}
-          onChange={(values) => setParam("completionStatus", serializeSelection(values, []))}
-        />
-        <MultiSelectFilter
-          label={TICKET_FIELDS.complaintLevel.label}
-          values={query.complaintLevel ?? []}
-          options={COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }))}
-          onChange={(values) => setParam("level", serializeSelection(values, []))}
-        />
-        {/* 来源有缺省（排除归档单）：全选四个来源 ≠ 缺省，仍写入 URL */}
-        <MultiSelectFilter
-          label="来源"
-          values={query.source}
-          options={TICKET_SOURCES.map((source) => ({
-            value: source,
-            label: TICKET_SOURCE_LABELS[source],
-          }))}
-          onChange={(values) =>
-            setParam("source", serializeSelection(values, DEFAULT_TICKET_SOURCE_FILTER))
-          }
-        />
-        <CreatedRangeFilter
-          range={{ createdFrom: query.createdFrom, createdTo: query.createdTo }}
-          onChange={setCreatedRange}
-        />
-        <form
-          className="relative"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setParam("q", searchDraft.trim() || null);
-          }}
-        >
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.target.value)}
-            placeholder="工单号 / 客户姓名 / 保单号 / 电话"
-            className="h-8 w-60 pl-8"
-          />
-        </form>
-      </div>
+      {/* 处理态默认收起筛选器：URL 里的筛选值不变，只是不占屏 */}
+      {detailOpen && !filtersOpen && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>
+            共 {total} 条
+            {activeFilterCount > 0 ? ` · ${activeFilterCount} 个筛选条件` : " · 未筛选"}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setFiltersOpen(true)}>
+            <SlidersHorizontal data-icon="inline-start" />
+            展开筛选
+          </Button>
+        </div>
+      )}
 
-      {canBatchAssign && selected.size > 0 && (
+      {(!detailOpen || filtersOpen) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {detailOpen && (
+            <Button variant="ghost" size="sm" onClick={() => setFiltersOpen(false)}>
+              收起筛选
+            </Button>
+          )}
+          <MultiSelectFilter
+            label="状态"
+            values={query.status ?? []}
+            options={TICKET_DISPLAY_STATUSES.map((status) => ({
+              value: status,
+              label: TICKET_STATUS_LABELS[status],
+            }))}
+            onChange={(values) => setParam("status", serializeSelection(values, []))}
+          />
+          <MultiSelectFilter
+            label={TICKET_FIELDS.channelId.overrides.listLabel}
+            values={query.channelId ?? []}
+            options={channelOptions.map((channel) => ({
+              value: channel.id,
+              label: channel.active ? channel.name : `${channel.name}（已停用）`,
+            }))}
+            onChange={(values) => setParam("channel", serializeSelection(values, []))}
+          />
+          <MultiSelectFilter
+            label={TICKET_FIELDS.categoryId.overrides.listLabel}
+            values={query.categoryId ?? []}
+            options={categoryOptions.map((category) => ({
+              value: category.id,
+              label: category.active ? category.name : `${category.name}（已停用）`,
+            }))}
+            onChange={(values) => setParam("category", serializeSelection(values, []))}
+          />
+          <MultiSelectFilter
+            label={TICKET_FIELDS.completionStatusId.label}
+            values={query.completionStatusId ?? []}
+            options={completionStatusOptions.map((status) => ({
+              value: status.id,
+              label: status.active ? status.name : `${status.name}（已停用）`,
+            }))}
+            onChange={(values) => setParam("completionStatus", serializeSelection(values, []))}
+          />
+          <MultiSelectFilter
+            label={TICKET_FIELDS.complaintLevel.label}
+            values={query.complaintLevel ?? []}
+            options={COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }))}
+            onChange={(values) => setParam("level", serializeSelection(values, []))}
+          />
+          {/* 来源有缺省（排除归档单）：全选四个来源 ≠ 缺省，仍写入 URL */}
+          <MultiSelectFilter
+            label="来源"
+            values={query.source}
+            options={TICKET_SOURCES.map((source) => ({
+              value: source,
+              label: TICKET_SOURCE_LABELS[source],
+            }))}
+            onChange={(values) =>
+              setParam("source", serializeSelection(values, DEFAULT_TICKET_SOURCE_FILTER))
+            }
+          />
+          <CreatedRangeFilter
+            range={{ createdFrom: query.createdFrom, createdTo: query.createdTo }}
+            onChange={setCreatedRange}
+          />
+          <form
+            className="relative"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setParam("q", searchDraft.trim() || null);
+            }}
+          >
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              placeholder="工单号 / 客户姓名 / 保单号 / 电话"
+              className="h-8 w-60 pl-8"
+            />
+          </form>
+        </div>
+      )}
+
+      {!detailOpen && canBatchAssign && selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/50 px-3 py-2 text-sm">
           <span>已选 {selected.size} 个工单</span>
           <Button
@@ -550,6 +596,26 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           <AlertTitle>工单列表加载失败</AlertTitle>
           <AlertDescription>{listQuery.error.message}</AlertDescription>
         </Alert>
+      ) : detailOpen ? (
+        // 处理态：窄列 + 详情。窄屏 (<1024px) 无 lg → 详情占满，窄列让位
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]">
+          <div className="hidden min-h-0 rounded-md border lg:flex lg:flex-col">
+            <TicketNarrowList
+              items={items}
+              selectedId={detailId ?? ""}
+              onSelect={(id) => navigate(`/tickets/${id}${location.search}`, { replace: true })}
+            />
+          </div>
+          <div className="flex min-h-0 flex-col rounded-md border">
+            <TicketDetailPane
+              ticketId={detailId ?? ""}
+              neighbors={{ prev: prevTicketId, next: nextTicketId }}
+              // replace: 翻单是扫描动作，Back 应回到进入详情前那一步，不重放每一站
+              onSwitch={(id) => navigate(`/tickets/${id}${location.search}`, { replace: true })}
+              onClose={() => navigate(`/tickets${location.search}`)}
+            />
+          </div>
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <Table>
@@ -714,7 +780,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         </div>
       )}
 
-      {!listQuery.error && (
+      {!listQuery.error && !detailOpen && (
         <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
           <span>
             共 {total} 条 · 第 {query.page} / {totalPages} 页
@@ -747,21 +813,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             if (!open) navigate("/tickets");
           }}
           onCreated={(ticket) => setHighlightId(ticket.id)}
-        />
-      )}
-
-      {detailId && (
-        <TicketDetailDialog
-          open
-          ticketId={detailId}
-          prevTicketId={prevTicketId}
-          nextTicketId={nextTicketId}
-          // replace: arrow browsing is transient scanning — Back should return
-          // to wherever the detail was entered from, not replay every stop
-          onNavigate={(id) => navigate(`/tickets/${id}${location.search}`, { replace: true })}
-          onOpenChange={(open) => {
-            if (!open) navigate(`/tickets${location.search}`);
-          }}
         />
       )}
 
