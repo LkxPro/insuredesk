@@ -36,7 +36,9 @@ describe("buildTicketListUrl", () => {
   });
 
   it("urgent card returns level=特急投诉", () => {
-    expect(buildTicketListUrl("urgent", {})).toBe("/tickets?level=%E7%89%B9%E6%80%A5%E6%8A%95%E8%AF%89");
+    expect(buildTicketListUrl("urgent", {})).toBe(
+      "/tickets?level=%E7%89%B9%E6%80%A5%E6%8A%95%E8%AF%89",
+    );
   });
 
   it("includes createdFrom when present", () => {

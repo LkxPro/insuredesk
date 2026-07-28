@@ -43,7 +43,7 @@ export const DEFAULT_EXTERNAL_VISIBLE_FIELDS: readonly string[] = [
  * id for matching/linking, timestamps for sorting/pagination, status for display,
  * source/externalOrgId/creatorId for internal logic.
  */
-const SYSTEM_FIELDS = [
+const SYSTEM_FIELDS: readonly string[] = [
   "id",
   "createdAt",
   "updatedAt",
@@ -76,7 +76,7 @@ export function filterVisibleFields<T extends Record<string, unknown>>(
   const result = { ...ticket } as Record<string, unknown>;
 
   for (const key of Object.keys(result)) {
-    const isSystemField = SYSTEM_FIELDS.includes(key as any);
+    const isSystemField = SYSTEM_FIELDS.includes(key);
     const isInWhitelist = whitelistSet.has(key);
     const isSensitive = SENSITIVE_TICKET_FIELDS.includes(key);
 

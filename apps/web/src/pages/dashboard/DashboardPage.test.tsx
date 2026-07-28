@@ -162,15 +162,7 @@ describe("指标卡", () => {
     renderDashboard();
 
     expect(await screen.findByText("工单总数")).toBeInTheDocument();
-    for (const label of [
-      "未分配",
-      "已分配",
-      "处理中",
-      "已完结",
-      "待超时",
-      "已超时",
-      "特急工单",
-    ]) {
+    for (const label of ["未分配", "已分配", "处理中", "已完结", "待超时", "已超时", "特急工单"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     expect(screen.getByText("42")).toBeInTheDocument(); // total
@@ -268,7 +260,10 @@ describe("卡片跳转工单管理", () => {
     renderDashboard();
 
     const urgentCard = (await screen.findByText("特急工单")).closest("a");
-    expect(urgentCard).toHaveAttribute("href", "/tickets?level=%E7%89%B9%E6%80%A5%E6%8A%95%E8%AF%89");
+    expect(urgentCard).toHaveAttribute(
+      "href",
+      "/tickets?level=%E7%89%B9%E6%80%A5%E6%8A%95%E8%AF%89",
+    );
   });
 
   it("cards include createdFrom/createdTo when dashboard has a time range", async () => {

@@ -461,7 +461,10 @@ describe("user + role management (Testcontainers)", () => {
   describe("外部角色封锁 (acceptance: 外部角色不可见、不可造、不可改)", () => {
     it("external roles do not appear in role.list", async () => {
       const externalRole = await prisma.role.create({
-        data: { name: "外部用户", permissions: ["ticket.create_external", "ticket.process_external"] },
+        data: {
+          name: "外部用户",
+          permissions: ["ticket.create_external", "ticket.process_external"],
+        },
       });
 
       const list = await admin().role.list();
@@ -472,7 +475,10 @@ describe("user + role management (Testcontainers)", () => {
     });
 
     it("updatePermissions rejects external permission points for any role", async () => {
-      const normalRole = await admin().role.create({ name: "测试角色", permissions: ["ticket.view"] });
+      const normalRole = await admin().role.create({
+        name: "测试角色",
+        permissions: ["ticket.view"],
+      });
 
       await expect(
         admin().role.updatePermissions({
@@ -493,7 +499,10 @@ describe("user + role management (Testcontainers)", () => {
 
     it("external roles refuse rename, permission edits, required fields, and deletion", async () => {
       const externalRole = await prisma.role.create({
-        data: { name: "外部用户", permissions: ["ticket.create_external", "ticket.process_external"] },
+        data: {
+          name: "外部用户",
+          permissions: ["ticket.create_external", "ticket.process_external"],
+        },
       });
 
       await expect(
@@ -533,7 +542,10 @@ describe("user + role management (Testcontainers)", () => {
 
     it("requirePermission path unchanged: external accounts can still submit tickets and comments", async () => {
       const externalRole = await prisma.role.create({
-        data: { name: "外部用户", permissions: ["ticket.create_external", "ticket.process_external"] },
+        data: {
+          name: "外部用户",
+          permissions: ["ticket.create_external", "ticket.process_external"],
+        },
       });
       const externalUser = await prisma.user.create({
         data: {
