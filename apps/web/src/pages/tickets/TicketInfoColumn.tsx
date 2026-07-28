@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { formatDateTime } from "@/lib/datetime";
 import { StatusBadge } from "./StatusBadge";
+import { SubmissionTextCollapse } from "./SubmissionTextCollapse";
 import { TicketDetailField } from "./TicketDetailFields";
 import type { TicketFormValues } from "./TicketFormFields";
 import type { TicketDetail } from "./ticket-detail";
@@ -88,14 +89,14 @@ export function TicketInfoColumn({
         {field("contactTime")}
         {field("contactId")}
         <div className="sm:col-span-2 xl:col-span-3">{field("customerRequest")}</div>
-        {ticket.submissionText != null && ticket.submissionText !== "" && (
-          <div className="sm:col-span-2 xl:col-span-3">
-            <Item label="工单原文">
-              <pre className="whitespace-pre-wrap text-sm">{ticket.submissionText}</pre>
-            </Item>
-          </div>
-        )}
       </Section>
+
+      {!editing &&
+        ticket.source === "external_channel" &&
+        ticket.submissionText != null &&
+        ticket.submissionText !== "" && (
+          <SubmissionTextCollapse text={ticket.submissionText} />
+        )}
 
       <Section title="分类与等级">
         {field("categoryId")}
