@@ -280,4 +280,18 @@ describe("configuring roles", () => {
     expect(await screen.findByRole("button", { name: "确认删除" })).toBeDisabled();
     expect(screen.getByText(/仍有 3 个用户/)).toBeInTheDocument();
   });
+
+  it("external permissions do not appear in the permission checklist", async () => {
+    renderRolesPage();
+    await screen.findByText("质检专员");
+
+    fireEvent.click(screen.getByRole("button", { name: "配置权限" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // External permissions should not be in the checklist
+    expect(within(dialog).queryByText(/提交外部工单/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/添加外部留言/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/ticket.create_external/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/ticket.process_external/)).not.toBeInTheDocument();
+  });
 });

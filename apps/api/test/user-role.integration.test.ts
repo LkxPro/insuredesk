@@ -458,6 +458,105 @@ describe("user + role management (Testcontainers)", () => {
     });
   });
 
+  describe("外部角色封锁 (acceptance: 外部角色不可见、不可造、不可改)", () => {
+    it("external roles do not appear in role.list", async () => {
+      const externalRole = await prisma.role.create({
+        data: { name: "外部用户", permissions: ["ticket.create_external", "ticket.process_external"] },
+      });
+
+      const list = await admin().role.list();
+      expect(list.find((role) => role.id === externalRole.id)).toBeUndefined();
+
+      // Clean up
+      await prisma.role.delete({ where: { id: externalRole.id } });
+    });
+
+    it("updatePermissions rejects external permission points for any role", async () => {
+      const normalRole = await admin().role.create({ name: "测试角色", permissions: ["ticket.view"] });
+
+      await expect(
+        admin().role.updatePermissions({
+          id: normalRole.id,
+          permissions: ["ticket.view", "ticket.create_external"],
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("外部权限点"),
+      });
+
+      // Verify unchanged
+      const row = await prisma.role.findUniqueOrThrow({ where: { id: normalRole.id } });
+      expect(row.permissions).toEqual(["ticket.view"]);
+
+      await admin().role.delete({ id: normalRole.id });
+    });
+
+    it("external roles refuse rename, permission edits, required fields, and deletion", async () => {
+      const externalRole = await prisma.role.create({
+        data: { name: "外部用户", permissions: ["ticket.create_external", "ticket.process_external"] },
+      });
+
+      await expect(
+        admin().role.rename({ id: externalRole.id, name: "外部用户改名" }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("外部角色"),
+      });
+
+      await expect(
+        admin().role.updatePermissions({ id: externalRole.id, permissions: ["ticket.view"] }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("外部角色"),
+      });
+
+      await expect(
+        admin().role.updateRequiredFields({ id: externalRole.id, requiredTicketFields: [] }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("外部角色"),
+      });
+
+      await expect(admin().role.delete({ id: externalRole.id })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("外部角色"),
+      });
+
+      // Verify untouched
+      const row = await prisma.role.findUniqueOrThrow({ where: { id: externalRole.id } });
+      expect(row.name).toBe("外部用户");
+      expect(row.permissions).toEqual(["ticket.create_external", "ticket.process_external"]);
+
+      // Clean up directly via Prisma
+      await prisma.role.delete({ where: { id: externalRole.id } });
+    });
+
+    it("requirePermission path unchanged: external accounts can still submit tickets and comments", async () => {
+      const externalRole = await prisma.role.create({
+        data: { name: "外部用户", permissions: ["ticket.create_external", "ticket.process_external"] },
+      });
+      const externalUser = await prisma.user.create({
+        data: {
+          username: "external-probe",
+          passwordHash: "not-used-in-this-test",
+          name: "外部测试账号",
+          roleId: externalRole.id,
+        },
+      });
+
+      // External permissions still validate through requirePermission
+      const caller = callerWith(externalUser, "外部用户", [
+        "ticket.create_external",
+        "ticket.process_external",
+      ]);
+      expect(caller).toBeDefined();
+
+      // Clean up
+      await prisma.user.delete({ where: { id: externalUser.id } });
+      await prisma.role.delete({ where: { id: externalRole.id } });
+    });
+  });
+
   describe("系统角色锁 (acceptance: 管理员全锁,出厂角色与手建角色无差别)", () => {
     it("管理员 refuses rename, permission edits, and deletion", async () => {
       const role = seeded.roles.admin;
