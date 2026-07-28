@@ -83,6 +83,7 @@ export function TicketDetailPane({
   });
 
   // 切单要落回只读：翻单是浏览动作，不该把上一单的编辑态带过去
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ticketId 是触发重置的信号，不在 effect 体内使用
   useEffect(() => {
     setEditing(false);
     setPendingExit(null);

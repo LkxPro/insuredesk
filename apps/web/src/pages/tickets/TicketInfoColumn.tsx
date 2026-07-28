@@ -94,9 +94,7 @@ export function TicketInfoColumn({
       {!editing &&
         ticket.source === "external_channel" &&
         ticket.submissionText != null &&
-        ticket.submissionText !== "" && (
-          <SubmissionTextCollapse text={ticket.submissionText} />
-        )}
+        ticket.submissionText !== "" && <SubmissionTextCollapse text={ticket.submissionText} />}
 
       <Section title="分类与等级">
         {field("categoryId")}
