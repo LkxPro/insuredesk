@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { isTicketInFlight, type TicketEditData } from "@insuredesk/shared";
 import { AlertCircle, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { DiscardChangesDialog } from "@/components/DiscardChangesDialog";
@@ -58,6 +58,7 @@ export function TicketDetailPane({
 }) {
   const { hasPermission } = useAuth();
   const utils = trpc.useUtils();
+  const paneRef = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState(false);
   const [pendingExit, setPendingExit] = useState<PendingExit | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -87,6 +88,8 @@ export function TicketDetailPane({
   useEffect(() => {
     setEditing(false);
     setPendingExit(null);
+    // ↑/↓ 翻单靠 keydown 冒泡到本区，焦点留在窄列按钮上时事件到不了这里
+    paneRef.current?.focus({ preventScroll: true });
   }, [ticketId]);
 
   const dirty = editing && form.formState.isDirty;
@@ -130,8 +133,10 @@ export function TicketDetailPane({
 
   return (
     <section
+      ref={paneRef}
       aria-label="工单详情"
-      className="flex min-h-0 flex-1 flex-col"
+      className="flex min-h-0 flex-1 flex-col outline-hidden"
+      tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
         // 输入控件内的方向键归控件自己（光标移动、Select 选项浏览）
