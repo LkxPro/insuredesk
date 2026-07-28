@@ -9,6 +9,7 @@ export * from "./external-ticket";
 export * from "./health";
 export * from "./notification";
 export * from "./permissions";
+export * from "./phone-tokenize";
 export * from "./role";
 export * from "./schedule";
 export * from "./shift-type";
