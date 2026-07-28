@@ -214,6 +214,17 @@ describe("configuring roles", () => {
     );
   });
 
+  it("新增角色 dialog does not show external permissions", async () => {
+    renderRolesPage();
+    fireEvent.click(await screen.findByRole("button", { name: "新增角色" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/提交外部工单/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/添加外部留言/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/ticket.create_external/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/ticket.process_external/)).not.toBeInTheDocument();
+  });
+
   it("配置权限 starts from the role's current set and saves the delta", async () => {
     renderRolesPage();
     await screen.findByText("质检专员");
