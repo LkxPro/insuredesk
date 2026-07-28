@@ -27,6 +27,7 @@ function renderList(overrides: Record<string, unknown> = {}) {
     trpc: {
       "externalOrg.list": [ORG],
       "externalOrg.get": ORG,
+      "externalOrg.listUsers": [],
       "channel.list": CHANNELS,
       ...overrides,
     },

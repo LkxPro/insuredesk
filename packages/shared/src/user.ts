@@ -103,3 +103,54 @@ export const userAssignRoleInputSchema = z.object({
 });
 export type UserAssignRoleInput = z.input<typeof userAssignRoleInputSchema>;
 export type UserAssignRoleData = z.output<typeof userAssignRoleInputSchema>;
+
+/**
+ * 机构详情页的账号管理 (external_org.manage) — a parallel set of contracts
+ * rather than the user.* ones: no team field, roles are external-only, and the
+ * account's org is anchored to the page's org on create.
+ */
+export const externalOrgUserListInputSchema = z.object({
+  orgId: z.string().min(1),
+});
+export type ExternalOrgUserListInput = z.infer<typeof externalOrgUserListInputSchema>;
+
+export const externalOrgUserCreateInputSchema = z.object({
+  orgId: z.string().min(1),
+  username: usernameSchema,
+  password: passwordSchema,
+  name: displayNameSchema,
+  email: optionalEmailSchema,
+  roleId: z.string().min(1, "请选择角色"),
+});
+export type ExternalOrgUserCreateInput = z.input<typeof externalOrgUserCreateInputSchema>;
+export type ExternalOrgUserCreateData = z.output<typeof externalOrgUserCreateInputSchema>;
+
+/**
+ * 编辑机构账号: basic info + optional password reset + org migration. The org
+ * is required — an external account can move between orgs but never drop one.
+ */
+export const externalOrgUserUpdateInputSchema = z.object({
+  id: z.string().min(1),
+  username: usernameSchema,
+  name: displayNameSchema,
+  email: optionalEmailSchema,
+  password: z
+    .union([passwordSchema, z.literal(""), z.null(), z.undefined()])
+    .transform((value) => (value ? value : null)),
+  externalOrgId: z.string().min(1, "请选择所属外部机构"),
+});
+export type ExternalOrgUserUpdateInput = z.input<typeof externalOrgUserUpdateInputSchema>;
+export type ExternalOrgUserUpdateData = z.output<typeof externalOrgUserUpdateInputSchema>;
+
+export const externalOrgUserSetActiveInputSchema = z.object({
+  id: z.string().min(1),
+  active: z.boolean(),
+});
+export type ExternalOrgUserSetActiveInput = z.infer<typeof externalOrgUserSetActiveInputSchema>;
+
+/** 换角色 stays within 外部角色 and never touches the org binding. */
+export const externalOrgUserAssignRoleInputSchema = z.object({
+  id: z.string().min(1),
+  roleId: z.string().min(1, "请选择角色"),
+});
+export type ExternalOrgUserAssignRoleInput = z.infer<typeof externalOrgUserAssignRoleInputSchema>;
