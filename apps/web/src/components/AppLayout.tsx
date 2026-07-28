@@ -103,7 +103,7 @@ export function AppLayout() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset className="min-w-0">
+      <SidebarInset className="h-svh min-w-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
@@ -111,7 +111,7 @@ export function AppLayout() {
           <TodoBell />
           <NotificationBell />
         </header>
-        <main className="flex min-w-0 flex-1 flex-col p-4 md:p-6">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto p-4 md:p-6">
           <Outlet />
         </main>
       </SidebarInset>

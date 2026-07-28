@@ -88,7 +88,7 @@ export function ExternalTicketListPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="flex flex-1 flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">我的工单</h1>
@@ -137,9 +137,10 @@ export function ExternalTicketListPage() {
           <AlertDescription>{listQuery.error.message}</AlertDescription>
         </Alert>
       ) : (
-        <div className="overflow-x-auto rounded-md border">
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
           <Table>
-            <TableHeader>
+            {/* 表头随行滚动会丢失列语义，钉在滚动容器顶部 */}
+            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
               <TableRow>
                 {columns.map((key) => (
                   <TableHead key={key}>{externalFieldLabel(key, "listLabel")}</TableHead>

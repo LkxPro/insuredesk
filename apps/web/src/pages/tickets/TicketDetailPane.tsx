@@ -175,7 +175,7 @@ export function TicketDetailPane({
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <div className="min-h-0 overflow-y-auto p-4 xl:border-r">
+          <div className="overflow-y-auto p-4 xl:min-h-0 xl:border-r">
             {edit.error && (
               <Alert variant="destructive" className="mb-4">
                 <AlertCircle />

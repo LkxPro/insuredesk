@@ -18,12 +18,12 @@ export function TicketTimelineColumn({
   canComment: boolean;
 }) {
   return (
-    <div className="flex min-h-0 flex-col">
+    <div className="flex flex-col xl:min-h-0">
       <h3 className="m-0 shrink-0 border-b px-4 py-3 text-sm font-medium text-muted-foreground">
         处理记录
       </h3>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="p-4 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
         {ticket.processLogs.length === 0 ? (
           <p className="m-0 text-sm text-muted-foreground">还没有处理记录。</p>
         ) : (

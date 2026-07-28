@@ -413,7 +413,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   }
 
   return (
-    <div className={cn("flex min-w-0 flex-1 flex-col", detailOpen ? "min-h-0 gap-3" : "gap-6")}>
+    <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", detailOpen ? "gap-3" : "gap-6")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">工单管理</h1>
@@ -617,9 +617,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           </div>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-md border">
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
           <Table>
-            <TableHeader>
+            {/* 表头随行滚动会丢失列语义，钉在滚动容器顶部 */}
+            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
               <TableRow>
                 {canBatchAssign && (
                   <TableHead className="w-10">

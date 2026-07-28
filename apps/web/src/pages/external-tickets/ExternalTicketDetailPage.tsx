@@ -79,7 +79,7 @@ export function ExternalTicketDetailPage() {
   const data = detailQuery.data;
 
   return (
-    <div className="flex flex-1 flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto xl:min-h-full xl:overflow-visible">
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" asChild>
           <Link to="/external-tickets">
