@@ -22,14 +22,12 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
-import { ExternalOrgField, isExternalRoleOption } from "./ExternalOrgField";
 import type { UserRow } from "./UsersPage";
 
 /**
- * 分配角色 (user.assign_role): swap the user's role. Sessions resolve
- * permissions from the role per request, so the change takes effect on the
- * target's very next request — no re-login needed. Role and 所属外部机构 move
- * together here: this is the only door onto an 外部角色.
+ * 分配角色 (user.assign_role): swap the user's role among 内部角色. Sessions
+ * resolve permissions from the role per request, so the change takes effect on
+ * the target's very next request — no re-login needed.
  */
 export function AssignRoleDialog({
   user,
@@ -41,17 +39,14 @@ export function AssignRoleDialog({
   const utils = trpc.useUtils();
   const open = user !== null;
   const [roleId, setRoleId] = useState("");
-  const [externalOrgId, setExternalOrgId] = useState("");
 
   useEffect(() => {
     if (user) {
       setRoleId(user.roleId);
-      setExternalOrgId(user.externalOrgId ?? "");
     }
   }, [user]);
 
   const roleOptions = trpc.user.roleOptions.useQuery(undefined, { enabled: open });
-  const isExternal = isExternalRoleOption(roleOptions.data, roleId);
 
   const assign = trpc.user.assignRole.useMutation({
     onSuccess: (result) => {
@@ -62,7 +57,7 @@ export function AssignRoleDialog({
   });
 
   const busy = assign.isPending;
-  const unchanged = roleId === user?.roleId && externalOrgId === (user?.externalOrgId ?? "");
+  const unchanged = roleId === user?.roleId;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
@@ -76,15 +71,7 @@ export function AssignRoleDialog({
 
         <Field>
           <FieldLabel htmlFor="assign-role">角色</FieldLabel>
-          <Select
-            value={roleId}
-            onValueChange={(next) => {
-              setRoleId(next);
-              setExternalOrgId(
-                isExternalRoleOption(roleOptions.data, next) ? (user?.externalOrgId ?? "") : "",
-              );
-            }}
-          >
+          <Select value={roleId} onValueChange={setRoleId}>
             <SelectTrigger id="assign-role" className="w-full" disabled={roleOptions.isLoading}>
               <SelectValue placeholder="请选择角色" />
             </SelectTrigger>
@@ -98,14 +85,6 @@ export function AssignRoleDialog({
             </SelectContent>
           </Select>
         </Field>
-
-        {isExternal && (
-          <ExternalOrgField
-            id="assign-external-org"
-            value={externalOrgId}
-            onChange={setExternalOrgId}
-          />
-        )}
 
         {assign.error && (
           <Alert variant="destructive">
@@ -123,8 +102,8 @@ export function AssignRoleDialog({
           </DialogClose>
           <Button
             type="button"
-            disabled={busy || !roleId || unchanged || (isExternal && !externalOrgId)}
-            onClick={() => user && assign.mutate({ id: user.id, roleId, externalOrgId })}
+            disabled={busy || !roleId || unchanged}
+            onClick={() => user && assign.mutate({ id: user.id, roleId })}
           >
             {busy && <Spinner data-icon="inline-start" />}
             {busy ? "分配中…" : "确认"}

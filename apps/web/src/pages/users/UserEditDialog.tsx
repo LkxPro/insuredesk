@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { type UserUpdateInput, userUpdateInputSchema } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,15 +19,12 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
-import { ExternalOrgField } from "./ExternalOrgField";
 import type { UserRow } from "./UsersPage";
 
 /**
  * 编辑用户 (user.edit): basic info + optional password reset. The role is
  * deliberately absent — changing it is 分配角色, a separate permission point
- * (user.assign_role). 所属外部机构 therefore follows the role the account already
- * holds: external accounts can be moved between orgs, internal ones never see
- * the field (an org there is refused server-side).
+ * (user.assign_role).
  */
 export function UserEditDialog({
   user,
@@ -48,7 +45,6 @@ export function UserEditDialog({
       email: "",
       team: "",
       password: "",
-      externalOrgId: "",
     },
   });
 
@@ -61,7 +57,6 @@ export function UserEditDialog({
         email: user.email ?? "",
         team: user.team ?? "",
         password: "",
-        externalOrgId: user.externalOrgId ?? "",
       });
     }
   }, [user, form]);
@@ -126,21 +121,6 @@ export function UserEditDialog({
             <FieldDescription>填写后该用户需用新密码登录。</FieldDescription>
             {errors.password && <FieldError>{errors.password.message}</FieldError>}
           </Field>
-
-          {user?.roleExternal && (
-            <Controller
-              control={form.control}
-              name="externalOrgId"
-              render={({ field }) => (
-                <ExternalOrgField
-                  id="edit-external-org"
-                  value={field.value ?? ""}
-                  onChange={field.onChange}
-                  error={errors.externalOrgId?.message}
-                />
-              )}
-            />
-          )}
 
           {update.error && (
             <Alert variant="destructive">

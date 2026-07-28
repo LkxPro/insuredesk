@@ -30,7 +30,6 @@ import {
   ExternalAccountOnlyError,
   ExternalOrgOptionNotFoundError,
   ExternalRoleOnlyError,
-  ExternalRoleRequiresOrgError,
   InactiveExternalOrgError,
   listExternalRoleOptions,
   listOrgUsers,
@@ -63,7 +62,6 @@ function toTRPCError(error: unknown): never {
     error instanceof InvalidVisibleFieldError ||
     error instanceof RoleOptionNotFoundError ||
     error instanceof ExternalOrgOptionNotFoundError ||
-    error instanceof ExternalRoleRequiresOrgError ||
     error instanceof InactiveExternalOrgError ||
     error instanceof ExternalAccountOnlyError ||
     error instanceof ExternalRoleOnlyError ||
