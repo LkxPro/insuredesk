@@ -1,0 +1,137 @@
+import { TICKET_FIELDS, TICKET_SOURCE_LABELS, type TicketCreateFieldKey } from "@insuredesk/shared";
+import type { ReactNode } from "react";
+import type { UseFormReturn } from "react-hook-form";
+import { formatDateTime } from "@/lib/datetime";
+import { StatusBadge } from "./StatusBadge";
+import { TicketDetailField } from "./TicketDetailFields";
+import type { TicketFormValues } from "./TicketFormFields";
+import type { TicketDetail } from "./ticket-detail";
+
+/**
+ * 分栏详情的左栏：整单的工单信息字段，只读态渲染值、编辑态原位变控件（由
+ * TicketDetailField 双模式渲染）。系统字段（工单号/创建时间/来源/创建人）与
+ * SLA 派生字段（处理时限/首响/跟进频次/联系次数…）两态都是只读文本——它们不
+ * 是可编辑字段集的成员，编辑态也不长出控件。
+ *
+ * 只负责呈现字段。头部操作、编辑态的表单容器与保存/取消都在 TicketDetailPane。
+ */
+
+/** 分区标题 + 三列栅格；窄栏（分栏右侧的左栏）自动退回单列。 */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="m-0 text-sm font-medium text-muted-foreground">{title}</h3>
+      <dl className="m-0 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</dl>
+    </section>
+  );
+}
+
+/** 只读单元格；null/空值统一落到 — （未填写，不是空）。 */
+function Item({ label, children }: { label: string; children?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="m-0 text-sm">{children ?? "—"}</dd>
+    </div>
+  );
+}
+
+export function TicketInfoColumn({
+  ticket,
+  editing,
+  form,
+}: {
+  ticket: TicketDetail;
+  editing: boolean;
+  form: UseFormReturn<TicketFormValues>;
+}) {
+  const { dirtyFields, errors } = form.formState;
+  const field = (name: TicketCreateFieldKey) => (
+    <TicketDetailField
+      name={name}
+      ticket={ticket}
+      editing={editing}
+      form={form}
+      dirty={!!dirtyFields[name]}
+      error={errors[name]?.message}
+    />
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* 工单号不在这里：头部已经挂着它，重复一遍白占一格 */}
+      <Section title="基本信息">
+        <Item label="创建时间">{formatDateTime(ticket.createdAt)}</Item>
+        <Item label="更新时间">{formatDateTime(ticket.updatedAt)}</Item>
+        {field("feedbackTime")}
+        <Item label="工单来源">{TICKET_SOURCE_LABELS[ticket.source]}</Item>
+        <Item label="创建人">{ticket.createdBy}</Item>
+      </Section>
+
+      <Section title="业务信息">
+        {field("channelId")}
+        {field("project")}
+        {field("brokerageEntity")}
+        {field("paymentChannel")}
+        {field("internalOrderNumber")}
+        {field("policyNumbers")}
+        {field("userComplaintChannel")}
+        {field("complaintReceiveChannel")}
+      </Section>
+
+      <Section title="客户信息">
+        {field("customerName")}
+        {field("phone")}
+        {field("contactPhone")}
+        {field("nuclearBodyStatus")}
+        {field("hasContacted")}
+        {field("contactTime")}
+        {field("contactId")}
+        <div className="sm:col-span-2 xl:col-span-3">{field("customerRequest")}</div>
+        {ticket.submissionText != null && ticket.submissionText !== "" && (
+          <div className="sm:col-span-2 xl:col-span-3">
+            <Item label="工单原文">
+              <pre className="whitespace-pre-wrap text-sm">{ticket.submissionText}</pre>
+            </Item>
+          </div>
+        )}
+      </Section>
+
+      <Section title="分类与等级">
+        {field("categoryId")}
+        {field("complaintLevel")}
+        {field("priority")}
+        <Item label="跟进频次要求">{ticket.followUpFrequency}</Item>
+        <Item label="首响要求">{ticket.firstResponseRequirement}</Item>
+      </Section>
+
+      <Section title="处理状态">
+        <Item label="工单状态">
+          <StatusBadge status={ticket.displayStatus} />
+        </Item>
+        <Item label="责任人">{ticket.assigneeName}</Item>
+        <Item label="分配时间">{formatDateTime(ticket.assignedAt)}</Item>
+        <Item label="处理时限">
+          {/* dueAt null means 特急 (不设时限) when a level exists, 未定级 otherwise */}
+          {ticket.dueAt
+            ? formatDateTime(ticket.dueAt)
+            : ticket.complaintLevel
+              ? "不设时限（特急）"
+              : null}
+        </Item>
+        <Item label="下次联系时间">{formatDateTime(ticket.nextContactTime)}</Item>
+        <Item label="联系次数">{ticket.contactCount}</Item>
+        <div className="sm:col-span-2 xl:col-span-3">
+          <Item label="处理结果">{ticket.processingResult || null}</Item>
+        </div>
+      </Section>
+
+      {(ticket.completionTime || ticket.completionStatus) && (
+        <Section title="完结信息">
+          <Item label="完结时间">{formatDateTime(ticket.completionTime)}</Item>
+          <Item label={TICKET_FIELDS.completionStatusId.label}>{ticket.completionStatus}</Item>
+        </Section>
+      )}
+    </div>
+  );
+}

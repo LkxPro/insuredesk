@@ -103,13 +103,26 @@ function fakeTrpcFetch(overrides: TrpcOverrides) {
       const procedureInput = batch[String(index)];
       calls.push({ path, input: procedureInput });
       const override = overrides[path];
-      const data =
-        override === undefined
-          ? defaultData(path)
-          : typeof override === "function"
-            ? override(procedureInput)
-            : override;
-      return { result: { data } };
+      // A resolver that throws stands in for a server-side failure: the batch
+      // item becomes an error envelope, so the client surfaces it the way it
+      // would a real TRPCError instead of the request hanging.
+      try {
+        const data =
+          override === undefined
+            ? defaultData(path)
+            : typeof override === "function"
+              ? override(procedureInput)
+              : override;
+        return { result: { data } };
+      } catch (error) {
+        return {
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+            code: -32600,
+            data: { code: "BAD_REQUEST", httpStatus: 400, path },
+          },
+        };
+      }
     });
     return Promise.resolve(
       new Response(JSON.stringify(body), {

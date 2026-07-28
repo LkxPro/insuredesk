@@ -69,33 +69,37 @@ export interface EditableTicket {
   priority: Priority | null;
 }
 
-/** Detail wire values → form values: ISO instant to local partial, null to "". */
-export function formDefaults(ticket: EditableTicket): TicketFormValues {
+/**
+ * Detail wire values → form values: ISO instant to local partial, null to "".
+ * null ticket = the pre-load blank shape, so the form can be constructed before
+ * the detail query resolves (the real prefill lands via reset on 编辑).
+ */
+export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
   return {
-    feedbackTime: ticket.feedbackTime
+    feedbackTime: ticket?.feedbackTime
       ? format(new Date(ticket.feedbackTime), "yyyy-MM-dd'T'HH:mm")
       : "",
-    channelId: ticket.channel?.id ?? "",
-    project: ticket.project ?? "",
-    brokerageEntity: ticket.brokerageEntity ?? "",
-    paymentChannel: ticket.paymentChannel ?? "",
-    internalOrderNumber: ticket.internalOrderNumber ?? "",
-    policyNumbers: joinPolicyNumbers(ticket.policyNumbers),
-    userComplaintChannel: ticket.userComplaintChannel ?? "",
-    complaintReceiveChannel: ticket.complaintReceiveChannel ?? "",
-    customerName: ticket.customerName ?? "",
-    phone: ticket.phone ?? "",
-    contactPhone: ticket.contactPhone ?? "",
-    customerRequest: ticket.customerRequest ?? "",
-    nuclearBodyStatus: ticket.nuclearBodyStatus ?? "",
-    hasContacted: ticket.hasContacted,
-    contactTime: ticket.contactTime
+    channelId: ticket?.channel?.id ?? "",
+    project: ticket?.project ?? "",
+    brokerageEntity: ticket?.brokerageEntity ?? "",
+    paymentChannel: ticket?.paymentChannel ?? "",
+    internalOrderNumber: ticket?.internalOrderNumber ?? "",
+    policyNumbers: joinPolicyNumbers(ticket?.policyNumbers ?? []),
+    userComplaintChannel: ticket?.userComplaintChannel ?? "",
+    complaintReceiveChannel: ticket?.complaintReceiveChannel ?? "",
+    customerName: ticket?.customerName ?? "",
+    phone: ticket?.phone ?? "",
+    contactPhone: ticket?.contactPhone ?? "",
+    customerRequest: ticket?.customerRequest ?? "",
+    nuclearBodyStatus: ticket?.nuclearBodyStatus ?? "",
+    hasContacted: ticket?.hasContacted ?? null,
+    contactTime: ticket?.contactTime
       ? format(new Date(ticket.contactTime), "yyyy-MM-dd'T'HH:mm")
       : "",
-    contactId: ticket.contactId ?? "",
-    categoryId: ticket.category?.id ?? "",
-    complaintLevel: ticket.complaintLevel ?? "",
-    priority: ticket.priority ?? "",
+    contactId: ticket?.contactId ?? "",
+    categoryId: ticket?.category?.id ?? "",
+    complaintLevel: ticket?.complaintLevel ?? "",
+    priority: ticket?.priority ?? "",
   };
 }
 
