@@ -18,16 +18,22 @@ export const externalOrgSetActiveInputSchema = z.object({
   active: z.boolean(),
 });
 
+export const externalOrgGetInputSchema = z.object({
+  id: z.string(),
+});
+
 export type ExternalOrgCreateInput = z.infer<typeof externalOrgCreateInputSchema>;
 export type ExternalOrgUpdateInput = z.infer<typeof externalOrgUpdateInputSchema>;
 export type ExternalOrgSetActiveInput = z.infer<typeof externalOrgSetActiveInputSchema>;
+export type ExternalOrgGetInput = z.infer<typeof externalOrgGetInputSchema>;
 
 export interface ExternalOrgListItem {
   id: string;
   name: string;
   channelId: string | null;
   channelName: string | null;
-  visibleFieldCount: number;
+  /** 自定义可见字段白名单；null = 系统默认。 */
+  visibleTicketFields: string[] | null;
   userCount: number;
   active: boolean;
 }

@@ -15,12 +15,17 @@ afterEach(() => {
 });
 
 // jsdom has no ResizeObserver; Radix (Select trigger sizing) observes with it.
+// defineProperty 而非 vi.stubGlobal：renderApp 的 afterEach 调 unstubAllGlobals，
+// 会把 stubGlobal 注册的实现连带清掉，后续用例的 Radix Select 就会崩。
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
   disconnect() {}
 }
-vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+Object.defineProperty(globalThis, "ResizeObserver", {
+  writable: true,
+  value: ResizeObserverStub,
+});
 
 // jsdom has no matchMedia; ThemeProvider queries it for the initial theme.
 Object.defineProperty(window, "matchMedia", {

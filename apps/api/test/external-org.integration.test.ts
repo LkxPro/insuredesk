@@ -56,7 +56,7 @@ describe("ExternalOrg management (Testcontainers)", () => {
       name: "测试机构A",
       channelId: null,
       channelName: null,
-      visibleFieldCount: 5,
+      visibleTicketFields: null,
       userCount: 0,
       active: true,
     });
@@ -79,7 +79,7 @@ describe("ExternalOrg management (Testcontainers)", () => {
     expect(orgB).toMatchObject({
       name: "测试机构B",
       channelId,
-      visibleFieldCount: 3,
+      visibleTicketFields: ["feedbackTime", "project", "customerRequest"],
       userCount: 0,
       active: true,
     });
@@ -135,7 +135,7 @@ describe("ExternalOrg management (Testcontainers)", () => {
     const updated = orgs.find((o) => o.id === created.id);
     expect(updated).toMatchObject({
       channelId,
-      visibleFieldCount: 3,
+      visibleTicketFields: ["feedbackTime", "project", "customerRequest"],
     });
   });
 
@@ -159,8 +159,56 @@ describe("ExternalOrg management (Testcontainers)", () => {
     const updated = orgs.find((o) => o.id === created.id);
     expect(updated).toMatchObject({
       channelId: null,
-      visibleFieldCount: 5,
+      visibleTicketFields: null,
     });
+  });
+
+  it("gets a single org with its visibleTicketFields whitelist", async () => {
+    const channels = await harness.prisma.channel.findMany();
+    const channelId = channels[0]?.id;
+
+    const created = await manager().externalOrg.create({
+      name: "详情读取机构",
+      channelId,
+      visibleTicketFields: ["feedbackTime", "project"],
+    });
+
+    const org = await manager().externalOrg.get({ id: created.id });
+    expect(org).toMatchObject({
+      id: created.id,
+      name: "详情读取机构",
+      channelId,
+      visibleTicketFields: ["feedbackTime", "project"],
+      userCount: 0,
+      active: true,
+    });
+    expect(org.channelName).toBeTruthy();
+  });
+
+  it("gets null visibleTicketFields when the org uses system default", async () => {
+    const created = await manager().externalOrg.create({ name: "默认白名单机构" });
+
+    const org = await manager().externalOrg.get({ id: created.id });
+    expect(org.visibleTicketFields).toBeNull();
+  });
+
+  it("returns 404 for non-existent org on get", async () => {
+    await expect(manager().externalOrg.get({ id: "non-existent-id" })).rejects.toThrow(
+      "外部机构不存在",
+    );
+  });
+
+  it("rename-only update keeps the whitelist untouched", async () => {
+    const created = await manager().externalOrg.create({
+      name: "改名前机构",
+      visibleTicketFields: ["feedbackTime", "project", "customerRequest"],
+    });
+
+    await manager().externalOrg.update({ id: created.id, name: "改名后机构" });
+
+    const org = await manager().externalOrg.get({ id: created.id });
+    expect(org.name).toBe("改名后机构");
+    expect(org.visibleTicketFields).toEqual(["feedbackTime", "project", "customerRequest"]);
   });
 
   it("disables and re-enables an org", async () => {

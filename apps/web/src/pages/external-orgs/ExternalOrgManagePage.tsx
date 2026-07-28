@@ -1,7 +1,9 @@
 import type { AppRouter } from "@insuredesk/api";
+import { DEFAULT_EXTERNAL_VISIBLE_FIELDS } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
 import { AlertCircle, Building2, Plus } from "lucide-react";
 import { useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +19,19 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import { ExternalOrgEditDialog } from "./ExternalOrgEditDialog";
 
 export type ExternalOrgRow = inferRouterOutputs<AppRouter>["externalOrg"]["list"][number];
 
+export function visibleFieldCount(visibleTicketFields: string[] | null): number {
+  return visibleTicketFields?.length ?? DEFAULT_EXTERNAL_VISIBLE_FIELDS.length;
+}
+
 export function ExternalOrgManagePage() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission("external_org.manage");
+  const navigate = useNavigate();
 
   const utils = trpc.useUtils();
   const listQuery = trpc.externalOrg.list.useQuery();
@@ -34,7 +42,7 @@ export function ExternalOrgManagePage() {
   const setActive = trpc.externalOrg.setActive.useMutation({
     onSuccess: (_result, variables) => {
       toast.success(variables.active ? "已启用机构" : "已停用机构");
-      utils.externalOrg.list.invalidate();
+      utils.externalOrg.invalidate();
     },
     onError: (error) => toast.error(`操作失败：${error.message}`),
   });
@@ -96,18 +104,38 @@ export function ExternalOrgManagePage() {
                 </TableRow>
               )}
               {orgs.map((org) => (
-                <TableRow key={org.id} className={org.active ? undefined : "opacity-60"}>
+                <TableRow
+                  key={org.id}
+                  className={cn("cursor-pointer", !org.active && "opacity-60")}
+                  onClick={() => navigate(`/external-orgs/${org.id}`)}
+                >
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
-                      {org.name}
+                      {/* 行点击是鼠标的便利路径；机构名上的链接是键盘与
+                          读屏的正路（与 工单管理 同一处理） */}
+                      <Link
+                        to={`/external-orgs/${org.id}`}
+                        className="hover:underline"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {org.name}
+                      </Link>
                     </div>
                   </TableCell>
+                  <TableCell className="text-muted-foreground">{org.channelName ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {org.channelName ?? "—"}
+                    {visibleFieldCount(org.visibleTicketFields)}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{org.visibleFieldCount}</TableCell>
-                  <TableCell className="text-muted-foreground">{org.userCount}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <Link
+                      to={`/external-orgs/${org.id}`}
+                      className="hover:underline"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {org.userCount}
+                    </Link>
+                  </TableCell>
                   <TableCell>
                     {org.active ? (
                       <Badge variant="outline">启用</Badge>
@@ -115,7 +143,7 @@ export function ExternalOrgManagePage() {
                       <Badge variant="destructive">已停用</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
                     <div className="flex justify-end gap-1">
                       {canManage && (
                         <>

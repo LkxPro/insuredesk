@@ -1,10 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  type ExternalOrgCreateInput,
-  externalOrgCreateInputSchema,
-  type ExternalOrgUpdateInput,
-  externalOrgUpdateInputSchema,
   EXTERNAL_VISIBLE_FIELD_OPTIONS,
+  type ExternalOrgCreateInput,
+  type ExternalOrgUpdateInput,
+  externalOrgCreateInputSchema,
+  externalOrgUpdateInputSchema,
 } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect } from "react";
@@ -35,7 +35,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
 import type { ExternalOrgRow } from "./ExternalOrgManagePage";
 
-const FIELD_LABELS: Record<string, string> = {
+/** 编辑弹窗与机构详情页共用一份取词，两处显示保持一致。 */
+export const FIELD_LABELS: Record<string, string> = {
   workOrderNumber: "工单号",
   feedbackTime: "反馈时间",
   status: "状态",
@@ -66,20 +67,10 @@ export function ExternalOrgEditDialog({
   const isOpen = org ? !!org : !!open;
 
   if (isCreate) {
-    return (
-      <CreateDialog
-        open={isOpen}
-        onOpenChange={onOpenChange}
-      />
-    );
+    return <CreateDialog open={isOpen} onOpenChange={onOpenChange} />;
   }
 
-  return (
-    <UpdateDialog
-      org={org}
-      onOpenChange={onOpenChange}
-    />
-  );
+  return <UpdateDialog org={org} onOpenChange={onOpenChange} />;
 }
 
 function CreateDialog({
@@ -107,7 +98,7 @@ function CreateDialog({
   const create = trpc.externalOrg.create.useMutation({
     onSuccess: () => {
       toast.success("已创建机构");
-      utils.externalOrg.list.invalidate();
+      utils.externalOrg.invalidate();
       onOpenChange(false);
     },
   });
@@ -144,7 +135,11 @@ function CreateDialog({
                   value={field.value ?? ""}
                   onValueChange={(val) => field.onChange(val === "" ? undefined : val)}
                 >
-                  <SelectTrigger id="org-channel" className="w-full" disabled={channelsQuery.isLoading}>
+                  <SelectTrigger
+                    id="org-channel"
+                    className="w-full"
+                    disabled={channelsQuery.isLoading}
+                  >
                     <SelectValue placeholder="不关联渠道" />
                   </SelectTrigger>
                   <SelectContent>
@@ -176,9 +171,11 @@ function CreateDialog({
                       {EXTERNAL_VISIBLE_FIELD_OPTIONS.map((fieldKey) => (
                         <label
                           key={fieldKey}
+                          htmlFor={`org-create-field-${fieldKey}`}
                           className="flex items-center gap-2 text-sm hover:cursor-pointer"
                         >
                           <Checkbox
+                            id={`org-create-field-${fieldKey}`}
                             checked={value.includes(fieldKey)}
                             onCheckedChange={(checked) => {
                               const newValue = checked
@@ -248,7 +245,8 @@ function UpdateDialog({
         id: org.id,
         name: org.name,
         channelId: org.channelId ?? undefined,
-        visibleTicketFields: [],
+        // null = 系统默认；表单里以空勾选表达，保存空数组时服务端归一回 null
+        visibleTicketFields: org.visibleTicketFields ?? [],
       });
     }
   }, [org, form]);
@@ -258,7 +256,7 @@ function UpdateDialog({
   const update = trpc.externalOrg.update.useMutation({
     onSuccess: () => {
       toast.success("已更新机构");
-      utils.externalOrg.list.invalidate();
+      utils.externalOrg.invalidate();
       onOpenChange(false);
     },
   });
@@ -295,7 +293,11 @@ function UpdateDialog({
                   value={field.value ?? ""}
                   onValueChange={(val) => field.onChange(val === "" ? null : val)}
                 >
-                  <SelectTrigger id="org-channel" className="w-full" disabled={channelsQuery.isLoading}>
+                  <SelectTrigger
+                    id="org-channel"
+                    className="w-full"
+                    disabled={channelsQuery.isLoading}
+                  >
                     <SelectValue placeholder="不关联渠道" />
                   </SelectTrigger>
                   <SelectContent>
@@ -327,9 +329,11 @@ function UpdateDialog({
                       {EXTERNAL_VISIBLE_FIELD_OPTIONS.map((fieldKey) => (
                         <label
                           key={fieldKey}
+                          htmlFor={`org-edit-field-${fieldKey}`}
                           className="flex items-center gap-2 text-sm hover:cursor-pointer"
                         >
                           <Checkbox
+                            id={`org-edit-field-${fieldKey}`}
                             checked={value.includes(fieldKey)}
                             onCheckedChange={(checked) => {
                               const newValue = checked

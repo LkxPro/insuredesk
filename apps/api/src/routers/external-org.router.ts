@@ -1,5 +1,6 @@
 import {
   externalOrgCreateInputSchema,
+  externalOrgGetInputSchema,
   externalOrgSetActiveInputSchema,
   externalOrgUpdateInputSchema,
 } from "@insuredesk/shared";
@@ -8,6 +9,7 @@ import { prisma } from "../db";
 import {
   createExternalOrg,
   DuplicateOrgNameError,
+  getExternalOrg,
   InvalidVisibleFieldError,
   listExternalOrgs,
   OrgNotFoundError,
@@ -33,6 +35,10 @@ function toTRPCError(error: unknown): never {
 
 export const externalOrgRouter = router({
   list: requirePermission("external_org.manage").query(() => listExternalOrgs(deps)),
+
+  get: requirePermission("external_org.manage")
+    .input(externalOrgGetInputSchema)
+    .query(({ input }) => getExternalOrg(deps, input).catch(toTRPCError)),
 
   create: requirePermission("external_org.manage")
     .input(externalOrgCreateInputSchema)
