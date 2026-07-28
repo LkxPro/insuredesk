@@ -241,3 +241,75 @@ describe("加载失败", () => {
     expect(await screen.findByText("看板数据加载失败")).toBeInTheDocument();
   });
 });
+
+describe("卡片跳转工单管理", () => {
+  it("total card links to tickets with no status filter", async () => {
+    renderDashboard();
+
+    const totalCard = (await screen.findByText("工单总数")).closest("a");
+    expect(totalCard).toHaveAttribute("href", "/tickets");
+  });
+
+  it("unassigned card links to tickets with status=unassigned", async () => {
+    renderDashboard();
+
+    const unassignedCard = (await screen.findByText("未分配")).closest("a");
+    expect(unassignedCard).toHaveAttribute("href", "/tickets?status=unassigned");
+  });
+
+  it("overdue card links to tickets with status=overdue", async () => {
+    renderDashboard();
+
+    const overdueCard = (await screen.findByText("已超时")).closest("a");
+    expect(overdueCard).toHaveAttribute("href", "/tickets?status=overdue");
+  });
+
+  it("urgent card links to tickets with level=特急投诉", async () => {
+    renderDashboard();
+
+    const urgentCard = (await screen.findByText("特急工单")).closest("a");
+    expect(urgentCard).toHaveAttribute("href", "/tickets?level=%E7%89%B9%E6%80%A5%E6%8A%95%E8%AF%89");
+  });
+
+  it("cards include createdFrom/createdTo when dashboard has a time range", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const trpcClient = trpc.createClient({
+      links: [httpBatchLink({ url: "http://localhost/api/trpc", fetch: fakeFetch })],
+    });
+
+    render(
+      <trpc.Provider client={trpcClient} queryClient={queryClient}>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <MemoryRouter
+              initialEntries={["/dashboard?createdFrom=2026-07-01&createdTo=2026-07-31"]}
+            >
+              <AppRoutes />
+            </MemoryRouter>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </trpc.Provider>,
+    );
+
+    const totalCard = (await screen.findByText("工单总数")).closest("a");
+    expect(totalCard).toHaveAttribute(
+      "href",
+      "/tickets?createdFrom=2026-07-01&createdTo=2026-07-31",
+    );
+
+    const overdueCard = screen.getByText("已超时").closest("a");
+    expect(overdueCard).toHaveAttribute(
+      "href",
+      "/tickets?status=overdue&createdFrom=2026-07-01&createdTo=2026-07-31",
+    );
+  });
+});
+
+describe("渠道行跳转工单管理", () => {
+  it("channel rows are clickable", async () => {
+    renderDashboard();
+
+    const channelRow = (await screen.findByText("保司")).closest("tr");
+    expect(channelRow).toHaveClass("cursor-pointer");
+  });
+});

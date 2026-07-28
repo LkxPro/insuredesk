@@ -4,6 +4,7 @@ import {
   type DashboardMetricKey,
 } from "@insuredesk/shared";
 import { AlertCircle, Users } from "lucide-react";
+import { Link, useNavigate } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +29,7 @@ import { formatDurationMs } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { CreatedRangeFilter } from "../tickets/CreatedRangeFilter";
+import { buildChannelTicketListUrl, buildTicketListUrl } from "./build-ticket-list-url";
 import { useCreatedRangeQueryParams } from "./useCreatedRangeQueryParams";
 
 /**
@@ -51,23 +53,33 @@ const METRIC_HINTS: Partial<Record<DashboardMetricKey, string>> = {
   urgent: "特急投诉，不设时限",
 };
 
-function MetricCard({ metric, value }: { metric: DashboardMetricKey; value: number }) {
+function MetricCard({
+  metric,
+  value,
+  href,
+}: {
+  metric: DashboardMetricKey;
+  value: number;
+  href: string;
+}) {
   return (
-    <Card className="gap-2 py-4">
-      <CardHeader className="px-4">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {DASHBOARD_METRIC_LABELS[metric]}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-4">
-        <div className={cn("text-3xl font-semibold tabular-nums", METRIC_TONES[metric])}>
-          {value}
-        </div>
-        {METRIC_HINTS[metric] && (
-          <p className="mt-1 text-xs text-muted-foreground">{METRIC_HINTS[metric]}</p>
-        )}
-      </CardContent>
-    </Card>
+    <Link to={href} className="block">
+      <Card className="gap-2 py-4 transition-colors hover:bg-accent">
+        <CardHeader className="px-4">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            {DASHBOARD_METRIC_LABELS[metric]}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4">
+          <div className={cn("text-3xl font-semibold tabular-nums", METRIC_TONES[metric])}>
+            {value}
+          </div>
+          {METRIC_HINTS[metric] && (
+            <p className="mt-1 text-xs text-muted-foreground">{METRIC_HINTS[metric]}</p>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -94,6 +106,7 @@ const percentFormat = new Intl.NumberFormat("zh-CN", {
 });
 
 export function DashboardPage() {
+  const navigate = useNavigate();
   const [createdRange, setCreatedRange] = useCreatedRangeQueryParams();
   const statsQuery = trpc.dashboard.stats.useQuery(createdRange);
   const stats = statsQuery.data;
@@ -129,7 +142,12 @@ export function DashboardPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
             {stats ? (
               DASHBOARD_METRIC_KEYS.map((metric) => (
-                <MetricCard key={metric} metric={metric} value={stats.metrics[metric]} />
+                <MetricCard
+                  key={metric}
+                  metric={metric}
+                  value={stats.metrics[metric]}
+                  href={buildTicketListUrl(metric, createdRange)}
+                />
               ))
             ) : (
               <MetricSkeletons />
@@ -153,7 +171,13 @@ export function DashboardPage() {
                   <TableBody>
                     {stats
                       ? stats.channels.map((row) => (
-                          <TableRow key={row.channelId}>
+                          <TableRow
+                            key={row.channelId}
+                            className="cursor-pointer"
+                            onClick={() =>
+                              navigate(buildChannelTicketListUrl(row.channelId, createdRange))
+                            }
+                          >
                             <TableCell>{row.name}</TableCell>
                             <TableCell className="text-right tabular-nums">{row.count}</TableCell>
                             <TableCell className="text-right tabular-nums">
