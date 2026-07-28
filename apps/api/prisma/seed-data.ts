@@ -270,6 +270,9 @@ export async function seedFactoryRolesAndDemoUsers(prisma: PrismaClient): Promis
  * Create-if-missing: the "外部用户" role with external submission permissions.
  * Non-factory role (system=false) that survives bootstrap replay. Created by
  * name upsert so renames/permission edits persist across restarts.
+ *
+ * 这是全库唯一的外部角色,建机构账号靠它落 roleId(账号不选角色)。再添一个外部
+ * 角色会让建号直接失败,而不是随机挑一个。
  */
 export async function seedExternalUserRole(prisma: PrismaClient): Promise<Role> {
   return prisma.role.upsert({

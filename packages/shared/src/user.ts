@@ -94,8 +94,9 @@ export type UserAssignRoleData = z.output<typeof userAssignRoleInputSchema>;
 
 /**
  * 机构详情页的账号管理 (external_org.manage) — a parallel set of contracts
- * rather than the user.* ones: no team field, roles are external-only, and the
- * account's org is anchored to the page's org on create.
+ * rather than the user.* ones: no team field, no role field (外部账号 all carry
+ * the one 外部角色, mounted server-side), and the account's org is anchored to
+ * the page's org on create.
  */
 export const externalOrgUserListInputSchema = z.object({
   orgId: z.string().min(1),
@@ -108,7 +109,6 @@ export const externalOrgUserCreateInputSchema = z.object({
   password: passwordSchema,
   name: displayNameSchema,
   email: optionalEmailSchema,
-  roleId: z.string().min(1, "请选择角色"),
 });
 export type ExternalOrgUserCreateInput = z.input<typeof externalOrgUserCreateInputSchema>;
 export type ExternalOrgUserCreateData = z.output<typeof externalOrgUserCreateInputSchema>;
@@ -135,10 +135,3 @@ export const externalOrgUserSetActiveInputSchema = z.object({
   active: z.boolean(),
 });
 export type ExternalOrgUserSetActiveInput = z.infer<typeof externalOrgUserSetActiveInputSchema>;
-
-/** 换角色 stays within 外部角色 and never touches the org binding. */
-export const externalOrgUserAssignRoleInputSchema = z.object({
-  id: z.string().min(1),
-  roleId: z.string().min(1, "请选择角色"),
-});
-export type ExternalOrgUserAssignRoleInput = z.infer<typeof externalOrgUserAssignRoleInputSchema>;

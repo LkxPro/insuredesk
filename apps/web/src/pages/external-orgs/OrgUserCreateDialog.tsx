@@ -5,7 +5,7 @@ import {
 } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,19 +20,12 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
 
 /**
  * 新建机构账号 (external_org.manage): 所属机构锁定为当前机构（只展示、不可选），
- * 角色下拉仅外部角色，表单不含团队字段。
+ * 表单不含团队与角色字段——账号能力恒为一档，角色由服务端自动挂载。
  */
 export function OrgUserCreateDialog({
   org,
@@ -53,17 +46,14 @@ export function OrgUserCreateDialog({
       password: "",
       name: "",
       email: "",
-      roleId: "",
     },
   });
 
   useEffect(() => {
     if (open) {
-      form.reset({ orgId: org.id, username: "", password: "", name: "", email: "", roleId: "" });
+      form.reset({ orgId: org.id, username: "", password: "", name: "", email: "" });
     }
   }, [open, org.id, form]);
-
-  const roleOptions = trpc.externalOrg.externalRoleOptions.useQuery(undefined, { enabled: open });
 
   const create = trpc.externalOrg.createUser.useMutation({
     onSuccess: (result) => {
@@ -117,33 +107,6 @@ export function OrgUserCreateDialog({
               {errors.email && <FieldError>{errors.email.message}</FieldError>}
             </Field>
           </div>
-
-          <Field data-invalid={!!errors.roleId}>
-            <FieldLabel htmlFor="org-user-role">角色</FieldLabel>
-            <Controller
-              control={form.control}
-              name="roleId"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger
-                    id="org-user-role"
-                    className="w-full"
-                    disabled={roleOptions.isLoading}
-                  >
-                    <SelectValue placeholder="请选择外部角色" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(roleOptions.data ?? []).map((role) => (
-                      <SelectItem key={role.id} value={role.id}>
-                        {role.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {errors.roleId && <FieldError>{errors.roleId.message}</FieldError>}
-          </Field>
 
           {create.error && (
             <Alert variant="destructive">

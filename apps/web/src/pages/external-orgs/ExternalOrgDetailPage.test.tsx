@@ -28,8 +28,6 @@ const ORG_USERS = [
     name: "外部张三",
     email: "zhang@partner.example",
     active: true,
-    roleId: "er1",
-    roleName: "外部用户",
     createdAt: "2026-07-01T08:00:00.000Z",
   },
   {
@@ -38,15 +36,8 @@ const ORG_USERS = [
     name: "外部李四",
     email: null,
     active: false,
-    roleId: "er2",
-    roleName: "外部只读",
     createdAt: "2026-07-02T08:00:00.000Z",
   },
-];
-
-const EXTERNAL_ROLES = [
-  { id: "er1", name: "外部用户" },
-  { id: "er2", name: "外部只读" },
 ];
 
 const ORG_LIST = [
@@ -71,16 +62,6 @@ beforeAll(() => {
     releasePointerCapture: vi.fn(),
   });
 });
-
-/** Pick a Radix Select option: pointerDown opens, click commits. */
-async function pick(scope: ReturnType<typeof within>, comboboxName: string, optionName: string) {
-  const trigger = scope.getByRole("combobox", { name: comboboxName });
-  // 选项查询未回来前 trigger 是 disabled 的，pointerDown 会被吞掉
-  await waitFor(() => expect(trigger).toBeEnabled());
-  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
-  fireEvent.click(trigger);
-  fireEvent.click(await screen.findByRole("option", { name: optionName }));
-}
 
 /** Open a Radix Select and return its options' text, without committing. */
 async function openedOptions(scope: ReturnType<typeof within>, comboboxName: string) {
@@ -108,7 +89,6 @@ function renderDetail(overrides: Record<string, unknown> = {}) {
       "externalOrg.get": ORG,
       "externalOrg.list": ORG_LIST,
       "externalOrg.listUsers": ORG_USERS,
-      "externalOrg.externalRoleOptions": EXTERNAL_ROLES,
       "channel.list": CHANNELS,
       ...overrides,
     },
@@ -198,16 +178,17 @@ describe("编辑弹窗回填", () => {
 });
 
 describe("账号表", () => {
-  it("lists accounts with role and state, no team column", async () => {
+  it("lists accounts with state, no team or role column", async () => {
     renderDetail();
 
     expect(await screen.findByText("外部张三")).toBeInTheDocument();
     expect(screen.getByText("ext-zhang")).toBeInTheDocument();
     expect(screen.getByText("zhang@partner.example")).toBeInTheDocument();
-    expect(screen.getByText("外部用户")).toBeInTheDocument();
     expect(screen.getByText("外部李四")).toBeInTheDocument();
     expect(screen.getByText("已禁用")).toBeInTheDocument();
     expect(screen.queryByText("团队")).not.toBeInTheDocument();
+    expect(screen.queryByText("角色")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "换角色" })).not.toBeInTheDocument();
     expect(callsTo("externalOrg.listUsers")[0]?.input).toEqual({ orgId: "o1" });
   });
 
@@ -218,7 +199,7 @@ describe("账号表", () => {
 });
 
 describe("新建账号", () => {
-  it("机构锁定当前机构、角色下拉仅外部角色，提交不含团队", async () => {
+  it("机构锁定当前机构，四字段提交，无团队与角色", async () => {
     renderDetail();
     fireEvent.click(await screen.findByRole("button", { name: "新建账号" }));
 
@@ -226,13 +207,11 @@ describe("新建账号", () => {
     expect(dialog.getByLabelText("所属机构")).toHaveValue("机构甲");
     expect(dialog.getByLabelText("所属机构")).toBeDisabled();
     expect(dialog.queryByLabelText(/团队/)).not.toBeInTheDocument();
+    expect(dialog.queryByLabelText(/角色/)).not.toBeInTheDocument();
 
     fireEvent.change(dialog.getByLabelText("姓名"), { target: { value: "新外部成员" } });
     fireEvent.change(dialog.getByLabelText("用户名"), { target: { value: "ext-new" } });
     fireEvent.change(dialog.getByLabelText("初始密码"), { target: { value: "secret-123" } });
-
-    expect(await openedOptions(dialog, "角色")).toEqual(["外部用户", "外部只读"]);
-    fireEvent.click(screen.getByRole("option", { name: "外部只读" }));
 
     fireEvent.click(dialog.getByRole("button", { name: "创建" }));
 
@@ -245,7 +224,6 @@ describe("新建账号", () => {
       password: "secret-123",
       name: "新外部成员",
       email: null,
-      roleId: "er2",
     });
   });
 });
@@ -292,25 +270,6 @@ describe("编辑账号", () => {
       id: "eu1",
       password: "rotated-1",
     });
-  });
-});
-
-describe("换角色", () => {
-  it("下拉仅外部角色，确认后 assignUserRole", async () => {
-    renderDetail();
-    fireEvent.click(await nthButton("换角色", 0));
-
-    const dialog = within(await screen.findByRole("dialog"));
-    // 未改角色时确认不可用
-    expect(dialog.getByRole("button", { name: "确认" })).toBeDisabled();
-
-    await pick(dialog, "角色", "外部只读");
-    fireEvent.click(dialog.getByRole("button", { name: "确认" }));
-
-    await waitFor(() => {
-      expect(callsTo("externalOrg.assignUserRole")).toHaveLength(1);
-    });
-    expect(callsTo("externalOrg.assignUserRole")[0]?.input).toEqual({ id: "eu1", roleId: "er2" });
   });
 });
 
