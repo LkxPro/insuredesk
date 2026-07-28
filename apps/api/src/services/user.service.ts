@@ -57,7 +57,7 @@ export class RoleOptionNotFoundError extends Error {
   }
 }
 
-/** The 外部机构 picker sent an id that no longer exists. */
+/** The 机构 picker on the org detail page sent an id that no longer exists. */
 export class ExternalOrgOptionNotFoundError extends Error {
   constructor() {
     super("所选外部机构不存在");
@@ -73,19 +73,19 @@ export class InactiveExternalOrgError extends Error {
   }
 }
 
-/** 外部角色 accounts are scoped by org — one without an org could see nothing. */
-export class ExternalRoleRequiresOrgError extends Error {
+/** The target of a 用户管理 operation is an 外部账号 — 机构详情页 owns those. */
+export class InternalAccountOnlyError extends Error {
   constructor() {
-    super("外部角色用户必须选择所属外部机构");
-    this.name = "ExternalRoleRequiresOrgError";
+    super("外部机构账号请在机构详情页管理");
+    this.name = "InternalAccountOnlyError";
   }
 }
 
-/** An org on an internal account would silently widen 外部 data scope. */
-export class InternalRoleCannotHaveOrgError extends Error {
+/** 用户管理 only ever hands out 内部角色 — an 外部角色 needs an org to bind to. */
+export class InternalRoleOnlyError extends Error {
   constructor() {
-    super("内部角色用户不能设置所属外部机构");
-    this.name = "InternalRoleCannotHaveOrgError";
+    super("只能选择内部角色");
+    this.name = "InternalRoleOnlyError";
   }
 }
 
@@ -122,7 +122,7 @@ async function assertEnabledAdminRemains(tx: Prisma.TransactionClient): Promise<
   }
 }
 
-async function loadRoleForOrgPairing(prisma: TicketServiceDeps["prisma"], roleId: string) {
+async function loadRole(prisma: TicketServiceDeps["prisma"], roleId: string) {
   const role = await prisma.role.findUnique({
     where: { id: roleId },
     select: { id: true, name: true, permissions: true, system: true },
@@ -133,26 +133,12 @@ async function loadRoleForOrgPairing(prisma: TicketServiceDeps["prisma"], roleId
   return role;
 }
 
-/**
- * Pair the role with the 外部机构 selection: 外部角色 ⇔ non-null org. Returns the
- * org id to write.
- */
+/** Resolve the 外部机构 an 外部账号 is being bound to. */
 async function resolveExternalOrg(
   prisma: TicketServiceDeps["prisma"],
-  role: { system: boolean; permissions: string[] },
-  externalOrgId: string | null,
+  externalOrgId: string,
   previousOrgId: string | null = null,
-): Promise<string | null> {
-  if (!isExternalRole(role)) {
-    if (externalOrgId !== null) {
-      throw new InternalRoleCannotHaveOrgError();
-    }
-    return null;
-  }
-
-  if (externalOrgId === null) {
-    throw new ExternalRoleRequiresOrgError();
-  }
+): Promise<string> {
   const org = await prisma.externalOrg.findUnique({
     where: { id: externalOrgId },
     select: { id: true, active: true },
@@ -193,16 +179,15 @@ function throwOnDuplicateIdentity(error: unknown): never {
 }
 
 /**
- * Every account, active or not — the 用户管理 table shows disabled users so
- * they can be re-enabled. Role name joined live (a rename shows everywhere at
+ * Every 内部账号, active or not — the 用户管理 table shows disabled users so
+ * they can be re-enabled. 外部账号 are out of scope entirely; 机构详情页 is their
+ * only management surface. Role name joined live (a rename shows everywhere at
  * once; roles are configuration, not history).
  */
 export async function listUsers({ prisma }: TicketServiceDeps) {
   const rows = await prisma.user.findMany({
-    include: {
-      role: { select: { name: true, system: true, permissions: true } },
-      externalOrg: { select: { name: true } },
-    },
+    where: { externalOrgId: null },
+    include: { role: { select: { name: true, system: true } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   return rows.map((row) => ({
@@ -215,17 +200,43 @@ export async function listUsers({ prisma }: TicketServiceDeps) {
     roleId: row.roleId,
     roleName: row.role.name,
     roleSystem: row.role.system,
-    roleExternal: isExternalRole(row.role),
-    externalOrgId: row.externalOrgId,
-    externalOrgName: row.externalOrg?.name ?? null,
     createdAt: row.createdAt.toISOString(),
   }));
 }
 
-/** New account, active from the start, password bcrypt-hashed here. */
+/**
+ * Load the role a 用户管理 door is about to hand out, refusing 外部角色: an
+ * external account is born on the org detail page and never through here.
+ */
+async function loadInternalRole(prisma: TicketServiceDeps["prisma"], roleId: string) {
+  const role = await loadRole(prisma, roleId);
+  if (isExternalRole(role)) {
+    throw new InternalRoleOnlyError();
+  }
+  return role;
+}
+
+/**
+ * Fence a 用户管理 door to 内部账号. Judged on the org binding rather than the
+ * role: the two are equivalent by construction, and the binding is what the
+ * list query filters on.
+ */
+async function assertInternalAccount(prisma: TicketServiceDeps["prisma"], id: string) {
+  const target = await prisma.user.findUnique({
+    where: { id },
+    select: { externalOrgId: true },
+  });
+  if (!target) {
+    throw new UserNotFoundError();
+  }
+  if (target.externalOrgId !== null) {
+    throw new InternalAccountOnlyError();
+  }
+}
+
+/** New 内部账号, active from the start, password bcrypt-hashed here. */
 export async function createUser({ prisma }: TicketServiceDeps, input: UserCreateData) {
-  const role = await loadRoleForOrgPairing(prisma, input.roleId);
-  const externalOrgId = await resolveExternalOrg(prisma, role, input.externalOrgId);
+  await loadInternalRole(prisma, input.roleId);
 
   const passwordHash = await hashPassword(input.password);
   try {
@@ -236,7 +247,6 @@ export async function createUser({ prisma }: TicketServiceDeps, input: UserCreat
         email: input.email,
         team: input.team,
         roleId: input.roleId,
-        externalOrgId,
         passwordHash,
         active: true,
       },
@@ -256,29 +266,13 @@ export async function createUser({ prisma }: TicketServiceDeps, input: UserCreat
  * must not keep riding a live session past the rotation.
  */
 export async function updateUser({ prisma }: TicketServiceDeps, input: UserUpdateData) {
-  // The role isn't editable here, so the org pairing is judged against the
-  // role the target already holds.
-  const target = await prisma.user.findUnique({
-    where: { id: input.id },
-    select: { roleId: true, externalOrgId: true },
-  });
-  if (!target) {
-    throw new UserNotFoundError();
-  }
-  const role = await loadRoleForOrgPairing(prisma, target.roleId);
-  const externalOrgId = await resolveExternalOrg(
-    prisma,
-    role,
-    input.externalOrgId,
-    target.externalOrgId,
-  );
+  await assertInternalAccount(prisma, input.id);
 
   const data: Prisma.UserUncheckedUpdateInput = {
     username: input.username,
     name: input.name,
     email: input.email,
     team: input.team,
-    externalOrgId,
   };
   if (input.password !== null) {
     data.passwordHash = await hashPassword(input.password);
@@ -322,6 +316,7 @@ export async function setUserActive(
   if (input.id === actor.id && !input.active) {
     throw new SelfDisableError();
   }
+  await assertInternalAccount(prisma, input.id);
 
   return prisma.$transaction(async (tx) => {
     let updated: { id: string; name: string; active: boolean; role: { system: boolean } };
@@ -348,30 +343,22 @@ export async function setUserActive(
 }
 
 /**
- * 分配角色 (user.assign_role). Takes effect on the target's very next request:
- * sessions store only the userId — permissions are resolved from the role at
- * validateSession time, never cached. Reassigning the last enabled admin to a
- * non-system role is refused — the system's one hard invariant.
+ * 分配角色 (user.assign_role), 内部角色 → 内部角色. Takes effect on the target's
+ * very next request: sessions store only the userId — permissions are resolved
+ * from the role at validateSession time, never cached. Reassigning the last
+ * enabled admin to a non-system role is refused — the system's one hard
+ * invariant.
  */
 export async function assignUserRole({ prisma }: TicketServiceDeps, input: UserAssignRoleData) {
-  const role = await loadRoleForOrgPairing(prisma, input.roleId);
-  const target = await prisma.user.findUnique({
-    where: { id: input.id },
-    select: { externalOrgId: true },
-  });
-  const externalOrgId = await resolveExternalOrg(
-    prisma,
-    role,
-    input.externalOrgId,
-    target?.externalOrgId ?? null,
-  );
+  const role = await loadInternalRole(prisma, input.roleId);
+  await assertInternalAccount(prisma, input.id);
 
   return prisma.$transaction(async (tx) => {
     let updated: { id: string; name: string };
     try {
       updated = await tx.user.update({
         where: { id: input.id },
-        data: { roleId: input.roleId, externalOrgId },
+        data: { roleId: input.roleId },
         select: { id: true, name: true },
       });
     } catch (error) {
@@ -389,34 +376,17 @@ export async function assignUserRole({ prisma }: TicketServiceDeps, input: UserA
 }
 
 /**
- * 外部机构 picker for the 用户管理 dialogs. Disabled orgs ride along so an
- * existing account still shows the org it is bound to; the dialog offers only
- * the enabled ones for new bindings.
- */
-export async function listExternalOrgOptions({ prisma }: TicketServiceDeps) {
-  return prisma.externalOrg.findMany({
-    select: { id: true, name: true, active: true },
-    orderBy: [{ name: "asc" }, { id: "asc" }],
-  });
-}
-
-/**
- * Role picker options for the 用户管理 dialogs — id + name only, the full
- * permission matrix stays behind role.view.
+ * Role picker options for the 用户管理 dialogs — 内部角色 only, id + name, with
+ * the full permission matrix left behind role.view.
  */
 export async function listRoleOptions({ prisma }: TicketServiceDeps) {
   const roles = await prisma.role.findMany({
     select: { id: true, name: true, system: true, permissions: true },
     orderBy: [{ system: "desc" }, { createdAt: "asc" }, { id: "asc" }],
   });
-  // `external` instead of the raw permission array: the dialogs only need to
-  // know whether to ask for an 外部机构, the matrix stays behind role.view.
-  return roles.map((role) => ({
-    id: role.id,
-    name: role.name,
-    system: role.system,
-    external: isExternalRole(role),
-  }));
+  return roles
+    .filter((role) => !isExternalRole(role))
+    .map((role) => ({ id: role.id, name: role.name, system: role.system }));
 }
 
 /*
@@ -492,11 +462,11 @@ export async function createOrgUser(
   { prisma }: TicketServiceDeps,
   input: ExternalOrgUserCreateData,
 ) {
-  const role = await loadRoleForOrgPairing(prisma, input.roleId);
+  const role = await loadRole(prisma, input.roleId);
   if (!isExternalRole(role)) {
     throw new ExternalRoleOnlyError();
   }
-  const externalOrgId = await resolveExternalOrg(prisma, role, input.orgId);
+  const externalOrgId = await resolveExternalOrg(prisma, input.orgId);
 
   const passwordHash = await hashPassword(input.password);
   try {
@@ -528,12 +498,7 @@ export async function updateOrgUser(
   input: ExternalOrgUserUpdateData,
 ) {
   const target = await loadExternalAccount(prisma, input.id);
-  const externalOrgId = await resolveExternalOrg(
-    prisma,
-    target.role,
-    input.externalOrgId,
-    target.externalOrgId,
-  );
+  const externalOrgId = await resolveExternalOrg(prisma, input.externalOrgId, target.externalOrgId);
 
   const data: Prisma.UserUncheckedUpdateInput = {
     username: input.username,
@@ -607,7 +572,7 @@ export async function assignOrgUserRole(
   input: ExternalOrgUserAssignRoleInput,
 ) {
   const target = await loadExternalAccount(prisma, input.id);
-  const role = await loadRoleForOrgPairing(prisma, input.roleId);
+  const role = await loadRole(prisma, input.roleId);
   if (!isExternalRole(role)) {
     throw new ExternalRoleOnlyError();
   }
