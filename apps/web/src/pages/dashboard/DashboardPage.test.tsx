@@ -164,10 +164,10 @@ describe("指标卡", () => {
     expect(await screen.findByText("工单总数")).toBeInTheDocument();
     for (const label of [
       "未分配",
-      "待处理",
+      "已分配",
       "处理中",
       "已完结",
-      "2小时超时预警",
+      "待超时",
       "已超时",
       "特急工单",
     ]) {
@@ -210,6 +210,13 @@ describe("跟进人考核表", () => {
     canned.stats = statsPayload({ assignees: [] });
     renderDashboard();
     expect(await screen.findByText("暂无考核数据")).toBeInTheDocument();
+  });
+
+  it("shows footnote explaining the two overdue 口径 and the partition", async () => {
+    renderDashboard();
+    expect(
+      await screen.findByText(/超时单数为历史追责口径.*六张状态卡互斥，合计 = 工单总数/),
+    ).toBeInTheDocument();
   });
 });
 

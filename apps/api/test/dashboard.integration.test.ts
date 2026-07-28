@@ -153,7 +153,7 @@ describe("dashboard stats (Testcontainers)", () => {
   }
 
   describe("8 张指标卡", () => {
-    it("counts stored statuses, time overlays and 特急 — one ticket can sit on several cards", async () => {
+    it("6 display statuses partition the set; overdue/pending_timeout no longer count in stored status", async () => {
       const now = new Date();
       const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
 
@@ -194,16 +194,21 @@ describe("dashboard stats (Testcontainers)", () => {
       expect(Object.keys(metrics).sort()).toEqual([...DASHBOARD_METRIC_KEYS].sort());
       expect(metrics.total).toBe(8);
       expect(metrics.unassigned).toBe(3); // 新单 + 特急 + 监管件
-      expect(metrics.assigned).toBe(2); // 已分配 + 预警中: the card counts STORED status
-      expect(metrics.processing).toBe(2); // 处理中 + 已超时: same — overlays don't subtract
+      expect(metrics.assigned).toBe(1); // 已分配 only; 预警中 now counts in pendingTimeout
+      expect(metrics.processing).toBe(1); // 处理中 only; 已超时 now counts in overdue
       expect(metrics.completed).toBe(1);
-      expect(metrics.pendingTimeout).toBe(1); // 预警中 only
-      expect(metrics.overdue).toBe(1); // 已超时 only — 特急 (dueAt null) never computes
+      expect(metrics.pendingTimeout).toBe(1); // 预警中
+      expect(metrics.overdue).toBe(1); // 已超时
       expect(metrics.urgent).toBe(1);
-      // The 4 status cards partition the set; the 4 other cards are overlays.
-      expect(metrics.unassigned + metrics.assigned + metrics.processing + metrics.completed).toBe(
-        metrics.total,
-      );
+      // The 6 display status cards partition the set; their sum = total.
+      expect(
+        metrics.unassigned +
+          metrics.assigned +
+          metrics.processing +
+          metrics.completed +
+          metrics.pendingTimeout +
+          metrics.overdue,
+      ).toBe(metrics.total);
     });
 
     it("agrees with the list predicates on the 2h / dueAt boundaries (single truth)", async () => {
@@ -376,6 +381,46 @@ describe("dashboard stats (Testcontainers)", () => {
 
       const list = await manager().ticket.list({});
       expect(list.items.map((ticket) => ticket.id)).toEqual([kept.id]);
+    });
+  });
+
+  describe("file_import 排除 — 全部指标、渠道表、考核表", () => {
+    it("file_import tickets count nowhere, matching list default", async () => {
+      const now = new Date();
+      await makeTicket({ customerName: "手工单" }, { source: "manual" });
+      await makeTicket(
+        { customerName: "归档·完结", channelId: channelId("监管"), complaintLevel: "特急投诉" },
+        {
+          source: "file_import",
+          status: "completed",
+          assigneeId: seeded.users.cs1.id,
+          completionTime: new Date(now.getTime() - HOUR_MS),
+        },
+      );
+      await makeTicket(
+        { customerName: "归档·在途超时", channelId: channelId("支付") },
+        {
+          source: "file_import",
+          status: "processing",
+          assigneeId: seeded.users.cs1.id,
+          dueAt: new Date(now.getTime() - HOUR_MS),
+        },
+      );
+
+      const stats = await statsAt(now);
+
+      expect(stats.metrics.total).toBe(1);
+      expect(stats.metrics.unassigned).toBe(1);
+      expect(stats.metrics.completed).toBe(0);
+      expect(stats.metrics.overdue).toBe(0);
+      expect(stats.metrics.urgent).toBe(0);
+
+      expect(stats.channels.find((ch) => ch.name === "保司")?.count).toBe(1);
+      expect(stats.channels.find((ch) => ch.name === "监管")?.count).toBe(0);
+      expect(stats.channels.find((ch) => ch.name === "支付")?.count).toBe(0);
+
+      // cs1 held only file_import tickets — the 考核表 must not know them.
+      expect(stats.assignees).toHaveLength(0);
     });
   });
 
@@ -617,7 +662,7 @@ describe("dashboard stats (Testcontainers)", () => {
         },
       );
       await makeTicket(
-        { customerName: "区间起点", channelId: channelId("保司") },
+        { customerName: "区间起点", channelId: channelId("经纪") },
         {
           createdAt: new Date(rangeStart),
           status: "assigned",
@@ -625,12 +670,18 @@ describe("dashboard stats (Testcontainers)", () => {
         },
       );
       await makeTicket(
-        { customerName: "区间内超时", channelId: channelId("监管"), complaintLevel: "特急投诉" },
+        { customerName: "区间内处理中", channelId: channelId("监管") },
         {
           createdAt: new Date("2026-07-16T10:00:00Z"),
           status: "processing",
           assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() - HOUR_MS),
+          dueAt: new Date(now.getTime() + 10 * HOUR_MS),
+        },
+      );
+      await makeTicket(
+        { customerName: "区间内特急", channelId: channelId("保司"), complaintLevel: "特急投诉" },
+        {
+          createdAt: new Date("2026-07-17T10:00:00Z"),
         },
       );
       await makeTicket(
@@ -652,16 +703,16 @@ describe("dashboard stats (Testcontainers)", () => {
         createdTo: rangeEnd,
       });
 
-      expect(stats.metrics.total).toBe(3);
-      expect(stats.metrics.unassigned).toBe(0);
+      expect(stats.metrics.total).toBe(4);
+      expect(stats.metrics.unassigned).toBe(1); // 区间内特急
       expect(stats.metrics.assigned).toBe(1);
       expect(stats.metrics.processing).toBe(1);
       expect(stats.metrics.completed).toBe(1);
-      expect(stats.metrics.overdue).toBe(1);
+      expect(stats.metrics.overdue).toBe(0);
       expect(stats.metrics.urgent).toBe(1);
 
       expect(stats.channels.find((ch) => ch.name === "保司")?.count).toBe(1);
-      expect(stats.channels.find((ch) => ch.name === "经纪")?.count).toBe(0);
+      expect(stats.channels.find((ch) => ch.name === "经纪")?.count).toBe(1);
       expect(stats.channels.find((ch) => ch.name === "支付")?.count).toBe(1);
       expect(stats.channels.find((ch) => ch.name === "监管")?.count).toBe(1);
 
@@ -669,7 +720,7 @@ describe("dashboard stats (Testcontainers)", () => {
       const cs1Row = stats.assignees.find((a) => a.assigneeId === seeded.users.cs1.id);
       expect(cs1Row?.totalCount).toBe(2);
       expect(cs1Row?.completedCount).toBe(0);
-      expect(cs1Row?.overdueCount).toBe(1);
+      expect(cs1Row?.overdueCount).toBe(0);
       const managerRow = stats.assignees.find((a) => a.assigneeId === seeded.users.manager.id);
       expect(managerRow?.totalCount).toBe(1);
       expect(managerRow?.completedCount).toBe(1);

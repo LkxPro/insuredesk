@@ -3,23 +3,26 @@ import {
   DASHBOARD_TOP_ASSIGNEE_LIMIT,
   type DashboardMetricKey,
   type DashboardStatsInput,
+  DEFAULT_TICKET_SOURCE_FILTER,
   TicketStatus,
 } from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyDashboardDataScope } from "./data-scope.service";
 import type { TicketServiceDeps } from "./ticket.service";
-import { overdueTicketWhere, pendingTimeoutTicketWhere } from "./ticket-display-status";
+import { displayStatusTicketWhere } from "./ticket-display-status";
 
 /**
  * 数据看板 aggregation: the 8 metric cards, the channel distribution, and
  * the Top-10 跟进人考核表, all in one read.
  *
- * Every count shares one WHERE base: soft-delete exclusion plus the
- * dashboard data scope — no `dashboard.view_all` → statistics narrow to the
- * viewer's own tickets. The 预警/超时 cards reuse the single-truth time
- * predicates from ticket-display-status.ts, never restating them,
- * so the dashboard reddens at the same instant as the list and 我的待办.
+ * Every count shares one WHERE base: soft-delete exclusion, file_import
+ * exclusion (dashboard excludes archived imports, matching the list default),
+ * plus the dashboard data scope — no `dashboard.view_all` → statistics narrow
+ * to the viewer's own tickets. The 6 status cards use displayStatusTicketWhere
+ * for a mutually-exclusive partition — each ticket counts in exactly one card,
+ * and their sum = total. The dashboard reddens at the same instant as the list
+ * and 我的待办.
  *
  * Two overdue 口径 coexist ON PURPOSE:
  * - 已超时 card  = 实时运营视角: in-flight past dueAt, drops out on completion
@@ -75,6 +78,7 @@ export async function getDashboardStats(
   }
   const base: Prisma.TicketWhereInput = {
     deletedAt: null,
+    source: { in: [...DEFAULT_TICKET_SOURCE_FILTER] },
     ...scoped,
     ...(Object.keys(createdAt).length > 0 && { createdAt }),
   };
@@ -85,9 +89,7 @@ export async function getDashboardStats(
   const anyAssignee: Prisma.TicketWhereInput = { assigneeId: { not: null } };
 
   const [
-    statusGroups,
-    pendingTimeout,
-    overdue,
+    displayStatusGroups,
     urgent,
     channelCatalog,
     channelGroups,
@@ -96,19 +98,14 @@ export async function getDashboardStats(
     assigneeOverdueInFlight,
     assigneeOverdueCompleted,
   ] = await Promise.all([
-    // Promise.all, not $transaction: a batch transaction at the default read
-    // committed level takes a fresh snapshot per statement anyway, so it buys
-    // no cross-count consistency — and it degrades groupBy's payload typing.
-    // orderBy on the group key satisfies groupBy's required-orderBy typing;
-    // result order is irrelevant (lookups below are keyed, never positional).
-    prisma.ticket.groupBy({
-      by: ["status"],
-      where: base,
-      _count: { _all: true },
-      orderBy: { status: "asc" },
-    }),
-    prisma.ticket.count({ where: and(pendingTimeoutTicketWhere(now)) }),
-    prisma.ticket.count({ where: and(overdueTicketWhere(now)) }),
+    Promise.all([
+      prisma.ticket.count({ where: and(displayStatusTicketWhere("unassigned", now)) }),
+      prisma.ticket.count({ where: and(displayStatusTicketWhere("assigned", now)) }),
+      prisma.ticket.count({ where: and(displayStatusTicketWhere("processing", now)) }),
+      prisma.ticket.count({ where: and(displayStatusTicketWhere("completed", now)) }),
+      prisma.ticket.count({ where: and(displayStatusTicketWhere("pending_timeout", now)) }),
+      prisma.ticket.count({ where: and(displayStatusTicketWhere("overdue", now)) }),
+    ]),
     prisma.ticket.count({ where: and({ complaintLevel: URGENT_LEVEL }) }),
     prisma.channel.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }),
     prisma.ticket.groupBy({
@@ -129,10 +126,9 @@ export async function getDashboardStats(
       _count: { _all: true },
       orderBy: { assigneeId: "asc" },
     }),
-    // 在途超时 — the same fragment the 已超时 card and the list filter use.
     prisma.ticket.groupBy({
       by: ["assigneeId"],
-      where: and(anyAssignee, overdueTicketWhere(now)),
+      where: and(anyAssignee, displayStatusTicketWhere("overdue", now)),
       _count: { _all: true },
       orderBy: { assigneeId: "asc" },
     }),
@@ -149,17 +145,16 @@ export async function getDashboardStats(
     }),
   ]);
 
-  const statusCount = (status: (typeof TicketStatus)[keyof typeof TicketStatus]) =>
-    statusGroups.find((group) => group.status === status)?._count._all ?? 0;
+  const [unassigned, assigned, processing, completed, pendingTimeout, overdue] =
+    displayStatusGroups;
 
   const metrics: Record<DashboardMetricKey, number> = {
-    // The 4 stored statuses partition the (scoped, non-deleted) set, so their
-    // sum IS the total — one groupBy serves five cards.
-    total: statusGroups.reduce((sum, group) => sum + group._count._all, 0),
-    unassigned: statusCount(TicketStatus.Unassigned),
-    assigned: statusCount(TicketStatus.Assigned),
-    processing: statusCount(TicketStatus.Processing),
-    completed: statusCount(TicketStatus.Completed),
+    // The 6 display statuses partition the (non-deleted, non-file_import) set.
+    total: unassigned + assigned + processing + completed + pendingTimeout + overdue,
+    unassigned,
+    assigned,
+    processing,
+    completed,
     pendingTimeout,
     overdue,
     urgent,
