@@ -1,7 +1,6 @@
 import { PERMISSION_LABELS, type Permission } from "@insuredesk/shared";
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
-import superjson from "superjson";
 import { ZodError } from "zod";
 import type { AuthenticatedUser, SessionToken } from "./services/auth.service";
 
@@ -37,7 +36,6 @@ export function createContext({ req }: CreateFastifyContextOptions): Context {
 }
 
 const t = initTRPC.context<Context>().create({
-  transformer: superjson,
   // Standardize Zod validation failures: every error response carries a
   // field-level `zodError` alongside the default shape.
   errorFormatter({ shape, error }) {
