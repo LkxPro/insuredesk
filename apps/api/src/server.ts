@@ -22,6 +22,12 @@ import { createContext } from "./trpc";
  */
 export function buildServer(env: Env) {
   const app = Fastify({
+    // httpBatchLink packs every procedure name of a batch into ONE path
+    // segment; Fastify's 100-char default rejects those with a 414 whose body
+    // isn't a tRPC envelope, so the client surfaces "Unable to transform
+    // response from server" instead of anything actionable. 工单管理 alone
+    // batches 5 procedures / 111 chars.
+    routerOptions: { maxParamLength: 5000 },
     logger: {
       level: env.LOG_LEVEL,
       ...(env.NODE_ENV === "development"
