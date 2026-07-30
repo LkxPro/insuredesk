@@ -1,225 +1,90 @@
-import { TICKET_STATUS_LABELS, TICKET_STATUSES, type TicketStatus } from "@insuredesk/shared";
-import { keepPreviousData } from "@tanstack/react-query";
-import { AlertCircle, Inbox, Search } from "lucide-react";
-import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
+import type { AppRouter } from "@insuredesk/api";
+import { PROCESS_LOG_ACTION_LABELS } from "@insuredesk/shared";
+import type { inferRouterOutputs } from "@trpc/server";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { trpc } from "@/lib/trpc";
-import { MultiSelectFilter } from "@/pages/tickets/MultiSelectFilter";
-import { externalFieldLabel, externalFieldValue } from "./external-ticket-fields";
+import { formatDateTime } from "@/lib/datetime";
+import { cn } from "@/lib/utils";
+import { StatusBadge } from "@/pages/tickets/StatusBadge";
 
 /**
- * 我的工单 tab 的内容。列按当前账号的可见字段白名单动态渲染
- * （白名单随列表响应下发——外部方读不到账号配置接口），顺序即白名单顺序，
- * 管理员改配置后无需改代码。数据范围（本人提交 + 未删除）与字段裁剪都在服务端，
- * 这里渲染拿到的一切。
+ * 行列表：固定 schema——工单号 / 状态 / 「客服新发言」徽标 / 最新跟进
+ * 摘要 / 时间，不放业务字段（身份字段按账号盖章，同账号行内是常量，零区分
+ * 价值）。行序即服务端排定的序（客服新发言在前），这里只管渲染与选中。
  *
- * 筛选与分页状态住在 URL 里，与 工单管理 同一套 deep-link 处理；排序固定
- * createdAt DESC，外部方只关心最新提交在最前。
+ * 「客服新发言」纯派生：最新一条可见处理记录是客服的 comment = 球在你这边；
+ * 是你自己的留言或建单则无徽标（等客服）。最新活跃时刻取最新可见记录的
+ * at，与排序键同源。
  */
 
-const PAGE_SIZE = 20;
+type ListItem = inferRouterOutputs<AppRouter>["externalTicket"]["list"]["items"][number];
 
-/** URL → 查询参数；单个参数畸形只退回它自己的缺省，不连坐其他筛选。 */
-function parseQuery(params: URLSearchParams) {
-  const rawStatus = params.get("status")?.split(",").filter(Boolean) ?? [];
-  const status = rawStatus.filter((value): value is TicketStatus =>
-    TICKET_STATUSES.includes(value as TicketStatus),
-  );
-  const page = Math.max(1, Number(params.get("page")) || 1);
-  return { status, search: params.get("q") ?? "", page };
+/** 最新跟进摘要：动作标签 + 有 remark 才拼内容（建单/完结的 remark 可能为空）。 */
+function latestSummary(item: ListItem): string {
+  const log = item.latestLog;
+  if (!log) {
+    return "—";
+  }
+  const label = PROCESS_LOG_ACTION_LABELS[log.action];
+  return log.remark ? `${label}：${log.remark}` : label;
 }
 
-export function ExternalTicketListPane() {
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const query = parseQuery(searchParams);
-  const [searchDraft, setSearchDraft] = useState(query.search);
-
-  const listQuery = trpc.externalTicket.list.useQuery(
-    {
-      status: query.status.length > 0 ? query.status : undefined,
-      search: query.search || undefined,
-      offset: (query.page - 1) * PAGE_SIZE,
-      limit: PAGE_SIZE,
-    },
-    { placeholderData: keepPreviousData },
-  );
-
-  /** 设置/清除一个 URL 参数；筛选变化回到第 1 页。 */
-  function setParam(key: string, value: string | null, { resetPage = true } = {}) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (value === null) {
-        next.delete(key);
-      } else {
-        next.set(key, value);
-      }
-      if (resetPage) {
-        next.delete("page");
-      }
-      return next;
-    });
+export function ExternalTicketListPane({
+  items,
+  isLoading,
+  selectedId,
+  onSelect,
+}: {
+  items: readonly ListItem[];
+  isLoading: boolean;
+  selectedId: string | undefined;
+  onSelect: (ticketId: string) => void;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-3 p-3">
+        {[0, 1, 2, 3, 4].map((row) => (
+          <Skeleton key={row} className="h-14 w-full" />
+        ))}
+      </div>
+    );
   }
 
-  const items = listQuery.data?.items ?? [];
-  const total = listQuery.data?.total ?? 0;
-  const columns = listQuery.data?.visibleFields ?? [];
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <MultiSelectFilter
-          label="状态"
-          values={query.status}
-          options={TICKET_STATUSES.map((status) => ({
-            value: status,
-            label: TICKET_STATUS_LABELS[status],
-          }))}
-          onChange={(values) => setParam("status", values.length > 0 ? values.join(",") : null)}
-        />
-        <form
-          className="relative"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setParam("q", searchDraft.trim() || null);
-          }}
-        >
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.target.value)}
-            placeholder="工单号 / 工单原文"
-            className="h-8 w-60 pl-8"
-          />
-        </form>
-      </div>
-
-      {listQuery.error ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>工单列表加载失败</AlertTitle>
-          <AlertDescription>{listQuery.error.message}</AlertDescription>
-        </Alert>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
-          <Table>
-            {/* 表头随行滚动会丢失列语义，钉在滚动容器顶部 */}
-            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
-              <TableRow>
-                {columns.map((key) => (
-                  <TableHead key={key}>{externalFieldLabel(key, "listLabel")}</TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {listQuery.isLoading ? (
-                [0, 1, 2, 3, 4].map((row) => (
-                  <TableRow key={row}>
-                    {(columns.length > 0 ? columns : ["a", "b", "c"]).map((key) => (
-                      <TableCell key={key}>
-                        <Skeleton className="h-4 w-full max-w-24" />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={Math.max(1, columns.length)} className="h-64">
-                    <Empty className="border-0">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <Inbox />
-                        </EmptyMedia>
-                        <EmptyTitle>没有工单</EmptyTitle>
-                        <EmptyDescription>
-                          {query.status.length > 0 || query.search
-                            ? "当前筛选条件下没有工单，换个条件试试。"
-                            : "切到「提交工单」，把客户反馈原文交给客服团队。"}
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((ticket) => (
-                  <TableRow
-                    key={ticket.id}
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/external-tickets/${ticket.id}`)}
-                  >
-                    {columns.map((key) => (
-                      <TableCell key={key} className="max-w-72 truncate">
-                        {key === "workOrderNumber" ? (
-                          // 行点击是鼠标的便利路径；工单号上的链接是键盘与
-                          // 读屏的正路（与 工单管理 同一处理）
-                          <Link
-                            to={`/external-tickets/${ticket.id}`}
-                            className="font-medium hover:underline"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            {ticket.workOrderNumber}
-                          </Link>
-                        ) : (
-                          (externalFieldValue(ticket, key) ?? (
-                            <span className="text-muted-foreground">—</span>
-                          ))
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!listQuery.error && (
-        <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span>
-            共 {total} 条 · 第 {query.page} / {totalPages} 页
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={query.page <= 1 || listQuery.isLoading}
-              onClick={() => setParam("page", String(query.page - 1), { resetPage: false })}
-            >
-              上一页
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={query.page >= totalPages || listQuery.isLoading}
-              onClick={() => setParam("page", String(query.page + 1), { resetPage: false })}
-            >
-              下一页
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
+    <nav aria-label="工单列表" className="min-h-0 flex-1 overflow-y-auto">
+      <ul className="m-0 flex list-none flex-col p-0">
+        {items.map((item) => {
+          const selected = item.id === selectedId;
+          const awaitingReply = item.latestLog?.action === "comment";
+          return (
+            <li key={item.id}>
+              <button
+                type="button"
+                aria-current={selected ? "true" : undefined}
+                onClick={() => onSelect(item.id)}
+                className={cn(
+                  "flex w-full flex-col items-start gap-1 border-b px-3 py-2 text-left hover:bg-muted/50",
+                  selected && "bg-muted",
+                )}
+              >
+                <div className="flex w-full items-center justify-between gap-2">
+                  <span className="truncate text-sm font-medium">{item.workOrderNumber}</span>
+                  <StatusBadge status={item.status} />
+                </div>
+                <div className="flex w-full min-w-0 items-center gap-1.5">
+                  {awaitingReply && <Badge className="shrink-0">客服新发言</Badge>}
+                  <span className="truncate text-xs text-muted-foreground">
+                    {latestSummary(item)}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {formatDateTime(item.latestLog?.at ?? item.createdAt)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }

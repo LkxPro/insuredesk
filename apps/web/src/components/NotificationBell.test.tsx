@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter, Route, Routes, useParams } from "react-router";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
@@ -13,12 +13,19 @@ import { trpc } from "@/lib/trpc";
  * the ticket detail with mark-read, toast only for notifications that ARRIVE
  * after the first poll, and 全部已读. Same faked-fetch tRPC pipeline as the
  * TicketsPage tests; polling refetches are driven via queryClient invalidation
- * instead of waiting out the 30s interval.
+ * instead of waiting out the 30s interval. 点击路由按账号侧分叉：外部账号
+ * 落 /external-tickets/:id，内部落 /tickets/:id。
  */
+
+const auth = vi.hoisted(() => ({ isExternal: false }));
+
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({ user: { isExternal: auth.isExternal } }),
+}));
 
 type Item = {
   id: string;
-  type: "assigned";
+  type: string;
   title: string;
   content: string;
   ticketId: string | null;
@@ -90,6 +97,11 @@ function TicketDetailProbe() {
   return <div>工单详情页 {id}</div>;
 }
 
+function ExternalTicketDetailProbe() {
+  const { id } = useParams();
+  return <div>外部工单详情页 {id}</div>;
+}
+
 function renderBell() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const trpcClient = trpc.createClient({
@@ -104,6 +116,7 @@ function renderBell() {
             <Routes>
               <Route path="/" element={<NotificationBell />} />
               <Route path="/tickets/:id" element={<TicketDetailProbe />} />
+              <Route path="/external-tickets/:id" element={<ExternalTicketDetailProbe />} />
             </Routes>
           </MemoryRouter>
           <Toaster />
@@ -124,6 +137,7 @@ async function poll(queryClient: QueryClient) {
 beforeEach(() => {
   canned.items = [];
   calls = [];
+  auth.isExternal = false;
 });
 
 describe("badge and inbox", () => {
@@ -184,6 +198,18 @@ describe("click-through (点击跳详情 + 标已读)", () => {
 
     expect(await screen.findByText("工单详情页 t1")).toBeInTheDocument();
     expect(calls.some((call) => call.path === "notification.markRead")).toBe(false);
+  });
+
+  it("外部账号点击落到 /external-tickets/:id", async () => {
+    auth.isExternal = true;
+    canned.items = [item({ id: "n1", type: "external_reply", title: "客服跟进", ticketId: "t9" })];
+    renderBell();
+
+    fireEvent.click(await screen.findByRole("button", { name: "通知（1 条未读）" }));
+    fireEvent.click(await screen.findByText("客服跟进"));
+
+    expect(await screen.findByText("外部工单详情页 t9")).toBeInTheDocument();
+    expect(screen.queryByText("工单详情页 t9")).not.toBeInTheDocument();
   });
 });
 

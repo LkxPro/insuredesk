@@ -1,6 +1,10 @@
 import { type TicketAddCommentData, TicketStatus, ticketStatusSchema } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service";
 import { applyTicketDataScope } from "./data-scope.service";
+import {
+  buildExternalReplyNotification,
+  writeExternalCreatorNotification,
+} from "./notification.service";
 import type { TicketServiceDeps } from "./ticket.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
 
@@ -52,7 +56,7 @@ export async function addTicketComment(
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
       where: { id: input.ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
-      select: { id: true, workOrderNumber: true, status: true },
+      select: { id: true, workOrderNumber: true, status: true, source: true, creatorId: true },
     });
     if (!ticket) {
       throw new TicketNotFoundError();
@@ -121,6 +125,18 @@ export async function addTicketComment(
           to: TicketStatus.Processing,
           remark: "首次跟进",
         },
+      });
+    }
+
+    // 内部跟进的回执只发给外部提交者；internalOnly 外部不可见，不发
+    if (!input.internalOnly) {
+      await writeExternalCreatorNotification(tx, {
+        ticket,
+        ...buildExternalReplyNotification({
+          operatorName: actor.name,
+          workOrderNumber: ticket.workOrderNumber,
+        }),
+        now,
       });
     }
 

@@ -11,17 +11,13 @@ import { formatDateTime } from "@/lib/datetime";
 import { StatusBadge } from "@/pages/tickets/StatusBadge";
 
 /**
- * 外部工单字段的取词与取值：列表列头、详情卡片、空值判定共用这一份，两个页面
- * 不各自维护 label 表。可见字段白名单里除建单字段外还有三个系统字段
- * （工单号/状态/最新跟进），它们不在 TICKET_FIELDS 里，标签在这里补齐。
+ * 外部工单字段的取词与取值：详情字段卡的标签、取值、空值判定共用这一份。
+ * 可见字段白名单里除建单字段外还有三个系统字段（工单号/状态/最新跟进），
+ * 它们不在 TICKET_FIELDS 里，标签在这里补齐。列表行是固定 schema（工单号/
+ * 状态/徽标/最新跟进摘要/时间），不经过本文件。
  */
 
-export type ExternalTicket =
-  inferRouterOutputs<AppRouter>["externalTicket"]["list"]["items"][number];
-
-/** 详情响应里的一条处理记录。 */
-export type ExternalProcessLog =
-  inferRouterOutputs<AppRouter>["externalTicket"]["detail"]["processLogs"][number];
+export type ExternalTicket = inferRouterOutputs<AppRouter>["externalTicket"]["detail"]["ticket"];
 
 /** 白名单里不属于建单字段的系统字段标签。 */
 const SYSTEM_FIELD_LABELS: Record<string, string> = {
@@ -46,13 +42,13 @@ function overridesOf(key: string): TicketFieldOverrides | undefined {
   return descriptor && "overrides" in descriptor ? descriptor.overrides : undefined;
 }
 
-/** 列表列头/详情标题取词；表面各自的 override 优先，缺省用标准名。 */
-export function externalFieldLabel(key: string, surface: "listLabel" | "detailLabel"): string {
+/** 详情卡片标题取词；detailLabel override 优先，缺省用标准名。 */
+export function externalFieldLabel(key: string): string {
   const descriptor = TICKET_FIELDS[key as keyof typeof TICKET_FIELDS];
   if (!descriptor) {
     return SYSTEM_FIELD_LABELS[key] ?? key;
   }
-  return overridesOf(key)?.[surface] ?? descriptor.label;
+  return overridesOf(key)?.detailLabel ?? descriptor.label;
 }
 
 /**

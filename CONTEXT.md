@@ -68,7 +68,7 @@ ComplaintLevel 所含的可配置 SLA 规则值，没有脱离等级的独立生
 一张工单当前实际采用的结构化 SLAPolicy 副本，是处理时限、首响要求、跟进频次与待办判定的共同依据。未完结工单会随所属等级策略更新而替换快照；完结时快照冻结，保留历史口径。
 
 **收件箱（AppNotification）**：
-通知两轨制之轨 1：用户操作触发的真事件（本期仅 assigned），同步落库，有已读/未读与 toast。
+通知两轨制之轨 1：用户操作触发的真事件，同步落库，有已读/未读与 toast。双向流动：内部事件通知内部用户（assigned 分配/改派；external_submitted 外部提交、external_note 外部留言广播或直达责任人），内部动作回执通知外部提交者（仅 source=external_channel 的工单：非 internal 跟进 → external_reply，完结 → external_resolved，直达 creatorId）。铃铛点击按账号内外部侧分叉到各自的工单路由。
 
 **我的待办**：
 通知两轨制之轨 2：待首响/检查点未达/特急欠跟进/due_soon/overdue 等时间类告警，**不落库**——前端 30 秒轮询时按当前 assigneeId 名下工单读时计算；未分配工单不进任何人的待办。

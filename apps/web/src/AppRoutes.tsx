@@ -7,7 +7,6 @@ import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
 import { ExternalAccountManagePage } from "@/pages/external-accounts/ExternalAccountManagePage";
-import { ExternalTicketDetailPage } from "@/pages/external-tickets/ExternalTicketDetailPage";
 import { ExternalTicketsPage } from "@/pages/external-tickets/ExternalTicketsPage";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
@@ -95,13 +94,13 @@ export function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        {/* 外部详情是独立路由，与主页共用同一 tab 顶栏：外部方的工单少、
-            停留久，留言与时间线值得整屏。守卫与列表同一个权限点，数据范围在服务端。 */}
+        {/* 外部端是主从单页：:id 只是列表的选中态，与 /tickets/:id 同一处理。
+            守卫与列表同一个权限点，数据范围在服务端。 */}
         <Route
           path="/external-tickets/:id"
           element={
             <ProtectedRoute requiredPermission="ticket.create_external">
-              <ExternalTicketDetailPage />
+              <ExternalTicketsPage />
             </ProtectedRoute>
           }
         />

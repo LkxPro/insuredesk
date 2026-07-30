@@ -156,6 +156,58 @@ export async function writeBulkNotifications(
   });
 }
 
+/** Pure message builder for the `external_reply` notification (内部跟进回执给外部提交者). */
+export function buildExternalReplyNotification(params: {
+  operatorName: string;
+  workOrderNumber: string;
+}) {
+  return {
+    type: "external_reply",
+    title: "客服跟进",
+    content: `${params.operatorName} 在工单 ${params.workOrderNumber} 添加了跟进`,
+  };
+}
+
+/** Pure message builder for the `external_resolved` notification. */
+export function buildExternalResolvedNotification(params: { workOrderNumber: string }) {
+  return {
+    type: "external_resolved",
+    title: "工单完结",
+    content: `工单 ${params.workOrderNumber} 已完结`,
+  };
+}
+
+/**
+ * 内部动作 → 外部提交者回执的唯一写入点：只有 source=external_channel 的
+ * 工单才有外部提交者可通知（其余来源的 creator 是内部同事，不在此通道），
+ * 在调用方的事务内写入，与动作本身同 commit。
+ */
+export async function writeExternalCreatorNotification(
+  tx: Prisma.TransactionClient,
+  params: {
+    ticket: { id: string; workOrderNumber: string; source: string; creatorId: string | null };
+    type: string;
+    title: string;
+    content: string;
+    now: Date;
+  },
+) {
+  if (params.ticket.source !== "external_channel" || params.ticket.creatorId === null) {
+    return;
+  }
+  await tx.appNotification.create({
+    data: {
+      type: params.type,
+      title: params.title,
+      content: params.content,
+      ticketId: params.ticket.id,
+      workOrderNumber: params.ticket.workOrderNumber,
+      targetUserId: params.ticket.creatorId,
+      createdAt: params.now,
+    },
+  });
+}
+
 /**
  * The bell's poll payload: the viewer's latest notifications plus their total
  * unread count, in one request (one 30s poll). Notifications

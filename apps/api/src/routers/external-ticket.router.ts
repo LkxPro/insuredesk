@@ -13,7 +13,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
-import type { Prisma } from "../generated/prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import {
   buildExternalNoteNotification,
   buildExternalSubmittedNotification,
@@ -221,8 +221,14 @@ export const externalTicketRouter = router({
 
   /**
    * List: external user lists tickets they submitted.
-   * Applies creatorId = 本人 + deletedAt IS NULL.
-   * Filters each ticket by the account's visibleTicketFields whitelist.
+   * Scope: creatorId = 本人 + deletedAt IS NULL; completed 默认排除
+   * （includeCompleted 或显式 status 筛选可查出）。排序：最新可见跟进是客服
+   * comment 的工单置顶（"该你说话了"），其余按最新可见跟进时刻倒序。
+   * 每单附最新一条可见跟进（可见性口径与 detail 相同），客户端据此渲染
+   * 摘要行与「客服新发言」徽标——纯派生，无已读落库。
+   *
+   * "每单最新一条可见日志 + 按它排序"超出 Prisma 关系查询能力，页切片走
+   * LATERAL 子查询取 id 页，再回 Prisma 水合字段（序列化口径只有一份）。
    */
   list: requirePermission("ticket.create_external")
     .input(externalTicketListInputSchema)
@@ -232,36 +238,86 @@ export const externalTicketRouter = router({
       const account = await loadExternalAccountConfig(user.id);
       const whitelist = resolveWhitelist(account.visibleTicketFields);
 
-      const where: Prisma.TicketWhereInput = {
-        creatorId: user.id,
-        deletedAt: null,
-        ...(input.status && input.status.length > 0 ? { status: { in: input.status } } : {}),
-        ...(input.search
-          ? {
-              OR: [
-                { workOrderNumber: { contains: input.search, mode: "insensitive" as const } },
-                { submissionText: { contains: input.search, mode: "insensitive" as const } },
-              ],
-            }
-          : {}),
-      };
+      const conditions: Prisma.Sql[] = [
+        Prisma.sql`t."creatorId" = ${user.id}`,
+        Prisma.sql`t."deletedAt" IS NULL`,
+      ];
+      if (input.status && input.status.length > 0) {
+        conditions.push(Prisma.sql`t.status IN (${Prisma.join(input.status)})`);
+      } else if (!input.includeCompleted) {
+        conditions.push(Prisma.sql`t.status <> 'completed'`);
+      }
+      if (input.search) {
+        const pattern = `%${input.search}%`;
+        conditions.push(
+          Prisma.sql`(t."workOrderNumber" ILIKE ${pattern} OR t."submissionText" ILIKE ${pattern})`,
+        );
+      }
+      const whereSql = Prisma.join(conditions, " AND ");
 
-      const [tickets, total] = await Promise.all([
-        prisma.ticket.findMany({
-          where,
-          include: catalogInclude,
-          orderBy: { createdAt: "desc" },
-          skip: input.offset,
-          take: input.limit,
-        }),
-        prisma.ticket.count({ where }),
+      // 可见性口径与 detail 的 ProcessLog 过滤相同，改一处必须改另一处
+      const [pageRows, countRows] = await Promise.all([
+        prisma.$queryRaw<
+          {
+            id: string;
+            latest_action: string | null;
+            latest_remark: string | null;
+            latest_at: Date | null;
+          }[]
+        >`
+          SELECT t.id, p.action AS latest_action, p.remark AS latest_remark, p.at AS latest_at
+          FROM tickets t
+          LEFT JOIN LATERAL (
+            SELECT p0.action, p0.remark, p0.at
+            FROM process_logs p0
+            WHERE p0."ticketId" = t.id
+              AND (
+                p0.action IN ('create', 'external_note', 'resolve')
+                OR (p0.action = 'comment' AND p0."internalOnly" = false)
+              )
+            ORDER BY p0.at DESC
+            LIMIT 1
+          ) p ON true
+          WHERE ${whereSql}
+          ORDER BY (p.action = 'comment') DESC NULLS LAST,
+                   COALESCE(p.at, t."createdAt") DESC,
+                   t.id DESC
+          LIMIT ${input.limit} OFFSET ${input.offset}
+        `,
+        prisma.$queryRaw<[{ count: bigint }]>`
+          SELECT count(*) AS count FROM tickets t WHERE ${whereSql}
+        `,
       ]);
 
+      const pageIds = pageRows.map((row) => row.id);
+      const tickets = await prisma.ticket.findMany({
+        where: { id: { in: pageIds } },
+        include: catalogInclude,
+      });
+      const ticketById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+
+      const items = pageRows.map((row) => {
+        const ticket = ticketById.get(row.id);
+        if (!ticket) {
+          // 页切片与水合之间并发删除了该单：跳过比 500 更接近真实
+          return null;
+        }
+        return {
+          ...serializeExternalTicket(ticket, whitelist),
+          latestLog:
+            row.latest_action === null
+              ? null
+              : {
+                  action: processLogActionSchema.parse(row.latest_action),
+                  remark: row.latest_remark ?? "",
+                  at: (row.latest_at as Date).toISOString(),
+                },
+        };
+      });
+
       return {
-        items: tickets.map((ticket) => serializeExternalTicket(ticket, whitelist)),
-        total,
-        // 列表列与详情卡片都按账号白名单渲染，客户端没有别的途径读到它
-        visibleFields: whitelist,
+        items: items.filter((item) => item !== null),
+        total: Number(countRows[0].count),
       };
     }),
 

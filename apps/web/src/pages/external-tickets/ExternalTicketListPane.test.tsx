@@ -4,13 +4,10 @@ import { callsTo, renderApp } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 我的工单 tab：列跟着账号可见字段白名单走（白名单随响应下发），筛选与分页
- * 状态住在 URL 里。数据范围与字段裁剪是服务端的事，这里验证渲染与请求参数。
- * 列表住在主页的 tab 布局里，用例统一从 ?tab=list 进入。
+ * 工单行列表：固定行 schema（工单号/状态/徽标/最新跟进摘要/时间），行序与
+ * 徽标语义由服务端给定，这里验证渲染与请求参数。筛选（状态/关键词/含已完结）
+ * 与分页住在 URL 里。jsdom 无 matchMedia → 不触发着陆自动选中，列表稳定可见。
  */
-
-/** 白名单顺序即列顺序；这里刻意不按 TICKET_FIELDS 顺序，验证列跟着配置走。 */
-const VISIBLE_FIELDS = ["workOrderNumber", "status", "feedbackTime", "processingResult"];
 
 function ticket(overrides: Record<string, unknown> = {}) {
   return {
@@ -39,26 +36,26 @@ function ticket(overrides: Record<string, unknown> = {}) {
     completionStatusId: null,
     completionStatusName: null,
     completionTime: null,
+    latestLog: null,
     ...overrides,
   };
 }
 
 function listPayload(items: unknown[], overrides: Record<string, unknown> = {}) {
-  return { items, total: items.length, visibleFields: VISIBLE_FIELDS, ...overrides };
+  return { items, total: items.length, ...overrides };
 }
 
-function renderList(overrides: Record<string, unknown> = {}) {
+function renderList(overrides: Record<string, unknown> = {}, path = "/external-tickets") {
   return renderApp({
-    path: "/external-tickets?tab=list",
+    path,
     role: TEST_ROLES.EXTERNAL,
     isExternal: true,
     trpc: {
       "externalTicket.list": listPayload([ticket()]),
-      // 行点击用例会真的切到详情路由；给详情一个合法响应，免得它拿
-      // 默认空壳渲染崩掉（unhandled error 会让整个 vitest 进程判败）
+      // 行点击用例会真的选中进详情；给详情一个合法响应，免得它拿默认空壳渲染崩掉
       "externalTicket.detail": {
         ticket: ticket(),
-        visibleFields: VISIBLE_FIELDS,
+        visibleFields: ["workOrderNumber", "status"],
         processLogs: [],
       },
       ...overrides,
@@ -66,44 +63,71 @@ function renderList(overrides: Record<string, unknown> = {}) {
   });
 }
 
-describe("列渲染跟随账号白名单", () => {
-  it("renders one column per visible field, in whitelist order", async () => {
+describe("行渲染", () => {
+  it("最新可见记录是客服 comment → 有「客服新发言」徽标与摘要", async () => {
+    renderList({
+      "externalTicket.list": listPayload([
+        ticket({
+          latestLog: {
+            action: "comment",
+            remark: "请补充保单号",
+            at: "2026-07-09T03:00:00.000Z",
+          },
+        }),
+      ]),
+    });
+
+    const row = (await screen.findByText("WO100001")).closest("button") as HTMLElement;
+    expect(within(row).getByText("客服新发言")).toBeInTheDocument();
+    expect(within(row).getByText("跟进记录：请补充保单号")).toBeInTheDocument();
+  });
+
+  it("最新记录是自己的留言 → 无徽标（球在客服那边）", async () => {
+    renderList({
+      "externalTicket.list": listPayload([
+        ticket({
+          latestLog: {
+            action: "external_note",
+            remark: "补充一句",
+            at: "2026-07-09T03:00:00.000Z",
+          },
+        }),
+      ]),
+    });
+
+    const row = (await screen.findByText("WO100001")).closest("button") as HTMLElement;
+    expect(within(row).queryByText("客服新发言")).not.toBeInTheDocument();
+    expect(within(row).getByText("外部留言：补充一句")).toBeInTheDocument();
+  });
+
+  it("建单后无动静 → 摘要只有动作标签，时间回落到创建时刻", async () => {
+    renderList({
+      "externalTicket.list": listPayload([
+        ticket({ latestLog: { action: "create", remark: "", at: "2026-07-09T02:00:00.000Z" } }),
+      ]),
+    });
+
+    const row = (await screen.findByText("WO100001")).closest("button") as HTMLElement;
+    expect(within(row).getByText("创建工单")).toBeInTheDocument();
+    expect(within(row).queryByText("客服新发言")).not.toBeInTheDocument();
+  });
+
+  it("点击行选中：详情拉取该单", async () => {
     renderList();
 
-    // 列头随响应到达才渲染（加载中只有骨架行），所以等 findAllBy。
-    // 取词用 listLabel override（客户反馈时间 → 反馈时间），与 工单管理 一致
-    const headers = (await screen.findAllByRole("columnheader")).map((cell) => cell.textContent);
-    expect(headers).toEqual(["工单号", "状态", "反馈时间", "最新跟进"]);
-  });
+    fireEvent.click(await screen.findByText("WO100001"));
 
-  it("a different whitelist yields different columns without code changes", async () => {
-    renderList({
-      "externalTicket.list": listPayload([ticket({ categoryName: "理赔纠纷" })], {
-        visibleFields: ["workOrderNumber", "categoryId"],
-      }),
+    await waitFor(() => {
+      expect(callsTo("externalTicket.detail")).toHaveLength(1);
     });
-
-    const headers = (await screen.findAllByRole("columnheader")).map((cell) => cell.textContent);
-    expect(headers).toEqual(["工单号", "类别"]);
-    // 目录引用显示名字，不是 id
-    expect(screen.getByText("理赔纠纷")).toBeInTheDocument();
-  });
-
-  it("shows — for a visible-but-empty field", async () => {
-    renderList({
-      "externalTicket.list": listPayload([ticket({ processingResult: "", feedbackTime: null })]),
-    });
-
-    await screen.findByText("WO100001");
-    const row = screen.getByText("WO100001").closest("tr") as HTMLElement;
-    expect(within(row).getAllByText("—")).toHaveLength(2);
+    expect(callsTo("externalTicket.detail")[0]?.input).toEqual({ ticketId: "t1" });
   });
 });
 
 describe("筛选与分页", () => {
   it("status filter rides the request and resets to page 1", async () => {
     renderList();
-    await screen.findAllByRole("columnheader");
+    await screen.findByText("WO100001");
 
     fireEvent.click(screen.getByRole("button", { name: "状态" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "已完结" }));
@@ -116,7 +140,7 @@ describe("筛选与分页", () => {
 
   it("search submits 工单号/原文 keyword", async () => {
     renderList();
-    await screen.findAllByRole("columnheader");
+    await screen.findByText("WO100001");
 
     const box = screen.getByPlaceholderText("工单号 / 工单原文");
     fireEvent.change(box, { target: { value: "WO100001" } });
@@ -130,10 +154,25 @@ describe("筛选与分页", () => {
     });
   });
 
-  it("paging moves the offset by page size", async () => {
-    renderList({
-      "externalTicket.list": listPayload([ticket()], { total: 45 }),
+  it("已完结默认不进请求，勾选「含已完结」后带上 includeCompleted", async () => {
+    renderList();
+    await screen.findByText("WO100001");
+
+    expect(
+      (callsTo("externalTicket.list").at(-1)?.input as { includeCompleted?: boolean })
+        ?.includeCompleted,
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "含已完结" }));
+
+    await waitFor(() => {
+      const last = callsTo("externalTicket.list").at(-1)?.input as { includeCompleted?: boolean };
+      expect(last?.includeCompleted).toBe(true);
     });
+  });
+
+  it("paging moves the offset by page size", async () => {
+    renderList({ "externalTicket.list": listPayload([ticket()], { total: 45 }) });
     expect(await screen.findByText(/共 45 条/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
@@ -146,48 +185,20 @@ describe("筛选与分页", () => {
 
   it("first page disables 上一页", async () => {
     renderList();
-    await screen.findAllByRole("columnheader");
+    await screen.findByText("WO100001");
     expect(screen.getByRole("button", { name: "上一页" })).toBeDisabled();
   });
 });
 
-describe("进入详情", () => {
-  it("工单号 is a link to the detail page (keyboard path)", async () => {
-    renderList();
-    await screen.findAllByRole("columnheader");
-
-    const link = screen.getByRole("link", { name: "WO100001" });
-    expect(link).toHaveAttribute("href", "/external-tickets/t1");
-  });
-
-  it("clicking anywhere on the row navigates too", async () => {
-    renderList();
-    await screen.findAllByRole("columnheader");
-
-    fireEvent.click(screen.getByText("已联系客户"));
-
-    // 详情页拉自己的 query，说明路由已经切过去
-    await waitFor(() => {
-      expect(callsTo("externalTicket.detail")).toHaveLength(1);
-    });
-    expect(callsTo("externalTicket.detail")[0]?.input).toEqual({ ticketId: "t1" });
-  });
-});
-
-describe("空态与错误", () => {
-  it("empty inbox points at the submit tab", async () => {
+describe("空态", () => {
+  it("empty inbox points at 新建工单", async () => {
     renderList({ "externalTicket.list": listPayload([]) });
     expect(await screen.findByText("没有工单")).toBeInTheDocument();
-    expect(screen.getByText(/「提交工单」/)).toBeInTheDocument();
+    expect(screen.getByText(/「新建工单」/)).toBeInTheDocument();
   });
 
   it("empty under a filter says so instead", async () => {
-    renderApp({
-      path: "/external-tickets?tab=list&q=nothing",
-      role: TEST_ROLES.EXTERNAL,
-      isExternal: true,
-      trpc: { "externalTicket.list": listPayload([]) },
-    });
+    renderList({ "externalTicket.list": listPayload([]) }, "/external-tickets?q=nothing");
     expect(await screen.findByText(/换个条件试试/)).toBeInTheDocument();
   });
 });

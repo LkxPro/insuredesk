@@ -7,6 +7,7 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ export function NotificationBell() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const utils = trpc.useUtils();
+  const { user } = useAuth();
 
   const { data } = trpc.notification.list.useQuery(undefined, {
     refetchInterval: NOTIFICATION_POLL_INTERVAL_MS,
@@ -41,7 +43,12 @@ export function NotificationBell() {
     }
     setOpen(false);
     if (notification.ticketId) {
-      navigate(`/tickets/${notification.ticketId}`);
+      // 内外部各有一套工单路由，按账号侧分叉——外部点进 /tickets 会撞权限墙
+      navigate(
+        user?.isExternal
+          ? `/external-tickets/${notification.ticketId}`
+          : `/tickets/${notification.ticketId}`,
+      );
     }
   }
 

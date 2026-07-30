@@ -2,6 +2,10 @@ import { type TicketResolveInput, TicketStatus } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service";
 import { completionStatusCatalog } from "./completion-status.service";
 import { applyTicketDataScope } from "./data-scope.service";
+import {
+  buildExternalResolvedNotification,
+  writeExternalCreatorNotification,
+} from "./notification.service";
 import type { TicketServiceDeps } from "./ticket.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
 
@@ -54,7 +58,7 @@ export async function resolveTicket(
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
       where: { id: input.ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
-      select: { id: true, workOrderNumber: true, status: true },
+      select: { id: true, workOrderNumber: true, status: true, source: true, creatorId: true },
     });
     if (!ticket) {
       throw new TicketNotFoundError();
@@ -117,6 +121,12 @@ export async function resolveTicket(
         to: TicketStatus.Completed,
         remark: "确认完结",
       },
+    });
+
+    await writeExternalCreatorNotification(tx, {
+      ticket,
+      ...buildExternalResolvedNotification({ workOrderNumber: ticket.workOrderNumber }),
+      now,
     });
 
     return {

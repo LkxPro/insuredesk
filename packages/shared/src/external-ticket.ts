@@ -15,11 +15,14 @@ export const externalTicketSubmitInputSchema = z.object({
 export type ExternalTicketSubmitInput = z.infer<typeof externalTicketSubmitInputSchema>;
 
 /**
- * 外部工单列表输入：支持按状态筛选、搜索、分页。
+ * 外部工单列表输入：支持按状态筛选、搜索、分页。已完结默认不进列表
+ * （收件箱只放在途），includeCompleted 或显式 status 筛选可查出——
+ * 显式 status 优先于 includeCompleted 缺省。
  */
 export const externalTicketListInputSchema = z.object({
   status: z.array(ticketStatusSchema).optional(),
   search: z.string().trim().optional(),
+  includeCompleted: z.boolean().default(false),
   offset: z.number().int().min(0).default(0),
   limit: z.number().int().min(1).max(100).default(20),
 });

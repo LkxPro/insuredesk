@@ -262,10 +262,13 @@ describe("external ticket API (Testcontainers)", () => {
       const ticket = list.items.find((t) => t.id === result.id);
 
       expect(ticket).toBeDefined();
+      expect(ticket).not.toHaveProperty("customerName");
+
+      // 白名单本身随详情下发（列表已不携带）
+      const detail = await caller.externalTicket.detail({ ticketId: result.id });
       expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("workOrderNumber");
       expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("status");
-      expect(list.visibleFields).toEqual([...DEFAULT_EXTERNAL_VISIBLE_FIELDS]);
-      expect(ticket).not.toHaveProperty("customerName");
+      expect(detail.visibleFields).toEqual([...DEFAULT_EXTERNAL_VISIBLE_FIELDS]);
     });
 
     it("keeps 工单号/状态 visible even when the account's whitelist omits them", async () => {
@@ -286,12 +289,19 @@ describe("external ticket API (Testcontainers)", () => {
       const created = await caller.externalTicket.submit({ submissionText: "窄白名单" });
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
 
-      expect(list.visibleFields).toEqual(["workOrderNumber", "status", "feedbackTime", "priority"]);
       const ticket = list.items.find((t) => t.id === created.id);
       expect(ticket?.workOrderNumber).toBe(created.workOrderNumber);
       expect(ticket?.status).toBe("unassigned");
       // 未配的业务字段仍然被裁掉
       expect(ticket?.customerRequest).toBeNull();
+
+      const detail = await caller.externalTicket.detail({ ticketId: created.id });
+      expect(detail.visibleFields).toEqual([
+        "workOrderNumber",
+        "status",
+        "feedbackTime",
+        "priority",
+      ]);
     });
 
     it("excludes soft-deleted tickets", async () => {
@@ -307,6 +317,120 @@ describe("external ticket API (Testcontainers)", () => {
 
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
       expect(list.items.some((t) => t.id === result.id)).toBe(false);
+    });
+
+    it("默认排除已完结；includeCompleted 或显式 status 筛选可查出", async () => {
+      const caller = externalCaller1();
+      const done = await caller.externalTicket.submit({ submissionText: "已完结的单" });
+      await prisma.ticket.update({ where: { id: done.id }, data: { status: "completed" } });
+
+      const defaultList = await caller.externalTicket.list({ offset: 0, limit: 100 });
+      expect(defaultList.items.some((t) => t.id === done.id)).toBe(false);
+
+      const withCompleted = await caller.externalTicket.list({
+        offset: 0,
+        limit: 100,
+        includeCompleted: true,
+      });
+      expect(withCompleted.items.some((t) => t.id === done.id)).toBe(true);
+
+      // 显式状态筛选优先于 includeCompleted 缺省
+      const onlyCompleted = await caller.externalTicket.list({
+        offset: 0,
+        limit: 100,
+        status: ["completed"],
+      });
+      expect(onlyCompleted.items.some((t) => t.id === done.id)).toBe(true);
+      expect(onlyCompleted.items.every((t) => t.status === "completed")).toBe(true);
+    });
+
+    it("随列表返回最新可见跟进；internalOnly 再新也不可见", async () => {
+      const account = await prisma.user.create({
+        data: {
+          username: "ext-latestlog",
+          name: "最新跟进账号",
+          passwordHash: "x",
+          roleId: externalRole.id,
+          active: true,
+        },
+      });
+      const caller = harness.callerFor(account, externalRole);
+      const ticket = await caller.externalTicket.submit({ submissionText: "带跟进的单" });
+
+      await prisma.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          action: "comment",
+          internalOnly: false,
+          remark: "可见跟进",
+          operatorId: seeded.users.manager.id,
+          operatorName: seeded.users.manager.name,
+          at: new Date(Date.now() + 60_000),
+        },
+      });
+      // 更新的内部跟进对外部不可见，不能成为 latestLog
+      await prisma.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          action: "comment",
+          internalOnly: true,
+          remark: "内部敏感",
+          operatorId: seeded.users.manager.id,
+          operatorName: seeded.users.manager.name,
+          at: new Date(Date.now() + 120_000),
+        },
+      });
+
+      const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
+      const item = list.items.find((t) => t.id === ticket.id);
+      expect(item?.latestLog).toMatchObject({ action: "comment", remark: "可见跟进" });
+    });
+
+    it("客服新发言的工单置顶，其余按最新活跃倒序", async () => {
+      const account = await prisma.user.create({
+        data: {
+          username: "ext-inbox-order",
+          name: "排序账号",
+          passwordHash: "x",
+          roleId: externalRole.id,
+          active: true,
+        },
+      });
+      const caller = harness.callerFor(account, externalRole);
+
+      // 提交顺序与最终序相反：旧 createdAt DESC 会给出 idle/noted/replied
+      const replied = await caller.externalTicket.submit({ submissionText: "客服回复了" });
+      const noted = await caller.externalTicket.submit({ submissionText: "我留言过" });
+      const idle = await caller.externalTicket.submit({ submissionText: "无动静" });
+
+      // noted 活跃更新，但 replied 是客服新发言 → replied 置顶，noted 次之
+      await prisma.processLog.create({
+        data: {
+          ticketId: replied.id,
+          action: "comment",
+          internalOnly: false,
+          remark: "请补充材料",
+          operatorId: seeded.users.manager.id,
+          operatorName: seeded.users.manager.name,
+          at: new Date(Date.now() + 60_000),
+        },
+      });
+      await prisma.processLog.create({
+        data: {
+          ticketId: noted.id,
+          action: "external_note",
+          remark: "补充一句",
+          operatorId: account.id,
+          operatorName: account.name,
+          at: new Date(Date.now() + 120_000),
+        },
+      });
+
+      const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
+      const ids = list.items.map((t) => t.id);
+      expect(ids[0]).toBe(replied.id);
+      expect(ids[1]).toBe(noted.id);
+      expect(ids[2]).toBe(idle.id);
     });
   });
 
@@ -578,6 +702,135 @@ describe("external ticket API (Testcontainers)", () => {
           content: longContent,
         }),
       ).rejects.toThrow();
+    });
+  });
+
+  describe("外部创建者通知", () => {
+    it("内部非 internal comment → 创建者收到 external_reply 通知", async () => {
+      const externalCaller = externalCaller1();
+      const internalCaller = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
+
+      const ticket = await externalCaller.externalTicket.submit({
+        submissionText: "等回复的单",
+      });
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { assigneeId: seeded.users.cs1.id, status: "assigned" },
+      });
+
+      await internalCaller.ticket.addComment({
+        ticketId: ticket.id,
+        remark: "请补充保单号",
+        internalOnly: false,
+      });
+
+      const notifications = await prisma.appNotification.findMany({
+        where: { ticketId: ticket.id, type: "external_reply", targetUserId: externalUser1.id },
+      });
+      expect(notifications).toHaveLength(1);
+      const notification = notifications[0];
+      if (!notification) throw new Error("notification not found");
+      expect(notification.title).toBe("客服跟进");
+      expect(notification.content).toContain(ticket.workOrderNumber);
+    });
+
+    it("internalOnly comment 不通知外部创建者", async () => {
+      const externalCaller = externalCaller1();
+      const internalCaller = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
+
+      const ticket = await externalCaller.externalTicket.submit({
+        submissionText: "内部讨论的单",
+      });
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { assigneeId: seeded.users.cs1.id, status: "assigned" },
+      });
+
+      await internalCaller.ticket.addComment({
+        ticketId: ticket.id,
+        remark: "内部敏感判断",
+        internalOnly: true,
+      });
+
+      const notifications = await prisma.appNotification.findMany({
+        where: { ticketId: ticket.id, type: "external_reply" },
+      });
+      expect(notifications).toHaveLength(0);
+    });
+
+    it("完结外部工单 → 创建者收到 external_resolved 通知", async () => {
+      const externalCaller = externalCaller1();
+      const internalCaller = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
+
+      const completionStatus = await prisma.completionStatus.findFirst({
+        where: { active: true },
+      });
+      if (!completionStatus) throw new Error("no active completion status seeded");
+
+      const ticket = await externalCaller.externalTicket.submit({
+        submissionText: "将被完结的外部单",
+      });
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { assigneeId: seeded.users.cs1.id, status: "assigned" },
+      });
+
+      await internalCaller.ticket.resolve({
+        ticketId: ticket.id,
+        completionStatusId: completionStatus.id,
+        remark: "已赔付完结",
+      });
+
+      const notifications = await prisma.appNotification.findMany({
+        where: { ticketId: ticket.id, type: "external_resolved", targetUserId: externalUser1.id },
+      });
+      expect(notifications).toHaveLength(1);
+      const notification = notifications[0];
+      if (!notification) throw new Error("notification not found");
+      expect(notification.title).toBe("工单完结");
+      expect(notification.content).toContain(ticket.workOrderNumber);
+    });
+
+    it("内部自建工单被跟进不触发 external_reply", async () => {
+      const internalCaller = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
+
+      const manualTicket = await internalCaller.ticket.create({
+        feedbackTime: new Date().toISOString(),
+        channelId: null,
+        project: null,
+        brokerageEntity: null,
+        paymentChannel: null,
+        internalOrderNumber: null,
+        policyNumbers: [],
+        userComplaintChannel: null,
+        complaintReceiveChannel: null,
+        customerName: null,
+        phone: null,
+        contactPhone: null,
+        customerRequest: "内部自建单",
+        nuclearBodyStatus: null,
+        hasContacted: null,
+        contactTime: null,
+        contactId: null,
+        categoryId: null,
+        complaintLevel: null,
+        priority: null,
+      });
+      await prisma.ticket.update({
+        where: { id: manualTicket.id },
+        data: { assigneeId: seeded.users.cs1.id, status: "assigned" },
+      });
+
+      await internalCaller.ticket.addComment({
+        ticketId: manualTicket.id,
+        remark: "内部单跟进",
+        internalOnly: false,
+      });
+
+      const notifications = await prisma.appNotification.findMany({
+        where: { ticketId: manualTicket.id, type: "external_reply" },
+      });
+      expect(notifications).toHaveLength(0);
     });
   });
 

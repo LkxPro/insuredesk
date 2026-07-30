@@ -1,12 +1,12 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 外部工单详情：原文 + 字段卡片 + 时间线 + 留言。字段卡片只渲染"白名单内且
- * 有值"的字段（一片 — 稀释信息），时间线的内容筛选在服务端，这里验证外部留言
- * 与内部跟进在视觉上可分，以及已完结不再给留言入口。
+ * 右栏详情（对话模型）：头部 → 处理记录时间线 → 留言框；原文与字段卡默认
+ * 折叠。时间线内容筛选在服务端，这里验证折叠行为、留言流、已完结只读，
+ * 以及窄屏返回键。
  */
 
 const ALL_FIELDS = [
@@ -68,58 +68,44 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
     path: "/external-tickets/t1",
     role: TEST_ROLES.EXTERNAL,
     isExternal: true,
-    trpc: { "externalTicket.detail": detailPayload(overrides), ...extraTrpc },
+    trpc: {
+      "externalTicket.detail": detailPayload(overrides),
+      // 返回键用例会回到无选中的列表：给列表一行可渲染的数据
+      "externalTicket.list": {
+        items: [
+          {
+            id: "t1",
+            workOrderNumber: "WO100001",
+            status: "processing",
+            createdAt: "2026-07-09T02:00:00.000Z",
+            latestLog: { action: "create", remark: "", at: "2026-07-09T02:00:00.000Z" },
+          },
+        ],
+        total: 1,
+        visibleFields: [],
+      },
+      ...extraTrpc,
+    },
   });
 }
 
-describe("tab 顶栏", () => {
-  it("详情与主页共用 tab 顶栏，我的工单 为当前 tab（点击即回列表）", async () => {
+describe("头部", () => {
+  it("shows 工单号与状态", async () => {
     renderDetail();
-    await screen.findByText("工单信息");
-
-    const listTab = screen.getByRole("tab", { name: "我的工单" });
-    expect(listTab).toHaveAttribute("data-state", "active");
-    expect(listTab).toHaveAttribute("href", "/external-tickets?tab=list");
-    expect(screen.getByRole("tab", { name: "提交工单" })).toHaveAttribute(
-      "href",
-      "/external-tickets",
-    );
+    // jsdom 无 CSS：选中态下列表行也在 DOM 里，状态徽标会出现两次，断言语义挂在详情头部
+    const header = (await screen.findByRole("heading", { name: "WO100001" }))
+      .parentElement as HTMLElement;
+    expect(within(header).getByText("处理中")).toBeInTheDocument();
   });
-});
 
-describe("原文与字段卡片", () => {
-  it("shows the submission text verbatim, newlines preserved", async () => {
+  it("窄屏返回键回到无选中的列表", async () => {
     renderDetail();
-    const text = await screen.findByText(/客户反馈保单无法下载/);
-    expect(text).toHaveClass("whitespace-pre-wrap");
-  });
+    await screen.findByRole("heading", { name: "WO100001" });
 
-  it("renders only visible fields that have a value", async () => {
-    renderDetail();
-    await screen.findByText("工单信息");
+    fireEvent.click(screen.getByRole("button", { name: "返回列表" }));
 
-    // 有值 → 出现（渠道走 JOIN 出的名字，枚举走中文标签，布尔走是/否）
-    expect(screen.getByText("微信")).toBeInTheDocument();
-    expect(screen.getByText("高")).toBeInTheDocument();
-    expect(screen.getByText("是")).toBeInTheDocument();
-    // 白名单内但无值 → 整条不渲染，不留 —
-    expect(screen.queryByText("类别")).not.toBeInTheDocument();
-    expect(screen.queryByText("最新跟进")).not.toBeInTheDocument();
-  });
-
-  it("hides a field the account's whitelist omits even when the value is present", async () => {
-    renderDetail({ visibleFields: ["workOrderNumber", "status"] });
-    await screen.findByText("工单信息");
-    expect(screen.queryByText("微信")).not.toBeInTheDocument();
-  });
-
-  it("says so when nothing has been filled in yet", async () => {
-    // 白名单全开但字段都空：工单号与状态不在卡片里（表头已呈现），故整卡为空
-    renderDetail({
-      visibleFields: ["feedbackTime", "channelId", "priority", "hasContacted"],
-      ticket: { channelName: null, priority: null, hasContacted: null, feedbackTime: null },
-    });
-    expect(await screen.findByText("客服团队还未补充工单信息。")).toBeInTheDocument();
+    // 回到列表路由后详情 query 不再挂在页面上；列表行出现
+    expect(await screen.findByRole("navigation", { name: "工单列表" })).toBeInTheDocument();
   });
 });
 
@@ -169,6 +155,46 @@ describe("处理记录时间线", () => {
   });
 });
 
+describe("折叠卡", () => {
+  it("原文默认折叠，展开后逐字呈现（换行保留）", async () => {
+    renderDetail();
+    await screen.findByText("处理记录");
+
+    expect(screen.queryByText(/客户反馈保单无法下载/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /工单原文/ }));
+
+    const text = await screen.findByText(/客户反馈保单无法下载/);
+    expect(text).toHaveClass("whitespace-pre-wrap");
+  });
+
+  it("字段卡默认折叠，展开后只渲染白名单内有值的字段", async () => {
+    renderDetail();
+    await screen.findByText("处理记录");
+
+    expect(screen.queryByText("微信")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /工单信息/ }));
+
+    // 有值 → 出现（渠道走 JOIN 出的名字，枚举走中文标签，布尔走是/否）
+    expect(await screen.findByText("微信")).toBeInTheDocument();
+    expect(screen.getByText("高")).toBeInTheDocument();
+    expect(screen.getByText("是")).toBeInTheDocument();
+    // 白名单内但无值 → 整条不渲染，不留 —
+    expect(screen.queryByText("类别")).not.toBeInTheDocument();
+    expect(screen.queryByText("最新跟进")).not.toBeInTheDocument();
+  });
+
+  it("hides a field the account's whitelist omits even when the value is present", async () => {
+    renderDetail({ visibleFields: ["workOrderNumber", "status"] });
+    await screen.findByText("处理记录");
+
+    fireEvent.click(screen.getByRole("button", { name: /工单信息/ }));
+
+    expect(screen.queryByText("微信")).not.toBeInTheDocument();
+  });
+});
+
 describe("外部留言", () => {
   it("submits the note and refetches the detail", async () => {
     renderDetail({}, { "externalTicket.addNote": { success: true } });
@@ -188,9 +214,12 @@ describe("外部留言", () => {
       content: "保单号是 P123",
     });
     expect(toastSpies.success).toHaveBeenCalledWith("留言已提交");
-    // 时间线要带上新留言
+    // 时间线要带上新留言；列表也要重拉（徽标/置顶位随最新记录易主而变）
     await waitFor(() => {
       expect(callsTo("externalTicket.detail").length).toBeGreaterThan(1);
+    });
+    await waitFor(() => {
+      expect(callsTo("externalTicket.list").length).toBeGreaterThan(1);
     });
     await waitFor(() => {
       expect(screen.getByLabelText("留言内容")).toHaveValue("");
