@@ -173,16 +173,13 @@ describe("处理记录时间线", () => {
 });
 
 describe("左栏", () => {
-  it("原文默认折叠，展开后逐字呈现（换行保留）", async () => {
+  it("原文直接呈现（换行保留），无折叠开关", async () => {
     renderDetail();
     const pane = await findPaneShowing("WO100001");
 
-    expect(within(pane).queryByText(/客户反馈保单无法下载/)).not.toBeInTheDocument();
-
-    fireEvent.click(within(pane).getByRole("button", { name: /工单原文/ }));
-
-    const text = await within(pane).findByText(/客户反馈保单无法下载/);
+    const text = within(pane).getByText(/客户反馈保单无法下载/);
     expect(text).toHaveClass("whitespace-pre-wrap");
+    expect(within(pane).queryByRole("button", { name: /工单原文/ })).not.toBeInTheDocument();
   });
 
   it("白名单字段平铺直出：有值渲染，无值整条不出现", async () => {
