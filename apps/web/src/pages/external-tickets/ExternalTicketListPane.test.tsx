@@ -1,12 +1,12 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { calls, callsTo, renderApp, toastSpies } from "@/test/renderApp";
+import { callsTo, renderApp } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 我的工单 列表：列跟着账号可见字段白名单走（白名单随响应下发），筛选与分页
- * 状态住在 URL 里，提交对话框只收工单原文。数据范围与字段裁剪是服务端的事，
- * 这里验证渲染与请求参数。
+ * 我的工单 tab：列跟着账号可见字段白名单走（白名单随响应下发），筛选与分页
+ * 状态住在 URL 里。数据范围与字段裁剪是服务端的事，这里验证渲染与请求参数。
+ * 列表住在主页的 tab 布局里，用例统一从 ?tab=list 进入。
  */
 
 /** 白名单顺序即列顺序；这里刻意不按 TICKET_FIELDS 顺序，验证列跟着配置走。 */
@@ -49,7 +49,7 @@ function listPayload(items: unknown[], overrides: Record<string, unknown> = {}) 
 
 function renderList(overrides: Record<string, unknown> = {}) {
   return renderApp({
-    path: "/external-tickets",
+    path: "/external-tickets?tab=list",
     role: TEST_ROLES.EXTERNAL,
     isExternal: true,
     trpc: {
@@ -175,73 +175,19 @@ describe("进入详情", () => {
 });
 
 describe("空态与错误", () => {
-  it("empty inbox invites a first submission", async () => {
+  it("empty inbox points at the submit tab", async () => {
     renderList({ "externalTicket.list": listPayload([]) });
     expect(await screen.findByText("没有工单")).toBeInTheDocument();
-    expect(screen.getByText(/点击「提交工单」/)).toBeInTheDocument();
+    expect(screen.getByText(/「提交工单」/)).toBeInTheDocument();
   });
 
   it("empty under a filter says so instead", async () => {
     renderApp({
-      path: "/external-tickets?q=nothing",
+      path: "/external-tickets?tab=list&q=nothing",
       role: TEST_ROLES.EXTERNAL,
       isExternal: true,
       trpc: { "externalTicket.list": listPayload([]) },
     });
     expect(await screen.findByText(/换个条件试试/)).toBeInTheDocument();
-  });
-});
-
-describe("提交工单", () => {
-  it("submits the 原文 and refetches the list", async () => {
-    renderList({
-      "externalTicket.submit": { id: "t2", workOrderNumber: "WO100002" },
-    });
-    await screen.findAllByRole("columnheader");
-
-    fireEvent.click(screen.getByRole("button", { name: "提交工单" }));
-    // 页面按钮与对话框提交按钮同名，作用域收到对话框里
-    const dialog = within(await screen.findByRole("dialog"));
-    fireEvent.change(dialog.getByLabelText("工单原文"), {
-      target: { value: "  客户要求退保  " },
-    });
-    fireEvent.click(dialog.getByRole("button", { name: "提交工单" }));
-
-    await waitFor(() => {
-      expect(callsTo("externalTicket.submit")).toHaveLength(1);
-    });
-    // 前后空白在提交前裁掉
-    expect(callsTo("externalTicket.submit")[0]?.input).toEqual({
-      submissionText: "客户要求退保",
-    });
-    expect(toastSpies.success).toHaveBeenCalledWith("工单 WO100002 已提交");
-    await waitFor(() => {
-      expect(callsTo("externalTicket.list").length).toBeGreaterThan(1);
-    });
-  });
-
-  it("caps 原文 at 2000 chars and shows the counter", async () => {
-    renderList();
-    await screen.findAllByRole("columnheader");
-
-    fireEvent.click(screen.getByRole("button", { name: "提交工单" }));
-    const dialog = within(await screen.findByRole("dialog"));
-    const box = dialog.getByLabelText("工单原文");
-    expect(box).toHaveAttribute("maxLength", "2000");
-
-    fireEvent.change(box, { target: { value: "字".repeat(12) } });
-    expect(dialog.getByText("12 / 2000 字，提交后不可修改。")).toBeInTheDocument();
-  });
-
-  it("blocks an empty 原文 client-side", async () => {
-    renderList();
-    await screen.findAllByRole("columnheader");
-
-    fireEvent.click(screen.getByRole("button", { name: "提交工单" }));
-    const dialog = within(await screen.findByRole("dialog"));
-    fireEvent.click(dialog.getByRole("button", { name: "提交工单" }));
-
-    expect(await screen.findByText("请填写工单原文")).toBeInTheDocument();
-    expect(calls.some((call) => call.path === "externalTicket.submit")).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 import { TICKET_STATUS_LABELS, TICKET_STATUSES, type TicketStatus } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
-import { AlertCircle, Inbox, Plus, Search } from "lucide-react";
+import { AlertCircle, Inbox, Search } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -24,11 +24,10 @@ import {
 } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { MultiSelectFilter } from "@/pages/tickets/MultiSelectFilter";
-import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
 import { externalFieldLabel, externalFieldValue } from "./external-ticket-fields";
 
 /**
- * 我的工单：外部账号的首屏。列按当前账号的可见字段白名单动态渲染
+ * 我的工单 tab 的内容。列按当前账号的可见字段白名单动态渲染
  * （白名单随列表响应下发——外部方读不到账号配置接口），顺序即白名单顺序，
  * 管理员改配置后无需改代码。数据范围（本人提交 + 未删除）与字段裁剪都在服务端，
  * 这里渲染拿到的一切。
@@ -49,12 +48,11 @@ function parseQuery(params: URLSearchParams) {
   return { status, search: params.get("q") ?? "", page };
 }
 
-export function ExternalTicketListPage() {
+export function ExternalTicketListPane() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const query = parseQuery(searchParams);
   const [searchDraft, setSearchDraft] = useState(query.search);
-  const [submitOpen, setSubmitOpen] = useState(false);
 
   const listQuery = trpc.externalTicket.list.useQuery(
     {
@@ -89,19 +87,6 @@ export function ExternalTicketListPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">我的工单</h1>
-          <p className="text-sm text-muted-foreground">
-            自己提交的工单，状态与对外公开的跟进记录实时可见。
-          </p>
-        </div>
-        <Button onClick={() => setSubmitOpen(true)}>
-          <Plus data-icon="inline-start" />
-          提交工单
-        </Button>
-      </div>
-
       <div className="flex flex-wrap items-center gap-2">
         <MultiSelectFilter
           label="状态"
@@ -170,7 +155,7 @@ export function ExternalTicketListPage() {
                         <EmptyDescription>
                           {query.status.length > 0 || query.search
                             ? "当前筛选条件下没有工单，换个条件试试。"
-                            : "点击「提交工单」把客户反馈原文交给客服团队。"}
+                            : "切到「提交工单」，把客户反馈原文交给客服团队。"}
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>
@@ -235,8 +220,6 @@ export function ExternalTicketListPage() {
           </div>
         </div>
       )}
-
-      <ExternalTicketSubmitDialog open={submitOpen} onOpenChange={setSubmitOpen} />
     </div>
   );
 }

@@ -1,8 +1,7 @@
 import { PROCESS_LOG_ACTION_LABELS, type ProcessLogAction } from "@insuredesk/shared";
-import { AlertCircle, ArrowLeft } from "lucide-react";
-import { Link, useParams } from "react-router";
+import { AlertCircle } from "lucide-react";
+import { useParams } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/datetime";
@@ -10,6 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/pages/tickets/StatusBadge";
 import { ExternalNoteCard } from "./ExternalNoteCard";
+import { ExternalTabBar } from "./ExternalTabBar";
 import {
   EXTERNAL_DETAIL_FIELD_ORDER,
   type ExternalTicket,
@@ -18,7 +18,8 @@ import {
 } from "./external-ticket-fields";
 
 /**
- * 外部工单详情：字段卡片 + 时间线 + 留言框。
+ * 外部工单详情：字段卡片 + 时间线 + 留言框，与主页共用同一 tab 顶栏
+ * （我的工单 为当前 tab，点它即回列表）。
  *
  * 字段卡片按 TICKET_FIELDS 声明顺序遍历（不是白名单顺序——管理员配可见字段时
  * 不用关心顺序），只渲染白名单内且有值的字段：外部方看到的是"这单已知什么"，
@@ -80,22 +81,15 @@ export function ExternalTicketDetailPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto xl:min-h-full xl:overflow-visible">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/external-tickets">
-            <ArrowLeft data-icon="inline-start" />
-            返回列表
-          </Link>
-        </Button>
-        {data && (
-          <>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {data.ticket.workOrderNumber ?? "工单详情"}
-            </h1>
-            <StatusBadge status={data.ticket.status} />
-          </>
-        )}
-      </div>
+      <ExternalTabBar active="list" />
+      {data && (
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {data.ticket.workOrderNumber ?? "工单详情"}
+          </h1>
+          <StatusBadge status={data.ticket.status} />
+        </div>
+      )}
 
       {detailQuery.error ? (
         <Alert variant="destructive">

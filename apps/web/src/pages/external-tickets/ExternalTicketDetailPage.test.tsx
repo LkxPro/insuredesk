@@ -72,6 +72,21 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
   });
 }
 
+describe("tab 顶栏", () => {
+  it("详情与主页共用 tab 顶栏，我的工单 为当前 tab（点击即回列表）", async () => {
+    renderDetail();
+    await screen.findByText("工单信息");
+
+    const listTab = screen.getByRole("tab", { name: "我的工单" });
+    expect(listTab).toHaveAttribute("data-state", "active");
+    expect(listTab).toHaveAttribute("href", "/external-tickets?tab=list");
+    expect(screen.getByRole("tab", { name: "提交工单" })).toHaveAttribute(
+      "href",
+      "/external-tickets",
+    );
+  });
+});
+
 describe("原文与字段卡片", () => {
   it("shows the submission text verbatim, newlines preserved", async () => {
     renderDetail();
@@ -92,7 +107,7 @@ describe("原文与字段卡片", () => {
     expect(screen.queryByText("最新跟进")).not.toBeInTheDocument();
   });
 
-  it("hides a field the org's whitelist omits even when the value is present", async () => {
+  it("hides a field the account's whitelist omits even when the value is present", async () => {
     renderDetail({ visibleFields: ["workOrderNumber", "status"] });
     await screen.findByText("工单信息");
     expect(screen.queryByText("微信")).not.toBeInTheDocument();

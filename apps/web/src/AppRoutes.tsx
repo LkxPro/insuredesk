@@ -8,7 +8,7 @@ import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
 import { ExternalAccountManagePage } from "@/pages/external-accounts/ExternalAccountManagePage";
 import { ExternalTicketDetailPage } from "@/pages/external-tickets/ExternalTicketDetailPage";
-import { ExternalTicketListPage } from "@/pages/external-tickets/ExternalTicketListPage";
+import { ExternalTicketsPage } from "@/pages/external-tickets/ExternalTicketsPage";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
 import { ProfilePage } from "@/pages/profile/ProfilePage";
@@ -29,7 +29,7 @@ import { UsersPage } from "@/pages/users/UsersPage";
 // Record<NavPath, …> makes "menu entry without a page" a compile error.
 const PAGES: Record<NavPath, ReactElement> = {
   "/dashboard": <DashboardPage />,
-  "/external-tickets": <ExternalTicketListPage />,
+  "/external-tickets": <ExternalTicketsPage />,
   "/tickets": <TicketsPage />,
   "/users": <UsersPage />,
   "/external-accounts": <ExternalAccountManagePage />,
@@ -95,8 +95,8 @@ export function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        {/* 外部详情是独立页面（不是列表上的弹窗）：外部方的工单少、停留久，
-            留言与时间线值得整屏。守卫与列表同一个权限点，数据范围在服务端。 */}
+        {/* 外部详情是独立路由，与主页共用同一 tab 顶栏：外部方的工单少、
+            停留久，留言与时间线值得整屏。守卫与列表同一个权限点，数据范围在服务端。 */}
         <Route
           path="/external-tickets/:id"
           element={
