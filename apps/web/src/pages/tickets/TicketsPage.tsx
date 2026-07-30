@@ -67,6 +67,7 @@ import { cn } from "@/lib/utils";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
 import { CreatedRangeFilter } from "./CreatedRangeFilter";
+import { detailNeighbors } from "./detail-navigation";
 import { MultiSelectFilter } from "./MultiSelectFilter";
 import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
@@ -348,12 +349,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const total = listQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
 
-  // QuickLook 键盘浏览: the detail dialog's ↑/↓ walk this page's rows in
-  // their listed (filter + sort) order. Edges stop dead — no page turn — and
-  // a detail deep-linked from outside the current page has no neighbours.
-  const detailIndex = detailId === undefined ? -1 : items.findIndex((t) => t.id === detailId);
-  const prevTicketId = detailIndex > 0 ? (items[detailIndex - 1]?.id ?? null) : null;
-  const nextTicketId = detailIndex === -1 ? null : (items[detailIndex + 1]?.id ?? null);
+  // 详情的 ↑/↓ 走当前页切片里的前后单（行序 = 筛选+排序后的列表序）
+  const { prev: prevTicketId, next: nextTicketId } = detailNeighbors(items, detailId);
   const columnCount = BASE_COLUMN_COUNT + (canBatchAssign ? 1 : 0) + (canRowActions ? 1 : 0);
 
   type ListItem = (typeof items)[number];

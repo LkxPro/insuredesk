@@ -11,10 +11,10 @@ import { formatDateTime } from "@/lib/datetime";
 import { StatusBadge } from "@/pages/tickets/StatusBadge";
 
 /**
- * 外部工单字段的取词与取值：详情字段卡的标签、取值、空值判定共用这一份。
- * 可见字段白名单里除建单字段外还有三个系统字段（工单号/状态/最新跟进），
- * 它们不在 TICKET_FIELDS 里，标签在这里补齐。列表行是固定 schema（工单号/
- * 状态/徽标/最新跟进摘要/时间），不经过本文件。
+ * 外部工单字段的取词与取值：详情左栏字段栅格的标签、取值、空值判定共用这
+ * 一份。可见字段白名单里除建单字段外还有三个系统字段（工单号/状态/最新跟
+ * 进），它们不在 TICKET_FIELDS 里，标签在这里补齐。窄列行是两行式（工单号
+ * +状态/徽标+时间），不经过本文件。
  */
 
 export type ExternalTicket = inferRouterOutputs<AppRouter>["externalTicket"]["detail"]["ticket"];

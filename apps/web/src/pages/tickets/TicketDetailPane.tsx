@@ -11,8 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
+import { AddCommentCard } from "./AddCommentCard";
 import { AssignTicketDialog } from "./AssignTicketDialog";
 import { DeleteTicketDialog } from "./DeleteTicketDialog";
+import { handleDetailArrowKey } from "./detail-navigation";
 import { ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { SubmissionTextPane } from "./SubmissionTextPane";
@@ -137,16 +139,11 @@ export function TicketDetailPane({
       aria-label="工单详情"
       className="flex min-h-0 flex-1 flex-col outline-hidden"
       tabIndex={-1}
-      onKeyDown={(event) => {
-        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-        // 输入控件内的方向键归控件自己（光标移动、Select 选项浏览）
-        const target = event.target as HTMLElement;
-        if (target.closest("input, textarea, [role='combobox'], [role='listbox']")) return;
-        const to = event.key === "ArrowUp" ? neighbors.prev : neighbors.next;
-        if (!to) return; // 列表边缘：不翻页，不报错
-        event.preventDefault();
-        requestExit({ kind: "switch", ticketId: to });
-      }}
+      onKeyDown={(event) =>
+        handleDetailArrowKey(event, neighbors, (to) =>
+          requestExit({ kind: "switch", ticketId: to }),
+        )
+      }
     >
       <PaneHeader
         ticket={ticket}
@@ -197,8 +194,12 @@ export function TicketDetailPane({
             <SubmissionTextPane text={ticket.submissionText} />
           ) : (
             <TicketTimelineColumn
-              ticket={ticket}
-              canComment={hasPermission("ticket.process") && isTicketInFlight(ticket.status)}
+              logs={ticket.processLogs}
+              composer={
+                hasPermission("ticket.process") && isTicketInFlight(ticket.status) ? (
+                  <AddCommentCard ticketId={ticket.id} />
+                ) : undefined
+              }
             />
           )}
         </div>

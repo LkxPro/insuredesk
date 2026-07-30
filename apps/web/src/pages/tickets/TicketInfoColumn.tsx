@@ -1,7 +1,7 @@
 import { TICKET_FIELDS, TICKET_SOURCE_LABELS, type TicketCreateFieldKey } from "@insuredesk/shared";
-import type { ReactNode } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { formatDateTime } from "@/lib/datetime";
+import { DetailItem as Item, DetailSection as Section } from "./DetailGrid";
 import { StatusBadge } from "./StatusBadge";
 import { SubmissionTextCollapse } from "./SubmissionTextCollapse";
 import { TicketDetailField } from "./TicketDetailFields";
@@ -15,27 +15,8 @@ import type { TicketDetail } from "./ticket-detail";
  * 是可编辑字段集的成员，编辑态也不长出控件。
  *
  * 只负责呈现字段。头部操作、编辑态的表单容器与保存/取消都在 TicketDetailPane。
+ * 栅格原语（Section/Item）与外部详情左栏共用 DetailGrid.tsx。
  */
-
-/** 分区标题 + 三列栅格；窄栏（分栏右侧的左栏）自动退回单列。 */
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-2">
-      <h3 className="m-0 text-sm font-medium text-muted-foreground">{title}</h3>
-      <dl className="m-0 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</dl>
-    </section>
-  );
-}
-
-/** 只读单元格；null/空值统一落到 — （未填写，不是空）。 */
-function Item({ label, children }: { label: string; children?: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="m-0 text-sm">{children ?? "—"}</dd>
-    </div>
-  );
-}
 
 export function TicketInfoColumn({
   ticket,

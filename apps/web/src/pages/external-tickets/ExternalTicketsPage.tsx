@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { detailNeighbors } from "@/pages/tickets/detail-navigation";
 import { MultiSelectFilter } from "@/pages/tickets/MultiSelectFilter";
 import { ExternalTicketDetailPane } from "./ExternalTicketDetailPane";
 import { ExternalTicketListPane } from "./ExternalTicketListPane";
@@ -80,6 +81,9 @@ export function ExternalTicketsPage() {
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // 详情的 ↑/↓ 走当前页切片里的前后单（行序即服务端排定的序）
+  const { prev: prevTicketId, next: nextTicketId } = detailNeighbors(items, selectedId);
 
   /** 选中单的路径：id 住 path，筛选参数随链接带走。 */
   function ticketPath(ticketId: string) {
@@ -175,7 +179,7 @@ export function ExternalTicketsPage() {
         <div
           className={cn(
             "grid min-h-0 flex-1 grid-cols-1 gap-3",
-            selectedId !== undefined && "lg:grid-cols-[minmax(16rem,2fr)_minmax(0,3fr)]",
+            selectedId !== undefined && "lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]",
           )}
         >
           <div
@@ -214,6 +218,8 @@ export function ExternalTicketsPage() {
             <div className="flex min-h-0 flex-col rounded-md border">
               <ExternalTicketDetailPane
                 ticketId={selectedId}
+                neighbors={{ prev: prevTicketId, next: nextTicketId }}
+                onSwitch={select}
                 onClose={() => navigate(`/external-tickets${location.search}`)}
               />
             </div>

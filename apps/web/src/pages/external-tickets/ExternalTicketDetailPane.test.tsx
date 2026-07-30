@@ -4,9 +4,10 @@ import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 右栏详情（对话模型）：头部 → 处理记录时间线 → 留言框；原文与字段卡默认
- * 折叠。时间线内容筛选在服务端，这里验证折叠行为、留言流、已完结只读，
- * 以及窄屏返回键。
+ * 右栏详情，镜像内部双栏：头部（工单号+状态+常驻 X）→ 左栏工单原文折叠 +
+ * 白名单有值字段平铺，右栏处理记录时间线 + 钉底留言框（已完结无）。↑/↓ 按
+ * 列表顺序翻单。时间线内容筛选在服务端，这里验证字段白名单、折叠行为、
+ * 留言流、翻单与两个返回出口。
  */
 
 const ALL_FIELDS = [
@@ -20,6 +21,37 @@ const ALL_FIELDS = [
   "processingResult",
 ];
 
+function ticket(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "t1",
+    workOrderNumber: "WO100001",
+    status: "processing",
+    submissionText: "客户反馈保单无法下载\n第二行",
+    createdAt: "2026-07-09T02:00:00.000Z",
+    feedbackTime: "2026-07-09T01:00:00.000Z",
+    channelId: "c1",
+    channelName: "微信",
+    project: null,
+    brokerageEntity: null,
+    paymentChannel: null,
+    userComplaintChannel: null,
+    complaintReceiveChannel: null,
+    nuclearBodyStatus: null,
+    customerRequest: null,
+    hasContacted: true,
+    contactTime: null,
+    categoryId: null,
+    categoryName: null,
+    complaintLevel: null,
+    priority: "high",
+    processingResult: null,
+    completionStatusId: null,
+    completionStatusName: null,
+    completionTime: null,
+    ...overrides,
+  };
+}
+
 type DetailOverrides = {
   ticket?: Record<string, unknown>;
   visibleFields?: string[];
@@ -29,34 +61,7 @@ type DetailOverrides = {
 function detailPayload(overrides: DetailOverrides = {}) {
   const { ticket: ticketOverrides = {}, ...rest } = overrides;
   return {
-    ticket: {
-      id: "t1",
-      workOrderNumber: "WO100001",
-      status: "processing",
-      submissionText: "客户反馈保单无法下载\n第二行",
-      createdAt: "2026-07-09T02:00:00.000Z",
-      feedbackTime: "2026-07-09T01:00:00.000Z",
-      channelId: "c1",
-      channelName: "微信",
-      project: null,
-      brokerageEntity: null,
-      paymentChannel: null,
-      userComplaintChannel: null,
-      complaintReceiveChannel: null,
-      nuclearBodyStatus: null,
-      customerRequest: null,
-      hasContacted: true,
-      contactTime: null,
-      categoryId: null,
-      categoryName: null,
-      complaintLevel: null,
-      priority: "high",
-      processingResult: null,
-      completionStatusId: null,
-      completionStatusName: null,
-      completionTime: null,
-      ...ticketOverrides,
-    },
+    ticket: ticket(ticketOverrides),
     visibleFields: ALL_FIELDS,
     processLogs: [],
     ...rest,
@@ -70,16 +75,10 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
     isExternal: true,
     trpc: {
       "externalTicket.detail": detailPayload(overrides),
-      // 返回键用例会回到无选中的列表：给列表一行可渲染的数据
+      // 返回出口用例会回到无选中的列表：给列表一行可渲染的数据
       "externalTicket.list": {
         items: [
-          {
-            id: "t1",
-            workOrderNumber: "WO100001",
-            status: "processing",
-            createdAt: "2026-07-09T02:00:00.000Z",
-            latestLog: { action: "create", remark: "", at: "2026-07-09T02:00:00.000Z" },
-          },
+          { ...ticket(), latestLog: { action: "create", remark: "", at: ticket().createdAt } },
         ],
         total: 1,
         visibleFields: [],
@@ -87,6 +86,12 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
       ...extraTrpc,
     },
   });
+}
+
+async function findPaneShowing(workOrderNumber: string) {
+  const pane = await screen.findByRole("region", { name: "工单详情" });
+  await waitFor(() => expect(pane).toHaveTextContent(workOrderNumber));
+  return pane;
 }
 
 describe("头部", () => {
@@ -104,8 +109,20 @@ describe("头部", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "返回列表" }));
 
-    // 回到列表路由后详情 query 不再挂在页面上；列表行出现
-    expect(await screen.findByRole("navigation", { name: "工单列表" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: "工单详情" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("常驻「关闭详情」同样回到无选中的列表", async () => {
+    renderDetail();
+    await screen.findByRole("heading", { name: "WO100001" });
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: "工单详情" })).not.toBeInTheDocument();
+    });
   });
 });
 
@@ -155,43 +172,49 @@ describe("处理记录时间线", () => {
   });
 });
 
-describe("折叠卡", () => {
+describe("左栏", () => {
   it("原文默认折叠，展开后逐字呈现（换行保留）", async () => {
     renderDetail();
-    await screen.findByText("处理记录");
+    const pane = await findPaneShowing("WO100001");
 
-    expect(screen.queryByText(/客户反馈保单无法下载/)).not.toBeInTheDocument();
+    expect(within(pane).queryByText(/客户反馈保单无法下载/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /工单原文/ }));
+    fireEvent.click(within(pane).getByRole("button", { name: /工单原文/ }));
 
-    const text = await screen.findByText(/客户反馈保单无法下载/);
+    const text = await within(pane).findByText(/客户反馈保单无法下载/);
     expect(text).toHaveClass("whitespace-pre-wrap");
   });
 
-  it("字段卡默认折叠，展开后只渲染白名单内有值的字段", async () => {
+  it("白名单字段平铺直出：有值渲染，无值整条不出现", async () => {
     renderDetail();
-    await screen.findByText("处理记录");
+    const pane = await findPaneShowing("WO100001");
 
-    expect(screen.queryByText("微信")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /工单信息/ }));
-
-    // 有值 → 出现（渠道走 JOIN 出的名字，枚举走中文标签，布尔走是/否）
-    expect(await screen.findByText("微信")).toBeInTheDocument();
-    expect(screen.getByText("高")).toBeInTheDocument();
-    expect(screen.getByText("是")).toBeInTheDocument();
+    // 有值 → 直接可见，无需展开（渠道走 JOIN 出的名字，枚举走中文标签，布尔走是/否）
+    expect(within(pane).getByText("微信")).toBeInTheDocument();
+    expect(within(pane).getByText("高")).toBeInTheDocument();
+    expect(within(pane).getByText("是")).toBeInTheDocument();
     // 白名单内但无值 → 整条不渲染，不留 —
-    expect(screen.queryByText("类别")).not.toBeInTheDocument();
-    expect(screen.queryByText("最新跟进")).not.toBeInTheDocument();
+    expect(within(pane).queryByText("类别")).not.toBeInTheDocument();
+    expect(within(pane).queryByText("最新跟进")).not.toBeInTheDocument();
   });
 
-  it("hides a field the account's whitelist omits even when the value is present", async () => {
+  it("工单号与状态已挂在头部，字段栅格不重复", async () => {
+    renderDetail();
+    const pane = await findPaneShowing("WO100001");
+
+    expect(within(pane).queryByText("工单号")).not.toBeInTheDocument();
+    expect(within(pane).queryByText("状态")).not.toBeInTheDocument();
+  });
+
+  it("白名单外字段有值也不渲染；栅格全空时给出提示", async () => {
+    renderDetail({ visibleFields: ["priority"] });
+    const pane = await findPaneShowing("WO100001");
+
+    expect(within(pane).getByText("高")).toBeInTheDocument();
+    expect(within(pane).queryByText("微信")).not.toBeInTheDocument();
+
     renderDetail({ visibleFields: ["workOrderNumber", "status"] });
-    await screen.findByText("处理记录");
-
-    fireEvent.click(screen.getByRole("button", { name: /工单信息/ }));
-
-    expect(screen.queryByText("微信")).not.toBeInTheDocument();
+    expect(await screen.findByText("客服团队还未补充工单信息。")).toBeInTheDocument();
   });
 });
 
@@ -230,5 +253,48 @@ describe("外部留言", () => {
     renderDetail({ ticket: { status: "completed" } });
     await screen.findByText("处理记录");
     expect(screen.queryByLabelText("留言内容")).not.toBeInTheDocument();
+  });
+});
+
+describe("↑/↓ 翻单", () => {
+  const detailIds = () =>
+    callsTo("externalTicket.detail").map((call) => (call.input as { ticketId: string }).ticketId);
+
+  function renderTwo() {
+    return renderApp({
+      path: "/external-tickets/t1",
+      role: TEST_ROLES.EXTERNAL,
+      isExternal: true,
+      trpc: {
+        "externalTicket.list": {
+          items: [
+            { ...ticket(), latestLog: null },
+            { ...ticket({ id: "t2", workOrderNumber: "WO100002" }), latestLog: null },
+          ],
+          total: 2,
+        },
+        "externalTicket.detail": (input: { ticketId: string }) =>
+          detailPayload({
+            ticket:
+              input.ticketId === "t1" ? {} : { id: input.ticketId, workOrderNumber: "WO100002" },
+          }),
+      },
+    });
+  }
+
+  it("↓ 切到列表下一单，↑ 切回；首行 ↑ 不动作", async () => {
+    renderTwo();
+    const pane = await findPaneShowing("WO100001");
+
+    fireEvent.keyDown(pane, { key: "ArrowDown" });
+    await findPaneShowing("WO100002");
+
+    fireEvent.keyDown(screen.getByRole("region", { name: "工单详情" }), { key: "ArrowUp" });
+    await findPaneShowing("WO100001");
+
+    // 首行 ↑：不翻页、不报错、不重拉
+    fireEvent.keyDown(screen.getByRole("region", { name: "工单详情" }), { key: "ArrowUp" });
+    expect(screen.getByRole("region", { name: "工单详情" })).toHaveTextContent("WO100001");
+    expect(detailIds()).toEqual(["t1", "t2", "t1"]);
   });
 });

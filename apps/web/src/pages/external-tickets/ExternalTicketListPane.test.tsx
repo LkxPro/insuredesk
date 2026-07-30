@@ -1,11 +1,13 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { formatDateTime } from "@/lib/datetime";
 import { callsTo, renderApp } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 工单行列表：固定行 schema（工单号/状态/徽标/最新跟进摘要/时间），行序与
- * 徽标语义由服务端给定，这里验证渲染与请求参数。筛选（状态/关键词/含已完结）
+ * 工单窄列：两行式（工单号+状态 / 「客服新发言」徽标+最新活跃时间），与内部
+ * 处理态窄列同密度——窄列只放"扫一眼决定点谁"的信息，最新跟进摘要在右侧
+ * 详情时间线里读。行序与徽标语义由服务端给定。筛选（状态/关键词/含已完结）
  * 与分页住在 URL 里。jsdom 无 matchMedia → 不触发着陆自动选中，列表稳定可见。
  */
 
@@ -64,7 +66,7 @@ function renderList(overrides: Record<string, unknown> = {}, path = "/external-t
 }
 
 describe("行渲染", () => {
-  it("最新可见记录是客服 comment → 有「客服新发言」徽标与摘要", async () => {
+  it("最新可见记录是客服 comment → 有「客服新发言」徽标，时间为该记录时刻", async () => {
     renderList({
       "externalTicket.list": listPayload([
         ticket({
@@ -79,7 +81,9 @@ describe("行渲染", () => {
 
     const row = (await screen.findByText("WO100001")).closest("button") as HTMLElement;
     expect(within(row).getByText("客服新发言")).toBeInTheDocument();
-    expect(within(row).getByText("跟进记录：请补充保单号")).toBeInTheDocument();
+    expect(within(row).getByText(formatDateTime("2026-07-09T03:00:00.000Z"))).toBeInTheDocument();
+    // 两行式：跟进摘要从窄列退场，留给右侧详情时间线
+    expect(within(row).queryByText(/请补充保单号/)).not.toBeInTheDocument();
   });
 
   it("最新记录是自己的留言 → 无徽标（球在客服那边）", async () => {
@@ -97,18 +101,16 @@ describe("行渲染", () => {
 
     const row = (await screen.findByText("WO100001")).closest("button") as HTMLElement;
     expect(within(row).queryByText("客服新发言")).not.toBeInTheDocument();
-    expect(within(row).getByText("外部留言：补充一句")).toBeInTheDocument();
+    expect(within(row).queryByText(/补充一句/)).not.toBeInTheDocument();
   });
 
-  it("建单后无动静 → 摘要只有动作标签，时间回落到创建时刻", async () => {
+  it("无处理记录 → 时间回落到创建时刻", async () => {
     renderList({
-      "externalTicket.list": listPayload([
-        ticket({ latestLog: { action: "create", remark: "", at: "2026-07-09T02:00:00.000Z" } }),
-      ]),
+      "externalTicket.list": listPayload([ticket({ latestLog: null })]),
     });
 
     const row = (await screen.findByText("WO100001")).closest("button") as HTMLElement;
-    expect(within(row).getByText("创建工单")).toBeInTheDocument();
+    expect(within(row).getByText(formatDateTime("2026-07-09T02:00:00.000Z"))).toBeInTheDocument();
     expect(within(row).queryByText("客服新发言")).not.toBeInTheDocument();
   });
 

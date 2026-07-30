@@ -1,5 +1,4 @@
 import type { AppRouter } from "@insuredesk/api";
-import { PROCESS_LOG_ACTION_LABELS } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,26 +7,16 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/pages/tickets/StatusBadge";
 
 /**
- * 行列表：固定 schema——工单号 / 状态 / 「客服新发言」徽标 / 最新跟进
- * 摘要 / 时间，不放业务字段（身份字段按账号盖章，同账号行内是常量，零区分
- * 价值）。行序即服务端排定的序（客服新发言在前），这里只管渲染与选中。
+ * 窄列两行式，与内部处理态窄列同密度：上行工单号+状态，下行「客服新发言」
+ * 徽标（有才渲染）+ 最新活跃时间。不放业务字段（身份字段按账号盖章，同账号
+ * 行内是常量，零区分价值），也不放最新跟进摘要——半句截断文本帮不了"点不
+ * 点"的决定，徽标才是那个决定依据，摘要全文在右侧详情时间线里读。
  *
- * 「客服新发言」纯派生：最新一条可见处理记录是客服的 comment = 球在你这边；
- * 是你自己的留言或建单则无徽标（等客服）。最新活跃时刻取最新可见记录的
- * at，与排序键同源。
+ * 「客服新发言」纯派生：最新一条可见处理记录是客服的 comment = 球在你这边。
+ * 行序即服务端排定的序（客服新发言在前），这里只管渲染与选中。
  */
 
 type ListItem = inferRouterOutputs<AppRouter>["externalTicket"]["list"]["items"][number];
-
-/** 最新跟进摘要：动作标签 + 有 remark 才拼内容（建单/完结的 remark 可能为空）。 */
-function latestSummary(item: ListItem): string {
-  const log = item.latestLog;
-  if (!log) {
-    return "—";
-  }
-  const label = PROCESS_LOG_ACTION_LABELS[log.action];
-  return log.remark ? `${label}：${log.remark}` : label;
-}
 
 export function ExternalTicketListPane({
   items,
@@ -74,12 +63,9 @@ export function ExternalTicketListPane({
                 <div className="flex w-full min-w-0 items-center gap-1.5">
                   {awaitingReply && <Badge className="shrink-0">客服新发言</Badge>}
                   <span className="truncate text-xs text-muted-foreground">
-                    {latestSummary(item)}
+                    {formatDateTime(item.latestLog?.at ?? item.createdAt)}
                   </span>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateTime(item.latestLog?.at ?? item.createdAt)}
-                </span>
               </button>
             </li>
           );
