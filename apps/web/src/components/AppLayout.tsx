@@ -39,7 +39,7 @@ function AppSidebar() {
   const { pathname } = useLocation();
   const { setOpenMobile } = useSidebar();
 
-  const items = visibleNavItems(user?.permissions ?? [], user?.externalOrgId ?? null);
+  const items = visibleNavItems(user?.permissions ?? [], user?.isExternal ?? false);
 
   return (
     <Sidebar collapsible="icon">

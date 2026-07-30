@@ -13,38 +13,41 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { trpc } from "@/lib/trpc";
-import type { OrgUserRow } from "./ExternalOrgDetailPage";
+import type { ExternalAccountRow } from "./ExternalAccountManagePage";
 
 /**
- * 禁用机构账号 confirmation (external_org.manage): 与内部账号禁用同语义 —
+ * 禁用外部账号 confirmation (external_account.manage): 与内部账号禁用同语义 —
  * locks out login AND kicks live sessions at once. 启用 is harmless and fires
  * directly from the table.
  */
-export function OrgUserDisableDialog({
-  user,
+export function ExternalAccountDisableDialog({
+  account,
   onOpenChange,
 }: {
-  user: OrgUserRow | null;
+  account: ExternalAccountRow | null;
   onOpenChange: (open: boolean) => void;
 }) {
   const utils = trpc.useUtils();
 
-  const disable = trpc.externalOrg.setUserActive.useMutation({
+  const disable = trpc.externalAccount.setActive.useMutation({
     onSuccess: (result) => {
       toast.success(`已禁用账号 ${result.name}`);
-      utils.externalOrg.invalidate();
+      utils.externalAccount.invalidate();
       onOpenChange(false);
     },
   });
 
   return (
-    <Dialog open={user !== null} onOpenChange={(next) => !disable.isPending && onOpenChange(next)}>
+    <Dialog
+      open={account !== null}
+      onOpenChange={(next) => !disable.isPending && onOpenChange(next)}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>禁用账号</DialogTitle>
           <DialogDescription>
-            {user &&
-              `确定禁用 ${user.name}（${user.username}）吗？禁用后无法登录，已登录的会话即刻失效；可随时重新启用。`}
+            {account &&
+              `确定禁用 ${account.name}（${account.username}）吗？禁用后无法登录，已登录的会话即刻失效；可随时重新启用。`}
           </DialogDescription>
         </DialogHeader>
 
@@ -66,7 +69,7 @@ export function OrgUserDisableDialog({
             type="button"
             variant="destructive"
             disabled={disable.isPending}
-            onClick={() => user && disable.mutate({ id: user.id, active: false })}
+            onClick={() => account && disable.mutate({ id: account.id, active: false })}
           >
             {disable.isPending && <Spinner data-icon="inline-start" />}
             {disable.isPending ? "禁用中…" : "确认禁用"}

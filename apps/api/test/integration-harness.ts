@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Permission } from "@insuredesk/shared";
+import { isExternalRole, type Permission } from "@insuredesk/shared";
 import { inject } from "vitest";
 import {
   seedChannels,
@@ -156,7 +156,7 @@ export async function startIntegrationHarness(
       roleName: role.name,
       permissions: permissions ?? effectivePermissions(role),
       requiredTicketFields: role.requiredTicketFields,
-      externalOrgId: user.externalOrgId,
+      isExternal: isExternalRole(role),
     });
 
     const caller = (user: AuthenticatedUser): Caller =>

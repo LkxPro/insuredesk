@@ -6,8 +6,8 @@ import { z } from "zod";
  * (the `active` flag), so history (tickets, process logs, rosters) always
  * keeps a live FK target.
  *
- * These contracts cover 内部账号 only — 外部账号 live behind the
- * externalOrgUser* set below, so no 所属外部机构 field appears here.
+ * These contracts cover 内部账号 only — 外部账号 live in external-account.ts,
+ * so no prefill/whitelist field appears here.
  */
 
 /** Login handle — ASCII word charset so it survives URLs, logs, and seeds. */
@@ -28,11 +28,19 @@ export const changeOwnPasswordInputSchema = z.object({
 });
 export type ChangeOwnPasswordInput = z.infer<typeof changeOwnPasswordInputSchema>;
 
-const displayNameSchema = z.string().trim().min(1, "请输入姓名").max(50, "姓名最长 50 字符");
+export const displayNameSchema = z.string().trim().min(1, "请输入姓名").max(50, "姓名最长 50 字符");
 
 /** Optional email: empty input means "none", non-empty must be well-formed. */
-const optionalEmailSchema = z
+export const optionalEmailSchema = z
   .union([z.string().trim().email("邮箱格式不正确"), z.literal(""), z.null(), z.undefined()])
+  .transform((value) => (value ? value : null));
+
+/**
+ * Optional password on edit forms: non-empty resets the credential,
+ * empty/null keeps it. Reset kills the target's sessions server-side.
+ */
+export const optionalPasswordResetSchema = z
+  .union([passwordSchema, z.literal(""), z.null(), z.undefined()])
   .transform((value) => (value ? value : null));
 
 /** Pure organizational label — drives no permission or filter. */
@@ -66,9 +74,7 @@ export const userUpdateInputSchema = z.object({
   name: displayNameSchema,
   email: optionalEmailSchema,
   team: optionalTeamSchema,
-  password: z
-    .union([passwordSchema, z.literal(""), z.null(), z.undefined()])
-    .transform((value) => (value ? value : null)),
+  password: optionalPasswordResetSchema,
 });
 export type UserUpdateInput = z.input<typeof userUpdateInputSchema>;
 export type UserUpdateData = z.output<typeof userUpdateInputSchema>;
@@ -91,47 +97,3 @@ export const userAssignRoleInputSchema = z.object({
 });
 export type UserAssignRoleInput = z.input<typeof userAssignRoleInputSchema>;
 export type UserAssignRoleData = z.output<typeof userAssignRoleInputSchema>;
-
-/**
- * 机构详情页的账号管理 (external_org.manage) — a parallel set of contracts
- * rather than the user.* ones: no team field, no role field (外部账号 all carry
- * the one 外部角色, mounted server-side), and the account's org is anchored to
- * the page's org on create.
- */
-export const externalOrgUserListInputSchema = z.object({
-  orgId: z.string().min(1),
-});
-export type ExternalOrgUserListInput = z.infer<typeof externalOrgUserListInputSchema>;
-
-export const externalOrgUserCreateInputSchema = z.object({
-  orgId: z.string().min(1),
-  username: usernameSchema,
-  password: passwordSchema,
-  name: displayNameSchema,
-  email: optionalEmailSchema,
-});
-export type ExternalOrgUserCreateInput = z.input<typeof externalOrgUserCreateInputSchema>;
-export type ExternalOrgUserCreateData = z.output<typeof externalOrgUserCreateInputSchema>;
-
-/**
- * 编辑机构账号: basic info + optional password reset + org migration. The org
- * is required — an external account can move between orgs but never drop one.
- */
-export const externalOrgUserUpdateInputSchema = z.object({
-  id: z.string().min(1),
-  username: usernameSchema,
-  name: displayNameSchema,
-  email: optionalEmailSchema,
-  password: z
-    .union([passwordSchema, z.literal(""), z.null(), z.undefined()])
-    .transform((value) => (value ? value : null)),
-  externalOrgId: z.string().min(1, "请选择所属外部机构"),
-});
-export type ExternalOrgUserUpdateInput = z.input<typeof externalOrgUserUpdateInputSchema>;
-export type ExternalOrgUserUpdateData = z.output<typeof externalOrgUserUpdateInputSchema>;
-
-export const externalOrgUserSetActiveInputSchema = z.object({
-  id: z.string().min(1),
-  active: z.boolean(),
-});
-export type ExternalOrgUserSetActiveInput = z.infer<typeof externalOrgUserSetActiveInputSchema>;

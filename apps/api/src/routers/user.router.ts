@@ -30,8 +30,8 @@ import { requireAnyPermission, requirePermission, router } from "../trpc";
  * one permission point per operation (user.view / user.create / user.edit /
  * user.delete / user.assign_role), business logic in user.service.
  *
- * Scope is 内部账号 only: 外部账号 answer to external_org.manage on the org
- * detail page, and every door below refuses them as targets.
+ * Scope is 内部账号 only: 外部账号 answer to external_account.manage on the
+ * 外部账号管理 page, and every door below refuses them as targets.
  */
 
 const deps = { prisma, clock: systemClock };

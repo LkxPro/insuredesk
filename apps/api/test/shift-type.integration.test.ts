@@ -36,7 +36,7 @@ describe("ShiftType management (Testcontainers)", () => {
       roleName: "班次管理员",
       permissions,
       requiredTicketFields: [],
-      externalOrgId: null,
+      isExternal: false,
     };
     return appRouter.createCaller({
       traceId: "shift-type-test",

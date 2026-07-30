@@ -101,12 +101,12 @@ export async function writeAssignedNotification(
  * Pure message builder for the `external_submitted` notification.
  */
 export function buildExternalSubmittedNotification(params: {
-  orgName: string;
+  accountName: string;
   workOrderNumber: string;
 }) {
   return {
     title: "外部工单提交",
-    content: `${params.orgName} 提交了新工单 ${params.workOrderNumber}`,
+    content: `${params.accountName} 提交了新工单 ${params.workOrderNumber}`,
   };
 }
 

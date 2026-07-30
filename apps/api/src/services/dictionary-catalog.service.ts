@@ -44,6 +44,14 @@ export class CatalogInUseError extends Error {
   }
 }
 
+/** 工单以外的引用也钉住目录行（如渠道被外部账号预填引用）— 同样的拒绝，自带文案。 */
+export class CatalogPinnedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CatalogPinnedError";
+  }
+}
+
 /** 目录引用指向不存在或已停用的目录项（编辑保持原停用值除外）。 */
 export class CatalogUnavailableError extends Error {
   constructor({ refNoun }: CatalogLabels, reason: "missing" | "disabled") {
@@ -114,6 +122,11 @@ export interface CatalogServiceConfig {
   labels: CatalogLabels;
   /** Ticket references guarding deletion — soft-deleted tickets count too. */
   countReferences: (tx: Prisma.TransactionClient, id: string) => Promise<number>;
+  /**
+   * Non-ticket references guarding deletion (e.g. 外部账号预填), checked inside
+   * the same transaction — throws CatalogPinnedError to refuse.
+   */
+  assertNoPinnedRefs?: (tx: Prisma.TransactionClient, id: string) => Promise<void>;
 }
 
 export interface CatalogDto {
@@ -159,6 +172,7 @@ export function createCatalogService({
   delegate,
   labels,
   countReferences,
+  assertNoPinnedRefs,
 }: CatalogServiceConfig): CatalogService {
   function translateWriteError(error: unknown): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -253,6 +267,7 @@ export function createCatalogService({
     async delete(prisma, id) {
       try {
         return await prisma.$transaction(async (tx) => {
+          await assertNoPinnedRefs?.(tx, id);
           const ticketCount = await countReferences(tx, id);
           if (ticketCount > 0) {
             throw new CatalogInUseError(labels, ticketCount);

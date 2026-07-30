@@ -29,7 +29,7 @@ import { trpc } from "@/lib/trpc";
 
 /**
  * 新增用户 (user.create): 内部账号 basics + initial password + role. The role
- * picker carries 内部角色 only — 外部账号 are created on the 机构详情页. The field
+ * picker carries 内部角色 only — 外部账号 are created on the 外部账号管理页. The field
  * contract is the shared userCreateInputSchema — the exact schema the API
  * parses.
  */

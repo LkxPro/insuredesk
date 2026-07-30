@@ -1,18 +1,13 @@
 import type {
-  ExternalOrgUserCreateData,
-  ExternalOrgUserListInput,
-  ExternalOrgUserSetActiveInput,
-  ExternalOrgUserUpdateData,
   UserAssignRoleData,
   UserCreateData,
   UserSetActiveInput,
   UserUpdateData,
 } from "@insuredesk/shared";
-import { isExternalRole } from "@insuredesk/shared";
+import { EXTERNAL_ROLE_PERMISSIONS, isExternalRole } from "@insuredesk/shared";
 import { Prisma } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { hashPassword } from "./auth.service";
-import { OrgNotFoundError } from "./external-org.service";
 import type { TicketServiceDeps } from "./ticket.service";
 
 /**
@@ -56,26 +51,10 @@ export class RoleOptionNotFoundError extends Error {
   }
 }
 
-/** The 机构 picker on the org detail page sent an id that no longer exists. */
-export class ExternalOrgOptionNotFoundError extends Error {
-  constructor() {
-    super("所选外部机构不存在");
-    this.name = "ExternalOrgOptionNotFoundError";
-  }
-}
-
-/** A 停用 org cannot take on accounts — they could neither submit nor view. */
-export class InactiveExternalOrgError extends Error {
-  constructor() {
-    super("所选外部机构已停用");
-    this.name = "InactiveExternalOrgError";
-  }
-}
-
-/** The target of a 用户管理 operation is an 外部账号 — 机构详情页 owns those. */
+/** The target of a 用户管理 operation is an 外部账号 — 外部账号管理页 owns those. */
 export class InternalAccountOnlyError extends Error {
   constructor() {
-    super("外部机构账号请在机构详情页管理");
+    super("外部账号请在外部账号管理页管理");
     this.name = "InternalAccountOnlyError";
   }
 }
@@ -132,28 +111,6 @@ async function loadRole(prisma: TicketServiceDeps["prisma"], roleId: string) {
   return role;
 }
 
-/** Resolve the 外部机构 an 外部账号 is being bound to. */
-async function resolveExternalOrg(
-  prisma: TicketServiceDeps["prisma"],
-  externalOrgId: string,
-  previousOrgId: string | null = null,
-): Promise<string> {
-  const org = await prisma.externalOrg.findUnique({
-    where: { id: externalOrgId },
-    select: { id: true, active: true },
-  });
-  if (!org) {
-    throw new ExternalOrgOptionNotFoundError();
-  }
-  // A 停用 org takes on no new accounts, but one already bound to it keeps the
-  // binding — else every unrelated edit to that account would be blocked until
-  // someone re-enables the org.
-  if (!org.active && org.id !== previousOrgId) {
-    throw new InactiveExternalOrgError();
-  }
-  return org.id;
-}
-
 function isUniqueViolationOn(error: unknown, field: string): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
     return false;
@@ -179,13 +136,19 @@ function throwOnDuplicateIdentity(error: unknown): never {
 
 /**
  * Every 内部账号, active or not — the 用户管理 table shows disabled users so
- * they can be re-enabled. 外部账号 are out of scope entirely; 机构详情页 is their
- * only management surface. Role name joined live (a rename shows everywhere at
- * once; roles are configuration, not history).
+ * they can be re-enabled. 外部账号 are out of scope entirely; 外部账号管理页 is
+ * their only management surface. The fence is the role's STORED permission
+ * array: 管理员 (system) expands to every positive point yet stays internal.
+ * Role name joined live (a rename shows everywhere at once; roles are
+ * configuration, not history).
  */
 export async function listUsers({ prisma }: TicketServiceDeps) {
   const rows = await prisma.user.findMany({
-    where: { externalOrgId: null },
+    where: {
+      NOT: {
+        role: { is: { system: false, permissions: { hasSome: [...EXTERNAL_ROLE_PERMISSIONS] } } },
+      },
+    },
     include: { role: { select: { name: true, system: true } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
@@ -216,19 +179,19 @@ async function loadInternalRole(prisma: TicketServiceDeps["prisma"], roleId: str
 }
 
 /**
- * Fence a 用户管理 door to 内部账号. Judged on the org binding rather than the
- * role: the two are equivalent by construction, and the binding is what the
- * list query filters on.
+ * Fence a 用户管理 door to 内部账号. Judged on the role's stored permission
+ * array — the same predicate the external surface uses, so an account can
+ * never be manageable from both sides.
  */
 async function assertInternalAccount(prisma: TicketServiceDeps["prisma"], id: string) {
   const target = await prisma.user.findUnique({
     where: { id },
-    select: { externalOrgId: true },
+    select: { role: { select: { system: true, permissions: true } } },
   });
   if (!target) {
     throw new UserNotFoundError();
   }
-  if (target.externalOrgId !== null) {
+  if (isExternalRole(target.role)) {
     throw new InternalAccountOnlyError();
   }
 }
@@ -386,194 +349,4 @@ export async function listRoleOptions({ prisma }: TicketServiceDeps) {
   return roles
     .filter((role) => !isExternalRole(role))
     .map((role) => ({ id: role.id, name: role.name, system: role.system }));
-}
-
-/*
- * 机构账号管理 — the org detail page's account operations, all behind the
- * single external_org.manage point (no user.* required). Every entry below is
- * fenced to 外部账号: without that fence the point would double as a general
- * user-management backdoor onto internal accounts.
- */
-
-/** The target of an org-account operation is not an 外部账号. */
-export class ExternalAccountOnlyError extends Error {
-  constructor() {
-    super("该用户不是外部机构账号");
-    this.name = "ExternalAccountOnlyError";
-  }
-}
-
-/**
- * 建号要挂的唯一外部角色不存在或不唯一。种子提供恰好一个外部角色,数量对不上
- * 说明库被改坏了 — 明确失败,不猜一个顶上：挂错角色等于给外部账号发错权限。
- */
-export class ExternalRoleNotUniqueError extends Error {
-  constructor(count: number) {
-    super(`外部角色应恰好有 1 个，当前 ${count} 个，无法创建机构账号`);
-    this.name = "ExternalRoleNotUniqueError";
-  }
-}
-
-/** Judged on the stored permission array, so 管理员 (system) counts as internal. */
-async function loadExternalAccount(prisma: TicketServiceDeps["prisma"], id: string) {
-  const target = await prisma.user.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      externalOrgId: true,
-      role: { select: { system: true, permissions: true } },
-    },
-  });
-  if (!target) {
-    throw new UserNotFoundError();
-  }
-  if (!isExternalRole(target.role)) {
-    throw new ExternalAccountOnlyError();
-  }
-  return target;
-}
-
-/** The org detail page's account table — no team or role column, accounts have neither. */
-export async function listOrgUsers({ prisma }: TicketServiceDeps, input: ExternalOrgUserListInput) {
-  const org = await prisma.externalOrg.findUnique({
-    where: { id: input.orgId },
-    select: { id: true },
-  });
-  if (!org) {
-    throw new OrgNotFoundError();
-  }
-  const rows = await prisma.user.findMany({
-    where: { externalOrgId: input.orgId },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-  });
-  return rows.map((row) => ({
-    id: row.id,
-    username: row.username,
-    name: row.name,
-    email: row.email,
-    active: row.active,
-    createdAt: row.createdAt.toISOString(),
-  }));
-}
-
-/**
- * The one 外部角色 every 机构账号 is born holding — 建号不选角色, so the role is
- * looked up here rather than passed in.
- */
-async function loadSoleExternalRole(prisma: TicketServiceDeps["prisma"]) {
-  const roles = await prisma.role.findMany({
-    select: { id: true, system: true, permissions: true },
-  });
-  const external = roles.filter((role) => isExternalRole(role));
-  if (external.length !== 1 || !external[0]) {
-    throw new ExternalRoleNotUniqueError(external.length);
-  }
-  return external[0];
-}
-
-/** New 机构账号, anchored to the page's org — a 停用 org takes on no new accounts. */
-export async function createOrgUser(
-  { prisma }: TicketServiceDeps,
-  input: ExternalOrgUserCreateData,
-) {
-  // 先校机构：机构停用是操作者当场能处理的，外部角色数量不对只有部署侧能修
-  const externalOrgId = await resolveExternalOrg(prisma, input.orgId);
-  const role = await loadSoleExternalRole(prisma);
-
-  const passwordHash = await hashPassword(input.password);
-  try {
-    const created = await prisma.user.create({
-      data: {
-        username: input.username,
-        name: input.name,
-        email: input.email,
-        team: null,
-        roleId: role.id,
-        externalOrgId,
-        passwordHash,
-        active: true,
-      },
-    });
-    return { id: created.id, name: created.name };
-  } catch (error) {
-    throwOnDuplicateIdentity(error);
-  }
-}
-
-/**
- * Edit a 机构账号: basic info, optional password reset (kills the target's
- * sessions, same as updateUser), and org migration — a 停用 org is refused as
- * a new destination but an existing binding to one survives.
- */
-export async function updateOrgUser(
-  { prisma }: TicketServiceDeps,
-  input: ExternalOrgUserUpdateData,
-) {
-  const target = await loadExternalAccount(prisma, input.id);
-  const externalOrgId = await resolveExternalOrg(prisma, input.externalOrgId, target.externalOrgId);
-
-  const data: Prisma.UserUncheckedUpdateInput = {
-    username: input.username,
-    name: input.name,
-    email: input.email,
-    externalOrgId,
-  };
-  if (input.password !== null) {
-    data.passwordHash = await hashPassword(input.password);
-  }
-
-  return prisma.$transaction(async (tx) => {
-    let updated: { id: string; name: string };
-    try {
-      updated = await tx.user.update({
-        where: { id: input.id },
-        data,
-        select: { id: true, name: true },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        throw new UserNotFoundError();
-      }
-      throwOnDuplicateIdentity(error);
-    }
-    if (input.password !== null) {
-      await tx.session.deleteMany({ where: { userId: input.id } });
-    }
-    return updated;
-  });
-}
-
-/**
- * 禁用/启用 a 机构账号 — same semantics as setUserActive (disable kills live
- * sessions), minus the last-admin check: an 外部账号 is never the system role.
- */
-export async function setOrgUserActive(
-  { prisma }: TicketServiceDeps,
-  actor: AuthenticatedUser,
-  input: ExternalOrgUserSetActiveInput,
-) {
-  if (input.id === actor.id && !input.active) {
-    throw new SelfDisableError();
-  }
-  await loadExternalAccount(prisma, input.id);
-
-  return prisma.$transaction(async (tx) => {
-    let updated: { id: string; name: string; active: boolean };
-    try {
-      updated = await tx.user.update({
-        where: { id: input.id },
-        data: { active: input.active },
-        select: { id: true, name: true, active: true },
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        throw new UserNotFoundError();
-      }
-      throw error;
-    }
-    if (!input.active) {
-      await tx.session.deleteMany({ where: { userId: input.id } });
-    }
-    return updated;
-  });
 }

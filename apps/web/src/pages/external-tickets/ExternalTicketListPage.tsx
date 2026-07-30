@@ -28,9 +28,9 @@ import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
 import { externalFieldLabel, externalFieldValue } from "./external-ticket-fields";
 
 /**
- * 我的工单：外部账号的首屏。列按当前账号所属机构的可见字段白名单动态渲染
- * （白名单随列表响应下发——外部方读不到机构配置接口），顺序即白名单顺序，
- * 管理员改配置后无需改代码。数据范围（本机构 + 未删除）与字段裁剪都在服务端，
+ * 我的工单：外部账号的首屏。列按当前账号的可见字段白名单动态渲染
+ * （白名单随列表响应下发——外部方读不到账号配置接口），顺序即白名单顺序，
+ * 管理员改配置后无需改代码。数据范围（本人提交 + 未删除）与字段裁剪都在服务端，
  * 这里渲染拿到的一切。
  *
  * 筛选与分页状态住在 URL 里，与 工单管理 同一套 deep-link 处理；排序固定
@@ -93,7 +93,7 @@ export function ExternalTicketListPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">我的工单</h1>
           <p className="text-sm text-muted-foreground">
-            本机构提交的工单，状态与对外公开的跟进记录实时可见。
+            自己提交的工单，状态与对外公开的跟进记录实时可见。
           </p>
         </div>
         <Button onClick={() => setSubmitOpen(true)}>

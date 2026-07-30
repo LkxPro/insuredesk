@@ -38,14 +38,14 @@ export const USER_PERMISSIONS = [
   "user.assign_role", // Assign role to user (operation permission)
 ] as const;
 
-// External organization permissions
-export const EXTERNAL_ORG_PERMISSIONS = [
-  "external_org.manage", // Manage external organizations (admin permission)
+// External account permissions
+export const EXTERNAL_ACCOUNT_PERMISSIONS = [
+  "external_account.manage", // Manage external accounts (admin permission)
 ] as const;
 
 /**
- * Points that mark a role as belonging to an 外部机构 account rather than an
- * internal one — holding either binds the role's users to exactly one org.
+ * Points that mark a role as belonging to an 外部账号 rather than an
+ * internal one — holding either makes the role an 外部角色.
  */
 export const EXTERNAL_ROLE_PERMISSIONS = [
   "ticket.create_external",
@@ -102,7 +102,7 @@ export const POSITIVE_PERMISSIONS = [
   ...USER_PERMISSIONS,
   ...ROLE_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
-  ...EXTERNAL_ORG_PERMISSIONS,
+  ...EXTERNAL_ACCOUNT_PERMISSIONS,
 ] as const;
 
 export const ALL_PERMISSIONS = [...POSITIVE_PERMISSIONS, ...RESTRICTIVE_PERMISSIONS] as const;
@@ -148,7 +148,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "sla.view": "访问 SLA 策略",
   "sla.edit": "编辑 SLA 策略",
   "dictionary.manage": "管理字典目录",
-  "external_org.manage": "管理外部机构",
+  "external_account.manage": "管理外部账号",
   "user.forbid_change_own_password": "禁止修改自己的密码",
 };
 
@@ -163,7 +163,7 @@ export const PERMISSION_GROUPS = [
   { label: "用户管理", permissions: USER_PERMISSIONS, restrictive: false },
   { label: "角色权限", permissions: ROLE_PERMISSIONS, restrictive: false },
   { label: "系统配置", permissions: SYSTEM_PERMISSIONS, restrictive: false },
-  { label: "外部机构", permissions: EXTERNAL_ORG_PERMISSIONS, restrictive: false },
+  { label: "外部账号", permissions: EXTERNAL_ACCOUNT_PERMISSIONS, restrictive: false },
   { label: "限制类权限", permissions: RESTRICTIVE_PERMISSIONS, restrictive: true },
 ] as const;
 

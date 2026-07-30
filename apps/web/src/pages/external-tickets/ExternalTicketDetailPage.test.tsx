@@ -9,8 +9,6 @@ import { TEST_ROLES } from "@/test/roles";
  * 与内部跟进在视觉上可分，以及已完结不再给留言入口。
  */
 
-const ORG = "org-1";
-
 const ALL_FIELDS = [
   "workOrderNumber",
   "status",
@@ -69,7 +67,7 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
   return renderApp({
     path: "/external-tickets/t1",
     role: TEST_ROLES.EXTERNAL,
-    externalOrgId: ORG,
+    isExternal: true,
     trpc: { "externalTicket.detail": detailPayload(overrides), ...extraTrpc },
   });
 }
@@ -118,7 +116,7 @@ describe("处理记录时间线", () => {
       remark: "工单创建",
       createdAt: "2026-07-09T02:00:00.000Z",
       operatorId: "u9",
-      operatorName: "机构用户",
+      operatorName: "外部用户",
     },
     {
       id: "l2",
@@ -134,7 +132,7 @@ describe("处理记录时间线", () => {
       remark: "补充：保单号 P123",
       createdAt: "2026-07-09T04:00:00.000Z",
       operatorId: "u9",
-      operatorName: "机构用户",
+      operatorName: "外部用户",
     },
   ];
 

@@ -24,8 +24,8 @@ import { UserCreateDialog } from "./UserCreateDialog";
 import { UserEditDialog } from "./UserEditDialog";
 
 /**
- * 用户管理: every 内部账号 with its role and enabled/disabled state — 外部机构
- * 账号 are managed on the 机构详情页 and never appear here.
+ * 用户管理: every 内部账号 with its role and enabled/disabled state — 外部账号
+ * are managed on the 外部账号管理 page and never appear here.
  * user.view opens the page (route-guarded); each operation button appears
  * only with its own permission point — user.create / user.edit / user.delete
  * (禁用/启用) / user.assign_role — and the API re-checks regardless. Disabled
@@ -66,7 +66,7 @@ export function UsersPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">用户管理</h1>
           <p className="text-sm text-muted-foreground">
-            新增、编辑、禁用/启用内部账号并分配角色；禁用后无法登录，已有会话即刻失效。外部机构账号在机构详情页管理。
+            新增、编辑、禁用/启用内部账号并分配角色；禁用后无法登录，已有会话即刻失效。外部账号在外部账号管理页维护。
           </p>
         </div>
         {canCreate && (

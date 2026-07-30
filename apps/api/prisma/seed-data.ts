@@ -1,5 +1,10 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
-import { COMPLAINT_LEVELS, DEFAULT_SLA_POLICIES, TicketStatus } from "@insuredesk/shared";
+import {
+  COMPLAINT_LEVELS,
+  DEFAULT_SLA_POLICIES,
+  isExternalRole,
+  TicketStatus,
+} from "@insuredesk/shared";
 import type { Clock } from "../src/clock";
 import type {
   Channel,
@@ -271,7 +276,7 @@ export async function seedFactoryRolesAndDemoUsers(prisma: PrismaClient): Promis
  * Non-factory role (system=false) that survives bootstrap replay. Created by
  * name upsert so renames/permission edits persist across restarts.
  *
- * 这是全库唯一的外部角色,建机构账号靠它落 roleId(账号不选角色)。再添一个外部
+ * 这是全库唯一的外部角色,建外部账号靠它落 roleId(账号不选角色)。再添一个外部
  * 角色会让建号直接失败,而不是随机挑一个。
  */
 export async function seedExternalUserRole(prisma: PrismaClient): Promise<Role> {
@@ -445,7 +450,7 @@ function authUser(user: User, role: Role): AuthenticatedUser {
     roleName: role.name,
     permissions: role.permissions as Permission[],
     requiredTicketFields: role.requiredTicketFields,
-    externalOrgId: user.externalOrgId,
+    isExternal: isExternalRole(role),
   };
 }
 

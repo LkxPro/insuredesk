@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { type Permission, POSITIVE_PERMISSIONS } from "@insuredesk/shared";
+import { isExternalRole, type Permission, POSITIVE_PERMISSIONS } from "@insuredesk/shared";
 import * as bcrypt from "bcryptjs";
 import type { PrismaClient } from "../generated/prisma/client";
 
@@ -214,7 +214,8 @@ export class SessionService {
       roleName: session.user.role.name,
       permissions: effectivePermissions(session.user.role),
       requiredTicketFields: session.user.role.requiredTicketFields,
-      externalOrgId: session.user.externalOrgId,
+      // 内外部之分读角色库中存的权限数组：管理员展开后含外部权限点却是内部账号
+      isExternal: isExternalRole(session.user.role),
     };
   }
 
@@ -251,7 +252,8 @@ export interface AuthenticatedUser {
   roleName: string;
   permissions: Permission[];
   requiredTicketFields: string[];
-  externalOrgId: string | null;
+  /** true = 外部账号：仅见自己提交的工单，管理界面不出现"角色"概念。 */
+  isExternal: boolean;
 }
 
 export function hasPermission(user: AuthenticatedUser, permission: Permission): boolean {

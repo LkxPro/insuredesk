@@ -5,13 +5,18 @@ import {
   CatalogInUseError,
   CatalogNameConflictError,
   CatalogNotFoundError,
+  CatalogPinnedError,
   type CatalogService,
 } from "../services/dictionary-catalog.service";
 import { protectedProcedure, requirePermission, router } from "../trpc";
 
 /** 目录 domain errors → transport codes; anything else rethrows as-is. */
 function translateError(error: unknown): never {
-  if (error instanceof CatalogNameConflictError || error instanceof CatalogInUseError) {
+  if (
+    error instanceof CatalogNameConflictError ||
+    error instanceof CatalogInUseError ||
+    error instanceof CatalogPinnedError
+  ) {
     throw new TRPCError({ code: "CONFLICT", message: error.message });
   }
   if (error instanceof CatalogNotFoundError) {

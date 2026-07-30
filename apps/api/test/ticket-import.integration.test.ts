@@ -158,7 +158,7 @@ describe("ticket import upload (Testcontainers)", () => {
         roleName: importerRole.name,
         permissions: importerRole.permissions as Permission[],
         requiredTicketFields: importerRole.requiredTicketFields,
-        externalOrgId: null,
+        isExternal: false,
       },
       sessionToken: null,
     });

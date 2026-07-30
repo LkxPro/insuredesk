@@ -5,6 +5,7 @@ import {
   externalTicketListInputSchema,
   externalTicketSubmitInputSchema,
   filterVisibleFields,
+  parseVisibleTicketFields,
   prioritySchema,
   processLogActionSchema,
   ticketStatusSchema,
@@ -13,7 +14,6 @@ import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
 import type { Prisma } from "../generated/prisma/client";
-import { applyExternalOrgDataScope } from "../services/data-scope.service";
 import {
   buildExternalNoteNotification,
   buildExternalSubmittedNotification,
@@ -25,8 +25,8 @@ const deps = { prisma, clock: systemClock };
 
 /**
  * External ticket router: submit/list/detail endpoints for external users.
- * Data scope: external users see only tickets from their org.
- * Field visibility: tickets are filtered by org's visibleTicketFields whitelist.
+ * Data scope: external users see only tickets they submitted (creatorId = 本人).
+ * Field visibility: tickets are filtered by the account's visibleTicketFields whitelist.
  * ProcessLog filtering: only comment (non-internal) + external_note + resolve.
  */
 
@@ -82,25 +82,60 @@ function serializeExternalTicket(ticket: TicketWithCatalogs, whitelist: readonly
 /**
  * 工单号与状态是工单对外的身份与当前进展，不是可配的业务字段：
  * EXTERNAL_VISIBLE_FIELD_OPTIONS 由建单字段推导，两者都不在其中，所以管理员
- * 在界面上根本勾不到——若只信任显式白名单，任何配过一次的机构都会丢掉工单号列
+ * 在界面上根本勾不到——若只信任显式白名单，任何配过一次的账号都会丢掉工单号列
  * 与详情标题。这里补齐，让白名单只表达"业务字段给不给看"。
  */
 const ALWAYS_VISIBLE_FIELDS = ["workOrderNumber", "status"] as const;
 
-/** 机构白名单：显式配置优先，未配置走系统默认；两种情况都补上恒可见字段。 */
+/** 账号白名单：显式配置优先，未配置(或坏值)走系统默认；两种情况都补上恒可见字段。 */
 function resolveWhitelist(visibleTicketFields: string | null): string[] {
-  const configured: string[] = visibleTicketFields
-    ? JSON.parse(visibleTicketFields)
-    : [...DEFAULT_EXTERNAL_VISIBLE_FIELDS];
+  const configured = parseVisibleTicketFields(visibleTicketFields) ?? [
+    ...DEFAULT_EXTERNAL_VISIBLE_FIELDS,
+  ];
   const missing = ALWAYS_VISIBLE_FIELDS.filter((key) => !configured.includes(key));
   // 恒可见字段排在前：白名单顺序就是列表列顺序
   return [...missing, ...configured];
 }
 
+/**
+ * 外部界面的入口闸：权限点之外再要求账号本身是外部的 —— 管理员展开后同样
+ * 持有 ticket.create_external，却不能从外部口子提交（无预填可盖，数据范围
+ * 语义也是外部账号的）。
+ */
+function requireExternalAccount(isExternal: boolean) {
+  if (!isExternal) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "该入口仅限外部账号使用",
+    });
+  }
+}
+
+/** 预填与白名单不进会话快照，每个入口现读现用 —— 改配置下次请求即生效。 */
+async function loadExternalAccountConfig(userId: string) {
+  const account = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      prefillChannelId: true,
+      prefillProject: true,
+      prefillBrokerageEntity: true,
+      prefillPaymentChannel: true,
+      prefillUserComplaintChannel: true,
+      prefillComplaintReceiveChannel: true,
+      visibleTicketFields: true,
+    },
+  });
+  if (!account) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "账号不存在" });
+  }
+  return account;
+}
+
 export const externalTicketRouter = router({
   /**
    * Submit: external user creates a ticket with submissionText.
-   * Stamps source=external_channel, externalOrgId, creatorId, channelId.
+   * Stamps source=external_channel, creatorId, and the account's 6 prefill
+   * values into the ticket fields (创建时盖章，进单后与手填无异；停用渠道照常写入).
    * Writes action=create ProcessLog.
    * Broadcasts external_submitted notification to all users with ticket.assign.
    */
@@ -108,31 +143,8 @@ export const externalTicketRouter = router({
     .input(externalTicketSubmitInputSchema)
     .mutation(async ({ ctx, input }) => {
       const user = ctx.user;
-
-      if (!user.externalOrgId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "外部提交需要关联外部机构",
-        });
-      }
-
-      const externalOrg = await prisma.externalOrg.findUnique({
-        where: { id: user.externalOrgId },
-      });
-
-      if (!externalOrg) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "外部机构不存在",
-        });
-      }
-
-      if (!externalOrg.active) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: "外部机构已停用",
-        });
-      }
+      requireExternalAccount(user.isExternal);
+      const account = await loadExternalAccountConfig(user.id);
 
       const now = deps.clock.now();
 
@@ -147,9 +159,13 @@ export const externalTicketRouter = router({
             workOrderNumber,
             source: "external_channel",
             submissionText: input.submissionText,
-            externalOrgId: user.externalOrgId,
             creatorId: user.id,
-            channelId: externalOrg.channelId,
+            channelId: account.prefillChannelId,
+            project: account.prefillProject,
+            brokerageEntity: account.prefillBrokerageEntity,
+            paymentChannel: account.prefillPaymentChannel,
+            userComplaintChannel: account.prefillUserComplaintChannel,
+            complaintReceiveChannel: account.prefillComplaintReceiveChannel,
             status: "unassigned",
             createdAt: now,
             updatedAt: now,
@@ -180,7 +196,7 @@ export const externalTicketRouter = router({
         });
 
         const { title, content } = buildExternalSubmittedNotification({
-          orgName: externalOrg.name,
+          accountName: user.name,
           workOrderNumber: newTicket.workOrderNumber,
         });
 
@@ -204,37 +220,20 @@ export const externalTicketRouter = router({
     }),
 
   /**
-   * List: external user lists tickets from their org.
-   * Applies externalOrgDataScope + deletedAt IS NULL.
-   * Filters each ticket by org's visibleTicketFields whitelist.
+   * List: external user lists tickets they submitted.
+   * Applies creatorId = 本人 + deletedAt IS NULL.
+   * Filters each ticket by the account's visibleTicketFields whitelist.
    */
   list: requirePermission("ticket.create_external")
     .input(externalTicketListInputSchema)
     .query(async ({ ctx, input }) => {
       const user = ctx.user;
-
-      if (!user.externalOrgId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "外部查询需要关联外部机构",
-        });
-      }
-
-      const externalOrg = await prisma.externalOrg.findUnique({
-        where: { id: user.externalOrgId },
-      });
-
-      if (!externalOrg) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "外部机构不存在",
-        });
-      }
-
-      const whitelist = resolveWhitelist(externalOrg.visibleTicketFields);
+      requireExternalAccount(user.isExternal);
+      const account = await loadExternalAccountConfig(user.id);
+      const whitelist = resolveWhitelist(account.visibleTicketFields);
 
       const where: Prisma.TicketWhereInput = {
-        ...applyExternalOrgDataScope(user),
+        creatorId: user.id,
         deletedAt: null,
         ...(input.status && input.status.length > 0 ? { status: { in: input.status } } : {}),
         ...(input.search
@@ -261,14 +260,14 @@ export const externalTicketRouter = router({
       return {
         items: tickets.map((ticket) => serializeExternalTicket(ticket, whitelist)),
         total,
-        // 列表列与详情卡片都按机构白名单渲染，客户端没有别的途径读到它
+        // 列表列与详情卡片都按账号白名单渲染，客户端没有别的途径读到它
         visibleFields: whitelist,
       };
     }),
 
   /**
-   * Detail: external user views one ticket from their org.
-   * Applies externalOrgDataScope + deletedAt IS NULL (404 if not found or wrong org).
+   * Detail: external user views one ticket they submitted.
+   * Applies creatorId = 本人 + deletedAt IS NULL (404 if not found or not theirs).
    * Filters ticket fields by whitelist.
    * Filters ProcessLog: only comment (non-internal) + external_note + resolve.
    */
@@ -276,29 +275,12 @@ export const externalTicketRouter = router({
     .input(externalTicketDetailInputSchema)
     .query(async ({ ctx, input }) => {
       const user = ctx.user;
-
-      if (!user.externalOrgId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "外部查询需要关联外部机构",
-        });
-      }
-
-      const externalOrg = await prisma.externalOrg.findUnique({
-        where: { id: user.externalOrgId },
-      });
-
-      if (!externalOrg) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "外部机构不存在",
-        });
-      }
+      requireExternalAccount(user.isExternal);
 
       const ticket = await prisma.ticket.findFirst({
         where: {
           id: input.ticketId,
-          ...applyExternalOrgDataScope(user),
+          creatorId: user.id,
           deletedAt: null,
         },
         include: catalogInclude,
@@ -327,7 +309,8 @@ export const externalTicketRouter = router({
         orderBy: { at: "asc" },
       });
 
-      const whitelist = resolveWhitelist(externalOrg.visibleTicketFields);
+      const account = await loadExternalAccountConfig(user.id);
+      const whitelist = resolveWhitelist(account.visibleTicketFields);
 
       return {
         ticket: serializeExternalTicket(ticket, whitelist),
@@ -345,7 +328,7 @@ export const externalTicketRouter = router({
     }),
 
   /**
-   * AddNote: external user adds a note to a ticket.
+   * AddNote: external user adds a note to a ticket they submitted.
    * Writes action=external_note ProcessLog, does NOT modify contactCount/processingResult/nextContactTime.
    * Notifies current assignee (or broadcasts to ticket.assign holders if unassigned).
    */
@@ -353,18 +336,12 @@ export const externalTicketRouter = router({
     .input(externalTicketAddNoteInputSchema)
     .mutation(async ({ ctx, input }) => {
       const user = ctx.user;
-
-      if (!user.externalOrgId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "外部留言需要关联外部机构",
-        });
-      }
+      requireExternalAccount(user.isExternal);
 
       const ticket = await prisma.ticket.findFirst({
         where: {
           id: input.ticketId,
-          ...applyExternalOrgDataScope(user),
+          creatorId: user.id,
           deletedAt: null,
         },
         select: { id: true, workOrderNumber: true, status: true, assigneeId: true },

@@ -54,7 +54,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     roleName: role.name,
     permissions: [...role.permissions],
     requiredTicketFields: [],
-    externalOrgId: null,
+    isExternal: false,
   };
 }
 
@@ -285,23 +285,23 @@ describe("operations", () => {
 });
 
 describe("内部账号专属", () => {
-  it("新增用户 never asks for an 所属外部机构 — 外部账号 live on the 机构详情页", async () => {
+  it("新增用户 never asks for 预填/白名单 — 外部账号 live on the 外部账号管理页", async () => {
     renderUsersPage();
     fireEvent.click(await screen.findByRole("button", { name: "新增用户" }));
     await screen.findByRole("heading", { name: "新增用户" });
 
     const trigger = screen.getByRole("combobox", { name: "角色" });
     await waitFor(() => expect(trigger).toBeEnabled());
-    expect(screen.queryByRole("combobox", { name: "所属外部机构" })).not.toBeInTheDocument();
+    expect(screen.queryByText("提交预填（全部可选）")).not.toBeInTheDocument();
   });
 
-  it("编辑用户 has no org field either", async () => {
+  it("编辑用户 has no prefill section either", async () => {
     canned.users = [row()];
     renderUsersPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
     await screen.findByRole("heading", { name: "编辑用户" });
-    expect(screen.queryByRole("combobox", { name: "所属外部机构" })).not.toBeInTheDocument();
+    expect(screen.queryByText("提交预填（全部可选）")).not.toBeInTheDocument();
   });
 
   it("分配角色 offers 内部角色 only and fires without an org", async () => {

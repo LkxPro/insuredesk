@@ -4,7 +4,7 @@ export * from "./completion-status";
 export * from "./dashboard";
 export * from "./dictionary-catalog";
 export * from "./enums";
-export * from "./external-org";
+export * from "./external-account";
 export * from "./external-ticket";
 export * from "./health";
 export * from "./notification";

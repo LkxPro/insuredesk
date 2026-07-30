@@ -1,20 +1,19 @@
-import { DEFAULT_EXTERNAL_VISIBLE_FIELDS, type Permission } from "@insuredesk/shared";
+import { DEFAULT_EXTERNAL_VISIBLE_FIELDS } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { ExternalOrg, PrismaClient, Role, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
- * External ticket API integration tests: submit/list/detail with data-scope,
- * field visibility filtering, ProcessLog filtering, and notification writing.
+ * External ticket API integration tests: submit with prefill stamping,
+ * creatorId-scoped list/detail, field visibility filtering, ProcessLog
+ * filtering, and notification writing.
  */
 describe("external ticket API (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let seeded: IntegrationHarness["seeded"];
-  let externalOrg1: ExternalOrg;
-  let externalOrg2: ExternalOrg;
+  let channelId: string;
   let externalUser1: User;
   let externalUser2: User;
   let externalRole: Role;
@@ -23,6 +22,7 @@ describe("external ticket API (Testcontainers)", () => {
     harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "channels"] });
     prisma = harness.prisma;
     seeded = harness.seeded;
+    channelId = harness.channelId("保司");
 
     externalRole = await prisma.role.create({
       data: {
@@ -33,49 +33,36 @@ describe("external ticket API (Testcontainers)", () => {
       },
     });
 
-    const channel = await prisma.channel.findFirst({ where: { name: "保司" } });
-
-    externalOrg1 = await prisma.externalOrg.create({
-      data: {
-        name: "外包客服 A",
-        channelId: channel?.id ?? null,
-        visibleTicketFields: JSON.stringify([
-          "workOrderNumber",
-          "feedbackTime",
-          "status",
-          "processingResult",
-        ]),
-        active: true,
-      },
-    });
-
-    externalOrg2 = await prisma.externalOrg.create({
-      data: {
-        name: "合作伙伴 B",
-        channelId: null,
-        visibleTicketFields: null,
-        active: true,
-      },
-    });
-
+    // 账号1: 6 预填全配 + 显式白名单
     externalUser1 = await prisma.user.create({
       data: {
         username: "external1",
         name: "外部用户1",
         passwordHash: "dummy",
         roleId: externalRole.id,
-        externalOrgId: externalOrg1.id,
         active: true,
+        prefillChannelId: channelId,
+        prefillProject: "融盛",
+        prefillBrokerageEntity: "东方大地",
+        prefillPaymentChannel: "连连",
+        prefillUserComplaintChannel: "400热线",
+        prefillComplaintReceiveChannel: "客服群",
+        visibleTicketFields: JSON.stringify([
+          "workOrderNumber",
+          "feedbackTime",
+          "status",
+          "processingResult",
+        ]),
       },
     });
 
+    // 账号2: 无预填,白名单 null(系统默认)
     externalUser2 = await prisma.user.create({
       data: {
         username: "external2",
         name: "外部用户2",
         passwordHash: "dummy",
         roleId: externalRole.id,
-        externalOrgId: externalOrg2.id,
         active: true,
       },
     });
@@ -85,30 +72,11 @@ describe("external ticket API (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  function callerFor(user: User, role: Role, externalOrgId: string | null = null) {
-    return appRouter.createCaller({
-      traceId: "external-ticket-test",
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        email: user.email,
-        team: user.team,
-        roleId: role.id,
-        roleName: role.name,
-        permissions: role.permissions as Permission[],
-        requiredTicketFields: [],
-        externalOrgId,
-      },
-      sessionToken: null,
-    });
-  }
-
-  const externalCaller1 = () => callerFor(externalUser1, externalRole, externalOrg1.id);
-  const externalCaller2 = () => callerFor(externalUser2, externalRole, externalOrg2.id);
+  const externalCaller1 = () => harness.callerFor(externalUser1, externalRole);
+  const externalCaller2 = () => harness.callerFor(externalUser2, externalRole);
 
   describe("submit", () => {
-    it("creates ticket with source=external_channel and correct metadata", async () => {
+    it("creates ticket with source=external_channel and the account's 6 prefill values stamped", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
         submissionText: "客户反馈无法登录系统，需要重置密码",
@@ -118,13 +86,58 @@ describe("external ticket API (Testcontainers)", () => {
       expect(result.workOrderNumber).toMatch(/^WO\d+$/);
 
       const ticket = await prisma.ticket.findUnique({ where: { id: result.id } });
-      expect(ticket).toBeDefined();
-      expect(ticket?.source).toBe("external_channel");
-      expect(ticket?.submissionText).toBe("客户反馈无法登录系统，需要重置密码");
-      expect(ticket?.externalOrgId).toBe(externalOrg1.id);
-      expect(ticket?.creatorId).toBe(externalUser1.id);
-      expect(ticket?.channelId).toBe(externalOrg1.channelId);
-      expect(ticket?.status).toBe("unassigned");
+      expect(ticket).toMatchObject({
+        source: "external_channel",
+        submissionText: "客户反馈无法登录系统，需要重置密码",
+        creatorId: externalUser1.id,
+        channelId,
+        project: "融盛",
+        brokerageEntity: "东方大地",
+        paymentChannel: "连连",
+        userComplaintChannel: "400热线",
+        complaintReceiveChannel: "客服群",
+        status: "unassigned",
+      });
+    });
+
+    it("无预填账号提交 → 六字段全 null", async () => {
+      const caller = externalCaller2();
+      const result = await caller.externalTicket.submit({ submissionText: "裸提交" });
+
+      const ticket = await prisma.ticket.findUnique({ where: { id: result.id } });
+      expect(ticket).toMatchObject({
+        creatorId: externalUser2.id,
+        channelId: null,
+        project: null,
+        brokerageEntity: null,
+        paymentChannel: null,
+        userComplaintChannel: null,
+        complaintReceiveChannel: null,
+      });
+    });
+
+    it("预填渠道被停用后提交,停用渠道照常盖章", async () => {
+      const disabled = await prisma.channel.create({
+        data: { name: "预填后停用渠道", active: true, displayOrder: 800 },
+      });
+      const account = await prisma.user.create({
+        data: {
+          username: "ext-disabled-channel",
+          name: "停用渠道账号",
+          passwordHash: "dummy",
+          roleId: externalRole.id,
+          active: true,
+          prefillChannelId: disabled.id,
+        },
+      });
+      await prisma.channel.update({ where: { id: disabled.id }, data: { active: false } });
+
+      const result = await harness
+        .callerFor(account, externalRole)
+        .externalTicket.submit({ submissionText: "停用渠道照样进单" });
+
+      const ticket = await prisma.ticket.findUnique({ where: { id: result.id } });
+      expect(ticket?.channelId).toBe(disabled.id);
     });
 
     it("writes action=create ProcessLog", async () => {
@@ -143,7 +156,7 @@ describe("external ticket API (Testcontainers)", () => {
       expect(createLog.operatorId).toBe(externalUser1.id);
     });
 
-    it("broadcasts external_submitted notification to users with ticket.assign", async () => {
+    it("broadcasts external_submitted notification naming the account", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
         submissionText: "需要通知的工单",
@@ -158,7 +171,7 @@ describe("external ticket API (Testcontainers)", () => {
       if (!firstNotification) throw new Error("notification not found");
 
       expect(firstNotification.title).toBe("外部工单提交");
-      expect(firstNotification.content).toContain(externalOrg1.name);
+      expect(firstNotification.content).toContain(externalUser1.name);
       expect(firstNotification.content).toContain(result.workOrderNumber);
     });
 
@@ -173,34 +186,24 @@ describe("external ticket API (Testcontainers)", () => {
       await expect(caller.externalTicket.submit({ submissionText: longText })).rejects.toThrow();
     });
 
-    it("rejects if external org is inactive", async () => {
-      await prisma.externalOrg.update({
-        where: { id: externalOrg1.id },
-        data: { active: false },
-      });
-
-      const caller = externalCaller1();
-      await expect(caller.externalTicket.submit({ submissionText: "测试" })).rejects.toThrow(
-        "外部机构已停用",
-      );
-
-      await prisma.externalOrg.update({
-        where: { id: externalOrg1.id },
-        data: { active: true },
-      });
+    it("内部账号(含管理员)持有点也不能走外部入口", async () => {
+      const asAdmin = harness.callerFor(seeded.users.admin, seeded.roles.admin);
+      await expect(
+        asAdmin.externalTicket.submit({ submissionText: "管理员试图外部提交" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN", message: "该入口仅限外部账号使用" });
     });
   });
 
   describe("list", () => {
-    it("shows only tickets from user's org", async () => {
+    it("shows only tickets the account itself submitted", async () => {
       const caller1 = externalCaller1();
       const caller2 = externalCaller2();
 
       const ticket1 = await caller1.externalTicket.submit({
-        submissionText: "机构1的工单",
+        submissionText: "账号1的工单",
       });
       const ticket2 = await caller2.externalTicket.submit({
-        submissionText: "机构2的工单",
+        submissionText: "账号2的工单",
       });
 
       const list1 = await caller1.externalTicket.list({ offset: 0, limit: 20 });
@@ -213,7 +216,7 @@ describe("external ticket API (Testcontainers)", () => {
       expect(list2.items.some((t) => t.id === ticket1.id)).toBe(false);
     });
 
-    it("filters fields by org's whitelist", async () => {
+    it("filters fields by the account's whitelist", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
         submissionText: "测试字段可见性",
@@ -241,7 +244,7 @@ describe("external ticket API (Testcontainers)", () => {
       expect(ticket).not.toHaveProperty("phone");
     });
 
-    it("uses default whitelist when org has null visibleTicketFields", async () => {
+    it("uses default whitelist when the account has null visibleTicketFields", async () => {
       const caller = externalCaller2();
       const result = await caller.externalTicket.submit({
         submissionText: "测试默认白名单",
@@ -265,27 +268,20 @@ describe("external ticket API (Testcontainers)", () => {
       expect(ticket).not.toHaveProperty("customerName");
     });
 
-    it("keeps 工单号/状态 visible even when the org's whitelist omits them", async () => {
+    it("keeps 工单号/状态 visible even when the account's whitelist omits them", async () => {
       // 管理员界面的候选清单由建单字段推导，勾不到工单号与状态 —— 任何配过一次
-      // 的机构白名单都不含它们，但工单号是外部方唯一的工单标识，必须还在
-      const org = await prisma.externalOrg.create({
+      // 的账号白名单都不含它们，但工单号是外部方唯一的工单标识，必须还在
+      const account = await prisma.user.create({
         data: {
-          name: "只配业务字段的机构",
-          visibleTicketFields: JSON.stringify(["feedbackTime", "priority"]),
-          active: true,
-        },
-      });
-      const user = await prisma.user.create({
-        data: {
-          username: `ext-narrow-${Date.now()}`,
-          passwordHash: "x",
+          username: "ext-narrow-whitelist",
           name: "窄白名单用户",
+          passwordHash: "x",
           roleId: externalRole.id,
-          externalOrgId: org.id,
           active: true,
+          visibleTicketFields: JSON.stringify(["feedbackTime", "priority"]),
         },
       });
-      const caller = callerFor(user, externalRole, org.id);
+      const caller = harness.callerFor(account, externalRole);
 
       const created = await caller.externalTicket.submit({ submissionText: "窄白名单" });
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
@@ -315,12 +311,12 @@ describe("external ticket API (Testcontainers)", () => {
   });
 
   describe("detail", () => {
-    it("returns 404 for ticket from different org", async () => {
+    it("returns 404 for another account's ticket", async () => {
       const caller1 = externalCaller1();
       const caller2 = externalCaller2();
 
       const ticket1 = await caller1.externalTicket.submit({
-        submissionText: "机构1的工单",
+        submissionText: "账号1的工单",
       });
 
       await expect(caller2.externalTicket.detail({ ticketId: ticket1.id })).rejects.toThrow(
@@ -539,12 +535,12 @@ describe("external ticket API (Testcontainers)", () => {
       ).rejects.toThrow("工单已完结");
     });
 
-    it("returns 404 for ticket from different org", async () => {
+    it("returns 404 for another account's ticket", async () => {
       const caller1 = externalCaller1();
       const caller2 = externalCaller2();
 
       const ticket1 = await caller1.externalTicket.submit({
-        submissionText: "机构1的工单",
+        submissionText: "账号1的工单",
       });
 
       await expect(
@@ -587,7 +583,7 @@ describe("external ticket API (Testcontainers)", () => {
 
   describe("internalOnly flag", () => {
     it("internal comment with internalOnly=true is filtered in external detail", async () => {
-      const internalCaller = callerFor(seeded.users.manager, seeded.roles.csManager, null);
+      const internalCaller = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
       const externalCaller = externalCaller1();
 
       const ticket = await externalCaller.externalTicket.submit({
@@ -619,7 +615,7 @@ describe("external ticket API (Testcontainers)", () => {
     });
 
     it("internal comment with internalOnly=true is visible to internal users", async () => {
-      const internalCaller = callerFor(seeded.users.manager, seeded.roles.csManager, null);
+      const internalCaller = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
 
       const manualTicket = await internalCaller.ticket.create({
         feedbackTime: new Date().toISOString(),
@@ -655,7 +651,7 @@ describe("external ticket API (Testcontainers)", () => {
         internalOnly: true,
       });
 
-      const internalAgentCaller = callerFor(seeded.users.cs1, seeded.roles.frontline, null);
+      const internalAgentCaller = harness.callerFor(seeded.users.cs1, seeded.roles.frontline);
       const detail = await internalAgentCaller.ticket.detail({ id: manualTicket.id });
 
       const remarks = detail.processLogs

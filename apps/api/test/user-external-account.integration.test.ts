@@ -14,14 +14,12 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
   let prisma: PrismaClient;
   let seeded: IntegrationHarness["seeded"];
   let externalRole: Role;
-  let orgA: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({ seed: ["rolesAndUsers"], traceId: "user-test" });
     prisma = harness.prisma;
     seeded = harness.seeded;
     externalRole = await seedExternalUserRole(prisma);
-    orgA = (await admin().externalOrg.create({ name: "外包客服A" })).id;
   }, 180_000);
 
   afterAll(async () => {
@@ -44,11 +42,10 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
     };
   }
 
-  /** An 外部账号 created through its own door — 机构详情页. */
+  /** An 外部账号 created through its own door — 外部账号管理. */
   async function createExternalAccount() {
     seq += 1;
-    return admin().externalOrg.createUser({
-      orgId: orgA,
+    return admin().externalAccount.create({
       username: `ext-account-${seq}`,
       password: "initial-pass-1",
       name: `外部成员${seq}`,
@@ -70,9 +67,9 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
       });
     });
 
-    it("禁用的外部账号同样不出现 — 过滤看的是机构绑定,不是启用状态", async () => {
+    it("禁用的外部账号同样不出现 — 过滤看的是角色判定,不是启用状态", async () => {
       const external = await createExternalAccount();
-      await admin().externalOrg.setUserActive({ id: external.id, active: false });
+      await admin().externalAccount.setActive({ id: external.id, active: false });
 
       expect(await listed(external.id)).toBeUndefined();
     });
@@ -93,10 +90,18 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
       expect(await listed(created.id)).toMatchObject({ roleSystem: true });
     });
 
-    it("内部账号不带机构", async () => {
+    it("内部账号预填恒空", async () => {
       const created = await admin().user.create(internalArgs());
       const row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
-      expect(row.externalOrgId).toBeNull();
+      expect(row).toMatchObject({
+        prefillChannelId: null,
+        prefillProject: null,
+        prefillBrokerageEntity: null,
+        prefillPaymentChannel: null,
+        prefillUserComplaintChannel: null,
+        prefillComplaintReceiveChannel: null,
+        visibleTicketFields: null,
+      });
     });
   });
 
@@ -114,7 +119,10 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
           team: null,
           password: "",
         }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "外部机构账号请在机构详情页管理" });
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "外部账号请在外部账号管理页管理",
+      });
 
       expect(await prisma.user.findUniqueOrThrow({ where: { id: external.id } })).toMatchObject({
         username: before.username,
@@ -127,23 +135,28 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
 
       await expect(
         admin().user.setActive({ id: external.id, active: false }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "外部机构账号请在机构详情页管理" });
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "外部账号请在外部账号管理页管理",
+      });
 
       expect((await prisma.user.findUniqueOrThrow({ where: { id: external.id } })).active).toBe(
         true,
       );
     });
 
-    it("分配角色 → BAD_REQUEST, 角色与机构都不动", async () => {
+    it("分配角色 → BAD_REQUEST, 角色不动", async () => {
       const external = await createExternalAccount();
 
       await expect(
         admin().user.assignRole({ id: external.id, roleId: seeded.roles.frontline.id }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "外部机构账号请在机构详情页管理" });
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "外部账号请在外部账号管理页管理",
+      });
 
       expect(await prisma.user.findUniqueOrThrow({ where: { id: external.id } })).toMatchObject({
         roleId: externalRole.id,
-        externalOrgId: orgA,
       });
     });
   });
@@ -158,7 +171,6 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
 
       expect(await prisma.user.findUniqueOrThrow({ where: { id: created.id } })).toMatchObject({
         roleId: seeded.roles.frontline.id,
-        externalOrgId: null,
       });
     });
 

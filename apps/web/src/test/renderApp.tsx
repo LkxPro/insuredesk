@@ -54,7 +54,7 @@ vi.mock("@/contexts/AuthContext", () => ({
 
 export type TestRole = { name: string; permissions: readonly Permission[] };
 
-export function userWith(role: TestRole, externalOrgId: string | null = null): AuthUser {
+export function userWith(role: TestRole, isExternal = false): AuthUser {
   return {
     id: "u1",
     username: "tester",
@@ -65,7 +65,7 @@ export function userWith(role: TestRole, externalOrgId: string | null = null): A
     roleName: role.name,
     permissions: [...role.permissions],
     requiredTicketFields: [],
-    externalOrgId,
+    isExternal,
   };
 }
 
@@ -140,12 +140,12 @@ export const restFetch = vi.fn();
 export function renderApp(options: {
   path: string;
   role?: TestRole;
-  /** 非空 = 外部账号，与 auth.me 的语义一致。 */
-  externalOrgId?: string | null;
+  /** true = 外部账号，与 auth.me 的语义一致。 */
+  isExternal?: boolean;
   trpc?: TrpcOverrides;
 }) {
   if (options.role) {
-    auth.user = userWith(options.role, options.externalOrgId ?? null);
+    auth.user = userWith(options.role, options.isExternal ?? false);
   }
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const trpcClient = trpc.createClient({

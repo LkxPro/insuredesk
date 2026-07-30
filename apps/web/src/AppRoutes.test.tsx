@@ -85,7 +85,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
     roleName: role.name,
     permissions: [...role.permissions],
     requiredTicketFields: [],
-    externalOrgId: null,
+    isExternal: false,
   };
 }
 
@@ -120,7 +120,7 @@ describe("menu visibility per role persona", () => {
       "数据看板",
       "工单管理",
       "用户管理",
-      "外部机构管理",
+      "外部账号管理",
       "角色权限",
       "排班表",
       "班次管理",

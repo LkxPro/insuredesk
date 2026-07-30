@@ -56,7 +56,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         roleName,
         permissions,
         requiredTicketFields: [],
-        externalOrgId: null,
+        isExternal: false,
       },
       sessionToken: null,
     });

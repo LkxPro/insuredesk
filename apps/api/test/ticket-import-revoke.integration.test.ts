@@ -82,7 +82,7 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       roleName: "测试角色",
       permissions,
       requiredTicketFields: [],
-      externalOrgId: null,
+      isExternal: false,
     };
   }
 

@@ -4,12 +4,10 @@ import { calls, callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 我的工单 列表：列跟着机构可见字段白名单走（白名单随响应下发），筛选与分页
+ * 我的工单 列表：列跟着账号可见字段白名单走（白名单随响应下发），筛选与分页
  * 状态住在 URL 里，提交对话框只收工单原文。数据范围与字段裁剪是服务端的事，
  * 这里验证渲染与请求参数。
  */
-
-const ORG = "org-1";
 
 /** 白名单顺序即列顺序；这里刻意不按 TICKET_FIELDS 顺序，验证列跟着配置走。 */
 const VISIBLE_FIELDS = ["workOrderNumber", "status", "feedbackTime", "processingResult"];
@@ -53,7 +51,7 @@ function renderList(overrides: Record<string, unknown> = {}) {
   return renderApp({
     path: "/external-tickets",
     role: TEST_ROLES.EXTERNAL,
-    externalOrgId: ORG,
+    isExternal: true,
     trpc: {
       "externalTicket.list": listPayload([ticket()]),
       // 行点击用例会真的切到详情路由；给详情一个合法响应，免得它拿
@@ -68,7 +66,7 @@ function renderList(overrides: Record<string, unknown> = {}) {
   });
 }
 
-describe("列渲染跟随机构白名单", () => {
+describe("列渲染跟随账号白名单", () => {
   it("renders one column per visible field, in whitelist order", async () => {
     renderList();
 
@@ -187,7 +185,7 @@ describe("空态与错误", () => {
     renderApp({
       path: "/external-tickets?q=nothing",
       role: TEST_ROLES.EXTERNAL,
-      externalOrgId: ORG,
+      isExternal: true,
       trpc: { "externalTicket.list": listPayload([]) },
     });
     expect(await screen.findByText(/换个条件试试/)).toBeInTheDocument();

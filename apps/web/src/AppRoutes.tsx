@@ -6,8 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
-import { ExternalOrgDetailPage } from "@/pages/external-orgs/ExternalOrgDetailPage";
-import { ExternalOrgManagePage } from "@/pages/external-orgs/ExternalOrgManagePage";
+import { ExternalAccountManagePage } from "@/pages/external-accounts/ExternalAccountManagePage";
 import { ExternalTicketDetailPage } from "@/pages/external-tickets/ExternalTicketDetailPage";
 import { ExternalTicketListPage } from "@/pages/external-tickets/ExternalTicketListPage";
 import { Forbidden } from "@/pages/Forbidden";
@@ -33,7 +32,7 @@ const PAGES: Record<NavPath, ReactElement> = {
   "/external-tickets": <ExternalTicketListPage />,
   "/tickets": <TicketsPage />,
   "/users": <UsersPage />,
-  "/external-orgs": <ExternalOrgManagePage />,
+  "/external-accounts": <ExternalAccountManagePage />,
   "/roles": <RolesPage />,
   "/schedule": <SchedulePage />,
   "/shift-types": <ShiftTypesPage />,
@@ -44,7 +43,7 @@ const PAGES: Record<NavPath, ReactElement> = {
 /** `/` lands on the first menu page the user may see; no page permissions → 403. */
 function IndexRedirect() {
   const { user } = useAuth();
-  const first = visibleNavItems(user?.permissions ?? [], user?.externalOrgId ?? null)[0];
+  const first = visibleNavItems(user?.permissions ?? [], user?.isExternal ?? false)[0];
   return <Navigate to={first?.path ?? "/403"} replace />;
 }
 
@@ -103,14 +102,6 @@ export function AppRoutes() {
           element={
             <ProtectedRoute requiredPermission="ticket.create_external">
               <ExternalTicketDetailPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/external-orgs/:id"
-          element={
-            <ProtectedRoute requiredPermission="external_org.manage">
-              <ExternalOrgDetailPage />
             </ProtectedRoute>
           }
         />

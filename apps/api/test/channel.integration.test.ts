@@ -43,7 +43,7 @@ describe("Channel catalog smoke (Testcontainers)", () => {
       roleName: "目录管理员",
       permissions,
       requiredTicketFields: [],
-      externalOrgId: null,
+      isExternal: false,
     };
     return appRouter.createCaller({
       traceId: "channel-smoke",
@@ -133,5 +133,39 @@ describe("Channel catalog smoke (Testcontainers)", () => {
       code: "CONFLICT",
       message: "该渠道已被 1 张工单使用，无法删除，可改为停用",
     });
+  });
+
+  it("rejects deletion when an external account's prefill references the channel, naming the account", async () => {
+    const externalRole = await seedData.seedExternalUserRole(prisma);
+    const channel = await manager().channel.create({
+      name: "被预填引用渠道",
+      displayOrder: 130,
+    });
+    const account = await prisma.user.create({
+      data: {
+        username: "prefill-ref-account",
+        name: "预填账号甲",
+        passwordHash: "dummy",
+        roleId: externalRole.id,
+        active: true,
+        prefillChannelId: channel.id,
+      },
+    });
+
+    await expect(manager().channel.delete({ id: channel.id })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "该渠道被外部账号 「预填账号甲」 的预填引用，无法删除，可改为停用",
+    });
+
+    // 禁用账号依旧算引用 — 预填绑定不因启停消失
+    await prisma.user.update({ where: { id: account.id }, data: { active: false } });
+    await expect(manager().channel.delete({ id: channel.id })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+
+    // 解绑后即可物理删除
+    await prisma.user.update({ where: { id: account.id }, data: { prefillChannelId: null } });
+    await manager().channel.delete({ id: channel.id });
+    expect(await prisma.channel.findUnique({ where: { id: channel.id } })).toBeNull();
   });
 });
