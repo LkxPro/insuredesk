@@ -19,7 +19,7 @@ jobs:
       # The checks bind-mount the pnpm store to this repo-local path, so
       # caching it here carries it across runs.
       - name: Cache pnpm store
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .pnpm-store
           key: pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
