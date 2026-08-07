@@ -13,6 +13,7 @@ import {
   EXTERNAL_VISIBLE_FIELD_OPTIONS,
   isExternalRole,
   parseVisibleTicketFields,
+  resolveExternalFieldOrder,
 } from "@insuredesk/shared";
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
@@ -95,6 +96,15 @@ function effectiveFields(fields: string[] | null | undefined, defaults: readonly
   return fields && fields.length > 0 ? fields : [...defaults];
 }
 
+function reconcileStoredOrder(
+  raw: string | null,
+  fields: string[] | null | undefined,
+  defaults: readonly string[],
+): string | null {
+  if (!parseVisibleTicketFields(raw)?.length) return null;
+  return JSON.stringify(resolveExternalFieldOrder(raw, effectiveFields(fields, defaults)));
+}
+
 function sensitiveFieldSet(
   listFields: string[] | null | undefined,
   detailFields: string[] | null | undefined,
@@ -166,6 +176,8 @@ async function loadExternalAccount(prisma: PrismaClient, id: string) {
       id: true,
       externalListFields: true,
       externalDetailFields: true,
+      externalListOrder: true,
+      externalExportOrder: true,
       role: { select: { system: true, permissions: true } },
     },
   });
@@ -337,9 +349,19 @@ export async function updateExternalAccount(
   }
   if (input.listVisibleFields !== undefined) {
     data.externalListFields = serializeVisibleFields(input.listVisibleFields);
+    data.externalListOrder = reconcileStoredOrder(
+      existing.externalListOrder,
+      input.listVisibleFields,
+      DEFAULT_EXTERNAL_LIST_FIELDS,
+    );
   }
   if (input.detailVisibleFields !== undefined) {
     data.externalDetailFields = serializeVisibleFields(input.detailVisibleFields);
+    data.externalExportOrder = reconcileStoredOrder(
+      existing.externalExportOrder,
+      input.detailVisibleFields,
+      DEFAULT_EXTERNAL_DETAIL_FIELDS,
+    );
   }
 
   return prisma.$transaction(async (tx) => {

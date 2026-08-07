@@ -12,9 +12,15 @@ import {
   ticketStatusSchema,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
-import type { PrismaClient } from "../generated/prisma/client";
-import { Prisma } from "../generated/prisma/client";
+import type { Prisma, PrismaClient } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
+import {
+  buildExternalTicketWhere,
+  EXTERNAL_PUBLIC_PROCESSING_RESULT_SQL,
+  EXTERNAL_VISIBLE_ACTIVITY_CONDITION,
+  externalTicketSortDirection,
+  externalTicketSortExpression,
+} from "./external-ticket-query";
 import { resolveTimeZone } from "./time-zone";
 
 export interface ExternalTicketExportFile {
@@ -61,6 +67,7 @@ function fieldValue(
   ticket: ExportTicket,
   field: string,
   formatDate: (date: Date | null) => string,
+  publicProcessingResult: string,
 ): string {
   switch (field) {
     case "workOrderNumber":
@@ -68,7 +75,7 @@ function fieldValue(
     case "status":
       return TICKET_STATUS_LABELS[ticketStatusSchema.parse(ticket.status)];
     case "processingResult":
-      return ticket.processingResult;
+      return publicProcessingResult;
     case "completionStatusId":
       return ticket.completionStatus?.name ?? "";
     case "feedbackTime":
@@ -134,100 +141,40 @@ export async function exportExternalTickets(
   );
   const fieldKeys = resolveExternalFieldOrder(account.externalExportOrder, authorizedFields);
 
-  const conditions: Prisma.Sql[] = [
-    Prisma.sql`t."creatorId" = ${viewer.id}`,
-    Prisma.sql`t."deletedAt" IS NULL`,
-  ];
-  if (query.status && query.status.length > 0) {
-    conditions.push(Prisma.sql`t.status IN (${Prisma.join(query.status)})`);
-  } else if (!query.includeCompleted) {
-    conditions.push(Prisma.sql`t.status <> 'completed'`);
-  }
-  if (query.completionStatusId && query.completionStatusId.length > 0) {
-    conditions.push(
-      Prisma.sql`t."completionStatusId" IN (${Prisma.join(query.completionStatusId)})`,
-    );
-  }
-  if (query.feedbackFrom) {
-    conditions.push(Prisma.sql`t."feedbackTime" >= ${new Date(query.feedbackFrom)}`);
-  }
-  if (query.feedbackTo) {
-    conditions.push(Prisma.sql`t."feedbackTime" <= ${new Date(query.feedbackTo)}`);
-  }
-  if (query.search) {
-    const pattern = `%${query.search}%`;
-    const searchExpressions: Record<string, Prisma.Sql> = {
-      submissionText: Prisma.sql`t."submissionText" ILIKE ${pattern}`,
-      workOrderNumber: Prisma.sql`t."workOrderNumber" ILIKE ${pattern}`,
-      project: Prisma.sql`t.project ILIKE ${pattern}`,
-      brokerageEntity: Prisma.sql`t."brokerageEntity" ILIKE ${pattern}`,
-      paymentChannel: Prisma.sql`t."paymentChannel" ILIKE ${pattern}`,
-      policyNumbers: Prisma.sql`array_to_string(t."policyNumbers", ' ') ILIKE ${pattern}`,
-      userComplaintChannel: Prisma.sql`t."userComplaintChannel" ILIKE ${pattern}`,
-      complaintReceiveChannel: Prisma.sql`t."complaintReceiveChannel" ILIKE ${pattern}`,
-      customerName: Prisma.sql`t."customerName" ILIKE ${pattern}`,
-      nuclearBodyStatus: Prisma.sql`t."nuclearBodyStatus" ILIKE ${pattern}`,
-      customerRequest: Prisma.sql`t."customerRequest" ILIKE ${pattern}`,
-      complaintLevel: Prisma.sql`t."complaintLevel" ILIKE ${pattern}`,
-      priority: Prisma.sql`t.priority ILIKE ${pattern}`,
-      processingResult: Prisma.sql`t."processingResult" ILIKE ${pattern}`,
-    };
-    const phoneDigits = query.search.replace(/\D/g, "");
-    if (phoneDigits) {
-      searchExpressions.phone = Prisma.sql`regexp_replace(t.phone, '[^0-9]', '', 'g') ILIKE ${`%${phoneDigits}%`}`;
-    }
-    const searchTerms = authorizedFields.flatMap((field) => {
-      const expression = searchExpressions[field];
-      return expression ? [expression] : [];
-    });
-    conditions.push(
-      searchTerms.length > 0
-        ? Prisma.sql`(${Prisma.join(searchTerms, " OR ")})`
-        : Prisma.sql`false`,
-    );
-  }
-
-  const sortExpression =
-    query.sortBy === "feedbackTime"
-      ? Prisma.sql`t."feedbackTime"`
-      : query.sortBy === "status"
-        ? Prisma.sql`t.status`
-        : query.sortBy === "completionStatus"
-          ? Prisma.sql`cs."displayOrder"`
-          : Prisma.sql`COALESCE(p.at, t."createdAt")`;
-  const sortDirection = query.sortOrder === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
-  const ids = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT t.id
+  const whereSql = buildExternalTicketWhere(query, viewer.id, authorizedFields);
+  const sortExpression = externalTicketSortExpression(query.sortBy);
+  const sortDirection = externalTicketSortDirection(query.sortOrder);
+  const idRows = await prisma.$queryRaw<{ id: string; public_processing_result: string | null }[]>`
+    SELECT t.id, ${EXTERNAL_PUBLIC_PROCESSING_RESULT_SQL} AS public_processing_result
     FROM tickets t
     LEFT JOIN completion_statuses cs ON cs.id = t."completionStatusId"
     LEFT JOIN LATERAL (
       SELECT p0.at
       FROM process_logs p0
       WHERE p0."ticketId" = t.id
-        AND (
-          p0.action IN ('create', 'external_note', 'resolve')
-          OR (p0.action = 'comment' AND p0."internalOnly" = false)
-        )
+        AND ${EXTERNAL_VISIBLE_ACTIVITY_CONDITION}
       ORDER BY p0.at DESC
       LIMIT 1
     ) p ON true
-    WHERE ${Prisma.join(conditions, " AND ")}
+    WHERE ${whereSql}
     ORDER BY ${sortExpression} ${sortDirection} NULLS LAST, t.id DESC
   `;
   const loaded = await prisma.ticket.findMany({
-    where: { id: { in: ids.map((row) => row.id) } },
+    where: { id: { in: idRows.map((row) => row.id) } },
     include: exportInclude,
   });
   const byId = new Map(loaded.map((ticket) => [ticket.id, ticket]));
-  const rows = ids.flatMap(({ id }) => {
+  const rows = idRows.flatMap(({ id, public_processing_result }) => {
     const ticket = byId.get(id);
-    return ticket ? [ticket] : [];
+    return ticket ? [{ ticket, publicProcessingResult: public_processing_result ?? "" }] : [];
   });
 
   const formatDate = makeDateFormatter(query.timeZone);
   const cells = [
     fieldKeys.map(fieldHeader),
-    ...rows.map((ticket) => fieldKeys.map((field) => fieldValue(ticket, field, formatDate))),
+    ...rows.map(({ ticket, publicProcessingResult }) =>
+      fieldKeys.map((field) => fieldValue(ticket, field, formatDate, publicProcessingResult)),
+    ),
   ];
   await prisma.externalTicketExportAudit.create({
     data: {

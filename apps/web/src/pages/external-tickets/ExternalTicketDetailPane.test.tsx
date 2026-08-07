@@ -93,24 +93,23 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
   });
 }
 
-async function findPaneShowing(workOrderNumber: string) {
+async function findPaneShowing(workOrderNumber?: string) {
   const pane = await screen.findByRole("region", { name: "工单详情" });
-  await waitFor(() => expect(pane).toHaveTextContent(workOrderNumber));
+  if (workOrderNumber) {
+    await waitFor(() => expect(pane).toHaveTextContent(workOrderNumber));
+  }
   return pane;
 }
 
 describe("头部", () => {
-  it("shows 工单号与状态", async () => {
+  it("shows a stable detail title without moving fields out of configured order", async () => {
     renderDetail();
-    // jsdom 无 CSS：选中态下列表行也在 DOM 里，状态徽标会出现两次，断言语义挂在详情头部
-    const header = (await screen.findByRole("heading", { name: "WO100001" }))
-      .parentElement as HTMLElement;
-    expect(within(header).getByText("处理中")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "工单详情" })).toBeInTheDocument();
   });
 
   it("窄屏返回键回到无选中的列表", async () => {
     renderDetail();
-    await screen.findByRole("heading", { name: "WO100001" });
+    await screen.findByRole("heading", { name: "工单详情" });
 
     fireEvent.click(screen.getByRole("button", { name: "返回列表" }));
 
@@ -121,7 +120,7 @@ describe("头部", () => {
 
   it("常驻「关闭详情」同样回到无选中的列表", async () => {
     renderDetail();
-    await screen.findByRole("heading", { name: "WO100001" });
+    await screen.findByRole("heading", { name: "工单详情" });
 
     fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
 
@@ -134,7 +133,6 @@ describe("头部", () => {
 describe("处理记录时间线", () => {
   const logs = [
     {
-      id: "l1",
       action: "create",
       remark: "工单创建",
       createdAt: "2026-07-09T02:00:00.000Z",
@@ -142,7 +140,6 @@ describe("处理记录时间线", () => {
       operatorName: "外部用户",
     },
     {
-      id: "l2",
       action: "comment",
       remark: "已联系客户，正在核实",
       createdAt: "2026-07-09T03:00:00.000Z",
@@ -150,7 +147,6 @@ describe("处理记录时间线", () => {
       operatorName: "客服小王",
     },
     {
-      id: "l3",
       action: "external_note",
       remark: "补充：保单号 P123",
       createdAt: "2026-07-09T04:00:00.000Z",
@@ -200,22 +196,33 @@ describe("左栏", () => {
     expect(within(pane).getAllByText("—").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("工单号与状态已挂在头部，字段栅格不重复", async () => {
+  it("按 visibleFields 顺序渲染所有授权字段", async () => {
     renderDetail();
     const pane = await findPaneShowing("WO100001");
 
-    expect(within(pane).queryByText("工单号")).not.toBeInTheDocument();
-    expect(within(pane).queryByText("状态")).not.toBeInTheDocument();
+    const labels = Array.from(pane.querySelectorAll("dt")).map((node) => node.textContent);
+    expect(labels).toEqual([
+      "工单号",
+      "工单原文",
+      "状态",
+      "反馈时间",
+      "反馈渠道",
+      "客诉类别",
+      "优先级",
+      "客户曾进线",
+      "最新处理",
+    ]);
   });
 
   it("白名单外字段有值也不渲染；栅格全空时给出提示", async () => {
-    renderDetail({ visibleFields: ["priority"] });
-    const pane = await findPaneShowing("WO100001");
+    const { unmount } = renderDetail({ visibleFields: ["priority"] });
+    const pane = await findPaneShowing();
 
-    expect(within(pane).getByText("高")).toBeInTheDocument();
+    expect(await within(pane).findByText("高")).toBeInTheDocument();
     expect(within(pane).queryByText("微信")).not.toBeInTheDocument();
 
-    renderDetail({ visibleFields: ["workOrderNumber", "status"] });
+    unmount();
+    renderDetail({ visibleFields: [] });
     expect(await screen.findByText("客服团队还未补充工单信息。")).toBeInTheDocument();
   });
 });

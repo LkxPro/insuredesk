@@ -17,7 +17,15 @@ import {
 import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
-import { Prisma } from "../generated/prisma/client";
+import type { Prisma } from "../generated/prisma/client";
+import {
+  buildExternalTicketWhere,
+  EXTERNAL_PUBLIC_PROCESSING_RESULT_SQL,
+  EXTERNAL_VISIBLE_ACTIVITY_CONDITION,
+  EXTERNAL_VISIBLE_PROCESS_LOG_FILTER,
+  externalTicketSortDirection,
+  externalTicketSortExpression,
+} from "../services/external-ticket-query";
 import {
   buildExternalNoteNotification,
   buildExternalSubmittedNotification,
@@ -49,7 +57,11 @@ type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclu
  * actually read — an id is useless to them, and they may not query the catalogs.
  * 名字只在对应 id 通过白名单时给出，否则跟着 id 一起消失。
  */
-function serializeExternalTicket(ticket: TicketWithCatalogs, whitelist: readonly string[]) {
+function serializeExternalTicket(
+  ticket: TicketWithCatalogs,
+  whitelist: readonly string[],
+  publicProcessingResult: string,
+) {
   const payload = {
     id: ticket.id,
     submissionText: ticket.submissionText,
@@ -75,7 +87,7 @@ function serializeExternalTicket(ticket: TicketWithCatalogs, whitelist: readonly
     categoryName: ticket.categoryId ? (ticket.category?.name ?? null) : null,
     complaintLevel: ticket.complaintLevel,
     priority: ticket.priority === null ? null : prioritySchema.parse(ticket.priority),
-    processingResult: ticket.processingResult,
+    processingResult: publicProcessingResult,
     completionStatusId: ticket.completionStatusId,
     completionStatusName: ticket.completionStatusId
       ? (ticket.completionStatus?.name ?? null)
@@ -301,70 +313,9 @@ export const externalTicketRouter = router({
         DEFAULT_EXTERNAL_DETAIL_FIELDS,
       );
 
-      const conditions: Prisma.Sql[] = [
-        Prisma.sql`t."creatorId" = ${user.id}`,
-        Prisma.sql`t."deletedAt" IS NULL`,
-      ];
-      if (input.status && input.status.length > 0) {
-        conditions.push(Prisma.sql`t.status IN (${Prisma.join(input.status)})`);
-      } else if (!input.includeCompleted) {
-        conditions.push(Prisma.sql`t.status <> 'completed'`);
-      }
-      if (input.completionStatusId && input.completionStatusId.length > 0) {
-        conditions.push(
-          Prisma.sql`t."completionStatusId" IN (${Prisma.join(input.completionStatusId)})`,
-        );
-      }
-      if (input.feedbackFrom) {
-        conditions.push(Prisma.sql`t."feedbackTime" >= ${new Date(input.feedbackFrom)}`);
-      }
-      if (input.feedbackTo) {
-        conditions.push(Prisma.sql`t."feedbackTime" <= ${new Date(input.feedbackTo)}`);
-      }
-      if (input.search) {
-        const pattern = `%${input.search}%`;
-        const searchTerms: Prisma.Sql[] = [];
-        const searchExpressions: Record<string, Prisma.Sql> = {
-          submissionText: Prisma.sql`t."submissionText" ILIKE ${pattern}`,
-          workOrderNumber: Prisma.sql`t."workOrderNumber" ILIKE ${pattern}`,
-          project: Prisma.sql`t.project ILIKE ${pattern}`,
-          brokerageEntity: Prisma.sql`t."brokerageEntity" ILIKE ${pattern}`,
-          paymentChannel: Prisma.sql`t."paymentChannel" ILIKE ${pattern}`,
-          policyNumbers: Prisma.sql`array_to_string(t."policyNumbers", ' ') ILIKE ${pattern}`,
-          userComplaintChannel: Prisma.sql`t."userComplaintChannel" ILIKE ${pattern}`,
-          complaintReceiveChannel: Prisma.sql`t."complaintReceiveChannel" ILIKE ${pattern}`,
-          customerName: Prisma.sql`t."customerName" ILIKE ${pattern}`,
-          nuclearBodyStatus: Prisma.sql`t."nuclearBodyStatus" ILIKE ${pattern}`,
-          customerRequest: Prisma.sql`t."customerRequest" ILIKE ${pattern}`,
-          complaintLevel: Prisma.sql`t."complaintLevel" ILIKE ${pattern}`,
-          priority: Prisma.sql`t.priority ILIKE ${pattern}`,
-          processingResult: Prisma.sql`t."processingResult" ILIKE ${pattern}`,
-        };
-        const phoneDigits = input.search.replace(/\D/g, "");
-        if (phoneDigits) {
-          searchExpressions.phone = Prisma.sql`regexp_replace(t.phone, '[^0-9]', '', 'g') ILIKE ${`%${phoneDigits}%`}`;
-        }
-        for (const field of detailWhitelist) {
-          const expression = searchExpressions[field];
-          if (expression) searchTerms.push(expression);
-        }
-        conditions.push(
-          searchTerms.length > 0
-            ? Prisma.sql`(${Prisma.join(searchTerms, " OR ")})`
-            : Prisma.sql`false`,
-        );
-      }
-      const whereSql = Prisma.join(conditions, " AND ");
-
-      const sortExpression =
-        input.sortBy === "feedbackTime"
-          ? Prisma.sql`t."feedbackTime"`
-          : input.sortBy === "status"
-            ? Prisma.sql`t.status`
-            : input.sortBy === "completionStatus"
-              ? Prisma.sql`cs."displayOrder"`
-              : Prisma.sql`COALESCE(p.at, t."createdAt")`;
-      const sortDirection = input.sortOrder === "asc" ? Prisma.sql`ASC` : Prisma.sql`DESC`;
+      const whereSql = buildExternalTicketWhere(input, user.id, detailWhitelist);
+      const sortExpression = externalTicketSortExpression(input.sortBy);
+      const sortDirection = externalTicketSortDirection(input.sortOrder);
 
       // 可见性口径与 detail 的 ProcessLog 过滤相同，改一处必须改另一处
       const [pageRows, countRows] = await Promise.all([
@@ -374,6 +325,7 @@ export const externalTicketRouter = router({
             latest_action: string | null;
             latest_remark: string | null;
             latest_at: Date | null;
+            public_processing_result: string | null;
             has_unread_reply: boolean;
           }[]
         >`
@@ -381,6 +333,7 @@ export const externalTicketRouter = router({
                  p.action AS latest_action,
                  p.remark AS latest_remark,
                  p.at AS latest_at,
+                 ${EXTERNAL_PUBLIC_PROCESSING_RESULT_SQL} AS public_processing_result,
                  EXISTS (
                    SELECT 1
                    FROM process_logs unread
@@ -395,10 +348,7 @@ export const externalTicketRouter = router({
             SELECT p0.action, p0.remark, p0.at
             FROM process_logs p0
             WHERE p0."ticketId" = t.id
-              AND (
-                p0.action IN ('create', 'external_note', 'resolve')
-                OR (p0.action = 'comment' AND p0."internalOnly" = false)
-              )
+              AND ${EXTERNAL_VISIBLE_ACTIVITY_CONDITION}
             ORDER BY p0.at DESC
             LIMIT 1
           ) p ON true
@@ -428,13 +378,17 @@ export const externalTicketRouter = router({
           return null;
         }
         return {
-          ...serializeExternalTicket(ticket, [...new Set([...listWhitelist, ...detailWhitelist])]),
+          ...serializeExternalTicket(
+            ticket,
+            [...new Set([...listWhitelist, ...detailWhitelist])],
+            row.public_processing_result ?? "",
+          ),
           latestLog:
             row.latest_action === null
               ? null
               : {
                   action: processLogActionSchema.parse(row.latest_action),
-                  remark: row.latest_remark ?? "",
+                  remark: row.latest_action === "status_change" ? "" : (row.latest_remark ?? ""),
                   at: (row.latest_at as Date).toISOString(),
                 },
           hasUnreadReply: row.has_unread_reply,
@@ -480,16 +434,7 @@ export const externalTicketRouter = router({
       const processLogs = await prisma.processLog.findMany({
         where: {
           ticketId: ticket.id,
-          OR: [
-            { action: "create" },
-            { action: "external_note" },
-            { action: "status_change" },
-            { action: "resolve" },
-            {
-              action: "comment",
-              internalOnly: false,
-            },
-          ],
+          ...EXTERNAL_VISIBLE_PROCESS_LOG_FILTER,
         },
         orderBy: [{ at: "desc" }, { id: "desc" }],
       });
@@ -516,11 +461,10 @@ export const externalTicketRouter = router({
       );
 
       return {
-        ticket: serializeExternalTicket(ticket, whitelist),
+        ticket: serializeExternalTicket(ticket, whitelist, latestPublicReply?.remark ?? ""),
         visibleFields: whitelist,
         canAddNote: ticket.status !== "completed",
         processLogs: processLogs.map((log) => ({
-          id: log.id,
           // Re-narrowed so the web renders the action label without a cast
           action: processLogActionSchema.parse(log.action),
           remark:
@@ -530,8 +474,7 @@ export const externalTicketRouter = router({
                 }`
               : log.remark,
           createdAt: log.at.toISOString(),
-          operatorId: log.operatorId,
-          operatorName: log.operatorName,
+          operatorName: log.action === "status_change" ? null : log.operatorName,
         })),
       };
     }),

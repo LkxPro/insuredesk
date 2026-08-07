@@ -350,6 +350,33 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
       expect(row.externalDetailFields).toBeNull();
     });
 
+    it("撤销授权会同步清理已保存的个人字段顺序", async () => {
+      const created = await manager().externalAccount.create(
+        accountArgs({
+          listVisibleFields: ["customerName", "feedbackTime"],
+          detailVisibleFields: ["workOrderNumber", "customerRequest"],
+        }),
+      );
+      await prisma.user.update({
+        where: { id: created.id },
+        data: {
+          externalListOrder: JSON.stringify(["customerName", "feedbackTime"]),
+          externalExportOrder: JSON.stringify(["customerRequest", "workOrderNumber"]),
+        },
+      });
+
+      await manager().externalAccount.update(
+        updateArgs(created.id, {
+          listVisibleFields: ["feedbackTime"],
+          detailVisibleFields: ["workOrderNumber"],
+        }),
+      );
+
+      const row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
+      expect(JSON.parse(row.externalListOrder ?? "null")).toEqual(["feedbackTime"]);
+      expect(JSON.parse(row.externalExportOrder ?? "null")).toEqual(["workOrderNumber"]);
+    });
+
     it("内部账号不是这扇门的对象", async () => {
       const internal = await createInternalUser();
       await expect(manager().externalAccount.update(updateArgs(internal.id))).rejects.toMatchObject(

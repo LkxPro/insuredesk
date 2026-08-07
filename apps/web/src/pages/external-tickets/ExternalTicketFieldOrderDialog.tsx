@@ -25,6 +25,10 @@ function moveField(fields: readonly string[], field: string, targetIndex: number
   return next;
 }
 
+function sameFieldOrder(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((field, index) => field === right[index]);
+}
+
 function OrderedFields({
   fields,
   onChange,
@@ -94,6 +98,8 @@ export function ExternalTicketFieldOrderDialog({
   const updatePreferences = trpc.externalTicket.updatePreferences.useMutation();
   const [listFields, setListFields] = useState<string[]>([]);
   const [exportFields, setExportFields] = useState<string[]>([]);
+  const [initialListFields, setInitialListFields] = useState<string[]>([]);
+  const [initialExportFields, setInitialExportFields] = useState<string[]>([]);
   const [resetList, setResetList] = useState(false);
   const [resetExport, setResetExport] = useState(false);
 
@@ -101,20 +107,32 @@ export function ExternalTicketFieldOrderDialog({
     if (!open || !preferences.data) return;
     setListFields(preferences.data.listFields);
     setExportFields(preferences.data.exportFields);
+    setInitialListFields(preferences.data.listFields);
+    setInitialExportFields(preferences.data.exportFields);
     setResetList(false);
     setResetExport(false);
   }, [open, preferences.data]);
 
   async function save() {
     try {
-      await updatePreferences.mutateAsync({
-        surface: "list",
-        fields: resetList ? [] : listFields,
-      });
-      await updatePreferences.mutateAsync({
-        surface: "export",
-        fields: resetExport ? [] : exportFields,
-      });
+      const updates: Promise<unknown>[] = [];
+      if (resetList || !sameFieldOrder(listFields, initialListFields)) {
+        updates.push(
+          updatePreferences.mutateAsync({
+            surface: "list",
+            fields: resetList ? [] : listFields,
+          }),
+        );
+      }
+      if (resetExport || !sameFieldOrder(exportFields, initialExportFields)) {
+        updates.push(
+          updatePreferences.mutateAsync({
+            surface: "export",
+            fields: resetExport ? [] : exportFields,
+          }),
+        );
+      }
+      await Promise.all(updates);
       await Promise.all([
         utils.externalTicket.preferences.invalidate(),
         utils.externalTicket.list.invalidate(),

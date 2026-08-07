@@ -142,6 +142,7 @@ export function ExternalTicketsPage() {
     if (
       selectedId !== undefined ||
       !query.search ||
+      listQuery.isPlaceholderData ||
       items.length !== 1 ||
       !first ||
       !isMasterDetailViewport()
@@ -149,7 +150,7 @@ export function ExternalTicketsPage() {
       return;
     }
     navigate(`/external-tickets/${first.id}${location.search}`, { replace: true });
-  }, [selectedId, items, query.search, location.search, navigate]);
+  }, [selectedId, items, query.search, listQuery.isPlaceholderData, location.search, navigate]);
 
   /** 设置/清除一个 URL 参数；筛选变化回到第 1 页。 */
   function setParam(key: string, value: string | null, { resetPage = true } = {}) {

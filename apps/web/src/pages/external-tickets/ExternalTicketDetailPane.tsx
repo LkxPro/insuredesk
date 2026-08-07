@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { handleDetailArrowKey } from "@/pages/tickets/detail-navigation";
-import { StatusBadge } from "@/pages/tickets/StatusBadge";
 import { TicketTimelineColumn } from "@/pages/tickets/TicketTimelineColumn";
 import { ExternalNoteCard } from "./ExternalNoteCard";
 import { ExternalTicketInfoColumn } from "./ExternalTicketInfoColumn";
@@ -54,7 +53,6 @@ export function ExternalTicketDetailPane({
   const detailQuery = trpc.externalTicket.detail.useQuery({ ticketId });
   const utils = trpc.useUtils();
   const data = detailQuery.data;
-  const ticket = data?.ticket ?? null;
   const paneRef = useRef<HTMLElement>(null);
 
   // ↑/↓ 翻单靠 keydown 冒泡到本区，焦点留在窄列按钮上时事件到不了这里
@@ -86,12 +84,7 @@ export function ExternalTicketDetailPane({
         >
           <ArrowLeft />
         </Button>
-        <h2 className="m-0 text-lg font-semibold tracking-tight">
-          {ticket?.workOrderNumber ?? "工单详情"}
-        </h2>
-        {ticket && data?.visibleFields.includes("status") && ticket.status && (
-          <StatusBadge status={ticket.status} />
-        )}
+        <h2 className="m-0 text-lg font-semibold tracking-tight">工单详情</h2>
         <div className="flex-1" />
         <Button variant="ghost" size="icon" aria-label="关闭详情" onClick={onClose}>
           <X />
@@ -118,8 +111,8 @@ export function ExternalTicketDetailPane({
             <ExternalTicketInfoColumn ticket={data.ticket} visibleFields={data.visibleFields} />
           </div>
           <TicketTimelineColumn
-            logs={data.processLogs.map((log) => ({
-              id: log.id,
+            logs={data.processLogs.map((log, index) => ({
+              id: `${log.createdAt}-${log.action}-${index}`,
               action: log.action,
               operatorName: log.operatorName,
               at: log.createdAt,

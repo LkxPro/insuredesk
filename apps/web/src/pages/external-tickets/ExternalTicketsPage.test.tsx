@@ -215,12 +215,12 @@ describe("个人字段顺序", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存顺序" }));
 
     await waitFor(() => {
-      expect(callsTo("externalTicket.updatePreferences")).toHaveLength(2);
+      expect(callsTo("externalTicket.updatePreferences")).toHaveLength(1);
     });
-    expect(callsTo("externalTicket.updatePreferences").map((call) => call.input)).toEqual([
-      { surface: "list", fields: ["workOrderNumber", "status"] },
-      { surface: "export", fields: ["phone", "customerName"] },
-    ]);
+    expect(callsTo("externalTicket.updatePreferences")[0]?.input).toEqual({
+      surface: "export",
+      fields: ["phone", "customerName"],
+    });
   });
 });
 

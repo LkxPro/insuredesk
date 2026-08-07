@@ -192,4 +192,64 @@ describe("external ticket export (Testcontainers)", () => {
 
     expect(response.statusCode).toBe(401);
   });
+
+  it("exports and searches only the latest public processing result", async () => {
+    await prisma.user.update({
+      where: { id: externalUser.id },
+      data: {
+        externalDetailFields: JSON.stringify(["workOrderNumber", "processingResult"]),
+        externalExportOrder: JSON.stringify(["workOrderNumber", "processingResult"]),
+      },
+    });
+    const ticket = await prisma.ticket.create({
+      data: {
+        workOrderNumber: "WO900004",
+        source: "external_channel",
+        creatorId: externalUser.id,
+        submissionText: "最新处理结果",
+        feedbackTime: new Date("2026-08-07T05:00:00.000Z"),
+        status: "processing",
+      },
+    });
+    await prisma.processLog.createMany({
+      data: [
+        {
+          ticketId: ticket.id,
+          action: "comment",
+          internalOnly: false,
+          remark: "公开处理结果",
+          operatorId: externalUser.id,
+          operatorName: externalUser.name,
+          at: new Date("2026-08-07T05:01:00.000Z"),
+        },
+        {
+          ticketId: ticket.id,
+          action: "comment",
+          internalOnly: true,
+          remark: "内部敏感判断",
+          operatorId: externalUser.id,
+          operatorName: externalUser.name,
+          at: new Date("2026-08-07T05:02:00.000Z"),
+        },
+      ],
+    });
+
+    const exportResponse = await app.inject({
+      method: "GET",
+      url: "/api/external-tickets/export",
+      cookies: { session: await sessionFor(externalUser.username) },
+      query: { format: "csv", timeZone: "Asia/Shanghai" },
+    });
+    expect(exportResponse.statusCode).toBe(200);
+    expect(exportResponse.body).toContain("WO900004,公开处理结果");
+    expect(exportResponse.body).not.toContain("内部敏感判断");
+
+    const internalSearchResponse = await app.inject({
+      method: "GET",
+      url: "/api/external-tickets/export",
+      cookies: { session: await sessionFor(externalUser.username) },
+      query: { format: "csv", search: "内部敏感判断" },
+    });
+    expect(internalSearchResponse.body.replace(/^\uFEFF/, "").trim()).toBe("工单号,最新处理");
+  });
 });

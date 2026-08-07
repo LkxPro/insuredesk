@@ -299,6 +299,17 @@ describe("external ticket API (Testcontainers)", () => {
           processingResult: "处理结果",
         },
       });
+      await prisma.processLog.create({
+        data: {
+          ticketId: result.id,
+          action: "comment",
+          internalOnly: false,
+          remark: "处理结果",
+          operatorId: seeded.users.manager.id,
+          operatorName: seeded.users.manager.name,
+          at: new Date(),
+        },
+      });
 
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
       const ticket = list.items.find((t) => t.id === result.id);
@@ -568,6 +579,14 @@ describe("external ticket API (Testcontainers)", () => {
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
       const item = list.items.find((t) => t.id === ticket.id);
       expect(item?.latestLog).toMatchObject({ action: "comment", remark: "可见跟进" });
+      expect(item?.processingResult).toBe("可见跟进");
+
+      const internalSearch = await caller.externalTicket.list({
+        offset: 0,
+        limit: 20,
+        search: "内部敏感",
+      });
+      expect(internalSearch.items).toEqual([]);
     });
 
     it("客服公开回复跨刷新保持未读，详情加载后已读，新回复再次触发", async () => {
@@ -611,22 +630,28 @@ describe("external ticket API (Testcontainers)", () => {
       );
       expect(item?.hasUnreadReply).toBe(false);
 
+      const statusChangedAt = new Date(Date.now() + 120_000);
       await prisma.processLog.create({
         data: {
           ticketId: ticket.id,
           action: "status_change",
           from: "assigned",
           to: "processing",
-          remark: "",
+          remark: "分配工单",
           operatorId: seeded.users.manager.id,
           operatorName: seeded.users.manager.name,
-          at: new Date("2026-08-01T11:00:00.000Z"),
+          at: statusChangedAt,
         },
       });
       item = (await caller.externalTicket.list({ offset: 0, limit: 20 })).items.find(
         (row) => row.id === ticket.id,
       );
       expect(item?.hasUnreadReply).toBe(false);
+      expect(item?.latestLog).toMatchObject({
+        action: "status_change",
+        at: statusChangedAt.toISOString(),
+        remark: "",
+      });
 
       await prisma.processLog.create({
         data: {
@@ -816,6 +841,13 @@ describe("external ticket API (Testcontainers)", () => {
       expect(actions).toContain("external_note");
       expect(actions).toContain("status_change");
       expect(actions).not.toContain("assign");
+      for (const log of detail.processLogs) {
+        expect(log).not.toHaveProperty("id");
+        expect(log).not.toHaveProperty("operatorId");
+      }
+      expect(detail.processLogs.find((log) => log.action === "status_change")?.operatorName).toBe(
+        null,
+      );
       const times = detail.processLogs.map((log) => Date.parse(log.createdAt));
       expect(times).toEqual([...times].sort((a, b) => b - a));
 
@@ -823,6 +855,7 @@ describe("external ticket API (Testcontainers)", () => {
       expect(remarks).toContain("可见跟进");
       expect(remarks).toContain("外部留言");
       expect(remarks).not.toContain("内部跟进");
+      expect(detail.ticket.processingResult).toBe("可见跟进");
     });
 
     it("filters ticket fields by whitelist", async () => {
@@ -837,6 +870,17 @@ describe("external ticket API (Testcontainers)", () => {
           customerName: "敏感客户名",
           phone: "13800000000",
           processingResult: "处理结果",
+        },
+      });
+      await prisma.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          action: "comment",
+          internalOnly: false,
+          remark: "处理结果",
+          operatorId: seeded.users.manager.id,
+          operatorName: seeded.users.manager.name,
+          at: new Date(),
         },
       });
 
