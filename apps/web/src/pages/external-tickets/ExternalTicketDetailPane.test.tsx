@@ -12,6 +12,7 @@ import { TEST_ROLES } from "@/test/roles";
 
 const ALL_FIELDS = [
   "workOrderNumber",
+  "submissionText",
   "status",
   "feedbackTime",
   "channelId",
@@ -55,14 +56,17 @@ function ticket(overrides: Record<string, unknown> = {}) {
 type DetailOverrides = {
   ticket?: Record<string, unknown>;
   visibleFields?: string[];
+  canAddNote?: boolean;
   processLogs?: unknown[];
 };
 
 function detailPayload(overrides: DetailOverrides = {}) {
   const { ticket: ticketOverrides = {}, ...rest } = overrides;
+  const item = ticket(ticketOverrides);
   return {
-    ticket: ticket(ticketOverrides),
+    ticket: item,
     visibleFields: ALL_FIELDS,
+    canAddNote: item.status !== "completed",
     processLogs: [],
     ...rest,
   };
@@ -82,6 +86,7 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
         ],
         total: 1,
         visibleFields: [],
+        detailVisibleFields: [],
       },
       ...extraTrpc,
     },
@@ -182,7 +187,7 @@ describe("左栏", () => {
     expect(within(pane).queryByRole("button", { name: /工单原文/ })).not.toBeInTheDocument();
   });
 
-  it("白名单字段平铺直出：有值渲染，无值整条不出现", async () => {
+  it("白名单字段平铺直出：有值渲染，空值显示破折号", async () => {
     renderDetail();
     const pane = await findPaneShowing("WO100001");
 
@@ -190,9 +195,9 @@ describe("左栏", () => {
     expect(within(pane).getByText("微信")).toBeInTheDocument();
     expect(within(pane).getByText("高")).toBeInTheDocument();
     expect(within(pane).getByText("是")).toBeInTheDocument();
-    // 白名单内但无值 → 整条不渲染，不留 —
-    expect(within(pane).queryByText("类别")).not.toBeInTheDocument();
-    expect(within(pane).queryByText("最新跟进")).not.toBeInTheDocument();
+    expect(within(pane).getByText("客诉类别")).toBeInTheDocument();
+    expect(within(pane).getByText("最新处理")).toBeInTheDocument();
+    expect(within(pane).getAllByText("—").length).toBeGreaterThanOrEqual(2);
   });
 
   it("工单号与状态已挂在头部，字段栅格不重复", async () => {
@@ -234,7 +239,7 @@ describe("外部留言", () => {
       content: "保单号是 P123",
     });
     expect(toastSpies.success).toHaveBeenCalledWith("留言已提交");
-    // 时间线要带上新留言；列表也要重拉（徽标/置顶位随最新记录易主而变）
+    // 时间线要带上新留言；列表也要重拉最新活动时间和摘要。
     await waitFor(() => {
       expect(callsTo("externalTicket.detail").length).toBeGreaterThan(1);
     });

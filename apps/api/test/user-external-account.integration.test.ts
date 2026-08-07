@@ -100,7 +100,8 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
         prefillPaymentChannel: null,
         prefillUserComplaintChannel: null,
         prefillComplaintReceiveChannel: null,
-        visibleTicketFields: null,
+        externalListFields: null,
+        externalDetailFields: null,
       });
     });
   });

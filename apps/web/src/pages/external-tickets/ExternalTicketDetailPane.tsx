@@ -33,6 +33,12 @@ function dotClassName(action: ProcessLogAction) {
   return DOT_CLASS_BY_ACTION[action] ?? "border-primary";
 }
 
+function itemClassName(action: ProcessLogAction) {
+  if (action === "external_note") return "bg-amber-50 px-3 py-2 dark:bg-amber-950/30";
+  if (action === "resolve") return "bg-emerald-50 px-3 py-2 dark:bg-emerald-950/30";
+  return "";
+}
+
 export function ExternalTicketDetailPane({
   ticketId,
   onClose,
@@ -46,6 +52,7 @@ export function ExternalTicketDetailPane({
   neighbors: { prev: string | null; next: string | null };
 }) {
   const detailQuery = trpc.externalTicket.detail.useQuery({ ticketId });
+  const utils = trpc.useUtils();
   const data = detailQuery.data;
   const ticket = data?.ticket ?? null;
   const paneRef = useRef<HTMLElement>(null);
@@ -55,6 +62,10 @@ export function ExternalTicketDetailPane({
   useEffect(() => {
     paneRef.current?.focus({ preventScroll: true });
   }, [ticketId]);
+
+  useEffect(() => {
+    if (data) void utils.externalTicket.list.invalidate();
+  }, [data, utils.externalTicket.list]);
 
   return (
     <section
@@ -78,7 +89,9 @@ export function ExternalTicketDetailPane({
         <h2 className="m-0 text-lg font-semibold tracking-tight">
           {ticket?.workOrderNumber ?? "工单详情"}
         </h2>
-        {ticket && <StatusBadge status={ticket.status} />}
+        {ticket && data?.visibleFields.includes("status") && ticket.status && (
+          <StatusBadge status={ticket.status} />
+        )}
         <div className="flex-1" />
         <Button variant="ghost" size="icon" aria-label="关闭详情" onClick={onClose}>
           <X />
@@ -113,11 +126,8 @@ export function ExternalTicketDetailPane({
               remark: log.remark,
             }))}
             dotClassName={dotClassName}
-            composer={
-              data.ticket.status !== "completed" ? (
-                <ExternalNoteCard ticketId={ticketId} />
-              ) : undefined
-            }
+            itemClassName={itemClassName}
+            composer={data.canAddNote ? <ExternalNoteCard ticketId={ticketId} /> : undefined}
           />
         </div>
       )}

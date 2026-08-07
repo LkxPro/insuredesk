@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
+import { callsTo, renderApp, restFetch, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
@@ -45,6 +45,7 @@ function detailPayload(id: string) {
   return {
     ticket: ticket({ id }),
     visibleFields: ["workOrderNumber", "status"],
+    canAddNote: true,
     processLogs: [],
   };
 }
@@ -55,7 +56,12 @@ function renderPage(path = "/external-tickets", trpc: Record<string, unknown> = 
     role: TEST_ROLES.EXTERNAL,
     isExternal: true,
     trpc: {
-      "externalTicket.list": { items: [ticket()], total: 1 },
+      "externalTicket.list": {
+        items: [ticket()],
+        total: 1,
+        visibleFields: ["workOrderNumber", "status"],
+        detailVisibleFields: ["workOrderNumber", "status"],
+      },
       "externalTicket.detail": detailPayload("t1"),
       ...trpc,
     },
@@ -70,17 +76,19 @@ describe("主从布局", () => {
     expect(callsTo("externalTicket.detail")).toHaveLength(0);
   });
 
-  it("宽屏着陆自动选中列表顶部第一单", async () => {
+  it("宽屏单一搜索结果自动打开详情", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: true,
       media: query,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }));
-    renderPage("/external-tickets", {
+    renderPage("/external-tickets?q=WO100002", {
       "externalTicket.list": {
-        items: [ticket({ id: "t2", workOrderNumber: "WO100002" }), ticket()],
-        total: 2,
+        items: [ticket({ id: "t2", workOrderNumber: "WO100002" })],
+        total: 1,
+        visibleFields: ["workOrderNumber", "status"],
+        detailVisibleFields: ["workOrderNumber", "status"],
       },
       "externalTicket.detail": detailPayload("t2"),
     });
@@ -89,13 +97,26 @@ describe("主从布局", () => {
       expect(callsTo("externalTicket.detail")).toHaveLength(1);
     });
     expect(callsTo("externalTicket.detail")[0]?.input).toEqual({ ticketId: "t2" });
-    // 选中后主从同屏：列表还在
+    // 选中后主从同屏：二级列表还在
     expect(await screen.findByRole("navigation", { name: "工单列表" })).toBeInTheDocument();
   });
 
   it("外部用户登录经 index redirect 落到本页", async () => {
     renderPage("/");
     expect(await screen.findByText("WO100001")).toBeInTheDocument();
+  });
+
+  it("restores the full-list scroll position after closing a detail", async () => {
+    renderPage();
+    const list = await screen.findByRole("navigation", { name: "工单列表" });
+    list.scrollTop = 160;
+    fireEvent.scroll(list);
+
+    fireEvent.click(screen.getByText("WO100001"));
+    fireEvent.click(await screen.findByRole("button", { name: "关闭详情" }));
+
+    const restored = await screen.findByRole("navigation", { name: "工单列表" });
+    expect(restored.scrollTop).toBe(160);
   });
 });
 
@@ -172,5 +193,70 @@ describe("新建工单", () => {
 
     expect(await screen.findByText("原文含有敏感信息")).toBeInTheDocument();
     expect(screen.getByLabelText("工单原文")).toHaveValue("客户电话 13800001111");
+  });
+});
+
+describe("个人字段顺序", () => {
+  it("saves independent list and export orders", async () => {
+    renderPage("/external-tickets", {
+      "externalTicket.preferences": {
+        listFields: ["workOrderNumber", "status"],
+        exportFields: ["customerName", "phone"],
+        defaultListFields: ["workOrderNumber", "status"],
+        defaultExportFields: ["customerName", "phone"],
+      },
+      "externalTicket.updatePreferences": (input: unknown) => ({
+        fields: (input as { fields: string[] }).fields,
+      }),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "字段顺序" }));
+    fireEvent.click(await screen.findByRole("button", { name: /上移 .*电话/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存顺序" }));
+
+    await waitFor(() => {
+      expect(callsTo("externalTicket.updatePreferences")).toHaveLength(2);
+    });
+    expect(callsTo("externalTicket.updatePreferences").map((call) => call.input)).toEqual([
+      { surface: "list", fields: ["workOrderNumber", "status"] },
+      { surface: "export", fields: ["phone", "customerName"] },
+    ]);
+  });
+});
+
+describe("筛选与导出", () => {
+  it("sends completion status and feedback filters, then exports without pagination", async () => {
+    restFetch.mockResolvedValue(
+      new Response("\uFEFF工单号\r\nWO100001\r\n", {
+        status: 200,
+        headers: { "content-type": "text/csv" },
+      }),
+    );
+    renderPage(
+      "/external-tickets?status=processing&completion=resolved&q=张三&from=2026-08-01&to=2026-08-07&page=3",
+      {
+        "completionStatus.filterOptions": [{ id: "resolved", name: "已解决", active: true }],
+      },
+    );
+
+    await waitFor(() => {
+      expect(callsTo("externalTicket.list")[0]?.input).toMatchObject({
+        status: ["processing"],
+        completionStatusId: ["resolved"],
+        search: "张三",
+        offset: 40,
+      });
+    });
+    const exportButton = await screen.findByRole("button", { name: "导出" });
+    fireEvent.pointerDown(exportButton, { button: 0, ctrlKey: false, pointerId: 1 });
+    fireEvent.click(exportButton);
+    fireEvent.click(await screen.findByText(/CSV/));
+
+    await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
+    expect(String(restFetch.mock.calls[0]?.[0])).toContain(
+      "/api/external-tickets/export?format=csv",
+    );
+    expect(String(restFetch.mock.calls[0]?.[0])).toContain("completionStatusId=resolved");
+    expect(String(restFetch.mock.calls[0]?.[0])).not.toContain("page=3");
   });
 });

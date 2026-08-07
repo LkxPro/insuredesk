@@ -52,8 +52,14 @@ model User {
   prefillUserComplaintChannel String?
   /// 预填：投诉信息接收渠道
   prefillComplaintReceiveChannel String?
-  /// 外部可见字段白名单 (JSON 编码字符串数组); null = 系统默认
-  visibleTicketFields String?
+  /// 外部一级列表的有序字段配置（JSON 字符串数组）；null = 系统默认。
+  externalListFields String?
+  /// 外部详情／搜索／导出的有序字段配置（JSON 字符串数组）；null = 系统默认。
+  externalDetailFields String?
+  /// 外部用户个人一级列表列顺序；null = 跟随管理员／系统顺序。
+  externalListOrder String?
+  /// 外部用户个人 Excel/CSV 列顺序；null = 跟随管理员／系统顺序。
+  externalExportOrder String?
 
   prefillChannel Channel? @relation(fields: [prefillChannelId], references: [id], onDelete: Restrict)
 
@@ -69,10 +75,55 @@ model User {
   /// 轨 1 inbox notifications addressed to this user (issue #25)
   notifications   AppNotification[]
   schedules       Schedule[]
+  externalTicketReadStates ExternalTicketReadState[]
 
   @@index([roleId])
   @@index([prefillChannelId])
   @@map("users")
+}
+
+/// 外部账号敏感字段授权／撤销审计。操作者与账号均存快照 id，不设外键，
+/// 账号或人员后续变化不能抹去当时发生的授权事实。
+model ExternalAccountFieldAudit {
+  id              String   @id @default(cuid())
+  targetAccountId String
+  actorId         String
+  actorName       String?
+  grantedFields   String[] @default([])
+  revokedFields   String[] @default([])
+  at              DateTime @default(now()) @db.Timestamptz
+
+  @@index([targetAccountId, at])
+  @@index([actorId, at])
+  @@map("external_account_field_audits")
+}
+
+/// 外部账号对客服公开回复的已读游标；只记录实际随详情成功加载到的最新回复时刻。
+model ExternalTicketReadState {
+  userId          String
+  ticketId        String
+  lastReadReplyAt DateTime @db.Timestamptz
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@id([userId, ticketId])
+  @@index([ticketId])
+  @@map("external_ticket_read_states")
+}
+
+/// 外部账号导出审计；筛选快照使用 JSON 字符串保存，避免后续字段增减改写历史。
+model ExternalTicketExportAudit {
+  id             String   @id @default(cuid())
+  userId         String
+  format         String
+  filterSnapshot String
+  fieldKeys      String[] @default([])
+  rowCount       Int
+  at             DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId, at])
+  @@map("external_ticket_export_audits")
 }
 
 /// Roles define collections of permission points.
@@ -208,6 +259,7 @@ model Ticket {
   completionStatus CompletionStatus?  @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
   importBatch      TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
   processLogs      ProcessLog[]
+  externalReadStates ExternalTicketReadState[]
 
   @@index([assigneeId])
   /// The non-view_all data scope ORs assigneeId with creatorId

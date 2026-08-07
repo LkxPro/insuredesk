@@ -38,7 +38,8 @@ function accountRow(overrides: Record<string, unknown> = {}) {
       userComplaintChannel: null,
       complaintReceiveChannel: null,
     },
-    visibleTicketFields: ["feedbackTime", "project"],
+    listVisibleFields: ["feedbackTime", "project"],
+    detailVisibleFields: ["workOrderNumber", "feedbackTime"],
     ticketCount: 3,
     ...overrides,
   };
@@ -72,7 +73,7 @@ describe("账号列表", () => {
     expect(within(row).getByText("partner1")).toBeInTheDocument();
     // 预填概览:已配置值按序拼接(渠道名 + 项目)
     expect(within(row).getByText("保司 · 融盛")).toBeInTheDocument();
-    expect(within(row).getByText("2")).toBeInTheDocument();
+    expect(within(row).getByText("2／2")).toBeInTheDocument();
     expect(within(row).getByText("3")).toBeInTheDocument();
     expect(within(row).getByText("启用")).toBeInTheDocument();
   });
@@ -90,15 +91,15 @@ describe("账号列表", () => {
             userComplaintChannel: null,
             complaintReceiveChannel: null,
           },
-          visibleTicketFields: null,
+          listVisibleFields: null,
+          detailVisibleFields: null,
         }),
       ],
     });
 
     const row = (await screen.findByText("甲合作方")).closest("tr") as HTMLElement;
     expect(within(row).getByText("—")).toBeInTheDocument();
-    // null 白名单 = 系统默认 5 项
-    expect(within(row).getByText("5")).toBeInTheDocument();
+    expect(within(row).getByText("6／5")).toBeInTheDocument();
   });
 });
 
@@ -121,7 +122,11 @@ describe("新建账号", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "项目（保司）" }), {
       target: { value: "泰康" },
     });
-    fireEvent.click(screen.getByRole("checkbox", { name: "客户诉求" }));
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "详情／搜索／导出字段" })).getByRole("checkbox", {
+        name: "客户诉求",
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
     await waitFor(() =>
@@ -130,7 +135,8 @@ describe("新建账号", () => {
         password: "secret-123",
         name: "乙合作方",
         prefill: { channelId: "ch-jianguan", project: "泰康" },
-        visibleTicketFields: ["customerRequest"],
+        listVisibleFields: [],
+        detailVisibleFields: ["customerRequest"],
       }),
     );
     expect(toastSpies.success).toHaveBeenCalledWith("已创建账号 新账号");
@@ -158,8 +164,11 @@ describe("编辑账号", () => {
     await screen.findByRole("heading", { name: "编辑外部账号" });
     expect(screen.getByRole("textbox", { name: "姓名" })).toHaveValue("甲合作方");
     expect(screen.getByRole("textbox", { name: "项目（保司）" })).toHaveValue("融盛");
-    expect(screen.getByRole("checkbox", { name: "客户诉求" })).not.toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "反馈时间" })).toBeChecked();
+    const listFields = screen.getByRole("group", { name: "一级列表字段" });
+    const detailFields = screen.getByRole("group", { name: "详情／搜索／导出字段" });
+    expect(within(detailFields).getByRole("checkbox", { name: "客户诉求" })).not.toBeChecked();
+    expect(within(listFields).getByRole("checkbox", { name: "反馈时间" })).toBeChecked();
+    expect(within(detailFields).getByRole("checkbox", { name: "反馈时间" })).toBeChecked();
 
     fireEvent.change(screen.getByRole("textbox", { name: "经纪主体" }), {
       target: { value: "凯森" },
@@ -170,7 +179,8 @@ describe("编辑账号", () => {
       expect(callsTo("externalAccount.update")[0]?.input).toMatchObject({
         id: "acc-1",
         prefill: { channelId: "ch-baosi", project: "融盛", brokerageEntity: "凯森" },
-        visibleTicketFields: ["feedbackTime", "project"],
+        listVisibleFields: ["feedbackTime", "project"],
+        detailVisibleFields: ["workOrderNumber", "feedbackTime"],
       }),
     );
   });

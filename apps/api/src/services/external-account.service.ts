@@ -5,11 +5,14 @@ import type {
   ExternalAccountUpdateData,
 } from "@insuredesk/shared";
 import {
+  ACCOUNT_AUTHORIZABLE_SENSITIVE_TICKET_FIELDS,
+  DEFAULT_EXTERNAL_DETAIL_FIELDS,
+  DEFAULT_EXTERNAL_LIST_FIELDS,
+  EXTERNAL_RESTRICTED_TICKET_FIELDS,
   EXTERNAL_ROLE_PERMISSIONS,
   EXTERNAL_VISIBLE_FIELD_OPTIONS,
   isExternalRole,
   parseVisibleTicketFields,
-  SENSITIVE_TICKET_FIELDS,
 } from "@insuredesk/shared";
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
@@ -71,11 +74,11 @@ function validateVisibleFields(fields: string[] | undefined | null): void {
   }
 
   const allowedSet = new Set(EXTERNAL_VISIBLE_FIELD_OPTIONS);
-  const sensitiveSet = new Set(SENSITIVE_TICKET_FIELDS);
+  const restrictedSet = new Set(EXTERNAL_RESTRICTED_TICKET_FIELDS);
 
   for (const field of fields) {
-    if (sensitiveSet.has(field)) {
-      throw new InvalidVisibleFieldError(`字段 ${field} 为敏感字段，不允许外部可见`);
+    if (restrictedSet.has(field)) {
+      throw new InvalidVisibleFieldError(`字段 ${field} 为内部字段，不允许外部可见`);
     }
     if (!allowedSet.has(field)) {
       throw new InvalidVisibleFieldError(`字段 ${field} 不在允许的可见字段清单中`);
@@ -86,6 +89,50 @@ function validateVisibleFields(fields: string[] | undefined | null): void {
 /** null/空数组都归一为 null（= 系统默认白名单）。 */
 function serializeVisibleFields(fields: string[] | null | undefined): string | null {
   return fields && fields.length > 0 ? JSON.stringify(fields) : null;
+}
+
+function effectiveFields(fields: string[] | null | undefined, defaults: readonly string[]) {
+  return fields && fields.length > 0 ? fields : [...defaults];
+}
+
+function sensitiveFieldSet(
+  listFields: string[] | null | undefined,
+  detailFields: string[] | null | undefined,
+) {
+  const visible = new Set([
+    ...effectiveFields(listFields, DEFAULT_EXTERNAL_LIST_FIELDS),
+    ...effectiveFields(detailFields, DEFAULT_EXTERNAL_DETAIL_FIELDS),
+  ]);
+  return new Set(
+    ACCOUNT_AUTHORIZABLE_SENSITIVE_TICKET_FIELDS.filter((field) => visible.has(field)),
+  );
+}
+
+async function writeSensitiveFieldAudit(
+  tx: Prisma.TransactionClient,
+  actor: AuthenticatedUser,
+  targetAccountId: string,
+  before: ReadonlySet<string>,
+  after: ReadonlySet<string>,
+) {
+  const grantedFields = ACCOUNT_AUTHORIZABLE_SENSITIVE_TICKET_FIELDS.filter(
+    (field) => !before.has(field) && after.has(field),
+  );
+  const revokedFields = ACCOUNT_AUTHORIZABLE_SENSITIVE_TICKET_FIELDS.filter(
+    (field) => before.has(field) && !after.has(field),
+  );
+  if (grantedFields.length === 0 && revokedFields.length === 0) {
+    return;
+  }
+  await tx.externalAccountFieldAudit.create({
+    data: {
+      targetAccountId,
+      actorId: actor.id,
+      actorName: actor.name,
+      grantedFields,
+      revokedFields,
+    },
+  });
 }
 
 function isUniqueViolationOn(error: unknown, field: string): boolean {
@@ -117,6 +164,8 @@ async function loadExternalAccount(prisma: PrismaClient, id: string) {
     where: { id },
     select: {
       id: true,
+      externalListFields: true,
+      externalDetailFields: true,
       role: { select: { system: true, permissions: true } },
     },
   });
@@ -186,7 +235,8 @@ function toListItem(row: AccountListRow): ExternalAccountListItem {
       userComplaintChannel: row.prefillUserComplaintChannel,
       complaintReceiveChannel: row.prefillComplaintReceiveChannel,
     },
-    visibleTicketFields: parseVisibleTicketFields(row.visibleTicketFields),
+    listVisibleFields: parseVisibleTicketFields(row.externalListFields),
+    detailVisibleFields: parseVisibleTicketFields(row.externalDetailFields),
     ticketCount: row._count.createdTickets,
   };
 }
@@ -206,35 +256,47 @@ export async function listExternalAccounts(
 /** New 外部账号：active from the start, 唯一外部角色服务端挂载, password bcrypt-hashed here. */
 export async function createExternalAccount(
   deps: ExternalAccountServiceDeps,
+  actor: AuthenticatedUser,
   input: ExternalAccountCreateData,
 ) {
   const { prisma } = deps;
-  validateVisibleFields(input.visibleTicketFields);
+  validateVisibleFields(input.listVisibleFields);
+  validateVisibleFields(input.detailVisibleFields);
   await resolvePrefillChannel(prisma, input.prefill?.channelId ?? null);
   const role = await loadSoleExternalRole(prisma);
 
   const passwordHash = await hashPassword(input.password);
   try {
-    const created = await prisma.user.create({
-      data: {
-        username: input.username,
-        name: input.name,
-        email: input.email,
-        team: null,
-        roleId: role.id,
-        passwordHash,
-        active: true,
-        prefillChannelId: input.prefill?.channelId ?? null,
-        prefillProject: input.prefill?.project ?? null,
-        prefillBrokerageEntity: input.prefill?.brokerageEntity ?? null,
-        prefillPaymentChannel: input.prefill?.paymentChannel ?? null,
-        prefillUserComplaintChannel: input.prefill?.userComplaintChannel ?? null,
-        prefillComplaintReceiveChannel: input.prefill?.complaintReceiveChannel ?? null,
-        visibleTicketFields: serializeVisibleFields(input.visibleTicketFields),
-      },
-      select: { id: true, name: true },
+    return await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          username: input.username,
+          name: input.name,
+          email: input.email,
+          team: null,
+          roleId: role.id,
+          passwordHash,
+          active: true,
+          prefillChannelId: input.prefill?.channelId ?? null,
+          prefillProject: input.prefill?.project ?? null,
+          prefillBrokerageEntity: input.prefill?.brokerageEntity ?? null,
+          prefillPaymentChannel: input.prefill?.paymentChannel ?? null,
+          prefillUserComplaintChannel: input.prefill?.userComplaintChannel ?? null,
+          prefillComplaintReceiveChannel: input.prefill?.complaintReceiveChannel ?? null,
+          externalListFields: serializeVisibleFields(input.listVisibleFields),
+          externalDetailFields: serializeVisibleFields(input.detailVisibleFields),
+        },
+        select: { id: true, name: true },
+      });
+      await writeSensitiveFieldAudit(
+        tx,
+        actor,
+        created.id,
+        new Set(),
+        sensitiveFieldSet(input.listVisibleFields, input.detailVisibleFields),
+      );
+      return created;
     });
-    return created;
   } catch (error) {
     throwOnDuplicateIdentity(error);
   }
@@ -246,11 +308,13 @@ export async function createExternalAccount(
  */
 export async function updateExternalAccount(
   deps: ExternalAccountServiceDeps,
+  actor: AuthenticatedUser,
   input: ExternalAccountUpdateData,
 ) {
   const { prisma } = deps;
-  await loadExternalAccount(prisma, input.id);
-  validateVisibleFields(input.visibleTicketFields);
+  const existing = await loadExternalAccount(prisma, input.id);
+  validateVisibleFields(input.listVisibleFields);
+  validateVisibleFields(input.detailVisibleFields);
   if (input.prefill !== undefined) {
     await resolvePrefillChannel(prisma, input.prefill.channelId);
   }
@@ -271,8 +335,11 @@ export async function updateExternalAccount(
     data.prefillUserComplaintChannel = input.prefill.userComplaintChannel;
     data.prefillComplaintReceiveChannel = input.prefill.complaintReceiveChannel;
   }
-  if (input.visibleTicketFields !== undefined) {
-    data.visibleTicketFields = serializeVisibleFields(input.visibleTicketFields);
+  if (input.listVisibleFields !== undefined) {
+    data.externalListFields = serializeVisibleFields(input.listVisibleFields);
+  }
+  if (input.detailVisibleFields !== undefined) {
+    data.externalDetailFields = serializeVisibleFields(input.detailVisibleFields);
   }
 
   return prisma.$transaction(async (tx) => {
@@ -293,6 +360,23 @@ export async function updateExternalAccount(
     if (input.password !== null) {
       await tx.session.deleteMany({ where: { userId: input.id } });
     }
+    await writeSensitiveFieldAudit(
+      tx,
+      actor,
+      input.id,
+      sensitiveFieldSet(
+        parseVisibleTicketFields(existing.externalListFields),
+        parseVisibleTicketFields(existing.externalDetailFields),
+      ),
+      sensitiveFieldSet(
+        input.listVisibleFields === undefined
+          ? parseVisibleTicketFields(existing.externalListFields)
+          : input.listVisibleFields,
+        input.detailVisibleFields === undefined
+          ? parseVisibleTicketFields(existing.externalDetailFields)
+          : input.detailVisibleFields,
+      ),
+    );
     return updated;
   });
 }

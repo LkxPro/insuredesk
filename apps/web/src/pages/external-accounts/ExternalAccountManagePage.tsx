@@ -1,5 +1,5 @@
 import type { AppRouter } from "@insuredesk/api";
-import { DEFAULT_EXTERNAL_VISIBLE_FIELDS } from "@insuredesk/shared";
+import { DEFAULT_EXTERNAL_DETAIL_FIELDS, DEFAULT_EXTERNAL_LIST_FIELDS } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
 import { AlertCircle, Plus, UserRound } from "lucide-react";
 import { useState } from "react";
@@ -24,8 +24,11 @@ import { ExternalAccountEditDialog } from "./ExternalAccountEditDialog";
 
 export type ExternalAccountRow = inferRouterOutputs<AppRouter>["externalAccount"]["list"][number];
 
-export function visibleFieldCount(visibleTicketFields: string[] | null): number {
-  return visibleTicketFields?.length ?? DEFAULT_EXTERNAL_VISIBLE_FIELDS.length;
+export function visibleFieldCount(
+  visibleFields: string[] | null,
+  defaults: readonly string[] = DEFAULT_EXTERNAL_DETAIL_FIELDS,
+): number {
+  return visibleFields?.length ?? defaults.length;
 }
 
 /** 预填概览：已配置值按序拼接；空 = 未配置。 */
@@ -98,7 +101,7 @@ export function ExternalAccountManagePage() {
                 <TableHead>姓名</TableHead>
                 <TableHead>用户名</TableHead>
                 <TableHead>预填</TableHead>
-                <TableHead>可见字段数</TableHead>
+                <TableHead>一级／详情字段</TableHead>
                 <TableHead>提交工单数</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -140,7 +143,11 @@ export function ExternalAccountManagePage() {
                       {summary || "—"}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {visibleFieldCount(account.visibleTicketFields)}
+                      {visibleFieldCount(account.listVisibleFields, DEFAULT_EXTERNAL_LIST_FIELDS)}／
+                      {visibleFieldCount(
+                        account.detailVisibleFields,
+                        DEFAULT_EXTERNAL_DETAIL_FIELDS,
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{account.ticketCount}</TableCell>
                     <TableCell>

@@ -191,6 +191,30 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(editLog?.remark).toContain("投诉信息接收渠道: 邮箱接收→（空）");
     });
 
+    it("外部来源工单的反馈时间可修改但不可清空", async () => {
+      const createdAt = new Date("2026-07-09T02:00:00.000Z");
+      const ticket = await prisma.ticket.create({
+        data: {
+          source: "external_channel",
+          submissionText: "外部提交原文",
+          createdAt,
+          feedbackTime: createdAt,
+          creatorId: seeded.users.cs1.id,
+        },
+      });
+
+      await expect(
+        manager().ticket.edit(editInput(ticket.id, { feedbackTime: null })),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "外部工单的反馈时间不能为空" });
+
+      const changedTime = "2026-07-10T03:30:00.000Z";
+      const result = await manager().ticket.edit(
+        editInput(ticket.id, { feedbackTime: changedTime }),
+      );
+      expect(result.changedFields).toContain("feedbackTime");
+      expect((await manager().ticket.detail({ id: ticket.id })).feedbackTime).toBe(changedTime);
+    });
+
     it("edits 保单号 multi values with space-joined remark; clearing logs （空）; 等值提交不留痕", async () => {
       const ticketId = await createTicket();
 

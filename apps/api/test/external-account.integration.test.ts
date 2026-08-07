@@ -135,7 +135,8 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
             userComplaintChannel: "400热线",
             complaintReceiveChannel: "客服群",
           },
-          visibleTicketFields: ["feedbackTime", "project", "customerRequest"],
+          listVisibleFields: ["feedbackTime", "customerName", "status"],
+          detailVisibleFields: ["workOrderNumber", "project", "customerRequest"],
         }),
       );
 
@@ -150,8 +151,13 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         prefillUserComplaintChannel: "400热线",
         prefillComplaintReceiveChannel: "客服群",
       });
-      expect(JSON.parse(row.visibleTicketFields ?? "")).toEqual([
+      expect(JSON.parse(row.externalListFields ?? "")).toEqual([
         "feedbackTime",
+        "customerName",
+        "status",
+      ]);
+      expect(JSON.parse(row.externalDetailFields ?? "")).toEqual([
+        "workOrderNumber",
         "project",
         "customerRequest",
       ]);
@@ -159,9 +165,20 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
       const listed = (await manager().externalAccount.list()).find((r) => r.id === created.id);
       expect(listed).toMatchObject({
         ticketCount: 0,
-        visibleTicketFields: ["feedbackTime", "project", "customerRequest"],
+        listVisibleFields: ["feedbackTime", "customerName", "status"],
+        detailVisibleFields: ["workOrderNumber", "project", "customerRequest"],
       });
       expect(listed?.prefill).toMatchObject({ channelId, channelName: "保司", project: "融盛" });
+
+      const audits = await prisma.externalAccountFieldAudit.findMany({
+        where: { targetAccountId: created.id },
+      });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({
+        actorId: seeded.users.manager.id,
+        grantedFields: ["customerName"],
+        revokedFields: [],
+      });
     });
 
     it("预填全空 → 六列与白名单皆 null(系统默认)", async () => {
@@ -175,7 +192,8 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         prefillPaymentChannel: null,
         prefillUserComplaintChannel: null,
         prefillComplaintReceiveChannel: null,
-        visibleTicketFields: null,
+        externalListFields: null,
+        externalDetailFields: null,
       });
     });
 
@@ -201,15 +219,18 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
     it("白名单含敏感字段 → BAD_REQUEST", async () => {
       await expect(
         manager().externalAccount.create(
-          accountArgs({ visibleTicketFields: ["project", "phone"] }),
+          accountArgs({ listVisibleFields: ["project", "contactPhone"] }),
         ),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("phone") });
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("contactPhone"),
+      });
     });
 
     it("白名单含候选域外字段 → BAD_REQUEST", async () => {
       await expect(
         manager().externalAccount.create(
-          accountArgs({ visibleTicketFields: ["project", "fakeField"] }),
+          accountArgs({ detailVisibleFields: ["project", "fakeField"] }),
         ),
       ).rejects.toMatchObject({
         code: "BAD_REQUEST",
@@ -283,7 +304,8 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
       const created = await manager().externalAccount.create(
         accountArgs({
           prefill: { project: "旧项目", paymentChannel: "旧支付" },
-          visibleTicketFields: ["project"],
+          listVisibleFields: ["project"],
+          detailVisibleFields: ["workOrderNumber", "project"],
         }),
       );
 
@@ -291,13 +313,15 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
       await manager().externalAccount.update(updateArgs(created.id));
       let row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
       expect(row).toMatchObject({ prefillProject: "旧项目", prefillPaymentChannel: "旧支付" });
-      expect(JSON.parse(row.visibleTicketFields ?? "")).toEqual(["project"]);
+      expect(JSON.parse(row.externalListFields ?? "")).toEqual(["project"]);
+      expect(JSON.parse(row.externalDetailFields ?? "")).toEqual(["workOrderNumber", "project"]);
 
       // 整块替换
       await manager().externalAccount.update(
         updateArgs(created.id, {
           prefill: { channelId, project: "新项目" },
-          visibleTicketFields: ["feedbackTime", "customerRequest"],
+          listVisibleFields: ["feedbackTime", "customerName"],
+          detailVisibleFields: ["workOrderNumber", "customerRequest"],
         }),
       );
       row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
@@ -306,18 +330,24 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         prefillProject: "新项目",
         prefillPaymentChannel: null,
       });
-      expect(JSON.parse(row.visibleTicketFields ?? "")).toEqual([
-        "feedbackTime",
+      expect(JSON.parse(row.externalListFields ?? "")).toEqual(["feedbackTime", "customerName"]);
+      expect(JSON.parse(row.externalDetailFields ?? "")).toEqual([
+        "workOrderNumber",
         "customerRequest",
       ]);
 
       // 空块/空数组 → 归一 null(未配置/系统默认)
       await manager().externalAccount.update(
-        updateArgs(created.id, { prefill: {}, visibleTicketFields: [] }),
+        updateArgs(created.id, {
+          prefill: {},
+          listVisibleFields: [],
+          detailVisibleFields: [],
+        }),
       );
       row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
       expect(row).toMatchObject({ prefillChannelId: null, prefillProject: null });
-      expect(row.visibleTicketFields).toBeNull();
+      expect(row.externalListFields).toBeNull();
+      expect(row.externalDetailFields).toBeNull();
     });
 
     it("内部账号不是这扇门的对象", async () => {

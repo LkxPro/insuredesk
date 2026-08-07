@@ -1,8 +1,13 @@
 import {
+  ACCOUNT_AUTHORIZABLE_SENSITIVE_TICKET_FIELDS,
+  DEFAULT_EXTERNAL_DETAIL_FIELDS,
+  DEFAULT_EXTERNAL_LIST_FIELDS,
   DEFAULT_EXTERNAL_VISIBLE_FIELDS,
+  EXTERNAL_RESTRICTED_TICKET_FIELDS,
   EXTERNAL_VISIBLE_FIELD_OPTIONS,
   filterVisibleFields,
-  SENSITIVE_TICKET_FIELDS,
+  resolveExternalFieldOrder,
+  resolveExternalVisibleFields,
 } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
 
@@ -28,6 +33,7 @@ describe("ticket-field-visibility", () => {
       const ticket = {
         workOrderNumber: "WO100001",
         customerName: "张三",
+        submissionText: "原始反馈",
         project: "融盛",
       };
 
@@ -35,6 +41,7 @@ describe("ticket-field-visibility", () => {
 
       expect(result.workOrderNumber).toBe("WO100001");
       expect(result.customerName).toBeNull();
+      expect(result.submissionText).toBeNull();
       expect(result.project).toBeNull();
     });
 
@@ -52,9 +59,10 @@ describe("ticket-field-visibility", () => {
       expect(result.tags).toEqual([]);
     });
 
-    it("forcibly filters sensitive fields even if whitelisted", () => {
+    it("allows account-authorized sensitive fields but always filters internal fields", () => {
       const ticket = {
         workOrderNumber: "WO100001",
+        submissionText: "原始反馈",
         phone: "13800138000",
         contactPhone: "13900139000",
         customerName: "张三",
@@ -63,9 +71,10 @@ describe("ticket-field-visibility", () => {
         contactId: "CONTACT001",
       };
 
-      // Attempt to whitelist all fields including sensitive ones
+      // Attempt to whitelist all fields, including the permanently restricted ones.
       const result = filterVisibleFields(ticket, [
         "workOrderNumber",
+        "submissionText",
         "phone",
         "contactPhone",
         "customerName",
@@ -75,11 +84,11 @@ describe("ticket-field-visibility", () => {
       ]);
 
       expect(result.workOrderNumber).toBe("WO100001");
-      // All sensitive fields should be null or []
-      expect(result.phone).toBeNull();
+      expect(result.submissionText).toBe("原始反馈");
+      expect(result.phone).toBe("13800138000");
+      expect(result.customerName).toBe("张三");
+      expect(result.policyNumbers).toEqual(["POL123"]);
       expect(result.contactPhone).toBeNull();
-      expect(result.customerName).toBeNull();
-      expect(result.policyNumbers).toEqual([]);
       expect(result.internalOrderNumber).toBeNull();
       expect(result.contactId).toBeNull();
     });
@@ -108,10 +117,10 @@ describe("ticket-field-visibility", () => {
 
       const result = filterVisibleFields(ticket, []);
 
-      // System fields always preserved
+      // Technical identity fields are preserved; status and business fields remain configurable.
       expect(result.id).toBe("ticket-123");
-      expect(result.status).toBe("unassigned");
       expect(result.createdAt).toEqual(new Date("2024-01-01"));
+      expect(result.status).toBeNull();
       // Non-system fields filtered
       expect(result.workOrderNumber).toBeNull();
       expect(result.policyNumbers).toEqual([]);
@@ -129,34 +138,101 @@ describe("ticket-field-visibility", () => {
       const result = filterVisibleFields(ticket, ["workOrderNumber"]);
 
       expect(result.workOrderNumber).toBe("WO100001");
-      // customerName and phone are sensitive, originally undefined → stay undefined
+      // Account-authorizable sensitive fields still preserve an original undefined.
       expect(result.customerName).toBeUndefined();
       expect(result.phone).toBeUndefined();
       // project is not whitelisted, has value → null
       expect(result.project).toBeNull();
-      // policyNumbers is sensitive array → []
+      // policyNumbers is not whitelisted → []
       expect(result.policyNumbers).toEqual([]);
     });
   });
 
   describe("constants", () => {
-    it("SENSITIVE_TICKET_FIELDS includes expected sensitive fields", () => {
-      expect(SENSITIVE_TICKET_FIELDS).toContain("phone");
-      expect(SENSITIVE_TICKET_FIELDS).toContain("contactPhone");
-      expect(SENSITIVE_TICKET_FIELDS).toContain("policyNumbers");
-      expect(SENSITIVE_TICKET_FIELDS).toContain("internalOrderNumber");
-      expect(SENSITIVE_TICKET_FIELDS).toContain("customerName");
-      expect(SENSITIVE_TICKET_FIELDS).toContain("contactId");
+    it("separates account-authorizable sensitive fields from permanently restricted fields", () => {
+      expect(ACCOUNT_AUTHORIZABLE_SENSITIVE_TICKET_FIELDS).toEqual([
+        "customerName",
+        "policyNumbers",
+        "phone",
+      ]);
+      expect(EXTERNAL_RESTRICTED_TICKET_FIELDS).toEqual([
+        "contactPhone",
+        "internalOrderNumber",
+        "contactId",
+      ]);
     });
 
-    it("EXTERNAL_VISIBLE_FIELD_OPTIONS excludes sensitive fields", () => {
-      for (const sensitiveField of SENSITIVE_TICKET_FIELDS) {
-        expect(EXTERNAL_VISIBLE_FIELD_OPTIONS).not.toContain(sensitiveField);
+    it("EXTERNAL_VISIBLE_FIELD_OPTIONS excludes permanently restricted fields", () => {
+      for (const restrictedField of EXTERNAL_RESTRICTED_TICKET_FIELDS) {
+        expect(EXTERNAL_VISIBLE_FIELD_OPTIONS).not.toContain(restrictedField);
       }
     });
 
     it("EXTERNAL_VISIBLE_FIELD_OPTIONS excludes import-only fields", () => {
       expect(EXTERNAL_VISIBLE_FIELD_OPTIONS).not.toContain("completionRemark");
+    });
+
+    it("external field options include account-authorized customer identity fields", () => {
+      expect(EXTERNAL_VISIBLE_FIELD_OPTIONS).toEqual(
+        expect.arrayContaining(["customerName", "policyNumbers", "phone"]),
+      );
+      expect(EXTERNAL_RESTRICTED_TICKET_FIELDS).toEqual(
+        expect.arrayContaining(["contactPhone", "internalOrderNumber", "contactId"]),
+      );
+      for (const field of EXTERNAL_RESTRICTED_TICKET_FIELDS) {
+        expect(EXTERNAL_VISIBLE_FIELD_OPTIONS).not.toContain(field);
+      }
+    });
+
+    it("uses separate safe defaults for list and detail/search/export surfaces", () => {
+      expect(DEFAULT_EXTERNAL_LIST_FIELDS).toEqual([
+        "feedbackTime",
+        "policyNumbers",
+        "customerName",
+        "status",
+        "processingResult",
+        "completionStatusId",
+      ]);
+      expect(DEFAULT_EXTERNAL_DETAIL_FIELDS).toEqual([
+        "workOrderNumber",
+        "feedbackTime",
+        "status",
+        "completionStatusId",
+        "processingResult",
+      ]);
+      expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toEqual(DEFAULT_EXTERNAL_DETAIL_FIELDS);
+    });
+
+    it("resolves null and empty selections to the requested surface default", () => {
+      expect(resolveExternalVisibleFields(null, DEFAULT_EXTERNAL_LIST_FIELDS)).toEqual(
+        DEFAULT_EXTERNAL_LIST_FIELDS,
+      );
+      expect(resolveExternalVisibleFields("[]", DEFAULT_EXTERNAL_DETAIL_FIELDS)).toEqual(
+        DEFAULT_EXTERNAL_DETAIL_FIELDS,
+      );
+    });
+
+    it("keeps configured order while dropping unknown and permanently restricted fields", () => {
+      expect(
+        resolveExternalVisibleFields(
+          JSON.stringify(["customerName", "contactPhone", "feedbackTime", "customerName"]),
+          DEFAULT_EXTERNAL_LIST_FIELDS,
+        ),
+      ).toEqual(["customerName", "feedbackTime"]);
+    });
+
+    it("reconciles personal order with current authorization and appends newly granted fields", () => {
+      expect(
+        resolveExternalFieldOrder(JSON.stringify(["status", "revoked", "feedbackTime"]), [
+          "feedbackTime",
+          "customerName",
+          "status",
+        ]),
+      ).toEqual(["status", "feedbackTime", "customerName"]);
+      expect(resolveExternalFieldOrder(null, ["feedbackTime", "status"])).toEqual([
+        "feedbackTime",
+        "status",
+      ]);
     });
 
     it("DEFAULT_EXTERNAL_VISIBLE_FIELDS contains safe, useful fields", () => {
@@ -167,8 +243,8 @@ describe("ticket-field-visibility", () => {
       expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("processingResult");
     });
 
-    it("DEFAULT_EXTERNAL_VISIBLE_FIELDS contains no sensitive fields", () => {
-      for (const sensitiveField of SENSITIVE_TICKET_FIELDS) {
+    it("default detail/search/export fields contain no account-authorized sensitive fields", () => {
+      for (const sensitiveField of ACCOUNT_AUTHORIZABLE_SENSITIVE_TICKET_FIELDS) {
         expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).not.toContain(sensitiveField);
       }
     });

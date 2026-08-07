@@ -50,7 +50,7 @@ export const externalAccountPrefillSchema = z.object({
 export type ExternalAccountPrefillInput = z.input<typeof externalAccountPrefillSchema>;
 export type ExternalAccountPrefill = z.output<typeof externalAccountPrefillSchema>;
 
-/** 白名单输入：undefined = 不碰（仅更新时），null/空数组 = 归一系统默认。 */
+/** 有序字段输入：undefined = 不碰（仅更新时），null/空数组 = 归一系统默认。 */
 const visibleTicketFieldsInputSchema = z.array(z.string()).optional().nullable();
 
 export const externalAccountCreateInputSchema = z.object({
@@ -59,7 +59,8 @@ export const externalAccountCreateInputSchema = z.object({
   name: displayNameSchema,
   email: optionalEmailSchema,
   prefill: externalAccountPrefillSchema.optional(),
-  visibleTicketFields: visibleTicketFieldsInputSchema,
+  listVisibleFields: visibleTicketFieldsInputSchema,
+  detailVisibleFields: visibleTicketFieldsInputSchema,
 });
 export type ExternalAccountCreateInput = z.input<typeof externalAccountCreateInputSchema>;
 export type ExternalAccountCreateData = z.output<typeof externalAccountCreateInputSchema>;
@@ -75,7 +76,8 @@ export const externalAccountUpdateInputSchema = z.object({
   email: optionalEmailSchema,
   password: optionalPasswordResetSchema,
   prefill: externalAccountPrefillSchema.optional(),
-  visibleTicketFields: visibleTicketFieldsInputSchema,
+  listVisibleFields: visibleTicketFieldsInputSchema,
+  detailVisibleFields: visibleTicketFieldsInputSchema,
 });
 export type ExternalAccountUpdateInput = z.input<typeof externalAccountUpdateInputSchema>;
 export type ExternalAccountUpdateData = z.output<typeof externalAccountUpdateInputSchema>;
@@ -96,8 +98,10 @@ export interface ExternalAccountListItem {
   active: boolean;
   createdAt: string;
   prefill: ExternalAccountPrefill & { channelName: string | null };
-  /** 自定义可见字段白名单；null = 系统默认。 */
-  visibleTicketFields: string[] | null;
+  /** 一级列表的自定义有序字段；null = 系统默认。 */
+  listVisibleFields: string[] | null;
+  /** 详情／搜索／导出的自定义有序字段；null = 系统默认。 */
+  detailVisibleFields: string[] | null;
   /** 该账号提交的工单数（含软删）。 */
   ticketCount: number;
 }

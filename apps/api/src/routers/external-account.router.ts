@@ -60,12 +60,12 @@ export const externalAccountRouter = router({
   /** New 外部账号: basic info + 6 预填 + 白名单; 唯一外部角色服务端挂载。 */
   create: requirePermission("external_account.manage")
     .input(externalAccountCreateInputSchema)
-    .mutation(({ input }) => createExternalAccount(deps, input).catch(toTRPCError)),
+    .mutation(({ ctx, input }) => createExternalAccount(deps, ctx.user, input).catch(toTRPCError)),
 
   /** Edit basic info + 预填/白名单整体替换 + optional password reset. */
   update: requirePermission("external_account.manage")
     .input(externalAccountUpdateInputSchema)
-    .mutation(({ input }) => updateExternalAccount(deps, input).catch(toTRPCError)),
+    .mutation(({ ctx, input }) => updateExternalAccount(deps, ctx.user, input).catch(toTRPCError)),
 
   /** 禁用/启用 — disabling kicks the account's live sessions at once. */
   setActive: requirePermission("external_account.manage")

@@ -34,7 +34,7 @@ import {
 } from "../services/ticket-assign.service";
 import { addTicketComment, TicketNotProcessableError } from "../services/ticket-comment.service";
 import { deleteTicket } from "../services/ticket-delete.service";
-import { editTicket } from "../services/ticket-edit.service";
+import { ExternalFeedbackTimeRequiredError, editTicket } from "../services/ticket-edit.service";
 import {
   ImportBatchAlreadyRevokedError,
   ImportBatchLockedError,
@@ -201,6 +201,9 @@ export const ticketRouter = router({
       try {
         return await editTicket(deps, ctx.user, input);
       } catch (error) {
+        if (error instanceof ExternalFeedbackTimeRequiredError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+        }
         if (error instanceof TicketNotFoundError) {
           throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
         }

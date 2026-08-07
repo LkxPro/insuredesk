@@ -54,6 +54,13 @@ const EDITABLE_FIELD_KEYS: [Exclude<EditableFieldKey, TicketCreateFieldKey>] ext
 
 type EditableValue = string | string[] | boolean | Date | null;
 
+export class ExternalFeedbackTimeRequiredError extends Error {
+  constructor() {
+    super("外部工单的反馈时间不能为空");
+    this.name = "ExternalFeedbackTimeRequiredError";
+  }
+}
+
 /**
  * One remark-side value. Priorities render their Chinese labels (the stored
  * codes are English); datetimes render the unambiguous ISO instant — the
@@ -125,6 +132,9 @@ export async function editTicket(
     });
     if (!ticket) {
       throw new TicketNotFoundError();
+    }
+    if (ticket.source === "external_channel" && next.feedbackTime === null) {
+      throw new ExternalFeedbackTimeRequiredError();
     }
 
     const changedFields = EDITABLE_FIELD_KEYS.filter((key) => !sameValue(ticket[key], next[key]));

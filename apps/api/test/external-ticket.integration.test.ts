@@ -1,4 +1,4 @@
-import { DEFAULT_EXTERNAL_VISIBLE_FIELDS } from "@insuredesk/shared";
+import { DEFAULT_EXTERNAL_DETAIL_FIELDS, DEFAULT_EXTERNAL_LIST_FIELDS } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
@@ -47,7 +47,13 @@ describe("external ticket API (Testcontainers)", () => {
         prefillPaymentChannel: "连连",
         prefillUserComplaintChannel: "400热线",
         prefillComplaintReceiveChannel: "客服群",
-        visibleTicketFields: JSON.stringify([
+        externalListFields: JSON.stringify([
+          "workOrderNumber",
+          "feedbackTime",
+          "status",
+          "processingResult",
+        ]),
+        externalDetailFields: JSON.stringify([
           "workOrderNumber",
           "feedbackTime",
           "status",
@@ -75,6 +81,68 @@ describe("external ticket API (Testcontainers)", () => {
   const externalCaller1 = () => harness.callerFor(externalUser1, externalRole);
   const externalCaller2 = () => harness.callerFor(externalUser2, externalRole);
 
+  describe("preferences", () => {
+    it("reconciles a personal list order with the account's current authorized fields", async () => {
+      await prisma.user.update({
+        where: { id: externalUser1.id },
+        data: {
+          externalListOrder: JSON.stringify(["status", "revoked", "feedbackTime"]),
+        },
+      });
+
+      const preferences = await externalCaller1().externalTicket.preferences();
+
+      expect(preferences.listFields).toEqual([
+        "status",
+        "feedbackTime",
+        "workOrderNumber",
+        "processingResult",
+      ]);
+    });
+
+    it("persists a personal export order and appends newly authorized fields", async () => {
+      const caller = externalCaller1();
+
+      await caller.externalTicket.updatePreferences({
+        surface: "export",
+        fields: ["processingResult", "status"],
+      });
+      const preferences = await caller.externalTicket.preferences();
+
+      expect(preferences.exportFields).toEqual([
+        "processingResult",
+        "status",
+        "workOrderNumber",
+        "feedbackTime",
+      ]);
+    });
+
+    it("uses the personal list order in list responses and can restore the default", async () => {
+      const caller = externalCaller1();
+
+      await caller.externalTicket.updatePreferences({
+        surface: "list",
+        fields: ["processingResult", "status", "feedbackTime", "workOrderNumber"],
+      });
+      const reordered = await caller.externalTicket.list({ offset: 0, limit: 1 });
+      expect(reordered.visibleFields).toEqual([
+        "processingResult",
+        "status",
+        "feedbackTime",
+        "workOrderNumber",
+      ]);
+
+      await caller.externalTicket.updatePreferences({ surface: "list", fields: [] });
+      const restored = await caller.externalTicket.list({ offset: 0, limit: 1 });
+      expect(restored.visibleFields).toEqual([
+        "workOrderNumber",
+        "feedbackTime",
+        "status",
+        "processingResult",
+      ]);
+    });
+  });
+
   describe("submit", () => {
     it("creates ticket with source=external_channel and the account's 6 prefill values stamped", async () => {
       const caller = externalCaller1();
@@ -98,6 +166,7 @@ describe("external ticket API (Testcontainers)", () => {
         complaintReceiveChannel: "客服群",
         status: "unassigned",
       });
+      expect(ticket?.feedbackTime).toEqual(ticket?.createdAt);
     });
 
     it("无预填账号提交 → 六字段全 null", async () => {
@@ -244,7 +313,7 @@ describe("external ticket API (Testcontainers)", () => {
       expect(ticket).not.toHaveProperty("phone");
     });
 
-    it("uses default whitelist when the account has null visibleTicketFields", async () => {
+    it("uses separate default fields when the account has null surface configs", async () => {
       const caller = externalCaller2();
       const result = await caller.externalTicket.submit({
         submissionText: "测试默认白名单",
@@ -262,18 +331,16 @@ describe("external ticket API (Testcontainers)", () => {
       const ticket = list.items.find((t) => t.id === result.id);
 
       expect(ticket).toBeDefined();
-      expect(ticket).not.toHaveProperty("customerName");
+      expect(ticket?.customerName).toBe("敏感客户名");
 
       // 白名单本身随详情下发（列表已不携带）
       const detail = await caller.externalTicket.detail({ ticketId: result.id });
-      expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("workOrderNumber");
-      expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("status");
-      expect(detail.visibleFields).toEqual([...DEFAULT_EXTERNAL_VISIBLE_FIELDS]);
+      expect(DEFAULT_EXTERNAL_LIST_FIELDS).toContain("customerName");
+      expect(DEFAULT_EXTERNAL_DETAIL_FIELDS).toContain("workOrderNumber");
+      expect(detail.visibleFields).toEqual([...DEFAULT_EXTERNAL_DETAIL_FIELDS]);
     });
 
-    it("keeps 工单号/状态 visible even when the account's whitelist omits them", async () => {
-      // 管理员界面的候选清单由建单字段推导，勾不到工单号与状态 —— 任何配过一次
-      // 的账号白名单都不含它们，但工单号是外部方唯一的工单标识，必须还在
+    it("keeps each surface selection exact, including selectable system fields", async () => {
       const account = await prisma.user.create({
         data: {
           username: "ext-narrow-whitelist",
@@ -281,7 +348,8 @@ describe("external ticket API (Testcontainers)", () => {
           passwordHash: "x",
           roleId: externalRole.id,
           active: true,
-          visibleTicketFields: JSON.stringify(["feedbackTime", "priority"]),
+          externalListFields: JSON.stringify(["feedbackTime", "priority"]),
+          externalDetailFields: JSON.stringify(["feedbackTime", "priority"]),
         },
       });
       const caller = harness.callerFor(account, externalRole);
@@ -290,18 +358,12 @@ describe("external ticket API (Testcontainers)", () => {
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
 
       const ticket = list.items.find((t) => t.id === created.id);
-      expect(ticket?.workOrderNumber).toBe(created.workOrderNumber);
-      expect(ticket?.status).toBe("unassigned");
-      // 未配的业务字段仍然被裁掉
-      expect(ticket?.customerRequest).toBeNull();
+      expect(ticket).not.toHaveProperty("workOrderNumber");
+      expect(ticket).not.toHaveProperty("status");
+      expect(ticket).not.toHaveProperty("customerRequest");
 
       const detail = await caller.externalTicket.detail({ ticketId: created.id });
-      expect(detail.visibleFields).toEqual([
-        "workOrderNumber",
-        "status",
-        "feedbackTime",
-        "priority",
-      ]);
+      expect(detail.visibleFields).toEqual(["feedbackTime", "priority"]);
     });
 
     it("excludes soft-deleted tickets", async () => {
@@ -319,20 +381,13 @@ describe("external ticket API (Testcontainers)", () => {
       expect(list.items.some((t) => t.id === result.id)).toBe(false);
     });
 
-    it("默认排除已完结；includeCompleted 或显式 status 筛选可查出", async () => {
+    it("默认包含已完结；显式状态筛选仍只返回所选状态", async () => {
       const caller = externalCaller1();
       const done = await caller.externalTicket.submit({ submissionText: "已完结的单" });
       await prisma.ticket.update({ where: { id: done.id }, data: { status: "completed" } });
 
       const defaultList = await caller.externalTicket.list({ offset: 0, limit: 100 });
-      expect(defaultList.items.some((t) => t.id === done.id)).toBe(false);
-
-      const withCompleted = await caller.externalTicket.list({
-        offset: 0,
-        limit: 100,
-        includeCompleted: true,
-      });
-      expect(withCompleted.items.some((t) => t.id === done.id)).toBe(true);
+      expect(defaultList.items.some((t) => t.id === done.id)).toBe(true);
 
       // 显式状态筛选优先于 includeCompleted 缺省
       const onlyCompleted = await caller.externalTicket.list({
@@ -342,6 +397,135 @@ describe("external ticket API (Testcontainers)", () => {
       });
       expect(onlyCompleted.items.some((t) => t.id === done.id)).toBe(true);
       expect(onlyCompleted.items.every((t) => t.status === "completed")).toBe(true);
+    });
+
+    it("按反馈时间范围含首尾筛选", async () => {
+      const caller = externalCaller1();
+      const start = await caller.externalTicket.submit({ submissionText: "范围起点" });
+      const middle = await caller.externalTicket.submit({ submissionText: "范围中间" });
+      const end = await caller.externalTicket.submit({ submissionText: "范围终点" });
+      const outside = await caller.externalTicket.submit({ submissionText: "范围之外" });
+      await Promise.all([
+        prisma.ticket.update({
+          where: { id: start.id },
+          data: { feedbackTime: new Date("2026-08-01T00:00:00.000Z") },
+        }),
+        prisma.ticket.update({
+          where: { id: middle.id },
+          data: { feedbackTime: new Date("2026-08-01T12:00:00.000Z") },
+        }),
+        prisma.ticket.update({
+          where: { id: end.id },
+          data: { feedbackTime: new Date("2026-08-01T23:59:59.999Z") },
+        }),
+        prisma.ticket.update({
+          where: { id: outside.id },
+          data: { feedbackTime: new Date("2026-08-02T00:00:00.000Z") },
+        }),
+      ]);
+
+      const list = await caller.externalTicket.list({
+        feedbackFrom: "2026-08-01T00:00:00.000Z",
+        feedbackTo: "2026-08-01T23:59:59.999Z",
+        offset: 0,
+        limit: 100,
+      });
+      const ids = new Set(list.items.map((item) => item.id));
+      expect(ids).toEqual(new Set([start.id, middle.id, end.id]));
+    });
+
+    it("只搜索详情组已授权字段，电话忽略空格与连字符", async () => {
+      const account = await prisma.user.create({
+        data: {
+          username: "ext-authorized-search",
+          name: "授权搜索账号",
+          passwordHash: "x",
+          roleId: externalRole.id,
+          active: true,
+          externalListFields: JSON.stringify(["feedbackTime", "customerName", "phone"]),
+          externalDetailFields: JSON.stringify(["customerName", "policyNumbers", "phone"]),
+        },
+      });
+      const caller = harness.callerFor(account, externalRole);
+      const hit = await caller.externalTicket.submit({ submissionText: "普通原文" });
+      await prisma.ticket.update({
+        where: { id: hit.id },
+        data: {
+          customerName: "王小明",
+          policyNumbers: ["POL-SEARCH-88"],
+          phone: "138-0013 8000",
+        },
+      });
+
+      expect(
+        (await caller.externalTicket.list({ search: "小明", offset: 0, limit: 100 })).items.map(
+          (item) => item.id,
+        ),
+      ).toContain(hit.id);
+      expect(
+        (
+          await caller.externalTicket.list({ search: "138 0013-8000", offset: 0, limit: 100 })
+        ).items.map((item) => item.id),
+      ).toContain(hit.id);
+
+      await prisma.ticket.update({
+        where: { id: hit.id },
+        data: { customerName: "绝密姓名" },
+      });
+      const unauthorized = await externalCaller1().externalTicket.list({
+        search: "绝密姓名",
+        offset: 0,
+        limit: 100,
+      });
+      expect(unauthorized.items).toHaveLength(0);
+
+      const hiddenSubmission = await caller.externalTicket.list({
+        search: "普通原文",
+        offset: 0,
+        limit: 100,
+      });
+      expect(hiddenSubmission.items).toHaveLength(0);
+      await prisma.user.update({
+        where: { id: account.id },
+        data: {
+          externalDetailFields: JSON.stringify([
+            "submissionText",
+            "customerName",
+            "policyNumbers",
+            "phone",
+          ]),
+        },
+      });
+      const authorizedSubmission = await caller.externalTicket.list({
+        search: "普通原文",
+        offset: 0,
+        limit: 100,
+      });
+      expect(authorizedSubmission.items.map((item) => item.id)).toContain(hit.id);
+    });
+
+    it("returns no matches when the detail group has no searchable text fields", async () => {
+      const account = await prisma.user.create({
+        data: {
+          username: "ext-no-searchable-fields",
+          name: "无文本搜索字段账号",
+          passwordHash: "x",
+          roleId: externalRole.id,
+          active: true,
+          externalListFields: JSON.stringify(["status"]),
+          externalDetailFields: JSON.stringify(["status", "feedbackTime"]),
+        },
+      });
+      const caller = harness.callerFor(account, externalRole);
+      await caller.externalTicket.submit({ submissionText: "不应被搜索命中" });
+
+      const result = await caller.externalTicket.list({
+        search: "不应被搜索命中",
+        offset: 0,
+        limit: 100,
+      });
+
+      expect(result.items).toEqual([]);
     });
 
     it("随列表返回最新可见跟进；internalOnly 再新也不可见", async () => {
@@ -386,7 +570,82 @@ describe("external ticket API (Testcontainers)", () => {
       expect(item?.latestLog).toMatchObject({ action: "comment", remark: "可见跟进" });
     });
 
-    it("客服新发言的工单置顶，其余按最新活跃倒序", async () => {
+    it("客服公开回复跨刷新保持未读，详情加载后已读，新回复再次触发", async () => {
+      const account = await prisma.user.create({
+        data: {
+          username: "ext-persistent-unread",
+          name: "持久未读账号",
+          passwordHash: "x",
+          roleId: externalRole.id,
+          active: true,
+        },
+      });
+      const caller = harness.callerFor(account, externalRole);
+      const ticket = await caller.externalTicket.submit({ submissionText: "等待客服回复" });
+      const firstReplyAt = new Date("2026-08-01T10:00:00.000Z");
+      await prisma.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          action: "comment",
+          internalOnly: false,
+          remark: "第一次公开回复",
+          operatorId: seeded.users.manager.id,
+          operatorName: seeded.users.manager.name,
+          at: firstReplyAt,
+        },
+      });
+
+      let item = (await caller.externalTicket.list({ offset: 0, limit: 20 })).items.find(
+        (row) => row.id === ticket.id,
+      );
+      expect(item?.hasUnreadReply).toBe(true);
+
+      await caller.externalTicket.detail({ ticketId: ticket.id });
+      expect(
+        await prisma.externalTicketReadState.findUnique({
+          where: { userId_ticketId: { userId: account.id, ticketId: ticket.id } },
+        }),
+      ).toMatchObject({ lastReadReplyAt: firstReplyAt });
+      item = (await caller.externalTicket.list({ offset: 0, limit: 20 })).items.find(
+        (row) => row.id === ticket.id,
+      );
+      expect(item?.hasUnreadReply).toBe(false);
+
+      await prisma.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          action: "status_change",
+          from: "assigned",
+          to: "processing",
+          remark: "",
+          operatorId: seeded.users.manager.id,
+          operatorName: seeded.users.manager.name,
+          at: new Date("2026-08-01T11:00:00.000Z"),
+        },
+      });
+      item = (await caller.externalTicket.list({ offset: 0, limit: 20 })).items.find(
+        (row) => row.id === ticket.id,
+      );
+      expect(item?.hasUnreadReply).toBe(false);
+
+      await prisma.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          action: "comment",
+          internalOnly: false,
+          remark: "第二次公开回复",
+          operatorId: seeded.users.manager.id,
+          operatorName: seeded.users.manager.name,
+          at: new Date("2026-08-01T12:00:00.000Z"),
+        },
+      });
+      item = (await caller.externalTicket.list({ offset: 0, limit: 20 })).items.find(
+        (row) => row.id === ticket.id,
+      );
+      expect(item?.hasUnreadReply).toBe(true);
+    });
+
+    it("默认按反馈时间倒序，客服新回复不改变行序", async () => {
       const account = await prisma.user.create({
         data: {
           username: "ext-inbox-order",
@@ -398,12 +657,25 @@ describe("external ticket API (Testcontainers)", () => {
       });
       const caller = harness.callerFor(account, externalRole);
 
-      // 提交顺序与最终序相反：旧 createdAt DESC 会给出 idle/noted/replied
       const replied = await caller.externalTicket.submit({ submissionText: "客服回复了" });
       const noted = await caller.externalTicket.submit({ submissionText: "我留言过" });
       const idle = await caller.externalTicket.submit({ submissionText: "无动静" });
 
-      // noted 活跃更新，但 replied 是客服新发言 → replied 置顶，noted 次之
+      await Promise.all([
+        prisma.ticket.update({
+          where: { id: replied.id },
+          data: { feedbackTime: new Date("2026-08-01T08:00:00.000Z") },
+        }),
+        prisma.ticket.update({
+          where: { id: noted.id },
+          data: { feedbackTime: new Date("2026-08-02T08:00:00.000Z") },
+        }),
+        prisma.ticket.update({
+          where: { id: idle.id },
+          data: { feedbackTime: new Date("2026-08-03T08:00:00.000Z") },
+        }),
+      ]);
+
       await prisma.processLog.create({
         data: {
           ticketId: replied.id,
@@ -428,9 +700,41 @@ describe("external ticket API (Testcontainers)", () => {
 
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
       const ids = list.items.map((t) => t.id);
-      expect(ids[0]).toBe(replied.id);
+      expect(ids[0]).toBe(idle.id);
       expect(ids[1]).toBe(noted.id);
-      expect(ids[2]).toBe(idle.id);
+      expect(ids[2]).toBe(replied.id);
+    });
+
+    it("sorts completion status by the catalog's display order", async () => {
+      const firstStatus = await prisma.completionStatus.create({
+        data: { id: "z-completion-first", name: "排序第一", displayOrder: 10 },
+      });
+      const secondStatus = await prisma.completionStatus.create({
+        data: { id: "a-completion-second", name: "排序第二", displayOrder: 20 },
+      });
+      const caller = externalCaller1();
+      const first = await caller.externalTicket.submit({ submissionText: "完结状态第一" });
+      const second = await caller.externalTicket.submit({ submissionText: "完结状态第二" });
+      await Promise.all([
+        prisma.ticket.update({
+          where: { id: first.id },
+          data: { status: "completed", completionStatusId: firstStatus.id },
+        }),
+        prisma.ticket.update({
+          where: { id: second.id },
+          data: { status: "completed", completionStatusId: secondStatus.id },
+        }),
+      ]);
+
+      const result = await caller.externalTicket.list({
+        sortBy: "completionStatus",
+        sortOrder: "asc",
+        offset: 0,
+        limit: 100,
+      });
+      const ids = result.items.map((item) => item.id);
+
+      expect(ids.indexOf(first.id)).toBeLessThan(ids.indexOf(second.id));
     });
   });
 
@@ -485,6 +789,16 @@ describe("external ticket API (Testcontainers)", () => {
           },
           {
             ticketId: ticket.id,
+            action: "status_change",
+            from: "assigned",
+            to: "processing",
+            operatorId: seeded.users.manager.id,
+            operatorName: seeded.users.manager.name,
+            remark: "",
+            at: new Date(),
+          },
+          {
+            ticketId: ticket.id,
             action: "external_note",
             remark: "外部留言",
             operatorId: externalUser1.id,
@@ -500,7 +814,10 @@ describe("external ticket API (Testcontainers)", () => {
       expect(actions).toContain("create");
       expect(actions).toContain("comment");
       expect(actions).toContain("external_note");
+      expect(actions).toContain("status_change");
       expect(actions).not.toContain("assign");
+      const times = detail.processLogs.map((log) => Date.parse(log.createdAt));
+      expect(times).toEqual([...times].sort((a, b) => b - a));
 
       const remarks = detail.processLogs.map((log) => log.remark).filter(Boolean);
       expect(remarks).toContain("可见跟进");

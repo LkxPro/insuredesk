@@ -1,5 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  DEFAULT_EXTERNAL_DETAIL_FIELDS,
+  DEFAULT_EXTERNAL_LIST_FIELDS,
   displayNameSchema,
   EXTERNAL_VISIBLE_FIELD_OPTIONS,
   externalAccountPrefillSchema,
@@ -8,7 +10,7 @@ import {
   TICKET_FIELDS,
   usernameSchema,
 } from "@insuredesk/shared";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp } from "lucide-react";
 import { useEffect } from "react";
 import { Controller, type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -49,7 +51,8 @@ const accountFormSchema = z.object({
   name: displayNameSchema,
   email: optionalEmailSchema,
   prefill: externalAccountPrefillSchema,
-  visibleTicketFields: z.array(z.string()),
+  listVisibleFields: z.array(z.string()),
+  detailVisibleFields: z.array(z.string()),
 });
 
 export type ExternalAccountFormValues = z.input<typeof accountFormSchema>;
@@ -76,6 +79,13 @@ function buildAccountFormSchema(mode: "create" | "update") {
 const FIELD_LABELS: Record<string, string> = Object.fromEntries(
   TICKET_FIELD_DESCRIPTORS.map((descriptor) => [descriptor.key, descriptor.label]),
 );
+Object.assign(FIELD_LABELS, {
+  workOrderNumber: "工单号",
+  submissionText: "工单原文",
+  status: "状态",
+  processingResult: "最新处理",
+  completionStatusId: "完结状态",
+});
 
 const EMPTY_PREFILL: NonNullable<ExternalAccountFormValues["prefill"]> = {
   channelId: "",
@@ -95,6 +105,122 @@ const PREFILL_TEXT_KEYS = [
   "complaintReceiveChannel",
 ] as const;
 
+type VisibleFieldFormName = "listVisibleFields" | "detailVisibleFields";
+
+function OrderedFieldSelector({
+  form,
+  name,
+  idPrefix,
+  label,
+  defaultFields,
+}: {
+  form: UseFormReturn<ExternalAccountFormValues>;
+  name: VisibleFieldFormName;
+  idPrefix: string;
+  label: string;
+  defaultFields: readonly string[];
+}) {
+  const selected = form.watch(name) ?? [];
+  const error = form.formState.errors[name];
+
+  return (
+    <Field data-invalid={!!error} role="group" aria-label={label}>
+      <FieldLabel>
+        {label}（{selected.length} 个已选）
+      </FieldLabel>
+      <Controller
+        control={form.control}
+        name={name}
+        render={({ field }) => {
+          const value = field.value ?? [];
+          const available = EXTERNAL_VISIBLE_FIELD_OPTIONS.filter((key) => !value.includes(key));
+          const move = (index: number, offset: -1 | 1) => {
+            const target = index + offset;
+            if (target < 0 || target >= value.length) return;
+            const next = [...value];
+            [next[index], next[target]] = [next[target] as string, next[index] as string];
+            field.onChange(next);
+          };
+          return (
+            <div className="flex max-h-64 flex-col gap-3 overflow-y-auto rounded-md border p-3">
+              {value.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {value.map((fieldKey, index) => (
+                    <div
+                      key={fieldKey}
+                      className="flex items-center gap-2 rounded-sm bg-muted/40 px-2 py-1"
+                    >
+                      <Checkbox
+                        id={`${idPrefix}-${name}-${fieldKey}`}
+                        checked
+                        onCheckedChange={() =>
+                          field.onChange(value.filter((key) => key !== fieldKey))
+                        }
+                      />
+                      <label
+                        htmlFor={`${idPrefix}-${name}-${fieldKey}`}
+                        className="min-w-0 flex-1 truncate text-sm hover:cursor-pointer"
+                      >
+                        {FIELD_LABELS[fieldKey] ?? fieldKey}
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        disabled={index === 0}
+                        aria-label={`上移${FIELD_LABELS[fieldKey] ?? fieldKey}`}
+                        onClick={() => move(index, -1)}
+                      >
+                        <ArrowUp />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        disabled={index === value.length - 1}
+                        aria-label={`下移${FIELD_LABELS[fieldKey] ?? fieldKey}`}
+                        onClick={() => move(index, 1)}
+                      >
+                        <ArrowDown />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {available.length > 0 && (
+                <div className="grid gap-2 border-t pt-3 sm:grid-cols-2">
+                  {available.map((fieldKey) => (
+                    <label
+                      key={fieldKey}
+                      htmlFor={`${idPrefix}-${name}-${fieldKey}`}
+                      className="flex items-center gap-2 text-sm hover:cursor-pointer"
+                    >
+                      <Checkbox
+                        id={`${idPrefix}-${name}-${fieldKey}`}
+                        checked={false}
+                        onCheckedChange={(checked) => {
+                          if (checked) field.onChange([...value, fieldKey]);
+                        }}
+                      />
+                      <span>{FIELD_LABELS[fieldKey] ?? fieldKey}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }}
+      />
+      {error && <FieldError>{error.message}</FieldError>}
+      <p className="text-xs text-muted-foreground">
+        全部不选时使用系统默认：{defaultFields.map((key) => FIELD_LABELS[key] ?? key).join("、")}
+      </p>
+    </Field>
+  );
+}
+
 /**
  * 6 预填 + 白名单, create/update 两个表单共用。渠道下拉只列启用项;
  * 当前引用的停用渠道随表单初值补进选项（保持原值可存, 不能新选其他停用项）。
@@ -110,9 +236,6 @@ function PrefillAndWhitelistFields({
   const currentChannelId = form.watch("prefill.channelId") ?? "";
   const options = channelsQuery.data ?? [];
   const currentMissing = currentChannelId !== "" && !options.some((c) => c.id === currentChannelId);
-
-  const selectedFields = form.watch("visibleTicketFields");
-  const selectedCount = selectedFields?.length ?? 0;
 
   const errors = form.formState.errors;
 
@@ -174,47 +297,27 @@ function PrefillAndWhitelistFields({
         ))}
       </div>
 
-      <Field data-invalid={!!errors.visibleTicketFields}>
-        <FieldLabel>可见字段（{selectedCount} 个已选）</FieldLabel>
-        <div className="max-h-48 overflow-y-auto rounded-md border p-3">
-          <Controller
-            control={form.control}
-            name="visibleTicketFields"
-            render={({ field }) => {
-              const value = field.value ?? [];
-              return (
-                <div className="grid gap-2">
-                  {EXTERNAL_VISIBLE_FIELD_OPTIONS.map((fieldKey) => (
-                    <label
-                      key={fieldKey}
-                      htmlFor={`${idPrefix}-field-${fieldKey}`}
-                      className="flex items-center gap-2 text-sm hover:cursor-pointer"
-                    >
-                      <Checkbox
-                        id={`${idPrefix}-field-${fieldKey}`}
-                        checked={value.includes(fieldKey)}
-                        onCheckedChange={(checked) => {
-                          const newValue = checked
-                            ? [...value, fieldKey]
-                            : value.filter((f) => f !== fieldKey);
-                          field.onChange(newValue);
-                        }}
-                      />
-                      <span>{FIELD_LABELS[fieldKey] ?? fieldKey}</span>
-                    </label>
-                  ))}
-                </div>
-              );
-            }}
-          />
-        </div>
-        {errors.visibleTicketFields && (
-          <FieldError>{errors.visibleTicketFields.message}</FieldError>
-        )}
+      <Separator />
+      <div className="flex flex-col gap-1">
+        <h3 className="text-sm font-medium">字段权限与默认顺序</h3>
         <p className="text-xs text-muted-foreground">
-          留空使用系统默认（工单号、反馈时间、状态、完结状态、处理结果）
+          两组独立配置；姓名、保单号和客户电话的勾选同时代表向该账号授权完整值。
         </p>
-      </Field>
+      </div>
+      <OrderedFieldSelector
+        form={form}
+        name="listVisibleFields"
+        idPrefix={idPrefix}
+        label="一级列表字段"
+        defaultFields={DEFAULT_EXTERNAL_LIST_FIELDS}
+      />
+      <OrderedFieldSelector
+        form={form}
+        name="detailVisibleFields"
+        idPrefix={idPrefix}
+        label="详情／搜索／导出字段"
+        defaultFields={DEFAULT_EXTERNAL_DETAIL_FIELDS}
+      />
     </>
   );
 }
@@ -255,7 +358,8 @@ function CreateDialog({
       name: "",
       email: "",
       prefill: EMPTY_PREFILL,
-      visibleTicketFields: [],
+      listVisibleFields: [],
+      detailVisibleFields: [],
     },
   });
 
@@ -267,7 +371,8 @@ function CreateDialog({
         name: "",
         email: "",
         prefill: EMPTY_PREFILL,
-        visibleTicketFields: [],
+        listVisibleFields: [],
+        detailVisibleFields: [],
       });
     }
   }, [open, form]);
@@ -363,7 +468,8 @@ function UpdateDialog({
       name: "",
       email: "",
       prefill: EMPTY_PREFILL,
-      visibleTicketFields: [],
+      listVisibleFields: [],
+      detailVisibleFields: [],
     },
   });
 
@@ -383,7 +489,8 @@ function UpdateDialog({
           complaintReceiveChannel: account.prefill.complaintReceiveChannel ?? "",
         },
         // null = 系统默认；表单里以空勾选表达，保存空数组时服务端归一回 null
-        visibleTicketFields: account.visibleTicketFields ?? [],
+        listVisibleFields: account.listVisibleFields ?? [],
+        detailVisibleFields: account.detailVisibleFields ?? [],
       });
     }
   }, [account, form]);

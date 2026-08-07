@@ -27,7 +27,7 @@ export function ExternalNoteCard({ ticketId }: { ticketId: string }) {
     onSuccess: () => {
       toast.success("留言已提交");
       setContent("");
-      // 列表也要作废：徽标/置顶位派生自最新可见记录，留言后球转给客服
+      // 列表也要作废：最新活动时间和摘要可能随留言变化。
       utils.externalTicket.detail.invalidate();
       utils.externalTicket.list.invalidate();
     },

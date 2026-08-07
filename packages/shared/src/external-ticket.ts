@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ticketStatusSchema } from "./enums";
+import { ticketExportFormatSchema } from "./ticket";
 
 /**
  * 外部工单提交输入：外部用户提交工单原文的唯一必填字段。
@@ -15,19 +16,61 @@ export const externalTicketSubmitInputSchema = z.object({
 export type ExternalTicketSubmitInput = z.infer<typeof externalTicketSubmitInputSchema>;
 
 /**
- * 外部工单列表输入：支持按状态筛选、搜索、分页。已完结默认不进列表
- * （收件箱只放在途），includeCompleted 或显式 status 筛选可查出——
- * 显式 status 优先于 includeCompleted 缺省。
+ * 外部工单列表输入：支持按状态、完结状态、反馈时间范围、授权字段搜索、
+ * 排序和分页。默认覆盖全部状态与全部反馈时间，按反馈时间倒序。
  */
+export const EXTERNAL_TICKET_SORT_FIELDS = [
+  "feedbackTime",
+  "status",
+  "completionStatus",
+  "latestActivityAt",
+] as const;
+export const externalTicketSortFieldSchema = z.enum(EXTERNAL_TICKET_SORT_FIELDS);
+export type ExternalTicketSortField = (typeof EXTERNAL_TICKET_SORT_FIELDS)[number];
+
+const optionalDateTime = z
+  .string()
+  .datetime({ offset: true, message: "反馈时间格式不正确" })
+  .optional();
+
 export const externalTicketListInputSchema = z.object({
   status: z.array(ticketStatusSchema).optional(),
   search: z.string().trim().optional(),
-  includeCompleted: z.boolean().default(false),
+  completionStatusId: z.array(z.string().min(1)).optional(),
+  feedbackFrom: optionalDateTime,
+  feedbackTo: optionalDateTime,
+  sortBy: externalTicketSortFieldSchema.default("feedbackTime"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  /** Legacy compatibility; false remains an explicit exclude-completed filter. */
+  includeCompleted: z.boolean().default(true),
   offset: z.number().int().min(0).default(0),
   limit: z.number().int().min(1).max(100).default(20),
 });
 
 export type ExternalTicketListInput = z.infer<typeof externalTicketListInputSchema>;
+
+export const externalTicketUpdatePreferencesInputSchema = z.object({
+  surface: z.enum(["list", "export"]),
+  fields: z.array(z.string().min(1)).max(100),
+});
+
+export type ExternalTicketUpdatePreferencesInput = z.infer<
+  typeof externalTicketUpdatePreferencesInputSchema
+>;
+
+export const externalTicketExportInputSchema = externalTicketListInputSchema
+  .omit({ offset: true, limit: true })
+  .extend({
+    format: ticketExportFormatSchema,
+    timeZone: z
+      .string()
+      .trim()
+      .max(64)
+      .transform((value) => (value ? value : undefined))
+      .optional(),
+  });
+
+export type ExternalTicketExportQuery = z.output<typeof externalTicketExportInputSchema>;
 
 /**
  * 外部工单详情输入：仅需工单 ID。

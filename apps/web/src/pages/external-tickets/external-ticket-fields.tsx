@@ -1,10 +1,5 @@
 import type { AppRouter } from "@insuredesk/api";
-import {
-  PRIORITY_LABELS,
-  TICKET_FIELD_DESCRIPTORS,
-  TICKET_FIELDS,
-  type TicketFieldOverrides,
-} from "@insuredesk/shared";
+import { PRIORITY_LABELS, TICKET_FIELDS, type TicketFieldOverrides } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { ReactNode } from "react";
 import { formatDateTime } from "@/lib/datetime";
@@ -22,21 +17,15 @@ export type ExternalTicket = inferRouterOutputs<AppRouter>["externalTicket"]["de
 /** 白名单里不属于建单字段的系统字段标签。 */
 const SYSTEM_FIELD_LABELS: Record<string, string> = {
   workOrderNumber: "工单号",
+  submissionText: "工单原文",
   status: "状态",
-  processingResult: "最新跟进",
+  processingResult: "最新处理",
 };
 
 /**
  * 详情页字段顺序：TICKET_FIELDS 声明顺序，系统字段按其语义就位——工单号与
  * 状态是工单的身份与当前进展，排在业务字段之前；最新跟进是处理结果，收尾。
  */
-export const EXTERNAL_DETAIL_FIELD_ORDER: readonly string[] = [
-  "workOrderNumber",
-  "status",
-  ...TICKET_FIELD_DESCRIPTORS.map((descriptor) => descriptor.key),
-  "processingResult",
-];
-
 function overridesOf(key: string): TicketFieldOverrides | undefined {
   const descriptor = TICKET_FIELDS[key as keyof typeof TICKET_FIELDS];
   return descriptor && "overrides" in descriptor ? descriptor.overrides : undefined;
@@ -60,6 +49,8 @@ export function externalFieldValue(ticket: ExternalTicket, key: string): ReactNo
   switch (key) {
     case "workOrderNumber":
       return ticket.workOrderNumber;
+    case "submissionText":
+      return ticket.submissionText;
     case "status":
       return <StatusBadge status={ticket.status} />;
     case "feedbackTime":
@@ -85,10 +76,16 @@ export function externalFieldValue(ticket: ExternalTicket, key: string): ReactNo
       return ticket.brokerageEntity;
     case "paymentChannel":
       return ticket.paymentChannel;
+    case "policyNumbers":
+      return ticket.policyNumbers?.join(" ") || null;
     case "userComplaintChannel":
       return ticket.userComplaintChannel;
     case "complaintReceiveChannel":
       return ticket.complaintReceiveChannel;
+    case "customerName":
+      return ticket.customerName;
+    case "phone":
+      return ticket.phone;
     case "nuclearBodyStatus":
       return ticket.nuclearBodyStatus;
     case "customerRequest":

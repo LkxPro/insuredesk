@@ -26,12 +26,15 @@ export function TicketTimelineColumn({
   logs,
   composer,
   dotClassName = () => "border-primary",
+  itemClassName = () => "",
 }: {
   logs: readonly TimelineLog[];
   /** 钉底的输入区；undefined = 本单不接受新记录（如已完结）。 */
   composer?: ReactNode;
   /** 圆点按 action 着色；默认全 primary（内部不区分发出方）。 */
   dotClassName?: (action: ProcessLogAction) => string;
+  /** 可选的条目内容背景，用于区分外部留言、完结等安全事件。 */
+  itemClassName?: (action: ProcessLogAction) => string;
 }) {
   return (
     <div className="flex flex-col xl:min-h-0">
@@ -55,7 +58,12 @@ export function TicketTimelineColumn({
                     dotClassName(log.action),
                   )}
                 />
-                <div className="flex min-w-0 flex-col gap-0.5">
+                <div
+                  className={cn(
+                    "flex min-w-0 flex-1 flex-col gap-0.5 rounded-md",
+                    itemClassName(log.action),
+                  )}
+                >
                   <div className="flex flex-wrap items-center gap-x-2 text-sm">
                     <span className="font-medium">{PROCESS_LOG_ACTION_LABELS[log.action]}</span>
                     {log.operatorName && (
