@@ -52,8 +52,6 @@ model User {
   prefillUserComplaintChannel String?
   /// 预填：投诉信息接收渠道
   prefillComplaintReceiveChannel String?
-  /// 外部可见字段白名单 (JSON 编码字符串数组); null = 系统默认
-  visibleTicketFields String?
 
   prefillChannel Channel? @relation(fields: [prefillChannelId], references: [id], onDelete: Restrict)
 

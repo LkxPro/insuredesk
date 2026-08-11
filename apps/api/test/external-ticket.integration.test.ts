@@ -46,16 +46,10 @@ describe("external ticket API (Testcontainers)", () => {
         prefillPaymentChannel: "连连",
         prefillUserComplaintChannel: "400热线",
         prefillComplaintReceiveChannel: "客服群",
-        visibleTicketFields: JSON.stringify([
-          "workOrderNumber",
-          "feedbackTime",
-          "status",
-          "processingResult",
-        ]),
       },
     });
 
-    // 账号2: 无预填，白名单 null（白名单配置不再生效）
+    // 账号2: 无预填
     externalUser2 = await prisma.user.create({
       data: {
         username: "external2",
@@ -289,7 +283,6 @@ describe("external ticket API (Testcontainers)", () => {
           passwordHash: "x",
           roleId: externalRole.id,
           active: true,
-          visibleTicketFields: JSON.stringify(["feedbackTime", "priority"]),
         },
       });
       const caller = harness.callerFor(account, externalRole);

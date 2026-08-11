@@ -13,8 +13,7 @@ import {
  * external_account.manage 单点执法。账号不选角色：唯一外部角色由服务端挂载。
  *
  * 预填域 = 6 身份类字段，全部选填（空 = 客服后补）：提交时服务端静默快照进
- * 工单字段，对提交输入隐形。文本上限抄对应工单字段。白名单选填：
- * null/空数组 = 系统默认清单。
+ * 工单字段，对提交输入隐形。文本上限抄对应工单字段。
  */
 
 /** 预填文本字段：trim、上限抄工单字段、空串归一为 null（= 未配置）。 */
@@ -50,22 +49,18 @@ export const externalAccountPrefillSchema = z.object({
 export type ExternalAccountPrefillInput = z.input<typeof externalAccountPrefillSchema>;
 export type ExternalAccountPrefill = z.output<typeof externalAccountPrefillSchema>;
 
-/** 白名单输入：undefined = 不碰（仅更新时），null/空数组 = 归一系统默认。 */
-const visibleTicketFieldsInputSchema = z.array(z.string()).optional().nullable();
-
 export const externalAccountCreateInputSchema = z.object({
   username: usernameSchema,
   password: passwordSchema,
   name: displayNameSchema,
   email: optionalEmailSchema,
   prefill: externalAccountPrefillSchema.optional(),
-  visibleTicketFields: visibleTicketFieldsInputSchema,
 });
 export type ExternalAccountCreateInput = z.input<typeof externalAccountCreateInputSchema>;
 export type ExternalAccountCreateData = z.output<typeof externalAccountCreateInputSchema>;
 
 /**
- * 编辑外部账号：基本信息 + 预填 + 白名单整体替换 + 可选改密。
+ * 编辑外部账号：基本信息 + 预填 + 可选改密。
  * prefill 缺省 = 不动；给出即整块替换（表单每次提交全量）。
  */
 export const externalAccountUpdateInputSchema = z.object({
@@ -75,7 +70,6 @@ export const externalAccountUpdateInputSchema = z.object({
   email: optionalEmailSchema,
   password: optionalPasswordResetSchema,
   prefill: externalAccountPrefillSchema.optional(),
-  visibleTicketFields: visibleTicketFieldsInputSchema,
 });
 export type ExternalAccountUpdateInput = z.input<typeof externalAccountUpdateInputSchema>;
 export type ExternalAccountUpdateData = z.output<typeof externalAccountUpdateInputSchema>;
@@ -96,8 +90,6 @@ export interface ExternalAccountListItem {
   active: boolean;
   createdAt: string;
   prefill: ExternalAccountPrefill & { channelName: string | null };
-  /** 自定义可见字段白名单；null = 系统默认。 */
-  visibleTicketFields: string[] | null;
   /** 该账号提交的工单数（含软删）。 */
   ticketCount: number;
 }

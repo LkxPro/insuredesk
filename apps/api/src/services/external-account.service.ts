@@ -6,10 +6,7 @@ import type {
 } from "@insuredesk/shared";
 import {
   EXTERNAL_ROLE_PERMISSIONS,
-  EXTERNAL_VISIBLE_FIELD_OPTIONS,
   isExternalRole,
-  parseVisibleTicketFields,
-  SENSITIVE_TICKET_FIELDS,
 } from "@insuredesk/shared";
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
@@ -63,29 +60,6 @@ export class PrefillChannelNotFoundError extends Error {
     super("所选反馈渠道不存在");
     this.name = "PrefillChannelNotFoundError";
   }
-}
-
-function validateVisibleFields(fields: string[] | undefined | null): void {
-  if (!fields || fields.length === 0) {
-    return;
-  }
-
-  const allowedSet = new Set(EXTERNAL_VISIBLE_FIELD_OPTIONS);
-  const sensitiveSet = new Set(SENSITIVE_TICKET_FIELDS);
-
-  for (const field of fields) {
-    if (sensitiveSet.has(field)) {
-      throw new InvalidVisibleFieldError(`字段 ${field} 为敏感字段，不允许外部可见`);
-    }
-    if (!allowedSet.has(field)) {
-      throw new InvalidVisibleFieldError(`字段 ${field} 不在允许的可见字段清单中`);
-    }
-  }
-}
-
-/** null/空数组都归一为 null（= 系统默认白名单）。 */
-function serializeVisibleFields(fields: string[] | null | undefined): string | null {
-  return fields && fields.length > 0 ? JSON.stringify(fields) : null;
 }
 
 function isUniqueViolationOn(error: unknown, field: string): boolean {
@@ -186,7 +160,6 @@ function toListItem(row: AccountListRow): ExternalAccountListItem {
       userComplaintChannel: row.prefillUserComplaintChannel,
       complaintReceiveChannel: row.prefillComplaintReceiveChannel,
     },
-    visibleTicketFields: parseVisibleTicketFields(row.visibleTicketFields),
     ticketCount: row._count.createdTickets,
   };
 }
@@ -209,7 +182,6 @@ export async function createExternalAccount(
   input: ExternalAccountCreateData,
 ) {
   const { prisma } = deps;
-  validateVisibleFields(input.visibleTicketFields);
   await resolvePrefillChannel(prisma, input.prefill?.channelId ?? null);
   const role = await loadSoleExternalRole(prisma);
 
@@ -230,7 +202,6 @@ export async function createExternalAccount(
         prefillPaymentChannel: input.prefill?.paymentChannel ?? null,
         prefillUserComplaintChannel: input.prefill?.userComplaintChannel ?? null,
         prefillComplaintReceiveChannel: input.prefill?.complaintReceiveChannel ?? null,
-        visibleTicketFields: serializeVisibleFields(input.visibleTicketFields),
       },
       select: { id: true, name: true },
     });
@@ -241,7 +212,7 @@ export async function createExternalAccount(
 }
 
 /**
- * Edit a 外部账号: basic info + 预填/白名单整体替换 + optional password reset
+ * Edit a 外部账号: basic info + 预填 + optional password reset
  * (kills the target's sessions in the same transaction, same as updateUser).
  */
 export async function updateExternalAccount(
@@ -250,7 +221,6 @@ export async function updateExternalAccount(
 ) {
   const { prisma } = deps;
   await loadExternalAccount(prisma, input.id);
-  validateVisibleFields(input.visibleTicketFields);
   if (input.prefill !== undefined) {
     await resolvePrefillChannel(prisma, input.prefill.channelId);
   }
@@ -270,9 +240,6 @@ export async function updateExternalAccount(
     data.prefillPaymentChannel = input.prefill.paymentChannel;
     data.prefillUserComplaintChannel = input.prefill.userComplaintChannel;
     data.prefillComplaintReceiveChannel = input.prefill.complaintReceiveChannel;
-  }
-  if (input.visibleTicketFields !== undefined) {
-    data.visibleTicketFields = serializeVisibleFields(input.visibleTicketFields);
   }
 
   return prisma.$transaction(async (tx) => {

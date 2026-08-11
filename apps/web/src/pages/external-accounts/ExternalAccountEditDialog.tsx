@@ -1,10 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   displayNameSchema,
-  EXTERNAL_VISIBLE_FIELD_OPTIONS,
   externalAccountPrefillSchema,
   optionalEmailSchema,
-  TICKET_FIELD_DESCRIPTORS,
   TICKET_FIELDS,
   usernameSchema,
 } from "@insuredesk/shared";
@@ -49,7 +47,6 @@ const accountFormSchema = z.object({
   name: displayNameSchema,
   email: optionalEmailSchema,
   prefill: externalAccountPrefillSchema,
-  visibleTicketFields: z.array(z.string()),
 });
 
 export type ExternalAccountFormValues = z.input<typeof accountFormSchema>;
@@ -72,11 +69,6 @@ function buildAccountFormSchema(mode: "create" | "update") {
   });
 }
 
-/** 白名单候选项的取词：候选域由建单字段推导，label 也从同一张声明表取。 */
-const FIELD_LABELS: Record<string, string> = Object.fromEntries(
-  TICKET_FIELD_DESCRIPTORS.map((descriptor) => [descriptor.key, descriptor.label]),
-);
-
 const EMPTY_PREFILL: NonNullable<ExternalAccountFormValues["prefill"]> = {
   channelId: "",
   project: "",
@@ -96,10 +88,10 @@ const PREFILL_TEXT_KEYS = [
 ] as const;
 
 /**
- * 6 预填 + 白名单, create/update 两个表单共用。渠道下拉只列启用项;
+ * 6 预填字段，create/update 两个表单共用。渠道下拉只列启用项;
  * 当前引用的停用渠道随表单初值补进选项（保持原值可存, 不能新选其他停用项）。
  */
-function PrefillAndWhitelistFields({
+function PrefillFields({
   form,
   idPrefix,
 }: {
@@ -110,9 +102,6 @@ function PrefillAndWhitelistFields({
   const currentChannelId = form.watch("prefill.channelId") ?? "";
   const options = channelsQuery.data ?? [];
   const currentMissing = currentChannelId !== "" && !options.some((c) => c.id === currentChannelId);
-
-  const selectedFields = form.watch("visibleTicketFields");
-  const selectedCount = selectedFields?.length ?? 0;
 
   const errors = form.formState.errors;
 
@@ -173,48 +162,6 @@ function PrefillAndWhitelistFields({
           </Field>
         ))}
       </div>
-
-      <Field data-invalid={!!errors.visibleTicketFields}>
-        <FieldLabel>可见字段（{selectedCount} 个已选）</FieldLabel>
-        <div className="max-h-48 overflow-y-auto rounded-md border p-3">
-          <Controller
-            control={form.control}
-            name="visibleTicketFields"
-            render={({ field }) => {
-              const value = field.value ?? [];
-              return (
-                <div className="grid gap-2">
-                  {EXTERNAL_VISIBLE_FIELD_OPTIONS.map((fieldKey) => (
-                    <label
-                      key={fieldKey}
-                      htmlFor={`${idPrefix}-field-${fieldKey}`}
-                      className="flex items-center gap-2 text-sm hover:cursor-pointer"
-                    >
-                      <Checkbox
-                        id={`${idPrefix}-field-${fieldKey}`}
-                        checked={value.includes(fieldKey)}
-                        onCheckedChange={(checked) => {
-                          const newValue = checked
-                            ? [...value, fieldKey]
-                            : value.filter((f) => f !== fieldKey);
-                          field.onChange(newValue);
-                        }}
-                      />
-                      <span>{FIELD_LABELS[fieldKey] ?? fieldKey}</span>
-                    </label>
-                  ))}
-                </div>
-              );
-            }}
-          />
-        </div>
-        {errors.visibleTicketFields && (
-          <FieldError>{errors.visibleTicketFields.message}</FieldError>
-        )}
-        <p className="text-xs text-muted-foreground">
-          留空使用系统默认（工单号、反馈时间、状态、完结状态、处理结果）
-        </p>
-      </Field>
     </>
   );
 }
@@ -255,7 +202,6 @@ function CreateDialog({
       name: "",
       email: "",
       prefill: EMPTY_PREFILL,
-      visibleTicketFields: [],
     },
   });
 
@@ -267,7 +213,6 @@ function CreateDialog({
         name: "",
         email: "",
         prefill: EMPTY_PREFILL,
-        visibleTicketFields: [],
       });
     }
   }, [open, form]);
@@ -319,7 +264,7 @@ function CreateDialog({
             </Field>
           </div>
 
-          <PrefillAndWhitelistFields form={form} idPrefix="account-create" />
+          <PrefillFields form={form} idPrefix="account-create" />
 
           {create.error && (
             <Alert variant="destructive">
@@ -363,7 +308,6 @@ function UpdateDialog({
       name: "",
       email: "",
       prefill: EMPTY_PREFILL,
-      visibleTicketFields: [],
     },
   });
 
@@ -382,8 +326,6 @@ function UpdateDialog({
           userComplaintChannel: account.prefill.userComplaintChannel ?? "",
           complaintReceiveChannel: account.prefill.complaintReceiveChannel ?? "",
         },
-        // null = 系统默认；表单里以空勾选表达，保存空数组时服务端归一回 null
-        visibleTicketFields: account.visibleTicketFields ?? [],
       });
     }
   }, [account, form]);
@@ -448,7 +390,7 @@ function UpdateDialog({
             {errors.password && <FieldError>{errors.password.message}</FieldError>}
           </Field>
 
-          <PrefillAndWhitelistFields form={form} idPrefix="account-edit" />
+          <PrefillFields form={form} idPrefix="account-edit" />
 
           {update.error && (
             <Alert variant="destructive">

@@ -1,5 +1,4 @@
 import type { AppRouter } from "@insuredesk/api";
-import { DEFAULT_EXTERNAL_VISIBLE_FIELDS } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
 import { AlertCircle, Plus, UserRound } from "lucide-react";
 import { useState } from "react";
@@ -23,10 +22,6 @@ import { ExternalAccountDisableDialog } from "./ExternalAccountDisableDialog";
 import { ExternalAccountEditDialog } from "./ExternalAccountEditDialog";
 
 export type ExternalAccountRow = inferRouterOutputs<AppRouter>["externalAccount"]["list"][number];
-
-export function visibleFieldCount(visibleTicketFields: string[] | null): number {
-  return visibleTicketFields?.length ?? DEFAULT_EXTERNAL_VISIBLE_FIELDS.length;
-}
 
 /** 预填概览：已配置值按序拼接；空 = 未配置。 */
 export function prefillSummary(prefill: ExternalAccountRow["prefill"]): string {
@@ -73,7 +68,7 @@ export function ExternalAccountManagePage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">外部账号管理</h1>
           <p className="text-sm text-muted-foreground">
-            创建、编辑、启停外部账号，为每个账号配置提交预填与可见字段白名单。
+            创建、编辑、启停外部账号，为每个账号配置提交预填。
           </p>
         </div>
         {canManage && (
@@ -98,7 +93,6 @@ export function ExternalAccountManagePage() {
                 <TableHead>姓名</TableHead>
                 <TableHead>用户名</TableHead>
                 <TableHead>预填</TableHead>
-                <TableHead>可见字段数</TableHead>
                 <TableHead>提交工单数</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -108,7 +102,7 @@ export function ExternalAccountManagePage() {
               {listQuery.isLoading &&
                 [1, 2, 3].map((row) => (
                   <TableRow key={row}>
-                    {[1, 2, 3, 4, 5, 6, 7].map((cell) => (
+                    {[1, 2, 3, 4, 5, 6].map((cell) => (
                       <TableCell key={cell}>
                         <Skeleton className="h-5 w-full max-w-24" />
                       </TableCell>
@@ -117,7 +111,7 @@ export function ExternalAccountManagePage() {
                 ))}
               {!listQuery.isLoading && accounts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                     暂无外部账号
                   </TableCell>
                 </TableRow>
@@ -138,9 +132,6 @@ export function ExternalAccountManagePage() {
                       title={summary || undefined}
                     >
                       {summary || "—"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {visibleFieldCount(account.visibleTicketFields)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{account.ticketCount}</TableCell>
                     <TableCell>

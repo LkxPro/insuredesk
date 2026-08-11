@@ -38,7 +38,6 @@ function accountRow(overrides: Record<string, unknown> = {}) {
       userComplaintChannel: null,
       complaintReceiveChannel: null,
     },
-    visibleTicketFields: ["feedbackTime", "project"],
     ticketCount: 3,
     ...overrides,
   };
@@ -65,19 +64,18 @@ function renderPage(overrides: Record<string, unknown> = {}) {
 }
 
 describe("账号列表", () => {
-  it("renders name, prefill summary, whitelist count, ticket count and status", async () => {
+  it("renders name, prefill summary, ticket count and status", async () => {
     renderPage();
 
     const row = (await screen.findByText("甲合作方")).closest("tr") as HTMLElement;
     expect(within(row).getByText("partner1")).toBeInTheDocument();
     // 预填概览:已配置值按序拼接(渠道名 + 项目)
     expect(within(row).getByText("保司 · 融盛")).toBeInTheDocument();
-    expect(within(row).getByText("2")).toBeInTheDocument();
     expect(within(row).getByText("3")).toBeInTheDocument();
     expect(within(row).getByText("启用")).toBeInTheDocument();
   });
 
-  it("shows — for an account without prefill, and the default whitelist count", async () => {
+  it("shows — for an account without prefill", async () => {
     renderPage({
       "externalAccount.list": [
         accountRow({
@@ -90,20 +88,17 @@ describe("账号列表", () => {
             userComplaintChannel: null,
             complaintReceiveChannel: null,
           },
-          visibleTicketFields: null,
         }),
       ],
     });
 
     const row = (await screen.findByText("甲合作方")).closest("tr") as HTMLElement;
     expect(within(row).getByText("—")).toBeInTheDocument();
-    // null 白名单 = 系统默认 5 项
-    expect(within(row).getByText("5")).toBeInTheDocument();
   });
 });
 
 describe("新建账号", () => {
-  it("submits basic info plus prefill and whitelist through externalAccount.create", async () => {
+  it("submits basic info plus prefill through externalAccount.create", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "新建账号" }));
 
@@ -121,7 +116,6 @@ describe("新建账号", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "项目（保司）" }), {
       target: { value: "泰康" },
     });
-    fireEvent.click(screen.getByRole("checkbox", { name: "客户诉求" }));
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
     await waitFor(() =>
@@ -130,7 +124,6 @@ describe("新建账号", () => {
         password: "secret-123",
         name: "乙合作方",
         prefill: { channelId: "ch-jianguan", project: "泰康" },
-        visibleTicketFields: ["customerRequest"],
       }),
     );
     expect(toastSpies.success).toHaveBeenCalledWith("已创建账号 新账号");
@@ -151,15 +144,13 @@ describe("新建账号", () => {
 });
 
 describe("编辑账号", () => {
-  it("pre-populates prefill and whitelist, submits the replacement block", async () => {
+  it("pre-populates prefill, submits the replacement block", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
 
     await screen.findByRole("heading", { name: "编辑外部账号" });
     expect(screen.getByRole("textbox", { name: "姓名" })).toHaveValue("甲合作方");
     expect(screen.getByRole("textbox", { name: "项目（保司）" })).toHaveValue("融盛");
-    expect(screen.getByRole("checkbox", { name: "客户诉求" })).not.toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "反馈时间" })).toBeChecked();
 
     fireEvent.change(screen.getByRole("textbox", { name: "经纪主体" }), {
       target: { value: "凯森" },
@@ -170,7 +161,6 @@ describe("编辑账号", () => {
       expect(callsTo("externalAccount.update")[0]?.input).toMatchObject({
         id: "acc-1",
         prefill: { channelId: "ch-baosi", project: "融盛", brokerageEntity: "凯森" },
-        visibleTicketFields: ["feedbackTime", "project"],
       }),
     );
   });
