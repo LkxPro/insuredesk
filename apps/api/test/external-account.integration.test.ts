@@ -278,9 +278,7 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
       });
 
       // 空块 → 归一 null(未配置)
-      await manager().externalAccount.update(
-        updateArgs(created.id, { prefill: {} }),
-      );
+      await manager().externalAccount.update(updateArgs(created.id, { prefill: {} }));
       row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
       expect(row).toMatchObject({ prefillChannelId: null, prefillProject: null });
     });

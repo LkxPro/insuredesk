@@ -4,10 +4,7 @@ import type {
   ExternalAccountSetActiveInput,
   ExternalAccountUpdateData,
 } from "@insuredesk/shared";
-import {
-  EXTERNAL_ROLE_PERMISSIONS,
-  isExternalRole,
-} from "@insuredesk/shared";
+import { EXTERNAL_ROLE_PERMISSIONS, isExternalRole } from "@insuredesk/shared";
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { hashPassword } from "./auth.service";
