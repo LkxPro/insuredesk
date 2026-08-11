@@ -48,14 +48,13 @@ export function MultiSelectFilter({
         <ul className="max-h-64 overflow-y-auto">
           {options.map((option) => (
             <li key={option.value}>
-              <div className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent">
+              <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent">
                 <Checkbox
                   checked={values.includes(option.value)}
                   onCheckedChange={() => toggle(option.value)}
-                  aria-label={option.label}
                 />
                 <span className="min-w-0 truncate">{option.label}</span>
-              </div>
+              </label>
             </li>
           ))}
         </ul>
