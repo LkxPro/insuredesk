@@ -283,3 +283,89 @@ describe("↑/↓ 翻单", () => {
     expect(detailIds()).toEqual(["t1", "t2", "t1"]);
   });
 });
+
+describe("跨页翻单 (issue #186)", () => {
+  // PAGE_SIZE=20：total=21 造两页，页 1 给 t1/t2，页 2 只有 t3
+  function renderPagedAt(path: string) {
+    return renderApp({
+      path,
+      role: TEST_ROLES.EXTERNAL,
+      isExternal: true,
+      trpc: {
+        "externalTicket.list": (input: { offset?: number }) => ({
+          items:
+            (input.offset ?? 0) === 0
+              ? [
+                  { ...ticket(), latestLog: null },
+                  { ...ticket({ id: "t2", workOrderNumber: "WO100002" }), latestLog: null },
+                ]
+              : [{ ...ticket({ id: "t3", workOrderNumber: "WO100003" }), latestLog: null }],
+          total: 21,
+        }),
+        "externalTicket.detail": (input: { ticketId: string }) =>
+          detailPayload({
+            ticket: { id: input.ticketId, workOrderNumber: `WO10000${input.ticketId.slice(1)}` },
+          }),
+      },
+    });
+  }
+
+  it("页 1 末行 ↓ 翻到页 2 选中第一条；页码同步进 URL（分页器停在第 2 页）", async () => {
+    renderPagedAt("/external-tickets/t2");
+    const pane = await findPaneShowing("WO100002");
+
+    fireEvent.keyDown(pane, { key: "ArrowDown" });
+
+    await findPaneShowing("WO100003");
+    const offsets = callsTo("externalTicket.list").map(
+      (call) => (call.input as { offset?: number }).offset ?? 0,
+    );
+    expect(offsets).toContain(20);
+    expect(screen.getByText(/第 2 \/ 2 页/)).toBeInTheDocument();
+  });
+
+  it("页 2 首行 ↑ 翻回页 1 选中最后一条", async () => {
+    renderPagedAt("/external-tickets/t3?page=2");
+    const pane = await findPaneShowing("WO100003");
+
+    fireEvent.keyDown(pane, { key: "ArrowUp" });
+
+    await findPaneShowing("WO100002");
+  });
+
+  it("深链单不在当前页切片：方向键与按钮都死停，不翻页", async () => {
+    renderPagedAt("/external-tickets/t3");
+    const pane = await findPaneShowing("WO100003");
+
+    fireEvent.keyDown(pane, { key: "ArrowDown" });
+
+    expect(screen.getByRole("region", { name: "工单详情" })).toHaveTextContent("WO100003");
+    expect(screen.getByRole("button", { name: "下一条工单" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "上一条工单" })).toBeDisabled();
+    const offsets = callsTo("externalTicket.list").map(
+      (call) => (call.input as { offset?: number }).offset ?? 0,
+    );
+    expect(offsets.every((offset) => offset === 0)).toBe(true);
+  });
+
+  it("←/→ 与 ↑/↓ 同向；prev/next 按钮同一逻辑、边界处禁用", async () => {
+    renderPagedAt("/external-tickets/t2?page=1");
+    const pane = await findPaneShowing("WO100002");
+
+    // → 越界 = ↓：页 1 末行按 → 翻到页 2 第一条
+    fireEvent.keyDown(pane, { key: "ArrowRight" });
+    await findPaneShowing("WO100003");
+
+    // 末页末行：下一条按钮禁用；上一条按钮 = ← 越界翻回页 1 末行
+    expect(screen.getByRole("button", { name: "下一条工单" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "上一条工单" }));
+    await findPaneShowing("WO100002");
+
+    // 页 1 内：← = ↑ 切片内换单
+    fireEvent.keyDown(screen.getByRole("region", { name: "工单详情" }), { key: "ArrowLeft" });
+    await findPaneShowing("WO100001");
+    expect(screen.getByRole("button", { name: "上一条工单" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "下一条工单" }));
+    await findPaneShowing("WO100002");
+  });
+});

@@ -61,7 +61,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
-import { detailNeighbors } from "./detail-navigation";
+import { detailNav, useCrossPageNav } from "./detail-navigation";
 import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
@@ -300,8 +300,22 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
 
-  // 详情的 ↑/↓ 走当前页切片里的前后单（行序 = 筛选+排序后的列表序）
-  const { prev: prevTicketId, next: nextTicketId } = detailNeighbors(items, detailId);
+  // 详情的翻单面：当前页切片里的前后单（行序 = 筛选+排序后的列表序）+ 页边界
+  const nav = detailNav(items, detailId, { page: query.page, pageSize: query.pageSize, total });
+
+  /** 换单路径：筛选串随车带走；replace 让 Back 回到进入详情前那一步。 */
+  function switchTo(ticketId: string) {
+    navigate(`/tickets/${ticketId}${location.search}`, { replace: true });
+  }
+
+  const crossPage = useCrossPageNav({
+    items,
+    page: query.page,
+    isPlaceholderData: listQuery.isPlaceholderData,
+    select: switchTo,
+    setPage: (page) => setParam("page", String(page), { resetPage: false }),
+  });
+
   const columnCount = BASE_COLUMN_COUNT + (canBatchAssign ? 1 : 0) + (canRowActions ? 1 : 0);
 
   type ListItem = (typeof items)[number];
@@ -514,18 +528,14 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         // 处理态：窄列 + 详情。窄屏 (<1024px) 无 lg → 详情占满，窄列让位
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]">
           <div className="hidden min-h-0 rounded-md border lg:flex lg:flex-col">
-            <TicketNarrowList
-              items={items}
-              selectedId={detailId ?? ""}
-              onSelect={(id) => navigate(`/tickets/${id}${location.search}`, { replace: true })}
-            />
+            <TicketNarrowList items={items} selectedId={detailId ?? ""} onSelect={switchTo} />
           </div>
           <div className="flex min-h-0 flex-col rounded-md border">
             <TicketDetailPane
               ticketId={detailId ?? ""}
-              neighbors={{ prev: prevTicketId, next: nextTicketId }}
-              // replace: 翻单是扫描动作，Back 应回到进入详情前那一步，不重放每一站
-              onSwitch={(id) => navigate(`/tickets/${id}${location.search}`, { replace: true })}
+              nav={nav}
+              onSwitch={switchTo}
+              onCrossPage={crossPage}
               onClose={() => navigate(`/tickets${location.search}`)}
             />
           </div>

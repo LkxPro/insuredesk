@@ -5,7 +5,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
-import { handleDetailArrowKey } from "@/pages/tickets/detail-navigation";
+import { DetailNavButtons } from "@/pages/tickets/DetailNavButtons";
+import {
+  type CrossPageDirection,
+  type DetailNav,
+  type DetailNavStep,
+  detailNavStep,
+  handleDetailArrowKey,
+} from "@/pages/tickets/detail-navigation";
 import { StatusBadge } from "@/pages/tickets/StatusBadge";
 import { TicketTimelineColumn } from "@/pages/tickets/TicketTimelineColumn";
 import { ExternalNoteCard } from "./ExternalNoteCard";
@@ -18,9 +25,9 @@ import { ExternalTicketInfoColumn } from "./ExternalTicketInfoColumn";
  * comment 非 internal + external_note + resolve），这里只按 action 给圆点
  * 着色区分"谁发出的"。
  *
- * ↑/↓ 按列表顺序翻单（neighbors 由页面按当前筛选算出，列表边缘为 null 不
- * 动作）；输入控件内的方向键归控件自己。key={ticketId} 强制换单重挂：
- * 折叠态与留言草稿不跨单残留。
+ * 方向键（↑/↓/←/→）与 prev/next 按钮按列表顺序翻单，越界翻页（nav 由页面
+ * 按当前筛选与页码算出，无路可走则按钮禁用、按键死停）；输入控件内的方向
+ * 键归控件自己。key={ticketId} 强制换单重挂：折叠态与留言草稿不跨单残留。
  */
 
 /** 时间线圆点按 action 着色：外部留言是"我方发出"，与内部跟进一眼可分。 */
@@ -37,13 +44,15 @@ export function ExternalTicketDetailPane({
   ticketId,
   onClose,
   onSwitch,
-  /** ↑/↓ 的目标，列表边缘为 null（无动作）。 */
-  neighbors,
+  onCrossPage,
+  /** 方向键与 prev/next 按钮共用的导航面。 */
+  nav,
 }: {
   ticketId: string;
   onClose: () => void;
   onSwitch: (ticketId: string) => void;
-  neighbors: { prev: string | null; next: string | null };
+  onCrossPage: (direction: CrossPageDirection) => void;
+  nav: DetailNav;
 }) {
   const detailQuery = trpc.externalTicket.detail.useQuery({ ticketId });
   const data = detailQuery.data;
@@ -56,13 +65,25 @@ export function ExternalTicketDetailPane({
     paneRef.current?.focus({ preventScroll: true });
   }, [ticketId]);
 
+  /** 键盘与 prev/next 按钮同一入口。 */
+  function applyStep(step: DetailNavStep) {
+    if (step.kind === "switch") {
+      onSwitch(step.ticketId);
+    } else {
+      onCrossPage(step.direction);
+    }
+  }
+
+  const prevStep = detailNavStep("prev", nav);
+  const nextStep = detailNavStep("next", nav);
+
   return (
     <section
       ref={paneRef}
       aria-label="工单详情"
       className="flex min-h-0 flex-1 flex-col outline-hidden"
       tabIndex={-1}
-      onKeyDown={(event) => handleDetailArrowKey(event, neighbors, onSwitch)}
+      onKeyDown={(event) => handleDetailArrowKey(event, nav, applyStep)}
     >
       <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
         {/* 窄屏主从不并存，返回键让位列表；宽屏它纯属多余 */}
@@ -80,6 +101,7 @@ export function ExternalTicketDetailPane({
         </h2>
         {ticket && <StatusBadge status={ticket.status} />}
         <div className="flex-1" />
+        <DetailNavButtons prevStep={prevStep} nextStep={nextStep} onStep={applyStep} />
         <Button variant="ghost" size="icon" aria-label="关闭详情" onClick={onClose}>
           <X />
         </Button>
