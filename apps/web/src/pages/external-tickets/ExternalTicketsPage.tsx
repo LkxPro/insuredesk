@@ -1,8 +1,13 @@
 import { TICKET_STATUS_LABELS, TICKET_STATUSES, type TicketStatus } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
-import { AlertCircle, Inbox, Search } from "lucide-react";
+import { AlertCircle, Inbox } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
+import { MultiSelectFilter } from "@/components/ticket-list/MultiSelectFilter";
+import { TicketListFilterBar } from "@/components/ticket-list/TicketListFilterBar";
+import { TicketListPagination } from "@/components/ticket-list/TicketListPagination";
+import { TicketListSearch } from "@/components/ticket-list/TicketListSearch";
+import { useTicketListUrl } from "@/components/ticket-list/useTicketListUrl";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,12 +18,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { detailNeighbors } from "@/pages/tickets/detail-navigation";
-import { MultiSelectFilter } from "@/pages/tickets/MultiSelectFilter";
 import { ExternalTicketDetailPane } from "./ExternalTicketDetailPane";
 import { ExternalTicketListPane } from "./ExternalTicketListPane";
 import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
@@ -62,9 +65,8 @@ export function ExternalTicketsPage() {
   const { id: selectedId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const query = parseQuery(searchParams);
-  const [searchDraft, setSearchDraft] = useState(query.search);
+  const { query, searchDraft, setSearchDraft, submitSearch, setParam } =
+    useTicketListUrl(parseQuery);
   const [submitOpen, setSubmitOpen] = useState(false);
 
   const listQuery = trpc.externalTicket.list.useQuery(
@@ -80,7 +82,6 @@ export function ExternalTicketsPage() {
 
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // 详情的 ↑/↓ 走当前页切片里的前后单（行序即服务端排定的序）
   const { prev: prevTicketId, next: nextTicketId } = detailNeighbors(items, selectedId);
@@ -100,22 +101,6 @@ export function ExternalTicketsPage() {
     navigate(`/external-tickets/${first.id}${location.search}`, { replace: true });
   }, [selectedId, items, location.search, navigate]);
 
-  /** 设置/清除一个 URL 参数；筛选变化回到第 1 页。 */
-  function setParam(key: string, value: string | null, { resetPage = true } = {}) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (value === null) {
-        next.delete(key);
-      } else {
-        next.set(key, value);
-      }
-      if (resetPage) {
-        next.delete("page");
-      }
-      return next;
-    });
-  }
-
   /** 首次选中 push（Back 回到无选中），已选中后换单 replace（翻单是扫描动作）。 */
   function select(ticketId: string) {
     navigate(ticketPath(ticketId), { replace: selectedId !== undefined });
@@ -131,7 +116,7 @@ export function ExternalTicketsPage() {
         <Button onClick={() => setSubmitOpen(true)}>新建工单</Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <TicketListFilterBar>
         <MultiSelectFilter
           label="状态"
           values={query.status}
@@ -141,22 +126,12 @@ export function ExternalTicketsPage() {
           }))}
           onChange={(values) => setParam("status", values.length > 0 ? values.join(",") : null)}
         />
-        <form
-          className="relative"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setParam("q", searchDraft.trim() || null);
-          }}
-        >
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.target.value)}
-            placeholder="工单号 / 工单原文"
-            className="h-8 w-60 pl-8"
-          />
-        </form>
+        <TicketListSearch
+          draft={searchDraft}
+          onDraftChange={setSearchDraft}
+          onSubmit={submitSearch}
+          placeholder="工单号 / 工单原文"
+        />
         <div className="flex items-center gap-2">
           <Checkbox
             id="include-completed"
@@ -167,7 +142,7 @@ export function ExternalTicketsPage() {
             含已完结
           </Label>
         </div>
-      </div>
+      </TicketListFilterBar>
 
       {listQuery.error ? (
         <Alert variant="destructive">
@@ -228,29 +203,13 @@ export function ExternalTicketsPage() {
       )}
 
       {!listQuery.error && (
-        <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span>
-            共 {total} 条 · 第 {query.page} / {totalPages} 页
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={query.page <= 1 || listQuery.isLoading}
-              onClick={() => setParam("page", String(query.page - 1), { resetPage: false })}
-            >
-              上一页
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={query.page >= totalPages || listQuery.isLoading}
-              onClick={() => setParam("page", String(query.page + 1), { resetPage: false })}
-            >
-              下一页
-            </Button>
-          </div>
-        </div>
+        <TicketListPagination
+          total={total}
+          page={query.page}
+          pageSize={PAGE_SIZE}
+          isLoading={listQuery.isLoading}
+          onPageChange={(page) => setParam("page", String(page), { resetPage: false })}
+        />
       )}
 
       <ExternalTicketSubmitDialog

@@ -1,7 +1,6 @@
 import {
   BATCH_ASSIGN_LIMIT,
   COMPLAINT_LEVELS,
-  type CreatedRangeQuery,
   DEFAULT_TICKET_SOURCE_FILTER,
   isTicketInFlight,
   TICKET_DISPLAY_STATUSES,
@@ -9,7 +8,6 @@ import {
   TICKET_SOURCE_LABELS,
   TICKET_SOURCES,
   TICKET_STATUS_LABELS,
-  type TicketExportFormat,
   type TicketListQuery,
   type TicketSortField,
   ticketListInputSchema,
@@ -20,9 +18,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  Download,
   Plus,
-  Search,
   SlidersHorizontal,
   Ticket,
   Upload,
@@ -30,18 +26,18 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
-import { toast } from "sonner";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { CreatedRangeFilter } from "@/components/ticket-list/CreatedRangeFilter";
+import { MultiSelectFilter } from "@/components/ticket-list/MultiSelectFilter";
+import { TicketExportButton } from "@/components/ticket-list/TicketExportButton";
+import { TicketListFilterBar } from "@/components/ticket-list/TicketListFilterBar";
+import { TicketListPagination } from "@/components/ticket-list/TicketListPagination";
+import { TicketListSearch } from "@/components/ticket-list/TicketListSearch";
+import { useTicketListUrl } from "@/components/ticket-list/useTicketListUrl";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyDescription,
@@ -49,7 +45,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -66,16 +61,13 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
-import { CreatedRangeFilter } from "./CreatedRangeFilter";
 import { detailNeighbors } from "./detail-navigation";
-import { MultiSelectFilter } from "./MultiSelectFilter";
 import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { TicketDetailPane } from "./TicketDetailPane";
 import { TicketImportDialog } from "./TicketImportDialog";
 import { TicketNarrowList } from "./TicketNarrowList";
-import { downloadTicketExport } from "./ticket-export";
 
 /**
  * 工单管理 list: filters (状态 incl. the computed statuses, 渠道, 完结状态,
@@ -261,9 +253,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const canImport = hasPermission("ticket.import");
   const canRowActions = canAssign || canProcess;
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const query = parseListQuery(searchParams);
-  const [searchDraft, setSearchDraft] = useState(query.search ?? "");
+  const { query, searchDraft, setSearchDraft, submitSearch, setParam, setParams } =
+    useTicketListUrl(parseListQuery);
 
   // 批量分配 selection: id → target so it survives paging (the dialog needs
   // more than the id, and page 2 replaces `items`)
@@ -272,7 +263,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [resolveTarget, setResolveTarget] = useState<ResolveTarget | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
-  const [exporting, setExporting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   // 建单成功留在列表：新建行高亮，直到下一次建单或离开本页
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -297,57 +287,18 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const categoryOptions = trpc.ticketCategory.filterOptions.useQuery().data ?? [];
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
 
-  /** Set/clear one URL param; filter changes restart from page 1. */
-  function setParam(key: string, value: string | null, { resetPage = true } = {}) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (value === null) {
-        next.delete(key);
-      } else {
-        next.set(key, value);
-      }
-      if (resetPage) {
-        next.delete("page");
-      }
-      return next;
-    });
-  }
-
-  /** 创建时间区间是一对参数，须同进同出，否则中间态会筛出半开区间。 */
-  function setCreatedRange(range: CreatedRangeQuery) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      for (const key of ["createdFrom", "createdTo"] as const) {
-        const value = range[key];
-        if (value === undefined) {
-          next.delete(key);
-        } else {
-          next.set(key, value);
-        }
-      }
-      next.delete("page");
-      return next;
-    });
-  }
-
   function toggleSort(field: TicketSortField) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("sortBy", field);
-      if (query.sortBy === field) {
-        next.set("sortOrder", query.sortOrder === "desc" ? "asc" : "desc");
-      } else {
-        // 处理时限 defaults to soonest-first — that's the queue-working order
-        next.set("sortOrder", field === "dueAt" ? "asc" : "desc");
-      }
-      next.delete("page");
-      return next;
+    // 处理时限 defaults to soonest-first — that's the queue-working order
+    const initialOrder = field === "dueAt" ? "asc" : "desc";
+    setParams({
+      sortBy: field,
+      sortOrder:
+        query.sortBy === field ? (query.sortOrder === "desc" ? "asc" : "desc") : initialOrder,
     });
   }
 
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
 
   // 详情的 ↑/↓ 走当前页切片里的前后单（行序 = 筛选+排序后的列表序）
   const { prev: prevTicketId, next: nextTicketId } = detailNeighbors(items, detailId);
@@ -383,18 +334,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
     selectableItems.length > 0 && selectableItems.every((ticket) => selected.has(ticket.id));
   const selectedHasAssigned = [...selected.values()].some((target) => target.assigneeId !== null);
 
-  /** 导出当前筛选结果 — the server re-applies scope and filters. */
-  async function handleExport(format: TicketExportFormat) {
-    setExporting(true);
-    try {
-      await downloadTicketExport(query, format);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "导出失败");
-    } finally {
-      setExporting(false);
-    }
-  }
-
   function togglePageSelection() {
     setSelected((prev) => {
       const next = new Map(prev);
@@ -420,24 +359,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {canExport && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" disabled={exporting}>
-                  <Download data-icon="inline-start" />
-                  {exporting ? "导出中…" : "导出"}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => handleExport("xlsx")}>
-                  导出 Excel (.xlsx)
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => handleExport("csv")}>
-                  导出 CSV (.csv)
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          {canExport && <TicketExportButton query={query} />}
           {canImport && (
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload data-icon="inline-start" />
@@ -470,7 +392,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       )}
 
       {(!detailOpen || filtersOpen) && (
-        <div className="flex flex-wrap items-center gap-2">
+        <TicketListFilterBar>
           {detailOpen && (
             <Button variant="ghost" size="sm" onClick={() => setFiltersOpen(false)}>
               收起筛选
@@ -532,25 +454,20 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           />
           <CreatedRangeFilter
             range={{ createdFrom: query.createdFrom, createdTo: query.createdTo }}
-            onChange={setCreatedRange}
+            onChange={(range) =>
+              setParams({
+                createdFrom: range.createdFrom ?? null,
+                createdTo: range.createdTo ?? null,
+              })
+            }
           />
-          <form
-            className="relative"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setParam("q", searchDraft.trim() || null);
-            }}
-          >
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              value={searchDraft}
-              onChange={(event) => setSearchDraft(event.target.value)}
-              placeholder="工单号 / 客户姓名 / 保单号 / 电话"
-              className="h-8 w-60 pl-8"
-            />
-          </form>
-        </div>
+          <TicketListSearch
+            draft={searchDraft}
+            onDraftChange={setSearchDraft}
+            onSubmit={submitSearch}
+            placeholder="工单号 / 客户姓名 / 保单号 / 电话"
+          />
+        </TicketListFilterBar>
       )}
 
       {!detailOpen && canBatchAssign && selected.size > 0 && (
@@ -779,29 +696,13 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       )}
 
       {!listQuery.error && !detailOpen && (
-        <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span>
-            共 {total} 条 · 第 {query.page} / {totalPages} 页
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={query.page <= 1 || listQuery.isLoading}
-              onClick={() => setParam("page", String(query.page - 1), { resetPage: false })}
-            >
-              上一页
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={query.page >= totalPages || listQuery.isLoading}
-              onClick={() => setParam("page", String(query.page + 1), { resetPage: false })}
-            >
-              下一页
-            </Button>
-          </div>
-        </div>
+        <TicketListPagination
+          total={total}
+          page={query.page}
+          pageSize={query.pageSize}
+          isLoading={listQuery.isLoading}
+          onPageChange={(page) => setParam("page", String(page), { resetPage: false })}
+        />
       )}
 
       {canCreate && (
