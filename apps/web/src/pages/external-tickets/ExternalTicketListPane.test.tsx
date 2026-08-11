@@ -139,11 +139,11 @@ describe("筛选与分页", () => {
     });
   });
 
-  it("search submits 工单号/原文 keyword", async () => {
+  it("search submits 工单号/保单号/原文 keyword", async () => {
     renderList();
     await screen.findByText("WO100001");
 
-    const box = screen.getByPlaceholderText("工单号 / 工单原文");
+    const box = screen.getByPlaceholderText("工单号 / 保单号 / 工单原文");
     fireEvent.change(box, { target: { value: "WO100001" } });
     // React 19 的 onSubmit 会拿 event.target 构造 FormData，
     // 直接 submit input 会在 jsdom 里抛 uncaught exception

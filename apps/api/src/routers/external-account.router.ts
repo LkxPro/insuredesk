@@ -1,6 +1,7 @@
 import {
   externalAccountCreateInputSchema,
   externalAccountSetActiveInputSchema,
+  externalAccountSetExportEnabledInputSchema,
   externalAccountUpdateInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
@@ -9,10 +10,12 @@ import {
   createExternalAccount,
   ExternalAccountOnlyError,
   ExternalRoleNotUniqueError,
+  getExternalExportEnabled,
   InvalidVisibleFieldError,
   listExternalAccounts,
   PrefillChannelNotFoundError,
   setExternalAccountActive,
+  setExternalExportEnabled,
   updateExternalAccount,
 } from "../services/external-account.service";
 import {
@@ -73,4 +76,14 @@ export const externalAccountRouter = router({
     .mutation(({ ctx, input }) =>
       setExternalAccountActive(deps, ctx.user, input).catch(toTRPCError),
     ),
+
+  /** 外部导出开关现状（唯一外部角色上的权限位）。 */
+  exportEnabled: requirePermission("external_account.manage").query(() =>
+    getExternalExportEnabled(deps),
+  ),
+
+  /** 开/关外部导出 —— 关掉后外部端入口消失、导出接口同步拒绝。 */
+  setExportEnabled: requirePermission("external_account.manage")
+    .input(externalAccountSetExportEnabledInputSchema)
+    .mutation(({ input }) => setExternalExportEnabled(deps, input.enabled).catch(toTRPCError)),
 });

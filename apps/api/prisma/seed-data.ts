@@ -272,9 +272,10 @@ export async function seedFactoryRolesAndDemoUsers(prisma: PrismaClient): Promis
 }
 
 /**
- * Create-if-missing: the "外部用户" role with external submission permissions.
- * Non-factory role (system=false) that survives bootstrap replay. Created by
- * name upsert so renames/permission edits persist across restarts.
+ * Create-if-missing: the "外部用户" role with external submission permissions
+ * (提交/留言/导出). Non-factory role (system=false) that survives bootstrap
+ * replay. Created by name upsert so renames/permission edits persist across
+ * restarts.
  *
  * 这是全库唯一的外部角色,建外部账号靠它落 roleId(账号不选角色)。再添一个外部
  * 角色会让建号直接失败,而不是随机挑一个。
@@ -285,7 +286,7 @@ export async function seedExternalUserRole(prisma: PrismaClient): Promise<Role> 
     update: {},
     create: {
       name: "外部用户",
-      permissions: ["ticket.create_external", "ticket.process_external"],
+      permissions: ["ticket.create_external", "ticket.process_external", "ticket.export_external"],
       system: false,
       requiredTicketFields: [],
     },

@@ -340,6 +340,58 @@ describe("external ticket API (Testcontainers)", () => {
       expect(onlyCompleted.items.every((t) => t.status === "completed")).toBe(true);
     });
 
+    it("按创建日期范围筛选，起止边界均在列", async () => {
+      const caller = externalCaller1();
+      const before = await caller.externalTicket.submit({ submissionText: "区间前的单" });
+      const from = await caller.externalTicket.submit({ submissionText: "起边界的单" });
+      const to = await caller.externalTicket.submit({ submissionText: "止边界的单" });
+      const after = await caller.externalTicket.submit({ submissionText: "区间后的单" });
+
+      const fromAt = new Date("2026-07-06T00:00:00.000Z");
+      const toAt = new Date("2026-07-12T23:59:59.999Z");
+      await prisma.ticket.update({
+        where: { id: before.id },
+        data: { createdAt: new Date(fromAt.getTime() - 1) },
+      });
+      await prisma.ticket.update({ where: { id: from.id }, data: { createdAt: fromAt } });
+      await prisma.ticket.update({ where: { id: to.id }, data: { createdAt: toAt } });
+      await prisma.ticket.update({
+        where: { id: after.id },
+        data: { createdAt: new Date(toAt.getTime() + 1) },
+      });
+
+      const list = await caller.externalTicket.list({
+        offset: 0,
+        limit: 100,
+        createdFrom: fromAt.toISOString(),
+        createdTo: toAt.toISOString(),
+      });
+      const ids = list.items.map((t) => t.id);
+      expect(ids).toContain(from.id);
+      expect(ids).toContain(to.id);
+      expect(ids).not.toContain(before.id);
+      expect(ids).not.toContain(after.id);
+    });
+
+    it("搜索命中保单号", async () => {
+      const caller = externalCaller1();
+      const hit = await caller.externalTicket.submit({ submissionText: "带保单号的单" });
+      await prisma.ticket.update({
+        where: { id: hit.id },
+        data: { policyNumbers: ["PX-2026-0001", "PX-2026-0002"] },
+      });
+      const miss = await caller.externalTicket.submit({ submissionText: "不带保单号的单" });
+
+      const list = await caller.externalTicket.list({
+        offset: 0,
+        limit: 100,
+        search: "PX-2026-0002",
+      });
+      const ids = list.items.map((t) => t.id);
+      expect(ids).toContain(hit.id);
+      expect(ids).not.toContain(miss.id);
+    });
+
     it("随列表返回最新可见跟进；internalOnly 再新也不可见", async () => {
       const account = await prisma.user.create({
         data: {

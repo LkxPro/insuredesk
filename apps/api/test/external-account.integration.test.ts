@@ -120,6 +120,29 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
       await expect(
         userAdmin.externalAccount.setActive({ id: "any", active: false }),
       ).rejects.toMatchObject(forbidden);
+      await expect(userAdmin.externalAccount.exportEnabled()).rejects.toMatchObject(forbidden);
+      await expect(
+        userAdmin.externalAccount.setExportEnabled({ enabled: false }),
+      ).rejects.toMatchObject(forbidden);
+    });
+  });
+
+  describe("外部导出开关", () => {
+    it("默认开启（种子外部角色带 ticket.export_external）", async () => {
+      expect(await manager().externalAccount.exportEnabled()).toBe(true);
+    });
+
+    it("关闭摘掉唯一外部角色上的权限位，开启恢复；重复开启不产生重复点", async () => {
+      await manager().externalAccount.setExportEnabled({ enabled: false });
+      let role = await prisma.role.findUniqueOrThrow({ where: { id: externalRole.id } });
+      expect(role.permissions).not.toContain("ticket.export_external");
+      expect(await manager().externalAccount.exportEnabled()).toBe(false);
+
+      await manager().externalAccount.setExportEnabled({ enabled: true });
+      await manager().externalAccount.setExportEnabled({ enabled: true });
+      role = await prisma.role.findUniqueOrThrow({ where: { id: externalRole.id } });
+      expect(role.permissions.filter((p) => p === "ticket.export_external")).toHaveLength(1);
+      expect(await manager().externalAccount.exportEnabled()).toBe(true);
     });
   });
 

@@ -33,6 +33,7 @@ import { TicketExportButton } from "@/components/ticket-list/TicketExportButton"
 import { TicketListFilterBar } from "@/components/ticket-list/TicketListFilterBar";
 import { TicketListPagination } from "@/components/ticket-list/TicketListPagination";
 import { TicketListSearch } from "@/components/ticket-list/TicketListSearch";
+import { downloadTicketExport } from "@/components/ticket-list/ticket-export";
 import { useTicketListUrl } from "@/components/ticket-list/useTicketListUrl";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -373,7 +374,9 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {canExport && <TicketExportButton query={query} />}
+          {canExport && (
+            <TicketExportButton onExport={(format) => downloadTicketExport(query, format)} />
+          )}
           {canImport && (
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload data-icon="inline-start" />

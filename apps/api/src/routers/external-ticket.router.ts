@@ -11,6 +11,7 @@ import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock";
 import { prisma } from "../db";
 import { Prisma } from "../generated/prisma/client";
+import { buildExternalTicketConditions } from "../services/external-ticket-query";
 import {
   buildExternalNoteNotification,
   buildExternalSubmittedNotification,
@@ -216,22 +217,7 @@ export const externalTicketRouter = router({
       requireExternalAccount(user.isExternal);
       await loadExternalAccountConfig(user.id);
 
-      const conditions: Prisma.Sql[] = [
-        Prisma.sql`t."creatorId" = ${user.id}`,
-        Prisma.sql`t."deletedAt" IS NULL`,
-      ];
-      if (input.status && input.status.length > 0) {
-        conditions.push(Prisma.sql`t.status IN (${Prisma.join(input.status)})`);
-      } else if (!input.includeCompleted) {
-        conditions.push(Prisma.sql`t.status <> 'completed'`);
-      }
-      if (input.search) {
-        const pattern = `%${input.search}%`;
-        conditions.push(
-          Prisma.sql`(t."workOrderNumber" ILIKE ${pattern} OR t."submissionText" ILIKE ${pattern})`,
-        );
-      }
-      const whereSql = Prisma.join(conditions, " AND ");
+      const whereSql = Prisma.join(buildExternalTicketConditions(user.id, input), " AND ");
 
       const [pageRows, countRows] = await Promise.all([
         prisma.$queryRaw<

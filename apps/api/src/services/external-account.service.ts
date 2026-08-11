@@ -173,6 +173,24 @@ export async function listExternalAccounts(
   return rows.map(toListItem);
 }
 
+/**
+ * 外部导出开关 = 唯一外部角色权限数组里 ticket.export_external 的在/否。
+ * 改动下次请求即生效（会话逐请求从角色解析权限），全外部账号同开同关。
+ */
+export async function getExternalExportEnabled(deps: ExternalAccountServiceDeps): Promise<boolean> {
+  const role = await loadSoleExternalRole(deps.prisma);
+  return role.permissions.includes("ticket.export_external");
+}
+
+export async function setExternalExportEnabled(deps: ExternalAccountServiceDeps, enabled: boolean) {
+  const role = await loadSoleExternalRole(deps.prisma);
+  const permissions = enabled
+    ? [...new Set([...role.permissions, "ticket.export_external"])]
+    : role.permissions.filter((permission) => permission !== "ticket.export_external");
+  await deps.prisma.role.update({ where: { id: role.id }, data: { permissions } });
+  return { enabled };
+}
+
 /** New 外部账号：active from the start, 唯一外部角色服务端挂载, password bcrypt-hashed here. */
 export async function createExternalAccount(
   deps: ExternalAccountServiceDeps,
