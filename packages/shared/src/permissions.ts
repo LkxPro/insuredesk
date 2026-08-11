@@ -27,6 +27,7 @@ export const TICKET_PERMISSIONS = [
   "ticket.delete", // Delete ticket - dangerous (operation permission)
   "ticket.create_external", // Create external channel ticket (external user permission)
   "ticket.process_external", // Add external note to ticket (external user permission)
+  "ticket.export_external", // Export own tickets from the external surface (external user permission)
 ] as const;
 
 // User management permissions
@@ -45,11 +46,22 @@ export const EXTERNAL_ACCOUNT_PERMISSIONS = [
 
 /**
  * Points that mark a role as belonging to an 外部账号 rather than an
- * internal one — holding either makes the role an 外部角色.
+ * internal one — holding either makes the role an 外部角色. 判定 marker 只含
+ * 提交/留言两点：ticket.export_external 是管理端可开关的能力位，单持它
+ * 不构成外部角色。
  */
 export const EXTERNAL_ROLE_PERMISSIONS = [
   "ticket.create_external",
   "ticket.process_external",
+] as const;
+
+/**
+ * 外部口子专用权限点：管理端 checklist 不出售，普通角色配上也无入口。
+ * 外部角色的权限数组由种子与「外部账号管理」的开关维护，不经角色管理。
+ */
+export const EXTERNAL_ONLY_PERMISSIONS = [
+  ...EXTERNAL_ROLE_PERMISSIONS,
+  "ticket.export_external",
 ] as const;
 
 /**
@@ -132,6 +144,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "ticket.delete": "删除工单",
   "ticket.create_external": "提交外部工单",
   "ticket.process_external": "添加外部留言",
+  "ticket.export_external": "导出外部工单",
   "user.view": "访问用户管理",
   "user.create": "新增用户",
   "user.edit": "编辑用户",
@@ -168,17 +181,17 @@ export const PERMISSION_GROUPS = [
 ] as const;
 
 /**
- * Management-surface permission groups: PERMISSION_GROUPS minus the two
- * external permission points. 角色管理 uses this to hide ticket.create_external
- * and ticket.process_external from the checklist, preventing new external
- * roles from being created through the UI.
+ * Management-surface permission groups: PERMISSION_GROUPS minus the
+ * external-only permission points. 角色管理 uses this to keep external points
+ * out of the checklist, preventing new external roles from being created
+ * through the UI.
  */
 export const MANAGEMENT_PERMISSION_GROUPS = PERMISSION_GROUPS.map((group) => {
   if (group.label === "工单管理") {
     return {
       ...group,
       permissions: group.permissions.filter(
-        (p) => !EXTERNAL_ROLE_PERMISSIONS.includes(p as (typeof EXTERNAL_ROLE_PERMISSIONS)[number]),
+        (p) => !EXTERNAL_ONLY_PERMISSIONS.includes(p as (typeof EXTERNAL_ONLY_PERMISSIONS)[number]),
       ),
     };
   }

@@ -48,7 +48,7 @@ const exportInclude = {
 type TicketExportRow = Prisma.TicketGetPayload<{ include: typeof exportInclude }>;
 
 /** "yyyy-MM-dd HH:mm" in the requested zone; empty cell for null dates. */
-function makeDateFormatter(timeZone: string | undefined) {
+export function makeDateFormatter(timeZone: string | undefined) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: resolveTimeZone(timeZone),
     year: "numeric",
@@ -143,13 +143,15 @@ function csvField(value: string | number): string {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function toCsv(cells: ReadonlyArray<ReadonlyArray<string | number>>): Buffer {
+export function toCsv(cells: ReadonlyArray<ReadonlyArray<string | number>>): Buffer {
   const lines = cells.map((row) => row.map(csvField).join(","));
   // UTF-8 BOM so Excel (the file's actual audience) decodes Chinese correctly
   return Buffer.from(`\uFEFF${lines.join("\r\n")}\r\n`, "utf8");
 }
 
-async function toXlsx(cells: ReadonlyArray<ReadonlyArray<string | number>>): Promise<Buffer> {
+export async function toXlsx(
+  cells: ReadonlyArray<ReadonlyArray<string | number>>,
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("工单");
   for (const row of cells) {
@@ -160,7 +162,7 @@ async function toXlsx(cells: ReadonlyArray<ReadonlyArray<string | number>>): Pro
 }
 
 /** Compact export-time stamp for the filename, in the requested zone. */
-function filenameStamp(formatDate: (date: Date | null) => string, now: Date): string {
+export function filenameStamp(formatDate: (date: Date | null) => string, now: Date): string {
   return formatDate(now).replace(/[-:]/g, "").replace(" ", "-");
 }
 

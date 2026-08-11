@@ -5,7 +5,7 @@ import type {
   RoleUpdatePermissionsData,
   RoleUpdateRequiredFieldsData,
 } from "@insuredesk/shared";
-import { EXTERNAL_ROLE_PERMISSIONS, isExternalRole } from "@insuredesk/shared";
+import { EXTERNAL_ONLY_PERMISSIONS, isExternalRole } from "@insuredesk/shared";
 import { Prisma } from "../generated/prisma/client";
 import { effectivePermissions } from "./auth.service";
 import type { TicketServiceDeps } from "./ticket.service";
@@ -142,7 +142,7 @@ export async function updateRolePermissions(
 ) {
   await findMutableRole(prisma, input.id);
   const hasExternalPermission = input.permissions.some((p) =>
-    EXTERNAL_ROLE_PERMISSIONS.includes(p as (typeof EXTERNAL_ROLE_PERMISSIONS)[number]),
+    EXTERNAL_ONLY_PERMISSIONS.includes(p as (typeof EXTERNAL_ONLY_PERMISSIONS)[number]),
   );
   if (hasExternalPermission) {
     throw new ExternalPermissionForbiddenError();

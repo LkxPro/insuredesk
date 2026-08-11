@@ -1,9 +1,16 @@
-import { TICKET_STATUS_LABELS, TICKET_STATUSES, type TicketStatus } from "@insuredesk/shared";
+import {
+  externalTicketListInputSchema,
+  TICKET_STATUS_LABELS,
+  TICKET_STATUSES,
+  type TicketStatus,
+} from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
 import { AlertCircle, Inbox } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
+import { CreatedRangeFilter } from "@/components/ticket-list/CreatedRangeFilter";
 import { MultiSelectFilter } from "@/components/ticket-list/MultiSelectFilter";
+import { TicketExportButton } from "@/components/ticket-list/TicketExportButton";
 import { TicketListFilterBar } from "@/components/ticket-list/TicketListFilterBar";
 import { TicketListPagination } from "@/components/ticket-list/TicketListPagination";
 import { TicketListSearch } from "@/components/ticket-list/TicketListSearch";
@@ -19,12 +26,14 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { detailNav, useCrossPageNav } from "@/pages/tickets/detail-navigation";
 import { ExternalTicketDetailPane } from "./ExternalTicketDetailPane";
 import { ExternalTicketListPane } from "./ExternalTicketListPane";
 import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
+import { downloadExternalTicketExport } from "./external-ticket-export";
 
 /**
  * 外部端主页：左列表右详情的主从单页（/external-tickets 与
@@ -50,8 +59,17 @@ function parseQuery(params: URLSearchParams) {
     status,
     search: params.get("q") ?? "",
     includeCompleted: params.get("completed") === "1",
+    createdFrom: salvageDateTime(params.get("createdFrom")),
+    createdTo: salvageDateTime(params.get("createdTo")),
     page,
   };
+}
+
+/** 创建时间边界必须是合法 ISO 时刻，否则该边界按未筛选处理。 */
+function salvageDateTime(raw: string | null) {
+  return raw !== null && externalTicketListInputSchema.shape.createdFrom.safeParse(raw).success
+    ? raw
+    : undefined;
 }
 
 /** 宽屏（主从同屏）才有"着陆即选中"的意义；jsdom 没有 matchMedia，按窄屏处理。 */
@@ -65,7 +83,9 @@ export function ExternalTicketsPage() {
   const { id: selectedId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { query, searchDraft, setSearchDraft, submitSearch, setParam } =
+  const { hasPermission } = useAuth();
+  const canExport = hasPermission("ticket.export_external");
+  const { query, searchDraft, setSearchDraft, submitSearch, setParam, setParams } =
     useTicketListUrl(parseQuery);
   const [submitOpen, setSubmitOpen] = useState(false);
 
@@ -74,6 +94,8 @@ export function ExternalTicketsPage() {
       status: query.status.length > 0 ? query.status : undefined,
       search: query.search || undefined,
       includeCompleted: query.includeCompleted,
+      createdFrom: query.createdFrom,
+      createdTo: query.createdTo,
       offset: (query.page - 1) * PAGE_SIZE,
       limit: PAGE_SIZE,
     },
@@ -134,11 +156,20 @@ export function ExternalTicketsPage() {
           }))}
           onChange={(values) => setParam("status", values.length > 0 ? values.join(",") : null)}
         />
+        <CreatedRangeFilter
+          range={{ createdFrom: query.createdFrom, createdTo: query.createdTo }}
+          onChange={(range) =>
+            setParams({
+              createdFrom: range.createdFrom ?? null,
+              createdTo: range.createdTo ?? null,
+            })
+          }
+        />
         <TicketListSearch
           draft={searchDraft}
           onDraftChange={setSearchDraft}
           onSubmit={submitSearch}
-          placeholder="工单号 / 工单原文"
+          placeholder="工单号 / 保单号 / 工单原文"
         />
         <div className="flex items-center gap-2">
           <Checkbox
@@ -150,6 +181,9 @@ export function ExternalTicketsPage() {
             含已完结
           </Label>
         </div>
+        {canExport && (
+          <TicketExportButton onExport={(format) => downloadExternalTicketExport(query, format)} />
+        )}
       </TicketListFilterBar>
 
       {listQuery.error ? (
@@ -179,7 +213,11 @@ export function ExternalTicketsPage() {
                   </EmptyMedia>
                   <EmptyTitle>没有工单</EmptyTitle>
                   <EmptyDescription>
-                    {query.status.length > 0 || query.search || query.includeCompleted ? (
+                    {query.status.length > 0 ||
+                    query.search ||
+                    query.includeCompleted ||
+                    query.createdFrom ||
+                    query.createdTo ? (
                       "当前筛选条件下没有工单，换个条件试试。"
                     ) : (
                       <>点右上角「新建工单」，把客户反馈原文交给客服团队。</>

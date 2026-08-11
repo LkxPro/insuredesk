@@ -58,6 +58,7 @@ function renderPage(overrides: Record<string, unknown> = {}) {
       "externalAccount.create": { id: "acc-new", name: "新账号" },
       "externalAccount.update": { id: "acc-1", name: "甲合作方" },
       "externalAccount.setActive": { id: "acc-1", name: "甲合作方", active: false },
+      "externalAccount.exportEnabled": true,
       ...overrides,
     },
   });
@@ -196,5 +197,24 @@ describe("启停", () => {
         active: true,
       }),
     );
+  });
+});
+
+describe("外部导出开关", () => {
+  it("回显当前状态，切换即发 setExportEnabled", async () => {
+    renderPage({
+      "externalAccount.exportEnabled": true,
+      "externalAccount.setExportEnabled": { enabled: false },
+    });
+
+    const toggle = await screen.findByRole("checkbox", { name: /允许外部账号导出工单/ });
+    // 开关状态来自 exportEnabled 查询，解析前 checkbox 是 disabled 未选态
+    await waitFor(() => expect(toggle).toBeChecked());
+
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(callsTo("externalAccount.setExportEnabled")[0]?.input).toEqual({ enabled: false }),
+    );
+    expect(toastSpies.success).toHaveBeenCalledWith("已关闭外部导出");
   });
 });

@@ -23,9 +23,13 @@ const MULTI_VALUE_PARAMS = [
   "source",
 ] as const;
 
-function splitMultiValueParams(query: Record<string, unknown>): Record<string, unknown> {
+/** 内外导出路由共用：keys 指定哪些 querystring 参数是逗号分隔的多选。 */
+export function splitMultiValueParams(
+  query: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
   const result = { ...query };
-  for (const key of MULTI_VALUE_PARAMS) {
+  for (const key of keys) {
     const value = result[key];
     if (typeof value === "string") {
       result[key] = value.split(",").filter(Boolean);
@@ -45,7 +49,7 @@ export function registerTicketExportRoute(app: FastifyInstance) {
     }
 
     const parsed = ticketExportInputSchema.safeParse(
-      splitMultiValueParams(req.query as Record<string, unknown>),
+      splitMultiValueParams(req.query as Record<string, unknown>, MULTI_VALUE_PARAMS),
     );
     if (!parsed.success) {
       return reply

@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -39,7 +41,8 @@ export function prefillSummary(prefill: ExternalAccountRow["prefill"]): string {
 
 /**
  * 外部账号管理 (external_account.manage 单点)：列表即全部——没有详情页，
- * 编辑弹窗直接吃列表行。账号的提交/留言能力恒为一档，管理界面不出现"角色"。
+ * 编辑弹窗直接吃列表行。账号的提交/留言能力恒为一档，管理界面不出现"角色"；
+ * 导出是整张外部表面的单一开关（挂在唯一外部角色的权限位上）。
  */
 export function ExternalAccountManagePage() {
   const { hasPermission } = useAuth();
@@ -47,6 +50,7 @@ export function ExternalAccountManagePage() {
 
   const utils = trpc.useUtils();
   const listQuery = trpc.externalAccount.list.useQuery();
+  const exportEnabledQuery = trpc.externalAccount.exportEnabled.useQuery();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ExternalAccountRow | null>(null);
@@ -55,6 +59,14 @@ export function ExternalAccountManagePage() {
   const setActive = trpc.externalAccount.setActive.useMutation({
     onSuccess: (result) => {
       toast.success(`已启用账号 ${result.name}`);
+      utils.externalAccount.invalidate();
+    },
+    onError: (error) => toast.error(`操作失败：${error.message}`),
+  });
+
+  const setExportEnabled = trpc.externalAccount.setExportEnabled.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.enabled ? "已开启外部导出" : "已关闭外部导出");
       utils.externalAccount.invalidate();
     },
     onError: (error) => toast.error(`操作失败：${error.message}`),
@@ -78,6 +90,20 @@ export function ExternalAccountManagePage() {
           </Button>
         )}
       </div>
+
+      {canManage && (
+        <div className="flex items-center gap-2 rounded-md border px-4 py-3">
+          <Checkbox
+            id="external-export-enabled"
+            checked={exportEnabledQuery.data ?? false}
+            disabled={exportEnabledQuery.isLoading || setExportEnabled.isPending}
+            onCheckedChange={(checked) => setExportEnabled.mutate({ enabled: checked === true })}
+          />
+          <Label htmlFor="external-export-enabled" className="text-sm font-normal">
+            允许外部账号导出工单（关闭后「我的工单」隐藏导出入口，导出接口同步拒绝）
+          </Label>
+        </div>
+      )}
 
       {listQuery.error ? (
         <Alert variant="destructive">

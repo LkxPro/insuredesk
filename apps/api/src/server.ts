@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { prisma } from "./db";
 import type { Env } from "./env";
 import { type AppRouter, appRouter } from "./routers";
+import { registerExternalTicketExportRoute } from "./routes/external-ticket-export.route";
 import { registerTicketExportRoute } from "./routes/ticket-export.route";
 import { registerTicketImportRoute } from "./routes/ticket-import.route";
 import { registerTicketImportTemplateRoute } from "./routes/ticket-import-template.route";
@@ -131,6 +132,7 @@ export function buildServer(env: Env) {
   // File downloads/uploads for 导出工单 / 导入模板 / 批量导入 — REST like the
   // auth endpoints.
   registerTicketExportRoute(app);
+  registerExternalTicketExportRoute(app);
   registerTicketImportTemplateRoute(app);
   registerTicketImportRoute(app);
 
