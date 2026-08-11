@@ -48,6 +48,7 @@ export function MultiSelectFilter({
         <ul className="max-h-64 overflow-y-auto">
           {options.map((option) => (
             <li key={option.value}>
+              {/* biome-ignore lint/a11y/noLabelWithoutControl: Radix Checkbox 渲染为 button（可标签元素），整行点击经 label 激活它；biome 只认原生 input */}
               <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent">
                 <Checkbox
                   checked={values.includes(option.value)}
