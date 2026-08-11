@@ -1,11 +1,8 @@
 import {
-  DEFAULT_EXTERNAL_VISIBLE_FIELDS,
   externalTicketAddNoteInputSchema,
   externalTicketDetailInputSchema,
   externalTicketListInputSchema,
   externalTicketSubmitInputSchema,
-  filterVisibleFields,
-  parseVisibleTicketFields,
   prioritySchema,
   processLogActionSchema,
   ticketStatusSchema,
@@ -26,8 +23,8 @@ const deps = { prisma, clock: systemClock };
 /**
  * External ticket router: submit/list/detail endpoints for external users.
  * Data scope: external users see only tickets they submitted (creatorId = 本人).
- * Field visibility: tickets are filtered by the account's visibleTicketFields whitelist.
- * ProcessLog filtering: only comment (non-internal) + external_note + resolve.
+ * Field visibility: all ticket fields with values are exposed (no whitelist filtering).
+ * ProcessLog filtering: only comment (non-internal) + external_note + resolve + create.
  */
 
 /** 目录名随查询 JOIN 出来，裁剪后按引用是否可见决定是否给出名字。 */
@@ -41,60 +38,43 @@ type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclu
 
 /**
  * Wire shape for the external surface: dates as ISO-8601 strings (no
- * transformer on the tRPC link) and 目录引用 paired with the名字 the外部方 can
- * actually read — an id is useless to them, and they may not query the catalogs.
- * 名字只在对应 id 通过白名单时给出，否则跟着 id 一起消失。
+ * transformer on the tRPC link) and 目录引用 paired with the名字.
+ * All valued fields are exposed; visibleFields whitelist no longer filters output.
  */
-function serializeExternalTicket(ticket: TicketWithCatalogs, whitelist: readonly string[]) {
-  const visible = filterVisibleFields(ticket, whitelist);
+function serializeExternalTicket(ticket: TicketWithCatalogs) {
   return {
-    id: visible.id,
-    workOrderNumber: visible.workOrderNumber,
-    // Re-narrow through the shared schema so the wire type carries the union
-    status: ticketStatusSchema.parse(visible.status),
-    submissionText: visible.submissionText,
-    createdAt: visible.createdAt.toISOString(),
-    feedbackTime: visible.feedbackTime?.toISOString() ?? null,
-    channelId: visible.channelId,
-    channelName: visible.channelId ? (ticket.channel?.name ?? null) : null,
-    project: visible.project,
-    brokerageEntity: visible.brokerageEntity,
-    paymentChannel: visible.paymentChannel,
-    userComplaintChannel: visible.userComplaintChannel,
-    complaintReceiveChannel: visible.complaintReceiveChannel,
-    nuclearBodyStatus: visible.nuclearBodyStatus,
-    customerRequest: visible.customerRequest,
-    hasContacted: visible.hasContacted,
-    contactTime: visible.contactTime?.toISOString() ?? null,
-    categoryId: visible.categoryId,
-    categoryName: visible.categoryId ? (ticket.category?.name ?? null) : null,
-    complaintLevel: visible.complaintLevel,
-    priority: visible.priority === null ? null : prioritySchema.parse(visible.priority),
-    processingResult: visible.processingResult,
-    completionStatusId: visible.completionStatusId,
-    completionStatusName: visible.completionStatusId
-      ? (ticket.completionStatus?.name ?? null)
-      : null,
-    completionTime: visible.completionTime?.toISOString() ?? null,
+    id: ticket.id,
+    workOrderNumber: ticket.workOrderNumber,
+    status: ticketStatusSchema.parse(ticket.status),
+    submissionText: ticket.submissionText,
+    createdAt: ticket.createdAt.toISOString(),
+    feedbackTime: ticket.feedbackTime?.toISOString() ?? null,
+    channelId: ticket.channelId,
+    channelName: ticket.channel?.name ?? null,
+    project: ticket.project,
+    brokerageEntity: ticket.brokerageEntity,
+    paymentChannel: ticket.paymentChannel,
+    internalOrderNumber: ticket.internalOrderNumber,
+    policyNumbers: ticket.policyNumbers,
+    userComplaintChannel: ticket.userComplaintChannel,
+    complaintReceiveChannel: ticket.complaintReceiveChannel,
+    customerName: ticket.customerName,
+    phone: ticket.phone,
+    contactPhone: ticket.contactPhone,
+    nuclearBodyStatus: ticket.nuclearBodyStatus,
+    customerRequest: ticket.customerRequest,
+    hasContacted: ticket.hasContacted,
+    contactTime: ticket.contactTime?.toISOString() ?? null,
+    contactId: ticket.contactId,
+    categoryId: ticket.categoryId,
+    categoryName: ticket.category?.name ?? null,
+    complaintLevel: ticket.complaintLevel,
+    priority: ticket.priority === null ? null : prioritySchema.parse(ticket.priority),
+    processingResult: ticket.processingResult,
+    completionStatusId: ticket.completionStatusId,
+    completionStatusName: ticket.completionStatus?.name ?? null,
+    completionTime: ticket.completionTime?.toISOString() ?? null,
   };
-}
-
-/**
- * 工单号与状态是工单对外的身份与当前进展，不是可配的业务字段：
- * EXTERNAL_VISIBLE_FIELD_OPTIONS 由建单字段推导，两者都不在其中，所以管理员
- * 在界面上根本勾不到——若只信任显式白名单，任何配过一次的账号都会丢掉工单号列
- * 与详情标题。这里补齐，让白名单只表达"业务字段给不给看"。
- */
-const ALWAYS_VISIBLE_FIELDS = ["workOrderNumber", "status"] as const;
-
-/** 账号白名单：显式配置优先，未配置(或坏值)走系统默认；两种情况都补上恒可见字段。 */
-function resolveWhitelist(visibleTicketFields: string | null): string[] {
-  const configured = parseVisibleTicketFields(visibleTicketFields) ?? [
-    ...DEFAULT_EXTERNAL_VISIBLE_FIELDS,
-  ];
-  const missing = ALWAYS_VISIBLE_FIELDS.filter((key) => !configured.includes(key));
-  // 恒可见字段排在前：白名单顺序就是列表列顺序
-  return [...missing, ...configured];
 }
 
 /**
@@ -111,7 +91,7 @@ function requireExternalAccount(isExternal: boolean) {
   }
 }
 
-/** 预填与白名单不进会话快照，每个入口现读现用 —— 改配置下次请求即生效。 */
+/** 预填不进会话快照，每个入口现读现用 —— 改配置下次请求即生效。 */
 async function loadExternalAccountConfig(userId: string) {
   const account = await prisma.user.findUnique({
     where: { id: userId },
@@ -122,7 +102,6 @@ async function loadExternalAccountConfig(userId: string) {
       prefillPaymentChannel: true,
       prefillUserComplaintChannel: true,
       prefillComplaintReceiveChannel: true,
-      visibleTicketFields: true,
     },
   });
   if (!account) {
@@ -235,8 +214,7 @@ export const externalTicketRouter = router({
     .query(async ({ ctx, input }) => {
       const user = ctx.user;
       requireExternalAccount(user.isExternal);
-      const account = await loadExternalAccountConfig(user.id);
-      const whitelist = resolveWhitelist(account.visibleTicketFields);
+      await loadExternalAccountConfig(user.id);
 
       const conditions: Prisma.Sql[] = [
         Prisma.sql`t."creatorId" = ${user.id}`,
@@ -255,7 +233,6 @@ export const externalTicketRouter = router({
       }
       const whereSql = Prisma.join(conditions, " AND ");
 
-      // 可见性口径与 detail 的 ProcessLog 过滤相同，改一处必须改另一处
       const [pageRows, countRows] = await Promise.all([
         prisma.$queryRaw<
           {
@@ -299,11 +276,10 @@ export const externalTicketRouter = router({
       const items = pageRows.map((row) => {
         const ticket = ticketById.get(row.id);
         if (!ticket) {
-          // 页切片与水合之间并发删除了该单：跳过比 500 更接近真实
           return null;
         }
         return {
-          ...serializeExternalTicket(ticket, whitelist),
+          ...serializeExternalTicket(ticket),
           latestLog:
             row.latest_action === null
               ? null
@@ -324,8 +300,8 @@ export const externalTicketRouter = router({
   /**
    * Detail: external user views one ticket they submitted.
    * Applies creatorId = 本人 + deletedAt IS NULL (404 if not found or not theirs).
-   * Filters ticket fields by whitelist.
-   * Filters ProcessLog: only comment (non-internal) + external_note + resolve.
+   * All ticket fields are exposed (no whitelist filtering).
+   * Filters ProcessLog: only comment (non-internal) + external_note + resolve + create.
    */
   detail: requirePermission("ticket.create_external")
     .input(externalTicketDetailInputSchema)
@@ -365,15 +341,10 @@ export const externalTicketRouter = router({
         orderBy: { at: "asc" },
       });
 
-      const account = await loadExternalAccountConfig(user.id);
-      const whitelist = resolveWhitelist(account.visibleTicketFields);
-
       return {
-        ticket: serializeExternalTicket(ticket, whitelist),
-        visibleFields: whitelist,
+        ticket: serializeExternalTicket(ticket),
         processLogs: processLogs.map((log) => ({
           id: log.id,
-          // Re-narrowed so the web renders the action label without a cast
           action: processLogActionSchema.parse(log.action),
           remark: log.remark,
           createdAt: log.at.toISOString(),

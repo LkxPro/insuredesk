@@ -12,9 +12,8 @@ import { StatusBadge } from "@/pages/tickets/StatusBadge";
 
 /**
  * 外部工单字段的取词与取值：详情左栏字段栅格的标签、取值、空值判定共用这
- * 一份。可见字段白名单里除建单字段外还有三个系统字段（工单号/状态/最新跟
- * 进），它们不在 TICKET_FIELDS 里，标签在这里补齐。窄列行是两行式（工单号
- * +状态/徽标+时间），不经过本文件。
+ * 一份。外部方现可见全部建单字段（包含敏感字段），渲染"有值即现"，不再
+ * 依赖 visibleFields。窄列行是两行式（工单号+状态/徽标+时间），不经过本文件。
  */
 
 export type ExternalTicket = inferRouterOutputs<AppRouter>["externalTicket"]["detail"]["ticket"];
@@ -73,7 +72,6 @@ export function externalFieldValue(ticket: ExternalTicket, key: string): ReactNo
     case "completionStatusId":
       return ticket.completionStatusName;
     case "completionRemark":
-      // 完结备注落在 resolve 的处理记录里，时间线已呈现，卡片不重复
       return null;
     case "hasContacted":
       return ticket.hasContacted === null ? null : ticket.hasContacted ? "是" : "否";
@@ -85,10 +83,24 @@ export function externalFieldValue(ticket: ExternalTicket, key: string): ReactNo
       return ticket.brokerageEntity;
     case "paymentChannel":
       return ticket.paymentChannel;
+    case "internalOrderNumber":
+      return ticket.internalOrderNumber;
+    case "policyNumbers":
+      return ticket.policyNumbers && ticket.policyNumbers.length > 0
+        ? ticket.policyNumbers.join(" ")
+        : null;
     case "userComplaintChannel":
       return ticket.userComplaintChannel;
     case "complaintReceiveChannel":
       return ticket.complaintReceiveChannel;
+    case "customerName":
+      return ticket.customerName;
+    case "phone":
+      return ticket.phone;
+    case "contactPhone":
+      return ticket.contactPhone;
+    case "contactId":
+      return ticket.contactId;
     case "nuclearBodyStatus":
       return ticket.nuclearBodyStatus;
     case "customerRequest":
@@ -98,7 +110,6 @@ export function externalFieldValue(ticket: ExternalTicket, key: string): ReactNo
     case "processingResult":
       return ticket.processingResult || null;
     default:
-      // 敏感字段与未知 key 不在外部 wire shape 里，一律无值
       return null;
   }
 }

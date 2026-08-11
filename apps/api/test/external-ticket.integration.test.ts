@@ -1,4 +1,3 @@
-import { DEFAULT_EXTERNAL_VISIBLE_FIELDS } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
@@ -6,8 +5,8 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 /**
  * External ticket API integration tests: submit with prefill stamping,
- * creatorId-scoped list/detail, field visibility filtering, ProcessLog
- * filtering, and notification writing.
+ * creatorId-scoped list/detail, full field exposure (no whitelist filtering),
+ * ProcessLog filtering, and notification writing.
  */
 describe("external ticket API (Testcontainers)", () => {
   let harness: IntegrationHarness;
@@ -33,7 +32,7 @@ describe("external ticket API (Testcontainers)", () => {
       },
     });
 
-    // 账号1: 6 预填全配 + 显式白名单
+    // 账号1: 6 预填全配（白名单配置不再生效，保留只为确认兼容性）
     externalUser1 = await prisma.user.create({
       data: {
         username: "external1",
@@ -56,7 +55,7 @@ describe("external ticket API (Testcontainers)", () => {
       },
     });
 
-    // 账号2: 无预填,白名单 null(系统默认)
+    // 账号2: 无预填，白名单 null（白名单配置不再生效）
     externalUser2 = await prisma.user.create({
       data: {
         username: "external2",
@@ -216,17 +215,21 @@ describe("external ticket API (Testcontainers)", () => {
       expect(list2.items.some((t) => t.id === ticket1.id)).toBe(false);
     });
 
-    it("filters fields by the account's whitelist", async () => {
+    it("exposes all ticket fields including sensitive ones", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
-        submissionText: "测试字段可见性",
+        submissionText: "测试全量字段可见性",
       });
 
       await prisma.ticket.update({
         where: { id: result.id },
         data: {
-          customerName: "敏感客户名",
-          phone: "13800000000",
+          customerName: "张三",
+          phone: "13800138000",
+          contactPhone: "13900139000",
+          internalOrderNumber: "ORD123456",
+          policyNumbers: ["POL001", "POL002"],
+          contactId: "CONTACT789",
           processingResult: "处理结果",
         },
       });
@@ -239,22 +242,26 @@ describe("external ticket API (Testcontainers)", () => {
 
       expect(ticket.workOrderNumber).toBe(result.workOrderNumber);
       expect(ticket.processingResult).toBe("处理结果");
-      // 敏感字段不在外部 wire shape 里，连键都不存在
-      expect(ticket).not.toHaveProperty("customerName");
-      expect(ticket).not.toHaveProperty("phone");
+      expect(ticket.customerName).toBe("张三");
+      expect(ticket.phone).toBe("13800138000");
+      expect(ticket.contactPhone).toBe("13900139000");
+      expect(ticket.internalOrderNumber).toBe("ORD123456");
+      expect(ticket.policyNumbers).toEqual(["POL001", "POL002"]);
+      expect(ticket.contactId).toBe("CONTACT789");
     });
 
-    it("uses default whitelist when the account has null visibleTicketFields", async () => {
+    it("all accounts see full fields regardless of legacy whitelist config", async () => {
       const caller = externalCaller2();
       const result = await caller.externalTicket.submit({
-        submissionText: "测试默认白名单",
+        submissionText: "测试全量字段",
       });
 
       await prisma.ticket.update({
         where: { id: result.id },
         data: {
-          customerName: "敏感客户名",
-          processingResult: "处理结果",
+          customerName: "李四",
+          phone: "13700137000",
+          processingResult: "已处理",
         },
       });
 
@@ -262,22 +269,23 @@ describe("external ticket API (Testcontainers)", () => {
       const ticket = list.items.find((t) => t.id === result.id);
 
       expect(ticket).toBeDefined();
-      expect(ticket).not.toHaveProperty("customerName");
+      if (!ticket) throw new Error("ticket not found");
 
-      // 白名单本身随详情下发（列表已不携带）
+      expect(ticket.customerName).toBe("李四");
+      expect(ticket.phone).toBe("13700137000");
+      expect(ticket.processingResult).toBe("已处理");
+
       const detail = await caller.externalTicket.detail({ ticketId: result.id });
-      expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("workOrderNumber");
-      expect(DEFAULT_EXTERNAL_VISIBLE_FIELDS).toContain("status");
-      expect(detail.visibleFields).toEqual([...DEFAULT_EXTERNAL_VISIBLE_FIELDS]);
+      expect(detail.ticket.customerName).toBe("李四");
+      expect(detail.ticket.phone).toBe("13700137000");
+      expect(detail).not.toHaveProperty("visibleFields");
     });
 
-    it("keeps 工单号/状态 visible even when the account's whitelist omits them", async () => {
-      // 管理员界面的候选清单由建单字段推导，勾不到工单号与状态 —— 任何配过一次
-      // 的账号白名单都不含它们，但工单号是外部方唯一的工单标识，必须还在
+    it("工单号与状态始终可见", async () => {
       const account = await prisma.user.create({
         data: {
-          username: "ext-narrow-whitelist",
-          name: "窄白名单用户",
+          username: "ext-legacy-config",
+          name: "旧配置用户",
           passwordHash: "x",
           roleId: externalRole.id,
           active: true,
@@ -286,22 +294,17 @@ describe("external ticket API (Testcontainers)", () => {
       });
       const caller = harness.callerFor(account, externalRole);
 
-      const created = await caller.externalTicket.submit({ submissionText: "窄白名单" });
+      const created = await caller.externalTicket.submit({ submissionText: "旧配置工单" });
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
 
       const ticket = list.items.find((t) => t.id === created.id);
       expect(ticket?.workOrderNumber).toBe(created.workOrderNumber);
       expect(ticket?.status).toBe("unassigned");
-      // 未配的业务字段仍然被裁掉
-      expect(ticket?.customerRequest).toBeNull();
 
       const detail = await caller.externalTicket.detail({ ticketId: created.id });
-      expect(detail.visibleFields).toEqual([
-        "workOrderNumber",
-        "status",
-        "feedbackTime",
-        "priority",
-      ]);
+      expect(detail.ticket.workOrderNumber).toBe(created.workOrderNumber);
+      expect(detail.ticket.status).toBe("unassigned");
+      expect(detail).not.toHaveProperty("visibleFields");
     });
 
     it("excludes soft-deleted tickets", async () => {
@@ -508,27 +511,36 @@ describe("external ticket API (Testcontainers)", () => {
       expect(remarks).not.toContain("内部跟进");
     });
 
-    it("filters ticket fields by whitelist", async () => {
+    it("detail exposes all fields including sensitive ones", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
-        submissionText: "测试详情字段过滤",
+        submissionText: "测试详情全量字段",
       });
 
       await prisma.ticket.update({
         where: { id: ticket.id },
         data: {
-          customerName: "敏感客户名",
-          phone: "13800000000",
-          processingResult: "处理结果",
+          customerName: "王五",
+          phone: "13600136000",
+          contactPhone: "13500135000",
+          internalOrderNumber: "ORD999",
+          policyNumbers: ["POL100", "POL200", "POL300"],
+          contactId: "CONTACT456",
+          processingResult: "完结",
         },
       });
 
       const detail = await caller.externalTicket.detail({ ticketId: ticket.id });
 
       expect(detail.ticket.workOrderNumber).toBe(ticket.workOrderNumber);
-      expect(detail.ticket.processingResult).toBe("处理结果");
-      expect(detail.ticket).not.toHaveProperty("customerName");
-      expect(detail.ticket).not.toHaveProperty("phone");
+      expect(detail.ticket.customerName).toBe("王五");
+      expect(detail.ticket.phone).toBe("13600136000");
+      expect(detail.ticket.contactPhone).toBe("13500135000");
+      expect(detail.ticket.internalOrderNumber).toBe("ORD999");
+      expect(detail.ticket.policyNumbers).toEqual(["POL100", "POL200", "POL300"]);
+      expect(detail.ticket.contactId).toBe("CONTACT456");
+      expect(detail.ticket.processingResult).toBe("完结");
+      expect(detail).not.toHaveProperty("visibleFields");
     });
 
     it("returns 404 for soft-deleted ticket", async () => {

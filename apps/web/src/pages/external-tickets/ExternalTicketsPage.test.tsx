@@ -44,7 +44,6 @@ function ticket(overrides: Record<string, unknown> = {}) {
 function detailPayload(id: string) {
   return {
     ticket: ticket({ id }),
-    visibleFields: ["workOrderNumber", "status"],
     processLogs: [],
   };
 }

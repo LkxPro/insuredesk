@@ -57,7 +57,6 @@ function renderList(overrides: Record<string, unknown> = {}, path = "/external-t
       // 行点击用例会真的选中进详情；给详情一个合法响应，免得它拿默认空壳渲染崩掉
       "externalTicket.detail": {
         ticket: ticket(),
-        visibleFields: ["workOrderNumber", "status"],
         processLogs: [],
       },
       ...overrides,

@@ -4,9 +4,9 @@ import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 右栏详情，镜像内部双栏：头部（工单号+状态+常驻 X）→ 左栏工单原文折叠 +
- * 白名单有值字段平铺，右栏处理记录时间线 + 钉底留言框（已完结无）。↑/↓ 按
- * 列表顺序翻单。时间线内容筛选在服务端，这里验证字段白名单、折叠行为、
+ * 右栏详情，镜像内部双栏：头部（工单号+状态+常驻 X）→ 左栏工单原文直出 +
+ * 全部有值字段平铺，右栏处理记录时间线 + 钉底留言框（已完结无）。↑/↓ 按
+ * 列表顺序翻单。时间线内容筛选在服务端，这里验证字段渲染、折叠行为、
  * 留言流、翻单与两个返回出口。
  */
 
@@ -54,7 +54,6 @@ function ticket(overrides: Record<string, unknown> = {}) {
 
 type DetailOverrides = {
   ticket?: Record<string, unknown>;
-  visibleFields?: string[];
   processLogs?: unknown[];
 };
 
@@ -62,7 +61,6 @@ function detailPayload(overrides: DetailOverrides = {}) {
   const { ticket: ticketOverrides = {}, ...rest } = overrides;
   return {
     ticket: ticket(ticketOverrides),
-    visibleFields: ALL_FIELDS,
     processLogs: [],
     ...rest,
   };
@@ -81,7 +79,6 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
           { ...ticket(), latestLog: { action: "create", remark: "", at: ticket().createdAt } },
         ],
         total: 1,
-        visibleFields: [],
       },
       ...extraTrpc,
     },
@@ -182,15 +179,15 @@ describe("左栏", () => {
     expect(within(pane).queryByRole("button", { name: /工单原文/ })).not.toBeInTheDocument();
   });
 
-  it("白名单字段平铺直出：有值渲染，无值整条不出现", async () => {
+  it("全部有值字段平铺直出：有值渲染，无值整条不出现", async () => {
     renderDetail();
     const pane = await findPaneShowing("WO100001");
 
-    // 有值 → 直接可见，无需展开（渠道走 JOIN 出的名字，枚举走中文标签，布尔走是/否）
+    // 有值 → 直接可见（渠道走 JOIN 出的名字，枚举走中文标签，布尔走是/否）
     expect(within(pane).getByText("微信")).toBeInTheDocument();
     expect(within(pane).getByText("高")).toBeInTheDocument();
     expect(within(pane).getByText("是")).toBeInTheDocument();
-    // 白名单内但无值 → 整条不渲染，不留 —
+    // 无值 → 整条不渲染，不留 —
     expect(within(pane).queryByText("类别")).not.toBeInTheDocument();
     expect(within(pane).queryByText("最新跟进")).not.toBeInTheDocument();
   });
@@ -203,14 +200,16 @@ describe("左栏", () => {
     expect(within(pane).queryByText("状态")).not.toBeInTheDocument();
   });
 
-  it("白名单外字段有值也不渲染；栅格全空时给出提示", async () => {
-    renderDetail({ visibleFields: ["priority"] });
-    const pane = await findPaneShowing("WO100001");
-
-    expect(within(pane).getByText("高")).toBeInTheDocument();
-    expect(within(pane).queryByText("微信")).not.toBeInTheDocument();
-
-    renderDetail({ visibleFields: ["workOrderNumber", "status"] });
+  it("栅格全空时给出提示", async () => {
+    renderDetail({
+      ticket: {
+        feedbackTime: null,
+        channelId: null,
+        channelName: null,
+        priority: null,
+        hasContacted: null,
+      },
+    });
     expect(await screen.findByText("客服团队还未补充工单信息。")).toBeInTheDocument();
   });
 });

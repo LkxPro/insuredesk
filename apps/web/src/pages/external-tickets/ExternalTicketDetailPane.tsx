@@ -102,7 +102,7 @@ export function ExternalTicketDetailPane({
           className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
         >
           <div className="overflow-y-auto p-4 xl:min-h-0 xl:border-r">
-            <ExternalTicketInfoColumn ticket={data.ticket} visibleFields={data.visibleFields} />
+            <ExternalTicketInfoColumn ticket={data.ticket} />
           </div>
           <TicketTimelineColumn
             logs={data.processLogs.map((log) => ({
