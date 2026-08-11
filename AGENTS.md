@@ -1,27 +1,16 @@
+When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
+
 # InsureDesk
 
-## Development
+## 注释规范
 
-Dev environment is **fully containerized**. Host only needs Docker + git + editor.
-First run:
+注释只用来陈述代码本身无法表达的约束（为什么不能换一种写法、外部系统的隐含契约、workaround 的原因）。禁止以下注释：
 
-```bash
-docker compose up -d    # installs deps, starts db/api/web with hot reload
-```
+- 引用出处："根据 docs/xxx"、"参考 ADR 0007 实现"、"按照 issue #43 的要求"
+- 叙述变更历史："以前是…现在改为…"、"原来这里用的是…"——那是 git log 的职责
+- Do not repeat what the code is already saying
 
-All services run in containers: dependency install (idempotent), PostgreSQL, api (port 3000), 
-web (port 5173). Hot reload works for both api and web. Use `make` commands for common tasks:
-`make test`, `make lint`, `make migrate`, `make shell`. Run `make` (no args) for help.
-
-`docker compose down -v` drops volumes for clean state. Schema changes: `docker compose exec api pnpm db:migrate` 
-generates + applies migration files (restarting the api service applies them too).
-Full dev setup in `README.md`; production deploy in `docs/deployment.md`.
-
-**In a git worktree** (`.worktrees/…`), always start the dev env with `scripts/dev-up.sh`
-(or `make up`), never bare `docker compose up`. Bare compose binds the fixed default host
-ports 3000/5173/5432, so parallel worktrees — and the main checkout — collide on them.
-`dev-up.sh` writes a per-worktree `.env` with deterministic, non-overlapping ports derived
-from the compose project name; the main checkout keeps the 3000/5173/5432 defaults.
+注释密度、命名和惯用法向周边既有代码看齐。发现存量的冗余注释时顺手删除。
 
 ## Agent skills
 

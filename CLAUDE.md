@@ -2,22 +2,6 @@ When reporting information to me, be extremely concise and sacrifice grammar for
 
 # InsureDesk
 
-## Development
-
-Dev is **fully containerized**; the host needs only Docker + git +
-an editor. First run, and whenever you return to a fresh session:
-
-```bash
-docker compose up -d    # installs deps, then starts db + api (3000) + web (5173), all with hot reload
-```
-
-Checks run in containers too: `make test`, `make lint`, `make migrate`,
-`make shell` (bare `make` lists targets). `docker compose down -v` drops the
-volumes for a clean database. Schema changes go through
-`docker compose exec api pnpm db:migrate` (generates + applies the migration
-file). Full dev setup is in `README.md`; production deploy steps and the host
-nginx reverse-proxy config are in `docs/deployment.md`.
-
 ## 注释规范
 
 注释只用来陈述代码本身无法表达的约束（为什么不能换一种写法、外部系统的隐含契约、workaround 的原因）。禁止以下注释：
