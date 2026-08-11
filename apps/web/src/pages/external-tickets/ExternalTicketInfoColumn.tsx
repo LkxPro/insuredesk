@@ -21,7 +21,8 @@ const HEADER_KEYS = new Set(["workOrderNumber", "status"]);
 
 export function ExternalTicketInfoColumn({ ticket }: { ticket: ExternalTicket }) {
   const filled = EXTERNAL_DETAIL_FIELD_ORDER.filter((key) => !HEADER_KEYS.has(key))
-    .map((key) => ({ key, value: externalFieldValue(ticket, key) }))
+    // JSON 序列化会丢掉 undefined 的键，统一按 null 走空值判定
+    .map((key) => ({ key, value: externalFieldValue(ticket, key) ?? null }))
     .filter((entry) => entry.value !== null && entry.value !== "");
 
   return (

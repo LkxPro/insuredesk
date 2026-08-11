@@ -10,17 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
  * 留言流、翻单与两个返回出口。
  */
 
-const _ALL_FIELDS = [
-  "workOrderNumber",
-  "status",
-  "feedbackTime",
-  "channelId",
-  "categoryId",
-  "priority",
-  "hasContacted",
-  "processingResult",
-];
-
 function ticket(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",
