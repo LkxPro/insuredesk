@@ -21,7 +21,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { detailNeighbors } from "@/pages/tickets/detail-navigation";
+import { detailNav, useCrossPageNav } from "@/pages/tickets/detail-navigation";
 import { ExternalTicketDetailPane } from "./ExternalTicketDetailPane";
 import { ExternalTicketListPane } from "./ExternalTicketListPane";
 import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
@@ -83,8 +83,8 @@ export function ExternalTicketsPage() {
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
 
-  // 详情的 ↑/↓ 走当前页切片里的前后单（行序即服务端排定的序）
-  const { prev: prevTicketId, next: nextTicketId } = detailNeighbors(items, selectedId);
+  // 详情的翻单面：当前页切片里的前后单（行序即服务端排定的序）+ 页边界
+  const nav = detailNav(items, selectedId, { page: query.page, pageSize: PAGE_SIZE, total });
 
   /** 选中单的路径：id 住 path，筛选参数随链接带走。 */
   function ticketPath(ticketId: string) {
@@ -105,6 +105,14 @@ export function ExternalTicketsPage() {
   function select(ticketId: string) {
     navigate(ticketPath(ticketId), { replace: selectedId !== undefined });
   }
+
+  const crossPage = useCrossPageNav({
+    items,
+    page: query.page,
+    isPlaceholderData: listQuery.isPlaceholderData,
+    select,
+    setPage: (page) => setParam("page", String(page), { resetPage: false }),
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -193,8 +201,9 @@ export function ExternalTicketsPage() {
             <div className="flex min-h-0 flex-col rounded-md border">
               <ExternalTicketDetailPane
                 ticketId={selectedId}
-                neighbors={{ prev: prevTicketId, next: nextTicketId }}
+                nav={nav}
                 onSwitch={select}
+                onCrossPage={crossPage}
                 onClose={() => navigate(`/external-tickets${location.search}`)}
               />
             </div>

@@ -14,7 +14,14 @@ import { trpc } from "@/lib/trpc";
 import { AddCommentCard } from "./AddCommentCard";
 import { AssignTicketDialog } from "./AssignTicketDialog";
 import { DeleteTicketDialog } from "./DeleteTicketDialog";
-import { handleDetailArrowKey } from "./detail-navigation";
+import { DetailNavButtons } from "./DetailNavButtons";
+import {
+  type CrossPageDirection,
+  type DetailNav,
+  type DetailNavStep,
+  detailNavStep,
+  handleDetailArrowKey,
+} from "./detail-navigation";
 import { ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { SubmissionTextPane } from "./SubmissionTextPane";
@@ -35,8 +42,8 @@ import type { TicketDetail } from "./ticket-detail";
  *
  * 编辑是整单模式：点「编辑」后左栏可编辑字段原位变控件，一次「保存修改」＝一条
  * edit 留痕（投诉等级变更时服务端按新等级重算 dueAt 与跟进/首响要求）。取消与
- * 保存都回只读、不离开分栏。有未保存改动时三个出口——关闭详情、↑/↓ 或点窄列切
- * 单、取消——都先过「丢弃修改？」。
+ * 保存都回只读、不离开分栏。有未保存改动时三个出口——关闭详情、方向键/翻单按钮
+ * 或点窄列切单、取消——都先过「丢弃修改？」。
  *
  * 右栏随模式自动切换：只读态显示时间线；编辑态下外部件（source=external_channel
  * 携带 submissionText）右栏自动切为工单原文对照（客服一边看原文一边补全左栏
@@ -44,19 +51,25 @@ import type { TicketDetail } from "./ticket-detail";
  */
 
 /** 未保存改动被拦下时，确认后要继续做的事。 */
-type PendingExit = { kind: "close" } | { kind: "switch"; ticketId: string } | { kind: "read" };
+type PendingExit =
+  | { kind: "close" }
+  | { kind: "switch"; ticketId: string }
+  | { kind: "crossPage"; direction: CrossPageDirection }
+  | { kind: "read" };
 
 export function TicketDetailPane({
   ticketId,
   onClose,
   onSwitch,
-  /** ↑/↓ 的目标，列表边缘为 null（无动作）。 */
-  neighbors,
+  onCrossPage,
+  /** 方向键与 prev/next 按钮共用的导航面。 */
+  nav,
 }: {
   ticketId: string;
   onClose: () => void;
   onSwitch: (ticketId: string) => void;
-  neighbors: { prev: string | null; next: string | null };
+  onCrossPage: (direction: CrossPageDirection) => void;
+  nav: DetailNav;
 }) {
   const { hasPermission } = useAuth();
   const utils = trpc.useUtils();
@@ -119,7 +132,18 @@ export function TicketDetailPane({
       onClose();
     } else if (exit.kind === "switch") {
       onSwitch(exit.ticketId);
+    } else if (exit.kind === "crossPage") {
+      onCrossPage(exit.direction);
     }
+  }
+
+  /** 键盘与 prev/next 按钮同一入口：脏草稿先过「丢弃修改？」。 */
+  function applyStep(step: DetailNavStep) {
+    requestExit(
+      step.kind === "switch"
+        ? { kind: "switch", ticketId: step.ticketId }
+        : { kind: "crossPage", direction: step.direction },
+    );
   }
 
   function save(values: TicketFormValues) {
@@ -139,16 +163,15 @@ export function TicketDetailPane({
       aria-label="工单详情"
       className="flex min-h-0 flex-1 flex-col outline-hidden"
       tabIndex={-1}
-      onKeyDown={(event) =>
-        handleDetailArrowKey(event, neighbors, (to) =>
-          requestExit({ kind: "switch", ticketId: to }),
-        )
-      }
+      onKeyDown={(event) => handleDetailArrowKey(event, nav, applyStep)}
     >
       <PaneHeader
         ticket={ticket}
         editing={editing}
         saving={edit.isPending}
+        prevStep={detailNavStep("prev", nav)}
+        nextStep={detailNavStep("next", nav)}
+        onStep={applyStep}
         onClose={() => requestExit({ kind: "close" })}
         onEdit={startEditing}
         onCancelEdit={() => requestExit({ kind: "read" })}
@@ -250,6 +273,9 @@ function PaneHeader({
   ticket,
   editing,
   saving,
+  prevStep,
+  nextStep,
+  onStep,
   onClose,
   onEdit,
   onCancelEdit,
@@ -262,6 +288,9 @@ function PaneHeader({
   ticket: TicketDetail | null;
   editing: boolean;
   saving: boolean;
+  prevStep: DetailNavStep | null;
+  nextStep: DetailNavStep | null;
+  onStep: (step: DetailNavStep) => void;
   onClose: () => void;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -325,6 +354,7 @@ function PaneHeader({
         </>
       )}
 
+      <DetailNavButtons prevStep={prevStep} nextStep={nextStep} onStep={onStep} />
       <Button type="button" variant="ghost" size="icon" aria-label="关闭详情" onClick={onClose}>
         <X />
       </Button>

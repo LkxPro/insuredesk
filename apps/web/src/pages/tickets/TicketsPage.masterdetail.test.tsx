@@ -195,6 +195,102 @@ describe("↑/↓ 翻单", () => {
   });
 });
 
+describe("跨页翻单 (issue #186)", () => {
+  // 默认 pageSize=20：total=21 造两页，页 1 给 t1/t2，页 2 只有 t3
+  const pagedRows: Record<number, typeof rows> = {
+    1: rows.slice(0, 2),
+    2: rows.slice(2),
+  };
+
+  function renderPagedAt(path: string) {
+    return renderApp({
+      path,
+      trpc: {
+        "ticket.list": (input: unknown) => {
+          const page = ((input as Record<string, unknown>)?.page as number | undefined) ?? 1;
+          return { items: pagedRows[page] ?? [], total: 21, page, pageSize: 20 };
+        },
+        "ticket.detail": (input: unknown) => {
+          const { id } = input as { id: string };
+          const payload = details[id];
+          if (!payload) throw new Error(`Unexpected ticket.detail id: ${id}`);
+          return payload;
+        },
+        "channel.options": channelOptions,
+        "ticketCategory.options": categoryOptions,
+        "channel.filterOptions": channelOptions,
+        "ticketCategory.filterOptions": categoryOptions,
+      },
+    });
+  }
+
+  function listPages() {
+    return callsTo("ticket.list").map(
+      (call) => ((call.input as Record<string, unknown>)?.page as number | undefined) ?? 1,
+    );
+  }
+
+  it("页 1 末行 ↓ 翻到页 2 选中第一条；URL 页码同步，关闭详情停在新页", async () => {
+    renderPagedAt("/tickets/t2");
+    const pane = await findPaneShowing("WO100002");
+
+    fireEvent.keyDown(pane, { key: "ArrowDown" });
+
+    await findPaneShowing("WO100003");
+    expect(listPages()).toContain(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
+    await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
+    expect(screen.getByText(/第 2 \/ 2 页/)).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("WO100003")).toBeInTheDocument();
+  });
+
+  it("页 2 首行 ↑ 翻回页 1 选中最后一条", async () => {
+    renderPagedAt("/tickets/t3?page=2");
+    const pane = await findPaneShowing("WO100003");
+
+    fireEvent.keyDown(pane, { key: "ArrowUp" });
+
+    await findPaneShowing("WO100002");
+    expect(detailIds()).toEqual(["t3", "t2"]);
+  });
+
+  it("深链单不在当前页切片：方向键与按钮都死停，不翻页", async () => {
+    renderPagedAt("/tickets/t3");
+    const pane = await findPaneShowing("WO100003");
+
+    fireEvent.keyDown(pane, { key: "ArrowDown" });
+    fireEvent.keyDown(pane, { key: "ArrowRight" });
+
+    expect(screen.getByRole("region", { name: "工单详情" })).toHaveTextContent("WO100003");
+    expect(screen.getByRole("button", { name: "下一条工单" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "上一条工单" })).toBeDisabled();
+    expect(listPages().every((page) => page === 1)).toBe(true);
+  });
+
+  it("←/→ 与 ↑/↓ 同向；prev/next 按钮同一逻辑、越界翻页也可点", async () => {
+    renderPagedAt("/tickets/t2?page=1");
+    const pane = await findPaneShowing("WO100002");
+
+    // → 越界 = ↓：页 1 末行按 → 翻到页 2 第一条
+    fireEvent.keyDown(pane, { key: "ArrowRight" });
+    await findPaneShowing("WO100003");
+
+    // 页 2 只有一条：下一条按钮无路可走（末页末行），上一条可点（= ← 越界翻回）
+    expect(screen.getByRole("button", { name: "下一条工单" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "上一条工单" }));
+    await findPaneShowing("WO100002");
+
+    // 页 1 内：← = ↑ 切片内换单
+    fireEvent.keyDown(screen.getByRole("region", { name: "工单详情" }), { key: "ArrowLeft" });
+    await findPaneShowing("WO100001");
+    // 页 1 首行：上一条按钮死停（无上一页），下一条可点
+    expect(screen.getByRole("button", { name: "上一条工单" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "下一条工单" }));
+    await findPaneShowing("WO100002");
+  });
+});
+
 describe("压缩态的筛选器", () => {
   it("默认收起为摘要，展开后筛选器回到位", async () => {
     renderAt("/tickets/t1?status=overdue");
