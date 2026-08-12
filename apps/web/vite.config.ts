@@ -24,6 +24,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Default host 'localhost' resolves to ::1 first on macOS (Node 17+ uses
+    // verbatim DNS order), so vite would bind IPv6 loopback only and direct
+    // 127.0.0.1 access gets refused. Pin IPv4 loopback.
+    host: "127.0.0.1",
     // Proxy API calls to the api in dev so the browser talks same-origin
     // (no CORS dance). /trpc carries queries; /api carries the login/logout
     // REST endpoints (cookie handling). Parallel worktrees override
