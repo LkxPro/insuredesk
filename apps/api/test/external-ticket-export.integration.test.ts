@@ -15,8 +15,8 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
  *
  * - guard 顺序: 401 未登录 → 403 非外部账号（管理员也不能走外部口子）
  *   → 400 参数错误；导出对外部账号恒开，无权限位可关
- * - 数据范围恒为本人提交的单，筛选（状态/搜索含保单号/创建时间区间/
- *   includeCompleted）与外部列表同口径；无翻页参数 = 筛选结果全集
+ * - 数据范围恒为本人提交的单，筛选（状态/搜索含保单号/创建时间区间）与外部
+ *   列表同口径；无翻页参数 = 筛选结果全集
  * - 两种格式 round-trip（CSV 按文本解析，XLSX 经 exceljs 重读）
  */
 describe("external ticket export (Testcontainers)", () => {
@@ -191,7 +191,7 @@ describe("external ticket export (Testcontainers)", () => {
       expect(res.body).not.toContain("软删客户");
     });
 
-    it("默认排除已完结；includeCompleted=1 或显式 status 筛选可查出", async () => {
+    it("已完结单默认在导出内；显式 status 筛选可只导已完结", async () => {
       await submit("在途单", { customerName: "在途客户" });
       const done = await submit("已完结单", { customerName: "完结客户" });
       await prisma.ticket.update({ where: { id: done.id }, data: { status: "completed" } });
@@ -199,10 +199,7 @@ describe("external ticket export (Testcontainers)", () => {
       const session = await sessionFor("ext-exporter");
       const defaulted = await exportRequest(session, { format: "csv" });
       expect(defaulted.body).toContain("在途客户");
-      expect(defaulted.body).not.toContain("完结客户");
-
-      const withCompleted = await exportRequest(session, { format: "csv", includeCompleted: "1" });
-      expect(withCompleted.body).toContain("完结客户");
+      expect(defaulted.body).toContain("完结客户");
 
       const onlyCompleted = await exportRequest(session, { format: "csv", status: "completed" });
       expect(onlyCompleted.body).toContain("完结客户");

@@ -9,7 +9,6 @@ export function buildExternalTicketConditions(
   userId: string,
   input: {
     status?: readonly string[] | undefined;
-    includeCompleted?: boolean;
     search?: string | undefined;
     createdFrom?: string | undefined;
     createdTo?: string | undefined;
@@ -21,8 +20,6 @@ export function buildExternalTicketConditions(
   ];
   if (input.status && input.status.length > 0) {
     conditions.push(Prisma.sql`t.status IN (${Prisma.join(input.status)})`);
-  } else if (!input.includeCompleted) {
-    conditions.push(Prisma.sql`t.status <> 'completed'`);
   }
   if (input.search) {
     // 直接 %拼接%、不转义 LIKE 元字符——与内部列表各搜索支同款口径

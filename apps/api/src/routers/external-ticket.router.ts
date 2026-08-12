@@ -203,8 +203,7 @@ export const externalTicketRouter = router({
 
   /**
    * List: external user lists tickets they submitted.
-   * Scope: creatorId = 本人 + deletedAt IS NULL; completed 默认排除
-   * （includeCompleted 或显式 status 筛选可查出）。排序：最新可见跟进是客服
+   * Scope: creatorId = 本人 + deletedAt IS NULL。排序：最新可见跟进是客服
    * comment 的工单置顶（"该你说话了"），其余按最新可见跟进时刻倒序。
    * 每单附最新一条可见跟进（可见性口径与 detail 相同），客户端据此渲染
    * 摘要行与「客服新发言」徽标——纯派生，无已读落库。

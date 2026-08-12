@@ -317,22 +317,14 @@ describe("external ticket API (Testcontainers)", () => {
       expect(list.items.some((t) => t.id === result.id)).toBe(false);
     });
 
-    it("默认排除已完结；includeCompleted 或显式 status 筛选可查出", async () => {
+    it("已完结单默认在列；显式 status 筛选可只看已完结", async () => {
       const caller = externalCaller1();
       const done = await caller.externalTicket.submit({ submissionText: "已完结的单" });
       await prisma.ticket.update({ where: { id: done.id }, data: { status: "completed" } });
 
       const defaultList = await caller.externalTicket.list({ offset: 0, limit: 100 });
-      expect(defaultList.items.some((t) => t.id === done.id)).toBe(false);
+      expect(defaultList.items.some((t) => t.id === done.id)).toBe(true);
 
-      const withCompleted = await caller.externalTicket.list({
-        offset: 0,
-        limit: 100,
-        includeCompleted: true,
-      });
-      expect(withCompleted.items.some((t) => t.id === done.id)).toBe(true);
-
-      // 显式状态筛选优先于 includeCompleted 缺省
       const onlyCompleted = await caller.externalTicket.list({
         offset: 0,
         limit: 100,

@@ -112,7 +112,7 @@ describe("导出", () => {
     );
     const from = "2026-07-06T00:00:00.000Z";
     renderPage(
-      `/external-tickets?status=processing&q=PX-1&completed=1&createdFrom=${encodeURIComponent(from)}&page=2`,
+      `/external-tickets?status=processing&q=PX-1&createdFrom=${encodeURIComponent(from)}&page=2`,
     );
 
     await pickExport(/CSV/);
@@ -123,7 +123,6 @@ describe("导出", () => {
     expect(url.searchParams.get("format")).toBe("csv");
     expect(url.searchParams.get("status")).toBe("processing");
     expect(url.searchParams.get("search")).toBe("PX-1");
-    expect(url.searchParams.get("includeCompleted")).toBe("1");
     expect(url.searchParams.get("createdFrom")).toBe(from);
     expect(url.searchParams.get("timeZone")).toBeTruthy();
     // 导出覆盖筛选结果全集 — 翻页不随车

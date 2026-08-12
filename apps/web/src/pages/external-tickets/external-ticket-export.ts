@@ -12,7 +12,6 @@ import { downloadFile } from "@/lib/download";
 export interface ExternalTicketExportFilters {
   status: readonly string[];
   search: string;
-  includeCompleted: boolean;
   createdFrom?: string | undefined;
   createdTo?: string | undefined;
 }
@@ -29,9 +28,6 @@ export function buildExternalTicketExportUrl(
   }
   if (query.search) {
     params.set("search", query.search);
-  }
-  if (query.includeCompleted) {
-    params.set("includeCompleted", "1");
   }
   if (query.createdFrom !== undefined) {
     params.set("createdFrom", query.createdFrom);

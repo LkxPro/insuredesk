@@ -22,7 +22,6 @@ import { useTicketListUrl } from "@/components/ticket-list/useTicketListUrl";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Empty,
   EmptyDescription,
@@ -30,7 +29,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -75,7 +73,6 @@ function parseQuery(params: URLSearchParams) {
   return {
     status,
     search: params.get("q") ?? "",
-    includeCompleted: params.get("completed") === "1",
     createdFrom: salvageDateTime(params.get("createdFrom")),
     createdTo: salvageDateTime(params.get("createdTo")),
     page,
@@ -101,7 +98,6 @@ export function ExternalTicketsPage() {
     {
       status: query.status.length > 0 ? query.status : undefined,
       search: query.search || undefined,
-      includeCompleted: query.includeCompleted,
       createdFrom: query.createdFrom,
       createdTo: query.createdTo,
       offset: (query.page - 1) * PAGE_SIZE,
@@ -141,7 +137,6 @@ export function ExternalTicketsPage() {
   const activeFilterCount = [
     query.status.length,
     query.search ? 1 : 0,
-    query.includeCompleted ? 1 : 0,
     query.createdFrom || query.createdTo ? 1 : 0,
   ].filter((count) => count > 0).length;
 
@@ -206,16 +201,6 @@ export function ExternalTicketsPage() {
             onSubmit={submitSearch}
             placeholder="工单号 / 保单号 / 工单原文"
           />
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="include-completed"
-              checked={query.includeCompleted}
-              onCheckedChange={(checked) => setParam("completed", checked === true ? "1" : null)}
-            />
-            <Label htmlFor="include-completed" className="text-sm font-normal">
-              含已完结
-            </Label>
-          </div>
         </TicketListFilterBar>
       )}
 
@@ -280,7 +265,6 @@ export function ExternalTicketsPage() {
                         <EmptyDescription>
                           {query.status.length > 0 ||
                           query.search ||
-                          query.includeCompleted ||
                           query.createdFrom ||
                           query.createdTo ? (
                             "当前筛选条件下没有工单，换个条件试试。"

@@ -17,15 +17,12 @@ export const externalTicketSubmitInputSchema = z.object({
 export type ExternalTicketSubmitInput = z.infer<typeof externalTicketSubmitInputSchema>;
 
 /**
- * 外部工单列表输入：支持按状态筛选、搜索、创建时间区间、分页。已完结默认不进列表
- * （收件箱只放在途），includeCompleted 或显式 status 筛选可查出——
- * 显式 status 优先于 includeCompleted 缺省。
+ * 外部工单列表输入：支持按状态筛选、搜索、创建时间区间、分页。
  * 搜索域：工单号 / 工单原文 / 保单号。
  */
 export const externalTicketListInputSchema = z.object({
   status: z.array(ticketStatusSchema).optional(),
   search: z.string().trim().optional(),
-  includeCompleted: z.boolean().default(false),
   ...createdRangeFields,
   offset: z.number().int().min(0).default(0),
   limit: z.number().int().min(1).max(100).default(20),
@@ -37,11 +34,10 @@ export type ExternalTicketListInput = z.infer<typeof externalTicketListInputSche
  * 外部导出 contract：列表的筛选集 —— 翻页参数刻意缺席，导出一份当前筛选
  * 结果全集 —— 加文件格式与浏览器 IANA 时区（日期列服务端格式化，与列表
  * 本地时刻口径一致；非法时区回落 UTC 而不是让下载失败）。
- * querystring 是扁平字符串：status 逗号分隔（路由层拆分），includeCompleted
- * 走列表页 URL 的 "1" 约定。
+ * querystring 是扁平字符串：status 逗号分隔（路由层拆分）。
  */
 export const externalTicketExportInputSchema = externalTicketListInputSchema
-  .omit({ offset: true, limit: true, includeCompleted: true })
+  .omit({ offset: true, limit: true })
   .extend({
     format: ticketExportFormatSchema,
     timeZone: z
@@ -49,10 +45,6 @@ export const externalTicketExportInputSchema = externalTicketListInputSchema
       .trim()
       .max(64)
       .transform((value) => (value ? value : undefined))
-      .optional(),
-    includeCompleted: z
-      .enum(["1", "0"])
-      .transform((value) => value === "1")
       .optional(),
   });
 
