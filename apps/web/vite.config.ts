@@ -15,10 +15,10 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["src/test/setup.ts"],
-    // Fork-per-core saturates the dev container's CPUs against the api/db
-    // services and flakes async-heavy suites. Cap concurrency; the waitFor/
-    // findBy polling window is widened separately in setup.ts (asyncUtilTimeout),
-    // and this outer per-test bound must stay above it so it never fires first.
+    // Fork-per-core saturates the machine and flakes async-heavy suites, so
+    // cap the workers. testTimeout is unrelated to that cap but must stay
+    // above setup.ts's asyncUtilTimeout, or it fires before waitFor/findBy
+    // gets its full polling window.
     maxWorkers: 4,
     testTimeout: 15000,
   },
@@ -26,8 +26,8 @@ export default defineConfig({
     port: 5173,
     // Proxy API calls to the api in dev so the browser talks same-origin
     // (no CORS dance). /trpc carries queries; /api carries the login/logout
-    // REST endpoints (cookie handling). VITE_API_URL points at the api
-    // compose service; localhost only works when running vite on the host.
+    // REST endpoints (cookie handling). Parallel worktrees override
+    // VITE_API_URL with their own hash-assigned api port (scripts/dev-up.sh).
     proxy: {
       "/trpc": {
         target: process.env.VITE_API_URL ?? "http://localhost:3000",

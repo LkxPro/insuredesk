@@ -4,7 +4,7 @@
 # SPA (apps/web/dist) via @fastify/static.
 
 # ---- Base: shared toolchain + network setup (inherited by both stages) -----
-FROM node:22-alpine AS base
+FROM node:22.23.1-alpine AS base
 
 # Optional registry/engine mirrors. Default to official sources (so GitHub CI
 # stays global); override for mainland-China / restricted networks, e.g.:

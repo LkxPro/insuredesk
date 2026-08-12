@@ -8,30 +8,35 @@ pnpm monorepo（`apps/api`、`apps/web`、`packages/shared`）。
 
 ## 快速开始
 
-前置：Docker + git + 编辑器（无需安装 Node/pnpm）。
+前置：Docker、git、[nvm](https://github.com/nvm-sh/nvm)、编辑器。
 
 ```bash
-docker compose up -d    # 首次会自动安装依赖、迁移数据库、seed、启动服务
+nvm use              # 切换到项目钉定的 Node 版本（读取 .nvmrc）
+corepack enable      # 启用 pnpm（只需一次，corepack 自动读取 packageManager 字段）
+make dev             # 一键启动：安装依赖 → 启动 db → 迁移 + seed → 并行 api+web
 ```
 
-全容器化开发环境：依赖安装、PostgreSQL、api（3000）、web（5173）
-全部运行在容器内，支持热重载。浏览器访问 [http://localhost:5173](http://localhost:5173)。
+开发环境：PostgreSQL 容器化（5432），api 和 web 在宿主机跑（3000 / 5173），支持热重载。
+浏览器访问 [http://localhost:5173](http://localhost:5173)。
 
 常用命令（Makefile 封装）：
 
 ```bash
-make          # 列出所有可用命令
-make up       # 启动开发环境
-make test     # 运行测试（容器内）
-make lint     # 运行 linter
-make migrate  # 应用数据库迁移
-make shell    # 进入 api 容器 shell
+make             # 列出所有可用命令
+make dev         # 启动开发环境（幂等，Ctrl-C 停前后台，db 常驻）
+make down        # 停止 db 容器
+make db-reset    # 清库重来（删 volume + 重新创建）
+make test        # 运行测试
+make typecheck   # 类型检查
+make lint        # 运行 linter
+make check       # CI 全套检查（push 前本地跑一遍）
 ```
 
-- 清库重来：`docker compose down -v` 后重新 `docker compose up -d`。
-- 改 schema：`docker compose exec api pnpm db:migrate` 生成迁移文件并应用到开发库（重启 api 服务也会自动应用）。
-- 受限网络：在根目录创建 `.env` 设置 `NPM_CONFIG_REGISTRY` 和 `PRISMA_ENGINES_MIRROR` 切换镜像源。
-- 并行 worktree（`.worktrees/…`）：一律用 `scripts/dev-up.sh`（或 `make up`）启动，不要直接 `docker compose up`。裸 compose 会绑定固定的 3000/5173/5432，多个 worktree 之间以及和主仓库会抢同一批宿主机端口。`dev-up.sh` 按工程名的稳定哈希生成一份 per-worktree `.env`，把端口错开；主仓库不写 `.env`，沿用 3000/5173/5432。
+- 清库重来：`make db-reset` 后重新 `make dev`。
+- 改 schema：在 `apps/api/prisma/schema.prisma` 修改后，运行 `cd apps/api && pnpm db:migrate` 生成迁移文件并应用到开发库。下次启动 api 会自动应用。
+- 切分支撞 schema：`make db-reset` 重建库（additive migration 通常无需此步）。
+- 受限网络：`pnpm config set registry <镜像地址>` 切换 npm 源；Prisma 下载引擎认 `PRISMA_ENGINES_MIRROR` 环境变量。
+- 并行 worktree（`.worktrees/…`）：一律用 `make dev` 启动。每个 worktree 按工程名 hash 分配独立端口（db / api / web），互不冲突。主仓库沿用默认端口（5432 / 3000 / 5173）。
 
 
 

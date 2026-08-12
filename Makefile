@@ -1,32 +1,37 @@
-.PHONY: help up down test lint migrate shell upgrade
+.PHONY: help dev down db-reset test typecheck lint check upgrade
 
 help:
 	@echo "InsureDesk development commands:"
-	@echo "  make up       - Start all services"
-	@echo "  make down     - Stop and remove containers"
-	@echo "  make test     - Run tests in containers"
-	@echo "  make lint     - Run linters"
-	@echo "  make migrate  - Run database migrations"
-	@echo "  make shell    - Open shell in api container"
-	@echo "  make upgrade  - Upgrade production to the latest release"
+	@echo "  make dev       - Start development environment (idempotent one-command)"
+	@echo "  make down      - Stop database container"
+	@echo "  make db-reset  - Reset database (drop volume and recreate)"
+	@echo "  make test      - Run tests on host"
+	@echo "  make typecheck - Run type checking on host"
+	@echo "  make lint      - Run linters on host"
+	@echo "  make check     - Run full CI check suite (pre-push validation)"
+	@echo "  make upgrade   - Upgrade production to the latest release"
 
-up:
-	./scripts/dev-up.sh --build
+dev:
+	@./scripts/dev-up.sh
 
 down:
-	docker compose down -v
+	@docker compose down --remove-orphans
+
+db-reset:
+	@docker compose down -v --remove-orphans
+	@echo "Database volume removed. Run 'make dev' to recreate and seed."
 
 test:
-	docker compose exec -T api pnpm test
+	@pnpm test
+
+typecheck:
+	@pnpm typecheck
 
 lint:
-	docker compose exec -T api pnpm lint
+	@pnpm lint
 
-migrate:
-	docker compose exec -T api pnpm db:migrate deploy
-
-shell:
-	docker compose exec api /bin/sh
+check:
+	@sh scripts/ci.sh
 
 # 一条命令升级生产到最新发版：解析最新 CalVer、迁前备份、钉版本、
 # 拉起。跑在宿主机（需 git + docker + 服务器 .env），故不经容器。

@@ -12,8 +12,8 @@ if (existsSync(".env")) {
  * database so a developer's in-progress tickets are never replaced.
  */
 
-// `docker compose up -d` returns before a fresh Postgres volume finishes
-// initdb, so retry instead of failing the very first `pnpm dev`.
+// A fresh Postgres volume may still be finishing initdb after the container
+// reports healthy, so retry instead of failing the very first `make dev`.
 const MIGRATE_ATTEMPTS = 15;
 for (let attempt = 1; ; attempt++) {
   try {
@@ -24,7 +24,7 @@ for (let attempt = 1; ; attempt++) {
   } catch (error) {
     if (attempt === MIGRATE_ATTEMPTS) {
       process.stderr.write(String((error as { stderr?: Buffer }).stderr ?? error));
-      console.error("❌ migrate deploy failed — is PostgreSQL up? (docker compose up -d)");
+      console.error("❌ migrate deploy failed — is PostgreSQL up? (make dev)");
       process.exit(1);
     }
     console.log(`⏳ database not reachable yet, retrying (${attempt}/${MIGRATE_ATTEMPTS})...`);
