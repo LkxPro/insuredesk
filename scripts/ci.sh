@@ -14,6 +14,7 @@ export CI=true CHECKPOINT_DISABLE=1
 # Shell scripts aren't part of the pnpm workspace, so run their POSIX tests
 # here or they never execute in CI. Cheap and dep-free — do it first.
 sh scripts/upgrade.test.sh
+sh scripts/upgrade.integration.test.sh
 sh scripts/dev-ports.test.sh
 sh scripts/agent-loop.test.sh
 sh scripts/agent/net-call.test.sh
