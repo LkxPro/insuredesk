@@ -91,6 +91,8 @@ describe("external ticket API (Testcontainers)", () => {
         complaintReceiveChannel: "客服群",
         status: "unassigned",
       });
+      // 外部单的客户反馈随提交发生：反馈时间即创建时间
+      expect(ticket?.feedbackTime).toEqual(ticket?.createdAt);
     });
 
     it("无预填账号提交 → 六字段全 null", async () => {

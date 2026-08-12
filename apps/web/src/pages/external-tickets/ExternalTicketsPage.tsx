@@ -1,21 +1,26 @@
 import {
   externalTicketListInputSchema,
+  TICKET_FIELDS,
   TICKET_STATUS_LABELS,
   TICKET_STATUSES,
   type TicketStatus,
 } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
 import { AlertCircle, Inbox } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { CreatedRangeFilter } from "@/components/ticket-list/CreatedRangeFilter";
+import { ListSkeletonRows } from "@/components/ticket-list/ListSkeletonRows";
 import { MultiSelectFilter } from "@/components/ticket-list/MultiSelectFilter";
+import { PolicyNumbersCell } from "@/components/ticket-list/PolicyNumbersCell";
 import { TicketExportButton } from "@/components/ticket-list/TicketExportButton";
 import { TicketListFilterBar } from "@/components/ticket-list/TicketListFilterBar";
 import { TicketListPagination } from "@/components/ticket-list/TicketListPagination";
 import { TicketListSearch } from "@/components/ticket-list/TicketListSearch";
+import { Unknown } from "@/components/ticket-list/Unknown";
 import { useTicketListUrl } from "@/components/ticket-list/useTicketListUrl";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -26,26 +31,35 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
 import { detailNav, useCrossPageNav } from "@/pages/tickets/detail-navigation";
+import { StatusBadge } from "@/pages/tickets/StatusBadge";
 import { ExternalTicketDetailPane } from "./ExternalTicketDetailPane";
-import { ExternalTicketListPane } from "./ExternalTicketListPane";
 import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
 import { downloadExternalTicketExport } from "./external-ticket-export";
 
 /**
- * 外部端主页：左列表右详情的主从单页（/external-tickets 与
- * /external-tickets/:id 都渲染本页，:id 即选中）。跟进为主的外部方进来
- * 第一眼是该说话的单（服务端把客服新发言的工单排在最前），点行右栏即换，
- * 永不跳页；新建是顶部按钮唤起对话框，提交成功自动选中新单。
+ * 外部端主页：/external-tickets 是全宽表格一级列表（筛选与分页住在 URL query
+ * 里），整行点进 /external-tickets/:id 整页详情。跟进为主的外部方进来最上面
+ * 是该说话的单（服务端把客服新发言的工单排在最前，列序即服务端排定的序，无
+ * 列头排序）；新建是顶部按钮唤起对话框，提交成功进新单详情。
  *
- * 窄屏（<lg）主从不并存：列表占满，点行进详情，详情头部给返回键。
- * 筛选（状态/关键词/含已完结）与分页住在 URL query 里，选中住在 path 里，
- * 深链与刷新都不丢上下文。
+ * 详情页保留翻单：nav 由同一份列表查询按当前筛选与页码算出，方向键/prev/next
+ * 与越界翻页契约同内部 /tickets（detail-navigation）。筛选串随链接带走，深链
+ * 与刷新都不丢上下文。
  */
 
 const PAGE_SIZE = 20;
+const COLUMN_COUNT = 7;
 
 /** URL → 查询参数；单个参数畸形只退回它自己的缺省，不连坐其他筛选。 */
 function parseQuery(params: URLSearchParams) {
@@ -69,13 +83,6 @@ function salvageDateTime(raw: string | null) {
   return raw !== null && externalTicketListInputSchema.shape.createdFrom.safeParse(raw).success
     ? raw
     : undefined;
-}
-
-/** 宽屏（主从同屏）才有"着陆即选中"的意义；jsdom 没有 matchMedia，按窄屏处理。 */
-function isMasterDetailViewport() {
-  return (
-    typeof window.matchMedia === "function" && window.matchMedia("(min-width: 1024px)").matches
-  );
 }
 
 export function ExternalTicketsPage() {
@@ -110,17 +117,7 @@ export function ExternalTicketsPage() {
     return `/external-tickets/${ticketId}${location.search}`;
   }
 
-  // 着陆默认选中第一单（列表顶部 = 最该看的）；replace 不让 Back
-  // 重放这一步。窄屏不自动选——用户的第一眼是列表本身，点谁看谁。
-  useEffect(() => {
-    const first = items[0];
-    if (selectedId !== undefined || !first || !isMasterDetailViewport()) {
-      return;
-    }
-    navigate(`/external-tickets/${first.id}${location.search}`, { replace: true });
-  }, [selectedId, items, location.search, navigate]);
-
-  /** 首次选中 push（Back 回到无选中），已选中后换单 replace（翻单是扫描动作）。 */
+  /** 列表进详情 push（Back 回到列表），详情内翻单 replace（翻单是扫描动作）。 */
   function select(ticketId: string) {
     navigate(ticketPath(ticketId), { replace: selectedId !== undefined });
   }
@@ -132,6 +129,20 @@ export function ExternalTicketsPage() {
     select,
     setPage: (page) => setParam("page", String(page), { resetPage: false }),
   });
+
+  if (selectedId !== undefined) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col rounded-md border">
+        <ExternalTicketDetailPane
+          ticketId={selectedId}
+          nav={nav}
+          onSwitch={select}
+          onCrossPage={crossPage}
+          onClose={() => navigate(`/external-tickets${location.search}`)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -188,59 +199,96 @@ export function ExternalTicketsPage() {
           <AlertDescription>{listQuery.error.message}</AlertDescription>
         </Alert>
       ) : (
-        <div
-          className={cn(
-            "grid min-h-0 flex-1 grid-cols-1 gap-3",
-            selectedId !== undefined && "lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]",
-          )}
-        >
-          <div
-            className={cn(
-              "min-h-0 flex-col rounded-md border",
-              selectedId !== undefined ? "hidden lg:flex" : "flex",
-            )}
-          >
-            {!listQuery.isLoading && items.length === 0 ? (
-              <Empty className="border-0">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <Inbox />
-                  </EmptyMedia>
-                  <EmptyTitle>没有工单</EmptyTitle>
-                  <EmptyDescription>
-                    {query.status.length > 0 ||
-                    query.search ||
-                    query.includeCompleted ||
-                    query.createdFrom ||
-                    query.createdTo ? (
-                      "当前筛选条件下没有工单，换个条件试试。"
-                    ) : (
-                      <>点右上角「新建工单」，把客户反馈原文交给客服团队。</>
-                    )}
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <ExternalTicketListPane
-                items={items}
-                isLoading={listQuery.isLoading}
-                selectedId={selectedId}
-                onSelect={select}
-              />
-            )}
-          </div>
-
-          {selectedId !== undefined && (
-            <div className="flex min-h-0 flex-col rounded-md border">
-              <ExternalTicketDetailPane
-                ticketId={selectedId}
-                nav={nav}
-                onSwitch={select}
-                onCrossPage={crossPage}
-                onClose={() => navigate(`/external-tickets${location.search}`)}
-              />
-            </div>
-          )}
+        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
+          <Table>
+            {/* 表头随行滚动会丢失列语义，钉在滚动容器顶部 */}
+            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
+              <TableRow>
+                <TableHead>工单号</TableHead>
+                <TableHead>{TICKET_FIELDS.feedbackTime.label}</TableHead>
+                <TableHead>{TICKET_FIELDS.policyNumbers.label}</TableHead>
+                <TableHead>{TICKET_FIELDS.customerName.label}</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>客服最近跟进记录</TableHead>
+                <TableHead>{TICKET_FIELDS.completionStatusId.label}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {listQuery.isLoading ? (
+                <ListSkeletonRows columnCount={COLUMN_COUNT} />
+              ) : items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={COLUMN_COUNT} className="p-0">
+                    <Empty className="border-0">
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <Inbox />
+                        </EmptyMedia>
+                        <EmptyTitle>没有工单</EmptyTitle>
+                        <EmptyDescription>
+                          {query.status.length > 0 ||
+                          query.search ||
+                          query.includeCompleted ||
+                          query.createdFrom ||
+                          query.createdTo ? (
+                            "当前筛选条件下没有工单，换个条件试试。"
+                          ) : (
+                            <>点右上角「新建工单」，把客户反馈原文交给客服团队。</>
+                          )}
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                items.map((ticket) => (
+                  <TableRow
+                    key={ticket.id}
+                    className="cursor-pointer"
+                    // 筛选串随车带走，返回列表时上下文不丢
+                    onClick={() => navigate(ticketPath(ticket.id))}
+                  >
+                    <TableCell>
+                      <span className="flex items-center gap-1.5">
+                        <Link
+                          to={ticketPath(ticket.id)}
+                          className="font-medium hover:underline"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {ticket.workOrderNumber}
+                        </Link>
+                        {/* 最新一条可见记录是客服发言 = 球在你这边 */}
+                        {ticket.latestLog?.action === "comment" && <Badge>客服新发言</Badge>}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {ticket.feedbackTime ? formatDateTime(ticket.feedbackTime) : <Unknown />}
+                    </TableCell>
+                    <TableCell>
+                      <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />
+                    </TableCell>
+                    <TableCell>{ticket.customerName ?? <Unknown />}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={ticket.status} />
+                    </TableCell>
+                    <TableCell>
+                      {/* 无人跟进（create 日志 remark 为空）时留空，不占 — 占位 */}
+                      {ticket.latestLog?.remark ? (
+                        <span className="block max-w-72 truncate" title={ticket.latestLog.remark}>
+                          {ticket.latestLog.remark}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      {ticket.completionStatusName ?? (
+                        <span className="text-muted-foreground">未完结</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
       )}
 

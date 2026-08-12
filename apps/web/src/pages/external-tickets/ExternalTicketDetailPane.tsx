@@ -1,5 +1,5 @@
 import type { ProcessLogAction } from "@insuredesk/shared";
-import { AlertCircle, ArrowLeft, X } from "lucide-react";
+import { AlertCircle, ArrowLeft } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,11 +19,10 @@ import { ExternalNoteCard } from "./ExternalNoteCard";
 import { ExternalTicketInfoColumn } from "./ExternalTicketInfoColumn";
 
 /**
- * 右栏详情，镜像内部分栏：头部（工单号+状态+常驻 X，窄屏另给返回键）→
- * 左栏工单信息（原文折叠+白名单字段），右栏处理记录时间线与钉底留言框。
- * 已完结是终态，只读（无留言框）。时间线内容已由服务端过滤（create +
- * comment 非 internal + external_note + resolve），这里只按 action 给圆点
- * 着色区分"谁发出的"。
+ * 整页详情，镜像内部分栏：头部（返回列表+工单号+状态+翻单按钮）→ 左栏工单
+ * 信息（原文折叠+白名单字段），右栏处理记录时间线与钉底留言框。已完结是终态，
+ * 只读（无留言框）。时间线内容已由服务端过滤（create + comment 非 internal +
+ * external_note + resolve），这里只按 action 给圆点着色区分"谁发出的"。
  *
  * 方向键（↑/↓/←/→）与 prev/next 按钮按列表顺序翻单，越界翻页（nav 由页面
  * 按当前筛选与页码算出，无路可走则按钮禁用、按键死停）；输入控件内的方向
@@ -86,14 +85,7 @@ export function ExternalTicketDetailPane({
       onKeyDown={(event) => handleDetailArrowKey(event, nav, applyStep)}
     >
       <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
-        {/* 窄屏主从不并存，返回键让位列表；宽屏它纯属多余 */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 lg:hidden"
-          aria-label="返回列表"
-          onClick={onClose}
-        >
+        <Button variant="ghost" size="icon" aria-label="返回列表" onClick={onClose}>
           <ArrowLeft />
         </Button>
         <h2 className="m-0 text-lg font-semibold tracking-tight">
@@ -102,9 +94,6 @@ export function ExternalTicketDetailPane({
         {ticket && <StatusBadge status={ticket.status} />}
         <div className="flex-1" />
         <DetailNavButtons prevStep={prevStep} nextStep={nextStep} onStep={applyStep} />
-        <Button variant="ghost" size="icon" aria-label="关闭详情" onClick={onClose}>
-          <X />
-        </Button>
       </div>
 
       {detailQuery.error ? (

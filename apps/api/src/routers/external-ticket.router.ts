@@ -147,6 +147,8 @@ export const externalTicketRouter = router({
             userComplaintChannel: account.prefillUserComplaintChannel,
             complaintReceiveChannel: account.prefillComplaintReceiveChannel,
             status: "unassigned",
+            // 外部单的客户反馈随提交发生，反馈时间即创建时间
+            feedbackTime: now,
             createdAt: now,
             updatedAt: now,
           },

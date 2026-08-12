@@ -94,8 +94,8 @@ export function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        {/* 外部端是主从单页：:id 只是列表的选中态，与 /tickets/:id 同一处理。
-            守卫与列表同一个权限点，数据范围在服务端。 */}
+        {/* 外部端：/external-tickets 是列表，:id 是整页详情，与 /tickets/:id
+            同一处理。守卫与列表同一个权限点，数据范围在服务端。 */}
         <Route
           path="/external-tickets/:id"
           element={

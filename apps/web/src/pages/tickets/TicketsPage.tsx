@@ -28,15 +28,17 @@ import {
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { CreatedRangeFilter } from "@/components/ticket-list/CreatedRangeFilter";
+import { ListSkeletonRows } from "@/components/ticket-list/ListSkeletonRows";
 import { MultiSelectFilter } from "@/components/ticket-list/MultiSelectFilter";
+import { PolicyNumbersCell } from "@/components/ticket-list/PolicyNumbersCell";
 import { TicketExportButton } from "@/components/ticket-list/TicketExportButton";
 import { TicketListFilterBar } from "@/components/ticket-list/TicketListFilterBar";
 import { TicketListPagination } from "@/components/ticket-list/TicketListPagination";
 import { TicketListSearch } from "@/components/ticket-list/TicketListSearch";
 import { downloadTicketExport } from "@/components/ticket-list/ticket-export";
+import { Unknown } from "@/components/ticket-list/Unknown";
 import { useTicketListUrl } from "@/components/ticket-list/useTicketListUrl";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -46,8 +48,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -152,55 +152,6 @@ function serializeSelection(
   return sameSet ? null : values.join(",");
 }
 
-/** The one placeholder for 未填写 cells — unknown, not empty. */
-function Unknown() {
-  return <span className="text-muted-foreground">—</span>;
-}
-
-/**
- * 保单号列：首个保单号 + 多于一个时的 +N 徽标，点徽标弹出全部保单号。徽标只显
- * 示"还有几个"，列宽由首值决定、不被整串撑爆。空数组沿用 Unknown 未填写样式。
- */
-function PolicyNumbersCell({ policyNumbers }: { policyNumbers: readonly string[] }) {
-  if (policyNumbers.length === 0) {
-    return <Unknown />;
-  }
-  const [first, ...rest] = policyNumbers;
-  return (
-    <span className="flex items-center gap-1.5 whitespace-nowrap">
-      {first}
-      {rest.length > 0 && (
-        <Popover>
-          {/* stopPropagation: 展开保单号不应顺带打开行详情 */}
-          <PopoverTrigger asChild onClick={(event) => event.stopPropagation()}>
-            <Badge
-              asChild
-              variant="secondary"
-              className="cursor-pointer tabular-nums"
-              aria-label={`还有 ${rest.length} 个保单号`}
-            >
-              <button type="button">+{rest.length}</button>
-            </Badge>
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className="w-auto max-w-72 p-2"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <ul className="flex flex-col gap-1 text-sm">
-              {policyNumbers.map((policyNumber) => (
-                <li key={policyNumber} className="break-all">
-                  {policyNumber}
-                </li>
-              ))}
-            </ul>
-          </PopoverContent>
-        </Popover>
-      )}
-    </span>
-  );
-}
-
 function SortHead({
   field,
   label,
@@ -219,24 +170,6 @@ function SortHead({
       {label}
       <Icon data-icon="inline-end" className={active ? "" : "text-muted-foreground"} />
     </Button>
-  );
-}
-
-/** Layout-shaped placeholder rows while the list query is in flight. */
-function ListSkeletonRows({ columnCount }: { columnCount: number }) {
-  const cells = Array.from({ length: columnCount }, (_, index) => index);
-  return (
-    <>
-      {[0, 1, 2, 3, 4].map((row) => (
-        <TableRow key={row}>
-          {cells.map((cell) => (
-            <TableCell key={cell}>
-              <Skeleton className="h-4 w-full max-w-24" />
-            </TableCell>
-          ))}
-        </TableRow>
-      ))}
-    </>
   );
 }
 

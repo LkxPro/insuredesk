@@ -4,10 +4,10 @@ import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 右栏详情，镜像内部双栏：头部（工单号+状态+常驻 X）→ 左栏工单原文直出 +
- * 全部有值字段平铺，右栏处理记录时间线 + 钉底留言框（已完结无）。↑/↓ 按
- * 列表顺序翻单。时间线内容筛选在服务端，这里验证字段渲染、折叠行为、
- * 留言流、翻单与两个返回出口。
+ * 整页详情，镜像内部双栏：头部（返回列表+工单号+状态+翻单按钮）→ 左栏工单
+ * 原文直出 + 全部有值字段平铺，右栏处理记录时间线 + 钉底留言框（已完结无）。
+ * ↑/↓ 按列表顺序翻单。时间线内容筛选在服务端，这里验证字段渲染、折叠行为、
+ * 留言流、翻单与返回出口。
  */
 
 function ticket(overrides: Record<string, unknown> = {}) {
@@ -18,6 +18,8 @@ function ticket(overrides: Record<string, unknown> = {}) {
     submissionText: "客户反馈保单无法下载\n第二行",
     createdAt: "2026-07-09T02:00:00.000Z",
     feedbackTime: "2026-07-09T01:00:00.000Z",
+    customerName: null,
+    policyNumbers: [],
     channelId: "c1",
     channelName: "微信",
     project: null,
@@ -83,28 +85,16 @@ async function findPaneShowing(workOrderNumber: string) {
 describe("头部", () => {
   it("shows 工单号与状态", async () => {
     renderDetail();
-    // jsdom 无 CSS：选中态下列表行也在 DOM 里，状态徽标会出现两次，断言语义挂在详情头部
     const header = (await screen.findByRole("heading", { name: "WO100001" }))
       .parentElement as HTMLElement;
     expect(within(header).getByText("处理中")).toBeInTheDocument();
   });
 
-  it("窄屏返回键回到无选中的列表", async () => {
+  it("返回键回到列表", async () => {
     renderDetail();
     await screen.findByRole("heading", { name: "WO100001" });
 
     fireEvent.click(screen.getByRole("button", { name: "返回列表" }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole("region", { name: "工单详情" })).not.toBeInTheDocument();
-    });
-  });
-
-  it("常驻「关闭详情」同样回到无选中的列表", async () => {
-    renderDetail();
-    await screen.findByRole("heading", { name: "WO100001" });
-
-    fireEvent.click(screen.getByRole("button", { name: "关闭详情" }));
 
     await waitFor(() => {
       expect(screen.queryByRole("region", { name: "工单详情" })).not.toBeInTheDocument();
@@ -310,7 +300,7 @@ describe("跨页翻单 (issue #186)", () => {
     });
   }
 
-  it("页 1 末行 ↓ 翻到页 2 选中第一条；页码同步进 URL（分页器停在第 2 页）", async () => {
+  it("页 1 末行 ↓ 翻到页 2 选中第一条（列表查询带上新页 offset）", async () => {
     renderPagedAt("/external-tickets/t2");
     const pane = await findPaneShowing("WO100002");
 
@@ -321,7 +311,6 @@ describe("跨页翻单 (issue #186)", () => {
       (call) => (call.input as { offset?: number }).offset ?? 0,
     );
     expect(offsets).toContain(20);
-    expect(screen.getByText(/第 2 \/ 2 页/)).toBeInTheDocument();
   });
 
   it("页 2 首行 ↑ 翻回页 1 选中最后一条", async () => {
