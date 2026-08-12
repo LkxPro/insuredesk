@@ -12,7 +12,8 @@ cd "$root"
 required_node="$(tr -d '[:space:]' < .nvmrc)"
 current_node="$(node --version | tr -d 'v')"
 if [ "$current_node" != "$required_node" ]; then
-  echo "✗ Node 版本不符：需要 $required_node（.nvmrc），当前 $current_node"
+  # 花括号必需：紧跟全角标点时，bash 会把其首字节吞进变量名，set -u 下即 unbound。
+  echo "✗ Node 版本不符：需要 ${required_node}（.nvmrc），当前 ${current_node}"
   echo "  运行 'nvm use'；未安装则先 'nvm install'。"
   exit 1
 fi
