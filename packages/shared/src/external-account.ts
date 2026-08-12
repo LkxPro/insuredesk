@@ -81,14 +81,6 @@ export const externalAccountSetActiveInputSchema = z.object({
 });
 export type ExternalAccountSetActiveInput = z.infer<typeof externalAccountSetActiveInputSchema>;
 
-/** 外部导出能力开关：全外部账号一档（挂在唯一外部角色上），非按账号配置。 */
-export const externalAccountSetExportEnabledInputSchema = z.object({
-  enabled: z.boolean(),
-});
-export type ExternalAccountSetExportEnabledInput = z.infer<
-  typeof externalAccountSetExportEnabledInputSchema
->;
-
 /** 列表行即编辑弹窗的全部数据，无独立详情接口。 */
 export interface ExternalAccountListItem {
   id: string;

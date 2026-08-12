@@ -26,7 +26,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Label } from "@/components/ui/label";
-import { useAuth } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { detailNav, useCrossPageNav } from "@/pages/tickets/detail-navigation";
@@ -83,8 +82,6 @@ export function ExternalTicketsPage() {
   const { id: selectedId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { hasPermission } = useAuth();
-  const canExport = hasPermission("ticket.export_external");
   const { query, searchDraft, setSearchDraft, submitSearch, setParam, setParams } =
     useTicketListUrl(parseQuery);
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -181,9 +178,7 @@ export function ExternalTicketsPage() {
             含已完结
           </Label>
         </div>
-        {canExport && (
-          <TicketExportButton onExport={(format) => downloadExternalTicketExport(query, format)} />
-        )}
+        <TicketExportButton onExport={(format) => downloadExternalTicketExport(query, format)} />
       </TicketListFilterBar>
 
       {listQuery.error ? (

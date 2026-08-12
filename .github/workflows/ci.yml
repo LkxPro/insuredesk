@@ -16,23 +16,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The checks bind-mount the pnpm store to this repo-local path, so
-      # caching it here carries it across runs.
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: .pnpm-store
-          key: pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: pnpm-store-
+      # pnpm is not preinstalled on the runner, and setup-node's `cache: pnpm`
+      # shells out to `pnpm store path` — so pnpm has to land on PATH first.
+      # Version comes from the packageManager field, same as local dev.
+      - uses: pnpm/action-setup@v4
 
-      # One-shot container on the same dev compose service/image as local
-      # development — Node/pnpm versions live in the image tag and the
-      # packageManager field, never in this file.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
       - name: Install + lint + typecheck + build + test
-        run: >
-          docker compose run --rm --no-deps -T
-          -v "$PWD/.pnpm-store:/app/.pnpm-store"
-          api sh scripts/ci.sh
+        run: sh scripts/ci.sh
 
   # Build the production image with the same context/Dockerfile as the Release
   # workflow, but never push: a broken image turns the PR red instead of
