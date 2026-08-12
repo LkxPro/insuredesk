@@ -464,7 +464,17 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         // 处理态：窄列 + 详情。窄屏 (<1024px) 无 lg → 详情占满，窄列让位
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]">
           <div className="hidden min-h-0 rounded-md border lg:flex lg:flex-col">
-            <TicketNarrowList items={items} selectedId={detailId ?? ""} onSelect={switchTo} />
+            <TicketNarrowList
+              items={items.map((ticket) => ({
+                id: ticket.id,
+                customerName: ticket.customerName,
+                status: ticket.displayStatus,
+                time: ticket.dueAt,
+                overdue: ticket.displayStatus === "overdue",
+              }))}
+              selectedId={detailId ?? ""}
+              onSelect={switchTo}
+            />
           </div>
           <div className="flex min-h-0 flex-col rounded-md border">
             <TicketDetailPane

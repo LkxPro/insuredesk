@@ -171,7 +171,7 @@ describe("external ticket export (Testcontainers)", () => {
 
   describe("数据范围与筛选 (CSV)", () => {
     it("只导出本人提交的单，软删除外", async () => {
-      const own = await submit("本人的单", { customerName: "本人客户" });
+      await submit("本人的单", { customerName: "本人客户" });
       await submitAs(externalPeer, externalRole, "他人的单", { customerName: "他人客户" });
       await submit("被软删的单", { customerName: "软删客户", deletedAt: new Date() });
 
@@ -185,8 +185,8 @@ describe("external ticket export (Testcontainers)", () => {
 
       const rows = parseCsv(res.body);
       expect(rows).toHaveLength(2); // header + 本人一单
-      expect(rows[1]?.[0]).toBe(own.workOrderNumber);
-      expect(res.body).toContain("本人客户");
+      const nameColumn = (rows[0] ?? []).indexOf("客户姓名");
+      expect(rows[1]?.[nameColumn]).toBe("本人客户");
       expect(res.body).not.toContain("他人客户");
       expect(res.body).not.toContain("软删客户");
     });
@@ -242,10 +242,13 @@ describe("external ticket export (Testcontainers)", () => {
       expect(res.body).not.toContain("区间后客户");
     });
 
-    it("列集为外部表面字段：有工单原文/保单号，无内部运营列", async () => {
+    it("列集固定为 5 列：保单号/客户姓名/客户电话/联系电话/工单原文", async () => {
       await submit("导出内容单", {
         customerName: "内容客户",
+        phone: "13800000000",
+        contactPhone: "13900000000",
         policyNumbers: ["PX-001"],
+        // 内部运营字段填了也不出列
         assigneeId: (await prisma.user.findUniqueOrThrow({ where: { username: "manager" } })).id,
         dueAt: new Date(),
       });
@@ -253,32 +256,17 @@ describe("external ticket export (Testcontainers)", () => {
       const session = await sessionFor("ext-exporter");
       const res = await exportRequest(session, { format: "csv", timeZone: "Asia/Shanghai" });
       const rows = parseCsv(res.body);
-      const header = rows[0] ?? [];
-      expect(header).toContain("工单原文");
-      expect(header).toContain("保单号");
-      expect(header).toContain("客户姓名");
-      expect(header).toContain("处理结果");
-      expect(header).not.toContain("责任人");
-      expect(header).not.toContain("处理时限");
-      expect(header).not.toContain("跟进频次");
-
-      const row = rows[1] ?? [];
-      expect(row[header.indexOf("保单号")]).toBe("PX-001");
-      expect(row[header.indexOf("工单原文")]).toBe("导出内容单");
+      expect(rows[0]).toEqual(["保单号", "客户姓名", "客户电话", "联系电话", "工单原文"]);
+      expect(rows[1]).toEqual(["PX-001", "内容客户", "13800000000", "13900000000", "导出内容单"]);
     });
 
-    it("日期列按请求时区格式化，非法时区回落 UTC", async () => {
-      await submit("时区单", { createdAt: new Date("2026-07-09T16:30:00.000Z") });
+    it("空字段导出为空字符串，不留占位符", async () => {
+      await submit("空字段单");
 
       const session = await sessionFor("ext-exporter");
-      const res = await exportRequest(session, { format: "csv", timeZone: "Asia/Shanghai" });
+      const res = await exportRequest(session, { format: "csv" });
       const rows = parseCsv(res.body);
-      const createdColumn = rows[0]?.indexOf("创建时间") ?? -1;
-      expect(rows[1]?.[createdColumn]).toBe("2026-07-10 00:30"); // UTC+8
-
-      const fallback = await exportRequest(session, { format: "csv", timeZone: "Not/AZone" });
-      expect(fallback.statusCode).toBe(200);
-      expect(parseCsv(fallback.body)[1]?.[createdColumn]).toBe("2026-07-09 16:30");
+      expect(rows[1]).toEqual(["", "", "", "", "空字段单"]);
     });
   });
 
@@ -299,7 +287,7 @@ describe("external ticket export (Testcontainers)", () => {
       const sheet = workbook.getWorksheet("工单");
       expect(sheet).toBeDefined();
       expect(sheet?.rowCount).toBe(3); // header + 2 tickets
-      expect(sheet?.getRow(1).getCell(1).value).toBe("工单号");
+      expect(sheet?.getRow(1).getCell(1).value).toBe("保单号");
       const headerCells = (sheet?.getRow(1).values as Array<string | undefined>) ?? [];
       const nameColumn = headerCells.indexOf("客户姓名");
       const names = [2, 3].map((row) => sheet?.getRow(row).getCell(nameColumn).value);

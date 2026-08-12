@@ -4,10 +4,10 @@ import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 整页详情，镜像内部双栏：头部（返回列表+工单号+状态+翻单按钮）→ 左栏工单
- * 原文直出 + 全部有值字段平铺，右栏处理记录时间线 + 钉底留言框（已完结无）。
- * ↑/↓ 按列表顺序翻单。时间线内容筛选在服务端，这里验证字段渲染、折叠行为、
- * 留言流、翻单与返回出口。
+ * 详情区，镜像内部双栏：头部（返回列表+工单号+状态+翻单按钮）→ 左栏工单
+ * 原文直出 + 固定字段（保单号/客户/两电话，空值 —），右栏处理记录时间线 +
+ * 钉底留言框（已完结无）。↑/↓ 按列表顺序翻单。时间线内容筛选在服务端，这里
+ * 验证字段渲染、留言流、翻单与返回出口。
  */
 
 function ticket(overrides: Record<string, unknown> = {}) {
@@ -158,17 +158,38 @@ describe("左栏", () => {
     expect(within(pane).queryByRole("button", { name: /工单原文/ })).not.toBeInTheDocument();
   });
 
-  it("全部有值字段平铺直出：有值渲染，无值整条不出现", async () => {
-    renderDetail();
+  it("原文为空显示 —", async () => {
+    renderDetail({ ticket: { submissionText: null } });
     const pane = await findPaneShowing("WO100001");
 
-    // 有值 → 直接可见（渠道走 JOIN 出的名字，枚举走中文标签，布尔走是/否）
-    expect(within(pane).getByText("微信")).toBeInTheDocument();
-    expect(within(pane).getByText("高")).toBeInTheDocument();
-    expect(within(pane).getByText("是")).toBeInTheDocument();
-    // 无值 → 整条不渲染，不留 —
-    expect(within(pane).queryByText("类别")).not.toBeInTheDocument();
-    expect(within(pane).queryByText("最新跟进")).not.toBeInTheDocument();
+    expect(within(pane).getByText("工单原文").parentElement).toHaveTextContent("—");
+  });
+
+  it("只渲染 保单号/客户/两个电话 四个字段，空值落 —，其余字段有值也不出", async () => {
+    renderDetail({
+      ticket: {
+        customerName: "张三",
+        phone: "13800000000",
+        policyNumbers: ["P123", "P456"],
+      },
+    });
+    const pane = await findPaneShowing("WO100001");
+
+    // 标签与内部详情同口径
+    expect(within(pane).getByText("保单号")).toBeInTheDocument();
+    expect(within(pane).getByText("P123 P456")).toBeInTheDocument();
+    expect(within(pane).getByText("客户姓名")).toBeInTheDocument();
+    expect(within(pane).getByText("张三")).toBeInTheDocument();
+    expect(within(pane).getByText("客户电话（投保人）")).toBeInTheDocument();
+    expect(within(pane).getByText("13800000000")).toBeInTheDocument();
+    // 空值整条仍在，落 —（fixture 的 contactPhone 未填）
+    expect(within(pane).getByText("联系人电话（备用）").parentElement).toHaveTextContent("—");
+
+    // 其余字段有值也不渲染（fixture 自带 渠道=微信 / 优先级=高 / 已联系=是）
+    expect(within(pane).queryByText("微信")).not.toBeInTheDocument();
+    expect(within(pane).queryByText("优先级")).not.toBeInTheDocument();
+    expect(within(pane).queryByText("是否已联系")).not.toBeInTheDocument();
+    expect(within(pane).queryByText("客服团队还未补充工单信息。")).not.toBeInTheDocument();
   });
 
   it("工单号与状态已挂在头部，字段栅格不重复", async () => {
@@ -177,19 +198,6 @@ describe("左栏", () => {
 
     expect(within(pane).queryByText("工单号")).not.toBeInTheDocument();
     expect(within(pane).queryByText("状态")).not.toBeInTheDocument();
-  });
-
-  it("栅格全空时给出提示", async () => {
-    renderDetail({
-      ticket: {
-        feedbackTime: null,
-        channelId: null,
-        channelName: null,
-        priority: null,
-        hasContacted: null,
-      },
-    });
-    expect(await screen.findByText("客服团队还未补充工单信息。")).toBeInTheDocument();
   });
 });
 

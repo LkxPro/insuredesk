@@ -1,13 +1,9 @@
 import {
   type ExternalTicketExportQuery,
   joinPolicyNumbers,
-  PRIORITY_LABELS,
-  prioritySchema,
-  TICKET_STATUS_LABELS,
   ticketExportHeader,
-  ticketStatusSchema,
 } from "@insuredesk/shared";
-import { Prisma } from "../generated/prisma/client";
+import { Prisma, type Ticket } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
 import { buildExternalTicketConditions } from "./external-ticket-query";
 import type { TicketServiceDeps } from "./ticket.service";
@@ -22,75 +18,23 @@ import {
 /**
  * 外部导出工单: the external viewer's *filtered list*, as a file. 与列表吃
  * 同一份 WHERE 构造器（buildExternalTicketConditions），数据范围恒为本人
- * 提交的单；无翻页参数，导出当前筛选结果全集。列集 = 外部表面可见字段
- * （与 serializeExternalTicket 同口径），不含责任人/处理时限等内部运营列。
- * 状态列取存储状态（外部表面不派生已超时），日期列按浏览器时区格式化。
- * 只读：导出不写 ProcessLog。
+ * 提交的单；无翻页参数，导出当前筛选结果全集。列集与外部详情同口径——
+ * 保单号/客户/两个电话/工单原文 5 列，空值导空字符串（「—」只是页面展示
+ * 层的兜底，进 Excel 会污染筛选）。只读：导出不写 ProcessLog。
  */
 
-const exportInclude = {
-  channel: { select: { name: true } },
-  category: { select: { name: true } },
-  completionStatus: { select: { name: true } },
-} satisfies Prisma.TicketInclude;
+type ExternalExportRow = Ticket;
 
-type ExternalExportRow = Prisma.TicketGetPayload<{ include: typeof exportInclude }>;
-
-type ExportContext = { formatDate: (date: Date | null) => string };
-
-/** 列序与外部详情字段顺序同向：身份（工单号/状态）→ 原文与时刻 → 业务字段 → 收尾（处理结果）。 */
+/** 列序与详情信息栏同向：身份（保单号/客户/电话）在前，长文本原文收尾。 */
 const EXPORT_COLUMNS: ReadonlyArray<{
   header: string;
-  value: (ticket: ExternalExportRow, ctx: ExportContext) => string | number;
+  value: (ticket: ExternalExportRow) => string;
 }> = [
-  { header: "工单号", value: (t) => t.workOrderNumber },
-  { header: "状态", value: (t) => TICKET_STATUS_LABELS[ticketStatusSchema.parse(t.status)] },
-  { header: "工单原文", value: (t) => t.submissionText ?? "" },
-  { header: "创建时间", value: (t, { formatDate }) => formatDate(t.createdAt) },
-  {
-    header: ticketExportHeader("feedbackTime"),
-    value: (t, { formatDate }) => formatDate(t.feedbackTime),
-  },
-  { header: ticketExportHeader("channelId"), value: (t) => t.channel?.name ?? "" },
-  { header: ticketExportHeader("project"), value: (t) => t.project ?? "" },
-  { header: ticketExportHeader("brokerageEntity"), value: (t) => t.brokerageEntity ?? "" },
-  { header: ticketExportHeader("paymentChannel"), value: (t) => t.paymentChannel ?? "" },
-  { header: ticketExportHeader("internalOrderNumber"), value: (t) => t.internalOrderNumber ?? "" },
   { header: ticketExportHeader("policyNumbers"), value: (t) => joinPolicyNumbers(t.policyNumbers) },
-  {
-    header: ticketExportHeader("userComplaintChannel"),
-    value: (t) => t.userComplaintChannel ?? "",
-  },
-  {
-    header: ticketExportHeader("complaintReceiveChannel"),
-    value: (t) => t.complaintReceiveChannel ?? "",
-  },
   { header: ticketExportHeader("customerName"), value: (t) => t.customerName ?? "" },
   { header: ticketExportHeader("phone"), value: (t) => t.phone ?? "" },
   { header: ticketExportHeader("contactPhone"), value: (t) => t.contactPhone ?? "" },
-  { header: ticketExportHeader("nuclearBodyStatus"), value: (t) => t.nuclearBodyStatus ?? "" },
-  { header: ticketExportHeader("customerRequest"), value: (t) => t.customerRequest ?? "" },
-  {
-    header: ticketExportHeader("hasContacted"),
-    value: (t) => (t.hasContacted === null ? "" : t.hasContacted ? "是" : "否"),
-  },
-  {
-    header: ticketExportHeader("contactTime"),
-    value: (t, { formatDate }) => formatDate(t.contactTime),
-  },
-  { header: ticketExportHeader("contactId"), value: (t) => t.contactId ?? "" },
-  { header: ticketExportHeader("categoryId"), value: (t) => t.category?.name ?? "" },
-  { header: ticketExportHeader("complaintLevel"), value: (t) => t.complaintLevel ?? "" },
-  {
-    header: ticketExportHeader("priority"),
-    value: (t) => (t.priority === null ? "" : PRIORITY_LABELS[prioritySchema.parse(t.priority)]),
-  },
-  {
-    header: ticketExportHeader("completionStatusId"),
-    value: (t) => t.completionStatus?.name ?? "",
-  },
-  { header: "完结时间", value: (t, { formatDate }) => formatDate(t.completionTime) },
-  { header: "处理结果", value: (t) => t.processingResult ?? "" },
+  { header: "工单原文", value: (t) => t.submissionText ?? "" },
 ];
 
 /**
@@ -111,22 +55,18 @@ export async function exportExternalTickets(
   `;
   const rows = await prisma.ticket.findMany({
     where: { id: { in: idRows.map((row) => row.id) } },
-    include: exportInclude,
   });
   const rowById = new Map(rows.map((row) => [row.id, row]));
   const ordered = idRows
     .map((row) => rowById.get(row.id))
     .filter((row): row is ExternalExportRow => row !== undefined);
 
-  const formatDate = makeDateFormatter(query.timeZone);
-  const cells: Array<Array<string | number>> = [
+  const cells: string[][] = [
     EXPORT_COLUMNS.map((column) => column.header),
-    ...ordered.map((ticket) =>
-      EXPORT_COLUMNS.map((column) => column.value(ticket, { formatDate })),
-    ),
+    ...ordered.map((ticket) => EXPORT_COLUMNS.map((column) => column.value(ticket))),
   ];
 
-  const stamp = filenameStamp(formatDate, clock.now());
+  const stamp = filenameStamp(makeDateFormatter(query.timeZone), clock.now());
   if (query.format === "csv") {
     return {
       filename: `external-tickets-${stamp}.csv`,

@@ -1,115 +1,27 @@
 import type { AppRouter } from "@insuredesk/api";
-import {
-  PRIORITY_LABELS,
-  TICKET_FIELD_DESCRIPTORS,
-  TICKET_FIELDS,
-  type TicketFieldOverrides,
-} from "@insuredesk/shared";
+import { TICKET_FIELDS, type TicketFieldOverrides } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
-import type { ReactNode } from "react";
-import { formatDateTime } from "@/lib/datetime";
-import { StatusBadge } from "@/pages/tickets/StatusBadge";
 
 /**
- * 外部工单字段的取词与取值：详情左栏字段栅格的标签、取值、空值判定共用这
- * 一份。外部方现可见全部建单字段（包含敏感字段），渲染"有值即现"，不再
- * 依赖 visibleFields。窄列行是两行式（工单号+状态/徽标+时间），不经过本文件。
+ * 外部详情信息栏的字段口径：固定 4 个建单字段（保单号/客户姓名/客户电话/
+ * 联系人电话），取词与内部详情同一份 descriptor。
  */
 
 export type ExternalTicket = inferRouterOutputs<AppRouter>["externalTicket"]["detail"]["ticket"];
 
-/** 白名单里不属于建单字段的系统字段标签。 */
-const SYSTEM_FIELD_LABELS: Record<string, string> = {
-  workOrderNumber: "工单号",
-  status: "状态",
-  processingResult: "最新跟进",
-};
+export const EXTERNAL_INFO_FIELDS = [
+  "policyNumbers",
+  "customerName",
+  "phone",
+  "contactPhone",
+] as const;
 
-/**
- * 详情页字段顺序：TICKET_FIELDS 声明顺序，系统字段按其语义就位——工单号与
- * 状态是工单的身份与当前进展，排在业务字段之前；最新跟进是处理结果，收尾。
- */
-export const EXTERNAL_DETAIL_FIELD_ORDER: readonly string[] = [
-  "workOrderNumber",
-  "status",
-  ...TICKET_FIELD_DESCRIPTORS.map((descriptor) => descriptor.key),
-  "processingResult",
-];
-
-function overridesOf(key: string): TicketFieldOverrides | undefined {
-  const descriptor = TICKET_FIELDS[key as keyof typeof TICKET_FIELDS];
-  return descriptor && "overrides" in descriptor ? descriptor.overrides : undefined;
-}
+export type ExternalInfoField = (typeof EXTERNAL_INFO_FIELDS)[number];
 
 /** 详情卡片标题取词；detailLabel override 优先，缺省用标准名。 */
-export function externalFieldLabel(key: string): string {
-  const descriptor = TICKET_FIELDS[key as keyof typeof TICKET_FIELDS];
-  if (!descriptor) {
-    return SYSTEM_FIELD_LABELS[key] ?? key;
-  }
-  return overridesOf(key)?.detailLabel ?? descriptor.label;
-}
-
-/**
- * 字段取值。目录引用取 JOIN 出的名字（外部方读不到目录），日期与枚举按各表面
- * 统一的格式化，状态走共用的 StatusBadge。返回 null = 未填写，由调用方决定
- * 显示成 — 还是整条不渲染。
- */
-export function externalFieldValue(ticket: ExternalTicket, key: string): ReactNode {
-  switch (key) {
-    case "workOrderNumber":
-      return ticket.workOrderNumber;
-    case "status":
-      return <StatusBadge status={ticket.status} />;
-    case "feedbackTime":
-      return ticket.feedbackTime ? formatDateTime(ticket.feedbackTime) : null;
-    case "contactTime":
-      return ticket.contactTime ? formatDateTime(ticket.contactTime) : null;
-    case "channelId":
-      return ticket.channelName;
-    case "categoryId":
-      return ticket.categoryName;
-    case "completionStatusId":
-      return ticket.completionStatusName;
-    case "completionRemark":
-      return null;
-    case "hasContacted":
-      return ticket.hasContacted === null ? null : ticket.hasContacted ? "是" : "否";
-    case "priority":
-      return ticket.priority ? PRIORITY_LABELS[ticket.priority] : null;
-    case "project":
-      return ticket.project;
-    case "brokerageEntity":
-      return ticket.brokerageEntity;
-    case "paymentChannel":
-      return ticket.paymentChannel;
-    case "internalOrderNumber":
-      return ticket.internalOrderNumber;
-    case "policyNumbers":
-      return ticket.policyNumbers && ticket.policyNumbers.length > 0
-        ? ticket.policyNumbers.join(" ")
-        : null;
-    case "userComplaintChannel":
-      return ticket.userComplaintChannel;
-    case "complaintReceiveChannel":
-      return ticket.complaintReceiveChannel;
-    case "customerName":
-      return ticket.customerName;
-    case "phone":
-      return ticket.phone;
-    case "contactPhone":
-      return ticket.contactPhone;
-    case "contactId":
-      return ticket.contactId;
-    case "nuclearBodyStatus":
-      return ticket.nuclearBodyStatus;
-    case "customerRequest":
-      return ticket.customerRequest;
-    case "complaintLevel":
-      return ticket.complaintLevel;
-    case "processingResult":
-      return ticket.processingResult || null;
-    default:
-      return null;
-  }
+export function externalFieldLabel(key: ExternalInfoField): string {
+  const descriptor = TICKET_FIELDS[key];
+  const overrides: TicketFieldOverrides | undefined =
+    "overrides" in descriptor ? descriptor.overrides : undefined;
+  return overrides?.detailLabel ?? descriptor.label;
 }

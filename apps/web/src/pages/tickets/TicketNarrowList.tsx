@@ -1,23 +1,29 @@
-import type { AppRouter } from "@insuredesk/api";
-import type { inferRouterOutputs } from "@trpc/server";
+import type { TicketDisplayStatus } from "@insuredesk/shared";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "./StatusBadge";
 
 /**
- * 处理态的左侧窄列：全宽表压缩后的样子。三个信息——客户名、状态、处理时限，
- * 超时行的时限红字。不显示工单号（窄列里它挤掉了真正要扫的信息，工单号在右侧
- * 详情头部）。行序与内容沿用全宽表当前的筛选/排序结果，不另发查询。
+ * 详情态的左侧窄列：全宽表压缩后的样子，内外两端共用。行 = 客户名、状态、
+ * 一个时间槽（内部传处理时限，外部传反馈时间，语义由调用方定），overdue
+ * 行的时间红字。不显示工单号（窄列里它挤掉了真正要扫的信息，工单号在右侧
+ * 详情头部）。行序沿用调用方列表当前的筛选/排序结果，不另发查询。
  */
 
-type ListItem = inferRouterOutputs<AppRouter>["ticket"]["list"]["items"][number];
+export type NarrowListItem = {
+  id: string;
+  customerName: string | null;
+  status: TicketDisplayStatus;
+  time: string | null;
+  overdue?: boolean;
+};
 
 export function TicketNarrowList({
   items,
   selectedId,
   onSelect,
 }: {
-  items: readonly ListItem[];
+  items: readonly NarrowListItem[];
   selectedId: string;
   onSelect: (ticketId: string) => void;
 }) {
@@ -39,15 +45,15 @@ export function TicketNarrowList({
               >
                 <div className="flex w-full items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium">{item.customerName || "—"}</span>
-                  <StatusBadge status={item.displayStatus} />
+                  <StatusBadge status={item.status} />
                 </div>
                 <span
                   className={cn(
                     "text-xs text-muted-foreground",
-                    item.displayStatus === "overdue" && "text-destructive",
+                    item.overdue === true && "text-destructive",
                   )}
                 >
-                  {formatDateTime(item.dueAt)}
+                  {formatDateTime(item.time)}
                 </span>
               </button>
             </li>

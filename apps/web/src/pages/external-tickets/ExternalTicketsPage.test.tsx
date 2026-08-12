@@ -5,8 +5,8 @@ import { TEST_ROLES } from "@/test/roles";
 
 /**
  * 外部端主页：/external-tickets 是全宽表格一级列表（着陆不自动选中、不跳转），
- * 整行点进 /external-tickets/:id 整页详情；新建工单是对话框，提交成功进新单
- * 详情。
+ * 整行点进 /external-tickets/:id 详情态——左侧窄列 + 右侧详情（两态结构与内部
+ * /tickets 同）；新建工单是对话框，提交成功进新单详情。
  */
 
 function ticket(overrides: Record<string, unknown> = {}) {
@@ -118,13 +118,15 @@ describe("列表页", () => {
     expect(cells[5]).toHaveTextContent("");
   });
 
-  it("整行点进整页详情，「返回列表」回到表格", async () => {
+  it("整行进详情态：全宽表换成窄列+详情，「返回列表」回到表格", async () => {
     renderPage();
 
     fireEvent.click(await screen.findByText("处理中"));
 
     expect(await screen.findByRole("region", { name: "工单详情" })).toBeInTheDocument();
     expect(callsTo("externalTicket.detail")[0]?.input).toEqual({ ticketId: "t1" });
+    expect(screen.getByRole("navigation", { name: "工单窄列" })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "返回列表" }));
     await waitFor(() => {
@@ -136,6 +138,81 @@ describe("列表页", () => {
   it("外部用户登录经 index redirect 落到本页", async () => {
     renderPage("/");
     expect(await screen.findByText("WO100001")).toBeInTheDocument();
+  });
+});
+
+describe("详情态（窄列 + 详情，同内部两态）", () => {
+  const twoItems = [
+    ticket({ customerName: "张三" }),
+    ticket({
+      id: "t2",
+      workOrderNumber: "WO100002",
+      customerName: "李四",
+      feedbackTime: null,
+    }),
+  ];
+
+  function renderDetail(path: string, items = twoItems) {
+    return renderPage(path, {
+      "externalTicket.list": { items, total: items.length },
+      "externalTicket.detail": (input: { ticketId: string }) => ({
+        ticket: ticket({
+          id: input.ticketId,
+          workOrderNumber: input.ticketId === "t2" ? "WO100002" : "WO100001",
+        }),
+        processLogs: [],
+      }),
+    });
+  }
+
+  it("窄列 = 客户名/状态/反馈时间（无工单号），点行切单并带上 aria-current", async () => {
+    renderDetail("/external-tickets/t1");
+    await screen.findByRole("region", { name: "工单详情" });
+
+    const narrow = screen.getByRole("navigation", { name: "工单窄列" });
+    expect(await within(narrow).findByText("张三")).toBeInTheDocument();
+    expect(within(narrow).getByText("李四")).toBeInTheDocument();
+    expect(within(narrow).queryByText("WO100001")).not.toBeInTheDocument();
+    // 反馈时间格式化出线；无反馈时间的行落 —
+    expect(within(narrow).getByText(/2026-07-09/)).toBeInTheDocument();
+    expect(within(narrow).getByText("—")).toBeInTheDocument();
+
+    fireEvent.click(within(narrow).getByText("李四"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "工单详情" })).toHaveTextContent("WO100002"),
+    );
+    expect(within(narrow).getByText("李四").closest("button")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+  });
+
+  it("详情态筛选收起为摘要、分页退场、副标题让位；展开后筛选器回到位", async () => {
+    renderDetail("/external-tickets/t1?status=processing", [
+      twoItems[0] as ReturnType<typeof ticket>,
+    ]);
+    await screen.findByRole("region", { name: "工单详情" });
+
+    expect(await screen.findByText(/共 1 条 · 1 个筛选条件/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "状态" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/第 1 \/ 1 页/)).not.toBeInTheDocument();
+    expect(screen.queryByText("客服有新发言的工单排在最前。")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开筛选" }));
+    expect(screen.getByRole("button", { name: "状态" })).toHaveTextContent("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "收起筛选" }));
+    expect(screen.queryByRole("button", { name: "状态" })).not.toBeInTheDocument();
+  });
+
+  it("深链 /external-tickets/:id 直接还原详情态", async () => {
+    renderDetail("/external-tickets/t2");
+
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: "工单详情" })).toHaveTextContent("WO100002"),
+    );
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 });
 

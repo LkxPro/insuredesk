@@ -106,7 +106,7 @@ describe("创建日期筛选", () => {
 });
 
 describe("导出", () => {
-  it("导出按钮在筛选栏，CSV 下载带当前筛选、无翻页参数", async () => {
+  it("导出按钮在页头（详情态也可达），CSV 下载带当前筛选、无翻页参数", async () => {
     restFetch.mockResolvedValue(
       new Response("csv", { status: 200, headers: { "content-type": "text/csv" } }),
     );

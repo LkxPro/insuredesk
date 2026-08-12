@@ -6,7 +6,7 @@ import {
   type TicketStatus,
 } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
-import { AlertCircle, Inbox } from "lucide-react";
+import { AlertCircle, Inbox, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { CreatedRangeFilter } from "@/components/ticket-list/CreatedRangeFilter";
@@ -41,17 +41,21 @@ import {
 } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import { detailNav, useCrossPageNav } from "@/pages/tickets/detail-navigation";
 import { StatusBadge } from "@/pages/tickets/StatusBadge";
+import { TicketNarrowList } from "@/pages/tickets/TicketNarrowList";
 import { ExternalTicketDetailPane } from "./ExternalTicketDetailPane";
 import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
 import { downloadExternalTicketExport } from "./external-ticket-export";
 
 /**
  * 外部端主页：/external-tickets 是全宽表格一级列表（筛选与分页住在 URL query
- * 里），整行点进 /external-tickets/:id 整页详情。跟进为主的外部方进来最上面
- * 是该说话的单（服务端把客服新发言的工单排在最前，列序即服务端排定的序，无
- * 列头排序）；新建是顶部按钮唤起对话框，提交成功进新单详情。
+ * 里），整行点进 /external-tickets/:id 详情态——两态结构与内部 /tickets 同：
+ * 列表压缩成左侧窄列（客户名/状态/反馈时间），右侧详情区；压缩态下筛选器收起
+ * 为一行摘要＋展开按钮，分页退场。跟进为主的外部方进来最上面是该说话的单
+ * （服务端把客服新发言的工单排在最前，列序即服务端排定的序，无列头排序）；
+ * 新建是顶部按钮唤起对话框，提交成功进新单详情。
  *
  * 详情页保留翻单：nav 由同一份列表查询按当前筛选与页码算出，方向键/prev/next
  * 与越界翻页契约同内部 /tickets（detail-navigation）。筛选串随链接带走，深链
@@ -130,67 +134,90 @@ export function ExternalTicketsPage() {
     setPage: (page) => setParam("page", String(page), { resetPage: false }),
   });
 
-  if (selectedId !== undefined) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col rounded-md border">
-        <ExternalTicketDetailPane
-          ticketId={selectedId}
-          nav={nav}
-          onSwitch={select}
-          onCrossPage={crossPage}
-          onClose={() => navigate(`/external-tickets${location.search}`)}
-        />
-      </div>
-    );
-  }
+  const detailOpen = selectedId !== undefined;
+  // 详情态的筛选器折叠：默认收起（屏幕预算给详情），展开后保持展开
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  /** 收起态摘要用的「有几个筛选条件在生效」——搜索词与创建时间区间各算一个。 */
+  const activeFilterCount = [
+    query.status.length,
+    query.search ? 1 : 0,
+    query.includeCompleted ? 1 : 0,
+    query.createdFrom || query.createdTo ? 1 : 0,
+  ].filter((count) => count > 0).length;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <div className={cn("flex min-h-0 flex-1 flex-col", detailOpen ? "gap-3" : "gap-4")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">我的工单</h1>
-          <p className="text-sm text-muted-foreground">客服有新发言的工单排在最前。</p>
+          {/* 详情态把这行纵向预算让给详情 */}
+          {!detailOpen && (
+            <p className="text-sm text-muted-foreground">客服有新发言的工单排在最前。</p>
+          )}
         </div>
-        <Button onClick={() => setSubmitOpen(true)}>新建工单</Button>
+        <div className="flex items-center gap-2">
+          <TicketExportButton onExport={(format) => downloadExternalTicketExport(query, format)} />
+          <Button onClick={() => setSubmitOpen(true)}>新建工单</Button>
+        </div>
       </div>
 
-      <TicketListFilterBar>
-        <MultiSelectFilter
-          label="状态"
-          values={query.status}
-          options={TICKET_STATUSES.map((status) => ({
-            value: status,
-            label: TICKET_STATUS_LABELS[status],
-          }))}
-          onChange={(values) => setParam("status", values.length > 0 ? values.join(",") : null)}
-        />
-        <CreatedRangeFilter
-          range={{ createdFrom: query.createdFrom, createdTo: query.createdTo }}
-          onChange={(range) =>
-            setParams({
-              createdFrom: range.createdFrom ?? null,
-              createdTo: range.createdTo ?? null,
-            })
-          }
-        />
-        <TicketListSearch
-          draft={searchDraft}
-          onDraftChange={setSearchDraft}
-          onSubmit={submitSearch}
-          placeholder="工单号 / 保单号 / 工单原文"
-        />
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="include-completed"
-            checked={query.includeCompleted}
-            onCheckedChange={(checked) => setParam("completed", checked === true ? "1" : null)}
-          />
-          <Label htmlFor="include-completed" className="text-sm font-normal">
-            含已完结
-          </Label>
+      {/* 详情态默认收起筛选器：URL 里的筛选值不变，只是不占屏 */}
+      {detailOpen && !filtersOpen && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>
+            共 {total} 条
+            {activeFilterCount > 0 ? ` · ${activeFilterCount} 个筛选条件` : " · 未筛选"}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setFiltersOpen(true)}>
+            <SlidersHorizontal data-icon="inline-start" />
+            展开筛选
+          </Button>
         </div>
-        <TicketExportButton onExport={(format) => downloadExternalTicketExport(query, format)} />
-      </TicketListFilterBar>
+      )}
+
+      {(!detailOpen || filtersOpen) && (
+        <TicketListFilterBar>
+          {detailOpen && (
+            <Button variant="ghost" size="sm" onClick={() => setFiltersOpen(false)}>
+              收起筛选
+            </Button>
+          )}
+          <MultiSelectFilter
+            label="状态"
+            values={query.status}
+            options={TICKET_STATUSES.map((status) => ({
+              value: status,
+              label: TICKET_STATUS_LABELS[status],
+            }))}
+            onChange={(values) => setParam("status", values.length > 0 ? values.join(",") : null)}
+          />
+          <CreatedRangeFilter
+            range={{ createdFrom: query.createdFrom, createdTo: query.createdTo }}
+            onChange={(range) =>
+              setParams({
+                createdFrom: range.createdFrom ?? null,
+                createdTo: range.createdTo ?? null,
+              })
+            }
+          />
+          <TicketListSearch
+            draft={searchDraft}
+            onDraftChange={setSearchDraft}
+            onSubmit={submitSearch}
+            placeholder="工单号 / 保单号 / 工单原文"
+          />
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="include-completed"
+              checked={query.includeCompleted}
+              onCheckedChange={(checked) => setParam("completed", checked === true ? "1" : null)}
+            />
+            <Label htmlFor="include-completed" className="text-sm font-normal">
+              含已完结
+            </Label>
+          </div>
+        </TicketListFilterBar>
+      )}
 
       {listQuery.error ? (
         <Alert variant="destructive">
@@ -198,6 +225,31 @@ export function ExternalTicketsPage() {
           <AlertTitle>工单列表加载失败</AlertTitle>
           <AlertDescription>{listQuery.error.message}</AlertDescription>
         </Alert>
+      ) : selectedId !== undefined ? (
+        // 详情态：窄列 + 详情。窄屏 (<1024px) 无 lg → 详情占满，窄列让位
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]">
+          <div className="hidden min-h-0 rounded-md border lg:flex lg:flex-col">
+            <TicketNarrowList
+              items={items.map((ticket) => ({
+                id: ticket.id,
+                customerName: ticket.customerName,
+                status: ticket.status,
+                time: ticket.feedbackTime,
+              }))}
+              selectedId={selectedId}
+              onSelect={select}
+            />
+          </div>
+          <div className="flex min-h-0 flex-col rounded-md border">
+            <ExternalTicketDetailPane
+              ticketId={selectedId}
+              nav={nav}
+              onSwitch={select}
+              onCrossPage={crossPage}
+              onClose={() => navigate(`/external-tickets${location.search}`)}
+            />
+          </div>
+        </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-md border">
           <Table>
@@ -292,7 +344,7 @@ export function ExternalTicketsPage() {
         </div>
       )}
 
-      {!listQuery.error && (
+      {!listQuery.error && !detailOpen && (
         <TicketListPagination
           total={total}
           page={query.page}
