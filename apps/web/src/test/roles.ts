@@ -45,15 +45,11 @@ export const TEST_ROLES = {
     ] as Permission[],
   },
   /**
-   * 外部账号：提交/留言/导出三点（种子缺省）。内外部之分另由 isExternal
+   * 外部账号：提交/留言两点（种子缺省）。内外部之分另由 isExternal
    * 决定（见 renderApp 的 isExternal 参数），权限集只是必要条件。
    */
   EXTERNAL: {
     name: "外部用户",
-    permissions: [
-      "ticket.create_external",
-      "ticket.process_external",
-      "ticket.export_external",
-    ] as Permission[],
+    permissions: ["ticket.create_external", "ticket.process_external"] as Permission[],
   },
 } as const;

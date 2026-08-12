@@ -273,7 +273,7 @@ export async function seedFactoryRolesAndDemoUsers(prisma: PrismaClient): Promis
 
 /**
  * Create-if-missing: the "外部用户" role with external submission permissions
- * (提交/留言/导出). Non-factory role (system=false) that survives bootstrap
+ * (提交/留言). Non-factory role (system=false) that survives bootstrap
  * replay. Created by name upsert so renames/permission edits persist across
  * restarts.
  *
@@ -286,7 +286,7 @@ export async function seedExternalUserRole(prisma: PrismaClient): Promise<Role> 
     update: {},
     create: {
       name: "外部用户",
-      permissions: ["ticket.create_external", "ticket.process_external", "ticket.export_external"],
+      permissions: ["ticket.create_external", "ticket.process_external"],
       system: false,
       requiredTicketFields: [],
     },

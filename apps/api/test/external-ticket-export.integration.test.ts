@@ -13,8 +13,8 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
  * (buildServer + app.inject with session cookies — the download is a REST
  * endpoint, not a tRPC procedure):
  *
- * - guard 顺序: 401 未登录 → 403 无 ticket.export_external → 403 非外部账号
- *   （管理员展开后持有该点也不能走外部口子）
+ * - guard 顺序: 401 未登录 → 403 非外部账号（管理员也不能走外部口子）
+ *   → 400 参数错误；导出对外部账号恒开，无权限位可关
  * - 数据范围恒为本人提交的单，筛选（状态/搜索含保单号/创建时间区间/
  *   includeCompleted）与外部列表同口径；无翻页参数 = 筛选结果全集
  * - 两种格式 round-trip（CSV 按文本解析，XLSX 经 exceljs 重读）
@@ -26,8 +26,6 @@ describe("external ticket export (Testcontainers)", () => {
   let externalRole: Role;
   let externalUser: User;
   let externalPeer: User;
-  /** 无导出位的外部角色 —— 权限位关闭后的形态（登录走用户名，无需留账号句柄）。 */
-  let noExportRole: Role;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({ seed: ["rolesAndUsers"] });
@@ -36,18 +34,6 @@ describe("external ticket export (Testcontainers)", () => {
     externalRole = await prisma.role.create({
       data: {
         name: "外部用户",
-        permissions: [
-          "ticket.create_external",
-          "ticket.process_external",
-          "ticket.export_external",
-        ],
-        system: false,
-        requiredTicketFields: [],
-      },
-    });
-    noExportRole = await prisma.role.create({
-      data: {
-        name: "外部用户（无导出）",
         permissions: ["ticket.create_external", "ticket.process_external"],
         system: false,
         requiredTicketFields: [],
@@ -70,15 +56,6 @@ describe("external ticket export (Testcontainers)", () => {
         name: "同角色他人",
         passwordHash,
         roleId: externalRole.id,
-        active: true,
-      },
-    });
-    await prisma.user.create({
-      data: {
-        username: "ext-no-export",
-        name: "无导出外部员",
-        passwordHash,
-        roleId: noExportRole.id,
         active: true,
       },
     });
@@ -171,25 +148,16 @@ describe("external ticket export (Testcontainers)", () => {
     });
   }
 
-  describe("权限校验 (UI 无入口之外，API 也拒绝)", () => {
-    it("401 未登录；403 无导出位的外部账号；403 非外部账号（含管理员）", async () => {
+  describe("守卫校验", () => {
+    it("401 未登录；403 非外部账号（含管理员）", async () => {
       const anonymous = await exportRequest(null, { format: "csv" });
       expect(anonymous.statusCode).toBe(401);
 
-      const noExport = await sessionFor("ext-no-export");
-      const forbidden = await exportRequest(noExport, { format: "csv" });
-      expect(forbidden.statusCode).toBe(403);
-      expect(forbidden.json().error).toContain("ticket.export_external");
-
-      // 管理员经系统角色展开持有全部正向点（含 ticket.export_external），仍非外部账号
+      // 管理员经系统角色展开持有全部正向点，仍非外部账号
       const admin = await sessionFor("admin");
       const adminRes = await exportRequest(admin, { format: "csv" });
       expect(adminRes.statusCode).toBe(403);
       expect(adminRes.json().error).toContain("外部账号");
-
-      // 内部普通角色本无该点
-      const manager = await sessionFor("manager");
-      expect((await exportRequest(manager, { format: "csv" })).statusCode).toBe(403);
     });
 
     it("schema 拒绝的 query（未知格式/畸形日期）→ 400", async () => {

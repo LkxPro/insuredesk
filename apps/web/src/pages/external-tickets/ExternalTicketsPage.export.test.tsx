@@ -1,13 +1,12 @@
-import type { Permission } from "@insuredesk/shared";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { callsTo, renderApp, restFetch, type TestRole } from "@/test/renderApp";
+import { callsTo, renderApp, restFetch } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
  * 外部列表的日期筛选与导出：筛选值住 URL（深链/刷新不丢）、查询随车；
- * 导出按钮按 ticket.export_external 权限位出现，点击经全局 fetch 下载
- * （restFetch），URL 带当前筛选、无翻页参数。
+ * 导出按钮恒显，点击经全局 fetch 下载（restFetch），URL 带当前筛选、
+ * 无翻页参数。
  */
 
 function ticket() {
@@ -41,16 +40,10 @@ function ticket() {
   };
 }
 
-/** 持导出位之外与种子缺省同形的外部角色。 */
-const EXTERNAL_NO_EXPORT = {
-  name: "外部用户",
-  permissions: ["ticket.create_external", "ticket.process_external"] as Permission[],
-};
-
-function renderPage(path: string, role: TestRole = TEST_ROLES.EXTERNAL) {
+function renderPage(path: string) {
   return renderApp({
     path,
-    role,
+    role: TEST_ROLES.EXTERNAL,
     isExternal: true,
     trpc: { "externalTicket.list": { items: [ticket()], total: 1 } },
   });
@@ -111,7 +104,7 @@ describe("创建日期筛选", () => {
 });
 
 describe("导出", () => {
-  it("有权限位：导出按钮在筛选栏，CSV 下载带当前筛选、无翻页参数", async () => {
+  it("导出按钮在筛选栏，CSV 下载带当前筛选、无翻页参数", async () => {
     restFetch.mockResolvedValue(
       new Response("csv", { status: 200, headers: { "content-type": "text/csv" } }),
     );
@@ -144,12 +137,5 @@ describe("导出", () => {
     await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
     const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
     expect(url.searchParams.get("format")).toBe("xlsx");
-  });
-
-  it("权限位关闭后按钮不出现", async () => {
-    renderPage("/external-tickets", EXTERNAL_NO_EXPORT);
-    await screen.findByText("WO100001");
-
-    expect(screen.queryByRole("button", { name: /导出/ })).not.toBeInTheDocument();
   });
 });
