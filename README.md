@@ -11,9 +11,7 @@ pnpm monorepo（`apps/api`、`apps/web`、`packages/shared`）。
 前置：Docker、git、[nvm](https://github.com/nvm-sh/nvm)、编辑器。
 
 ```bash
-nvm use              # 切换到项目钉定的 Node 版本（读取 .nvmrc）
-corepack enable      # 启用 pnpm（只需一次，corepack 自动读取 packageManager 字段）
-make dev             # 一键启动：安装依赖 → 启动 db → 迁移 + seed → 并行 api+web
+make dev   # 一键启动：切换/安装 node 版本 → 装依赖 → 起 db → 迁移 + seed → 并行 api+web
 ```
 
 开发环境：PostgreSQL 容器化（5432），api 和 web 在宿主机跑（3000 / 5173），支持热重载。
@@ -33,6 +31,7 @@ make check       # CI 全套检查（push 前本地跑一遍）
 ```
 
 - 清库重来：`make db-reset` 后重新 `make dev`。
+- node 版本由 `.nvmrc` 钉定，`make dev` 自动切换（未装则经 nvm 自动安装），无需手动 `nvm use`。
 - 改 schema：在 `apps/api/prisma/schema.prisma` 修改后，运行 `cd apps/api && pnpm db:migrate` 生成迁移文件并应用到开发库。下次启动 api 会自动应用。
 - 切分支撞 schema：`make db-reset` 重建库（additive migration 通常无需此步）。
 - 受限网络：`pnpm config set registry <镜像地址>` 切换 npm 源；Prisma 下载引擎认 `PRISMA_ENGINES_MIRROR` 环境变量。

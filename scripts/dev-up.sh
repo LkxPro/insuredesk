@@ -1,29 +1,13 @@
 #!/usr/bin/env bash
-# 启动开发环境：校验 node/pnpm → 按需安装依赖 → 起 db → 前台并行 api+web。
-# api 和 web 跑在宿主机，只有 Postgres 在容器里。
+# 启动开发环境：切换/安装 node → 按需装依赖 → 拉起 docker → 起 db →
+# 前台并行 api+web。api 和 web 跑在宿主机，只有 Postgres 在容器里。
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
-# --- Node 版本 ---------------------------------------------------------------
-# 不符时报错而非静默用错版本跑：node_modules 里的原生二进制（esbuild、prisma
-# engines）按安装时的 ABI 编译，换版本跑会以难懂的方式炸。
-required_node="$(tr -d '[:space:]' < .nvmrc)"
-current_node="$(node --version | tr -d 'v')"
-if [ "$current_node" != "$required_node" ]; then
-  # 花括号必需：紧跟全角标点时，bash 会把其首字节吞进变量名，set -u 下即 unbound。
-  echo "✗ Node 版本不符：需要 ${required_node}（.nvmrc），当前 ${current_node}"
-  echo "  运行 'nvm use'；未安装则先 'nvm install'。"
-  exit 1
-fi
-
-if ! command -v pnpm > /dev/null 2>&1; then
-  echo "✗ 找不到 pnpm。运行一次 'corepack enable' 即可（版本由 packageManager 字段钉定）。"
-  exit 1
-fi
-
-echo "✓ node $current_node · pnpm $(pnpm --version)"
+# --- Node --------------------------------------------------------------------
+. scripts/ensure-node.sh
 
 # --- 依赖 -------------------------------------------------------------------
 # 让 make dev 幂等且秒开。
@@ -83,6 +67,9 @@ case "$root" in
     echo "✓ worktree '$project' 端口：db=$db_port api=$api_port web=5173+"
     ;;
 esac
+
+# --- Docker ------------------------------------------------------------------
+. scripts/ensure-docker.sh
 
 # --- 数据库 -----------------------------------------------------------------
 # --wait 阻塞到 healthcheck 通过，api 启动时库已就绪（dev-init.ts 另有重试兜底

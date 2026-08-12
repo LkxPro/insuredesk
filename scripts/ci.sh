@@ -2,11 +2,11 @@
 # Full CI check suite. Runs on the host: the CI runner invokes it, and
 # `make check` runs the same bytes locally before a push.
 # Tests bring up their own Postgres via Testcontainers on the host Docker socket.
-#
-# pnpm is expected on PATH already (CI: pnpm/action-setup; local: corepack
-# enable). Enabling corepack here too would double-provision pnpm and can
-# collide with the runner's copy.
 set -e
+
+# 本地跑时自动切到 .nvmrc 钉定的 node 并备好 pnpm；CI 里 setup-node /
+# pnpm/action-setup 已备好，这步空转。
+. scripts/ensure-node.sh
 
 # CHECKPOINT_DISABLE kills Prisma's update/telemetry phone-home in CI.
 export CI=true CHECKPOINT_DISABLE=1
