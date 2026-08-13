@@ -52,9 +52,14 @@ EOF
     "$agent_plan_gh" api --method POST "repos/$repo/issues/$number/dependencies/blocked_by" -F issue_id="$parent_id"
 done
 
+jq 'with_entries(.value = .value.number)' "$tmp/map.json" >"$tmp/numbers.json"
+node "$script_dir/plan.mjs" render "$parent" "$tmp/numbers.json" <"$plan_file" >"$tmp/rendered.json"
+
 jq -c '.[]' "$tmp/rendered.json" | while IFS= read -r ticket; do
   key=$(printf '%s' "$ticket" | jq -r .key)
   number=$(jq -r --arg key "$key" '.[$key].number' "$tmp/map.json")
+  printf '%s' "$ticket" | jq -r .body >"$tmp/body-$number.md"
+  $agent_plan_gh issue edit "$number" --body-file "$tmp/body-$number.md" >/dev/null
   printf '%s' "$ticket" | jq -r '.dependsOn[]' | while IFS= read -r dependency; do
     blocker_id=$(jq -r --arg key "$dependency" '.[$key].id' "$tmp/map.json")
     post_edge "repos/$repo/issues/$number/dependencies/blocked_by" "$blocker_id" \

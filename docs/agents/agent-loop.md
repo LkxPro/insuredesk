@@ -63,7 +63,7 @@ flowchart LR
 
 - 读取仓库、Issues、PR 与 Actions 日志
 - 创建和编辑 Issues、标签、sub-issues 与原生 dependency edges
-- 创建并推送 `codex/issue-<n>` 分支
+- 创建并推送 `codex/issue-<n>` 分支，以及短生命周期的 `agent-claims/issue-<n>` / `agent-slots/<n>` 协调分支
 - 创建和编辑 PR
 
 检查登录：
@@ -107,11 +107,11 @@ claude --version
 | 变量 | 必需性 | 说明 |
 | --- | --- | --- |
 | `ANTHROPIC_BASE_URL` | 自定义 provider 必需 | Provider/Gateway 的 Anthropic-compatible base URL |
-| `ANTHROPIC_AUTH_TOKEN` | 二选一 | Provider 使用 `Authorization: Bearer` 时设置 |
-| `ANTHROPIC_API_KEY` | 二选一 | Provider 使用 `x-api-key` 时设置 |
-| `AGENT_MODEL` | 本团队配置必需 | 传给 Claude CLI 的 `--model`；adapter 技术上允许省略 |
+| `ANTHROPIC_AUTH_TOKEN` | 严格二选一 | Provider 使用 Bearer token 时设置 |
+| `ANTHROPIC_API_KEY` | 严格二选一 | Provider 使用 API key 时设置 |
+| `AGENT_MODEL` | 必需 | 传给 Claude CLI 的 `--model` |
 
-只设置 `ANTHROPIC_AUTH_TOKEN` 或 `ANTHROPIC_API_KEY` 中符合 provider 要求的一个。安全示例：
+默认 Claude adapter 要求 `ANTHROPIC_BASE_URL`、`AGENT_MODEL`，并严格要求两个凭据变量只设置一个；缺失或同时设置会在调用模型前失败，避免把任务送入含糊的认证配置。安全示例：
 
 ```sh
 export AGENT_EXECUTOR='claude'
@@ -138,6 +138,8 @@ Worker 会给 Claude 一个临时 `HOME`，不会依赖个人 `~/.claude` 登录
 | `AGENT_LOOP_MAX_PARALLEL` | `4` | 整个 clone 同时运行的最大 worker 数 |
 | `AGENT_LOOP_INTERVAL` | `30` | daemon 轮询间隔，单位秒 |
 | `AGENT_LOOP_WORKTREES` | `<repo>/.worktrees` | worktree、PID、日志与结果目录 |
+| `AGENT_CLAIM_HEARTBEAT_INTERVAL` | `60` | 远端 claim lease 心跳间隔，单位秒 |
+| `AGENT_CLAIM_STALE_SECONDS` | `300` | 无心跳多久后由其他 clone 自动回收 claim |
 | `AGENT_CLAUDE_BIN` | `claude` | Claude CLI 可执行文件 |
 | `AGENT_MAX_TURNS` | `80` | 单次 Claude 非交互运行最大 turns |
 | `AGENT_CLAUDE_ALLOWED_TOOLS` | `Bash,Read,Edit,Write,Glob,Grep` | Claude 可用工具 |
@@ -264,18 +266,18 @@ make agent-loop-queue
 这不是“创建任意 issue 就立即执行”：
 
 - 普通 issue 只有 `needs-triage` 等标签时，不会进入队列。
-- Grill Me issue 必须是 open，并同时有 `grill-me` 与 `decision-confirmed`；workflow 才会把它变成规划任务。
+- Grill Me issue 必须是 open，并同时有 `grill-me` 与 `decision-confirmed`；workflow 才会把它加入独立的自动规划通道。
 - 手工 Agent task 必须是 open、添加 `ready-for-agent`，并完整填写 Goal、Scope、Acceptance criteria、Declared touch-set、Logical locks、Dependencies 和 Test plan。
-- 真正领取前还必须有 `agent:brief` 或 `agent:task`、`agent:queued`，没有 open blocker，不与其他 worker 的 touch-set / logical lock 冲突，并且有空闲并发槽。
+- 规划任务必须有 `agent:brief` 与 `agent:queued`；实现任务必须有 `ready-for-agent`、`agent:task` 与 `agent:queued`。两者还必须没有 open blocker、不与其他 worker 的 touch-set / logical lock 冲突，并且有空闲并发槽。
 
 `Agent loop` 会在 issue 创建、编辑、加/删标签、关闭或重开时重新检查。手工任务不完整却被添加 `ready-for-agent` 时，系统会移除 `ready-for-agent`、`agent:queued`、`agent:task`，添加 `needs-info`；dispatcher 领取前还会再次验证，因此缺字段不会靠竞态绕过检查。
 
 团队应这样明确选择：
 
 - **加入正常闭环：** 使用 Grill Me 表单；完成讨论后添加 `grill-me` 与 `decision-confirmed`。
-- **加入已明确的单任务：** 使用 Agent task 表单；维护者检查后添加 `ready-for-agent`。
+- **加入已明确的单任务快速通道：** 使用 Agent task 表单；维护者检查后添加 `ready-for-agent`。
 - **不加入：** 不添加上述确认标签；普通 bug、咨询和草稿 issue 保持常规 triage。
-- **领取前退出：** 手工任务移除 `ready-for-agent`。Grill Me 任务先移除 `decision-confirmed`，再移除 `ready-for-agent`；关闭 issue 也会退出。
+- **领取前退出：** 手工任务移除 `ready-for-agent`。Grill Me 任务移除 `decision-confirmed`，并移除 `agent:queued`；关闭 issue 也会退出。
 - **已经 `agent:running`：** 不要只删标签；先按“停用、回滚与恢复”停止本地执行，再检查 worktree、PR 和 issue 状态。
 
 ## 6. 人工如何完成 Grill Me 并交棒
@@ -304,11 +306,7 @@ make agent-loop-queue
 - `grill-me`
 - `decision-confirmed`
 
-`Agent loop` workflow 会把它转换为：
-
-- `ready-for-agent`
-- `agent:brief`
-- `agent:queued`
+`Agent loop` workflow 会添加 `agent:brief` 与 `agent:queued`。`agent:brief` 是自动规划通道，不是绕过 ticket contract 的实现票，因此此时不会添加 `ready-for-agent`。
 
 至此人工正常流程结束。不要手动创建子票、关闭父 issue 或添加 `agent:running`。
 
@@ -342,14 +340,15 @@ docs/specs/issue-<parent>/tickets.json
 2. 建立 sub-issue 关系。
 3. 让每个 child 都 blocked by 父 decision issue。
 4. 按 `dependsOn` 建立 child 之间的 native dependency edges。
-5. 给 child 添加 `agent:task`、`ready-for-agent`、`agent:queued`；需要独占时再加 `serial-only`。
-6. 创建 durable-spec PR，并添加 `agent:automerge`。
+5. 把每个 child 的 Scope 写成明确的 in-scope touch-set / out-of-scope 清单，并把 Dependencies 更新为实际 `#<issue>` 引用。
+6. 给 child 添加 `agent:task`、`ready-for-agent`、`agent:queued`；需要独占时再加 `serial-only`。
+7. 创建 durable-spec PR，并添加 `agent:automerge`。
 
 父 issue 由 spec PR 的 `Closes #<parent>` 在合并时关闭。父 issue 未关闭前，所有 child 都被原生依赖阻塞，不会提前实现。
 
-### 手工 Agent task（例外入口）
+### Agent task 快速通道（例外入口）
 
-正常路径由 planning Agent 自动建票。如需手工加入一个已完全明确的任务，使用 **New issue → Agent task**，完整填写：
+默认团队流程必须经过 Grill Me 和自动规划。仅当已有完整、可直接验证的工程 ticket，且跳过规划确实能提高吞吐时，才使用 **New issue → Agent task** 快速通道，完整填写：
 
 - Goal
 - Scope
@@ -359,7 +358,7 @@ docs/specs/issue-<parent>/tickets.json
 - Dependencies（无依赖填 `- None`；有依赖写 `#123`）
 - Test plan（不能是 `None`）
 
-表单只添加 `needs-triage`。维护者确认内容完整后添加 `ready-for-agent`；workflow 验证正文、同步原生 dependency edges，然后添加 `agent:task` 与 `agent:queued`。验证失败会移除队列标签并添加 `needs-info`。
+表单只添加 `needs-triage`。维护者添加 `ready-for-agent` 即明确选择快速通道；workflow 验证正文、同步原生 dependency edges，然后添加 `agent:task` 与 `agent:queued`。验证失败会移除队列标签并添加 `needs-info`。不要用它承载仍需产品或架构决策的需求。
 
 ## 8. 启动、查看和停止 daemon
 
@@ -370,6 +369,8 @@ make agent-loop-daemon
 ```
 
 它每 `AGENT_LOOP_INTERVAL` 秒执行一次 dispatch。按 `Ctrl-C` 停止 dispatcher；已经启动的 worker 是独立后台进程，会继续完成当前任务，但不会再领取新任务。
+
+同一个 `AGENT_LOOP_WORKTREES` 只允许一个 daemon；第二个进程会立即退出。每轮 dispatch 也有本地互斥锁，避免重叠轮询超出并发上限。
 
 ### 只跑一轮
 
@@ -414,8 +415,8 @@ rm -f .worktrees/daemon.pid
 | `ready-for-human` | 需要人工实现 | 维护者 |
 | `grill-me` | 正在进行人工 Grill Me | 人工 |
 | `decision-confirmed` | 人工确认最终决定 | 人工；正常流程唯一审批点 |
-| `ready-for-agent` | 可进入自动调度入口 | workflow / 经确认的手工票 |
-| `agent:brief` | 规划任务：生成 spec 与 tickets | workflow |
+| `ready-for-agent` | 完整实现 ticket 的快速调度入口 | controller / 经确认的快速通道票 |
+| `agent:brief` | 独立规划通道：生成 spec 与 tickets；不需要 `ready-for-agent` | workflow |
 | `agent:task` | 已验证的实现 ticket | controller / workflow |
 | `agent:queued` | 等待进入 dependency-free frontier | controller / workflow |
 | `agent:running` | 本地 worker 已领取 | dispatcher |
@@ -436,8 +437,7 @@ rm -f .worktrees/daemon.pid
 Scheduler 只选择同时满足以下条件的 issues：
 
 - open
-- 同时具有 `ready-for-agent` 与 `agent:queued`
-- 具有 `agent:brief` 或完整有效的 `agent:task` 合约
+- 规划通道同时具有 `agent:brief` 与 `agent:queued`；或实现通道同时具有 `ready-for-agent`、`agent:task` 与 `agent:queued`
 - native `blocked_by` 数量为 0
 - 未超过 `AGENT_LOOP_MAX_PARALLEL`
 - 不与正在运行或本轮已选择 ticket 的 touch-set / logical locks 冲突
@@ -451,7 +451,7 @@ Touch-set 是仓库相对路径或 glob，例如：
 - packages/shared/src/ticket.ts
 ```
 
-路径前缀重叠会串行。例如 `apps/api/**` 与 `apps/api/src/index.ts` 冲突。Worker 完成后，controller 会检查实际 changed files；任何超出 touch-set 的修改都会进入 `agent:blocked`，不会发布 PR。
+可能匹配同一路径的 glob 会保守地串行。例如 `apps/api/**` 与 `apps/api/src/index.ts`、`**` 与 `apps/api/**`、`*.md` 与 `docs/readme.md` 都按冲突处理。宁可少并行，也不让两个 worker 同时修改潜在重叠区域。Worker 完成后，controller 会检查实际 changed files；任何超出 touch-set 的修改都会进入 `agent:blocked`，不会发布 PR。
 
 ### Logical locks
 
@@ -481,12 +481,13 @@ Logical lock 用于路径无法表达的共享所有权，例如：
 - implementation result：`.worktrees/issue-<n>.implementation.json`
 - review result：`.worktrees/issue-<n>.review.json`
 - PID：`.worktrees/issue-<n>.pid`
+- remote claim marker：`.worktrees/issue-<n>.claim`
 
 执行顺序：
 
 1. Implementation Agent 在隔离 worktree 修改代码。
 2. Review Agent 复查 diff，并可修复具体缺陷。
-3. Controller 验证未改 git history、修改未越过 touch-set。
+3. Controller 验证未改 git history、修改未越过 touch-set；拒绝时把 worktree 恢复到领取前 HEAD，并删除本轮新建的普通与 ignored 文件，避免下次误发布模型 commit 或残留物。
 4. Controller 强制运行 `make check`。
 5. 全部通过后 controller commit、push、创建或更新 PR。
 6. PR 添加 `agent:automerge`。
@@ -495,7 +496,7 @@ Logical lock 用于路径无法表达的共享所有权，例如：
 9. 合并关闭关联 issue；下游 native dependency 自动解除。
 10. daemon 下一轮计算新的 frontier。
 
-如果 CI 失败，`Agent PR health` 会给源 issue 添加 `agent:repair` 与 `agent:queued`。下一次 worker 会复用同一 worktree、branch 和 PR，重新经过 review 与 `make check`。当前 controller 不会自动下载 failed Actions log；若仅靠本地复现无法定位，值守人员需从 PR Actions 页面查看失败步骤，并把必要且不含秘密的诊断信息补充到 issue。
+如果 CI 失败，`Agent PR health` 会给源 issue 添加 `agent:repair` 与 `agent:queued`。Repair 模式优先于 brief/task，controller 会尝试下载最近一次 failed Actions log 并注入修复上下文，然后复用同一 worktree、branch 和 PR，重新经过 review 与 `make check`。若 GitHub 日志下载失败，worker 仍会用现有 worktree 与 issue 内容尝试本地复现，错误详情保留在 worker log。
 
 ## 12. 日常值守流程
 
@@ -548,12 +549,11 @@ Issue 评论会记录 stale-claim 恢复、PR 发布和失败原因。再结合 
 
 依次检查：
 
-1. Issue 是否同时有 `ready-for-agent` 与 `agent:queued`。
-2. 是否有 `agent:brief` 或 `agent:task`。
-3. `Dependencies` 是否仍有 open blocker。
-4. 是否被 running ticket 的 touch-set / logical lock 挡住。
-5. 是否达到 `AGENT_LOOP_MAX_PARALLEL`。
-6. stderr 是否显示 `invalid-contract`、`invalid-touch-set`、`capacity` 等原因。
+1. 规划任务是否有 `agent:brief` + `agent:queued`；实现任务是否有 `ready-for-agent` + `agent:task` + `agent:queued`。
+2. `Dependencies` 是否仍有 open blocker。
+3. 是否被 running ticket 的 touch-set / logical lock 挡住。
+4. 是否达到 `AGENT_LOOP_MAX_PARALLEL`。
+5. stderr 是否显示 `invalid-contract`、`invalid-touch-set`、`capacity` 等原因。
 
 ### Issue 进入 `agent:blocked`
 
@@ -573,6 +573,10 @@ tail -n 200 .worktrees/issue-123.log
 ```sh
 make agent-loop-dispatch
 ```
+
+Dispatcher 会用一次 atomic push 同时占用远端 `agent-claims/issue-<n>` 与 `agent-slots/<n>`。前者防止重复领取，后者在多个 clone 同时运行时仍限制全局并发。活跃 worker 定期刷新 lease；本 clone 只用本地 PID 回收自己领取的任务，其他 clone 的任务只有 lease 过期才自动回收。释放和发布前 fencing 都用 claim SHA 做 compare-and-swap；旧 worker 不能删除新 owner 的 lease，失去 lease 的 worker 会被终止且无法进入发布。正常结束或 stale recovery 会删除两个远端 ref。
+
+Issue 在 worker 仍存活时被关闭，dispatcher 会延迟清理，不删除 worktree、PID 或日志；worker 退出后下一轮才回收这些 artifacts。
 
 ### CI 失败没有重试
 

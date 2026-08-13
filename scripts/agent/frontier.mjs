@@ -32,16 +32,24 @@ function labels(issue) {
   return issue.labels.map((label) => (typeof label === "string" ? label : label.name));
 }
 
-function prefix(pattern) {
-  return pattern.trim().replace(/^\.\//, "").split("*")[0].replace(/\/$/, "");
+function literalPrefix(pattern) {
+  const normalized = pattern.trim().replace(/^\.\//, "");
+  const magic = normalized.search(/[?*[{(]/);
+  if (magic === -1) return normalized.replace(/\/$/, "");
+  return normalized
+    .slice(0, magic)
+    .replace(/[^/]*$/, "")
+    .replace(/\/$/, "");
 }
 
 export function touchSetsOverlap(left, right) {
   return left.some((a) =>
     right.some((b) => {
-      const aPrefix = prefix(a);
-      const bPrefix = prefix(b);
+      const aPrefix = literalPrefix(a);
+      const bPrefix = literalPrefix(b);
       return (
+        !aPrefix ||
+        !bPrefix ||
         aPrefix === bPrefix ||
         aPrefix.startsWith(`${bPrefix}/`) ||
         bPrefix.startsWith(`${aPrefix}/`)
@@ -81,7 +89,9 @@ export function normalizeIssue(issue) {
 export function planFrontier(issues, maxParallel) {
   const running = issues.filter((issue) => issue.labels.includes("agent:running"));
   const queued = issues.filter(
-    (issue) => issue.labels.includes("agent:queued") && issue.labels.includes("ready-for-agent"),
+    (issue) =>
+      issue.labels.includes("agent:queued") &&
+      (issue.labels.includes("agent:brief") || issue.labels.includes("ready-for-agent")),
   );
   const heldLocks = new Set(running.flatMap((issue) => issue.logicalLocks));
   const heldTouchSets = running.map((issue) => ({ number: issue.number, paths: issue.touchSet }));

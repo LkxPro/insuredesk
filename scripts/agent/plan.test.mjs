@@ -26,7 +26,11 @@ test("validates and renders an ordered ticket DAG", () => {
     ],
   };
   assert.deepEqual(validatePlan(plan), []);
-  assert.match(renderTickets(plan, 42)[1].body, /<!-- agent-plan:42:next -->/);
+  const rendered = renderTickets(plan, 42, { base: 101, next: 102 });
+  assert.match(rendered[1].body, /<!-- agent-plan:42:next -->/);
+  assert.match(rendered[1].body, /In scope:/);
+  assert.match(rendered[1].body, /`area\/base\/file\.ts`/);
+  assert.match(rendered[1].body, /- #101 \(plan key: `base`\)/);
 });
 
 test("rejects unordered overlap, cycles, and incomplete contracts", () => {

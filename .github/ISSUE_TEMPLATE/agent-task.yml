@@ -1,11 +1,11 @@
 name: Agent task
-description: A fully specified implementation ticket. Agents normally create these from a confirmed Grill Me issue.
+description: Explicit fast lane for a complete implementation ticket that needs no design decision.
 title: "Task: "
 labels: [needs-triage]
 body:
   - type: markdown
     attributes:
-      value: Agents create this form after a decision is confirmed. All fields are required so dependency-free tasks can dispatch safely in parallel.
+      value: Use this fast lane only when no Grill Me decision remains. All fields are required so dependency-free tasks can dispatch safely in parallel.
   - type: textarea
     id: goal
     attributes:

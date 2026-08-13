@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeIssue, planFrontier } from "./frontier.mjs";
+import { normalizeIssue, planFrontier, touchSetsOverlap } from "./frontier.mjs";
 
 function issue(number, overrides = {}) {
   return {
@@ -37,6 +37,13 @@ test("running tickets reserve capacity, touch-sets, and logical locks", () => {
   ]);
 });
 
+test("glob touch-sets conservatively reserve wildcard intersections", () => {
+  assert.equal(touchSetsOverlap(["**"], ["apps/api/**"]), true);
+  assert.equal(touchSetsOverlap(["*.md"], ["docs/readme.md"]), true);
+  assert.equal(touchSetsOverlap(["docs/**/*.md"], ["docs/runbook.txt"]), true);
+  assert.equal(touchSetsOverlap(["apps/api/**"], ["apps/web/**"]), false);
+});
+
 test("blocks dependencies and makes serial-only exclusive", () => {
   const result = planFrontier(
     [issue(1, { openBlockers: 1 }), issue(2, { serialOnly: true }), issue(3)],
@@ -58,7 +65,7 @@ test("planning briefs receive scheduler-owned scope while malformed tasks fail c
   const brief = normalizeIssue({
     number: 42,
     body: "confirmed decision",
-    labels: [{ name: "ready-for-agent" }, { name: "agent:queued" }, { name: "agent:brief" }],
+    labels: [{ name: "agent:queued" }, { name: "agent:brief" }],
   });
   const malformed = normalizeIssue({
     number: 43,

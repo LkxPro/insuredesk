@@ -32,3 +32,52 @@ if AGENT_EXECUTOR='../escape' \
   echo 'unsafe executor name unexpectedly accepted' >&2
   exit 1
 fi
+
+cat >"$tmp/bin/claude" <<'EOF'
+#!/bin/sh
+cat >/dev/null
+printf '{"result":"ok"}\n'
+EOF
+chmod +x "$tmp/bin/claude"
+
+if AGENT_EXECUTOR=claude \
+  AGENT_CLAUDE_BIN="$tmp/bin/claude" \
+  ANTHROPIC_BASE_URL=https://provider.invalid \
+  AGENT_MODEL=test-model \
+  AGENT_WORKTREE="$tmp/worktree" \
+  AGENT_TASK_FILE="$tmp/prompt.md" \
+  AGENT_OUTPUT_FILE="$tmp/output.txt" \
+  "$repo/scripts/agent/run-executor.sh" >/dev/null 2>&1; then
+  echo 'Claude adapter unexpectedly accepted missing credentials' >&2
+  exit 1
+fi
+
+if AGENT_EXECUTOR=claude \
+  AGENT_CLAUDE_BIN="$tmp/bin/claude" \
+  ANTHROPIC_BASE_URL=https://provider.invalid \
+  ANTHROPIC_AUTH_TOKEN=token \
+  ANTHROPIC_API_KEY=key \
+  AGENT_MODEL=test-model \
+  AGENT_WORKTREE="$tmp/worktree" \
+  AGENT_TASK_FILE="$tmp/prompt.md" \
+  AGENT_OUTPUT_FILE="$tmp/output.txt" \
+  "$repo/scripts/agent/run-executor.sh" >/dev/null 2>&1; then
+  echo 'Claude adapter unexpectedly accepted two credential modes' >&2
+  exit 1
+fi
+
+for credential in token key; do
+  if [ "$credential" = token ]; then
+    ANTHROPIC_AUTH_TOKEN=value ANTHROPIC_API_KEY='' \
+      AGENT_EXECUTOR=claude AGENT_CLAUDE_BIN="$tmp/bin/claude" \
+      ANTHROPIC_BASE_URL=https://provider.invalid AGENT_MODEL=test-model \
+      AGENT_WORKTREE="$tmp/worktree" AGENT_TASK_FILE="$tmp/prompt.md" \
+      AGENT_OUTPUT_FILE="$tmp/output.txt" "$repo/scripts/agent/run-executor.sh"
+  else
+    ANTHROPIC_AUTH_TOKEN='' ANTHROPIC_API_KEY=value \
+      AGENT_EXECUTOR=claude AGENT_CLAUDE_BIN="$tmp/bin/claude" \
+      ANTHROPIC_BASE_URL=https://provider.invalid AGENT_MODEL=test-model \
+      AGENT_WORKTREE="$tmp/worktree" AGENT_TASK_FILE="$tmp/prompt.md" \
+      AGENT_OUTPUT_FILE="$tmp/output.txt" "$repo/scripts/agent/run-executor.sh"
+  fi
+done

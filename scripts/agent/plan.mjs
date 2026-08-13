@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { touchSetsOverlap } from "./frontier.mjs";
 
@@ -81,7 +82,7 @@ function bullets(values, checklist = false, code = false) {
     .join("\n");
 }
 
-export function renderTickets(plan, parent) {
+export function renderTickets(plan, parent, issueNumbers = {}) {
   return plan.tickets.map((ticket) => ({
     ...ticket,
     body: [
@@ -92,7 +93,11 @@ export function renderTickets(plan, parent) {
       ticket.goal,
       "",
       "## Scope",
-      bullets(ticket.outOfScope.map((item) => `Out of scope: ${item}`)),
+      "In scope:",
+      bullets(ticket.touchSet, false, true),
+      "",
+      "Out of scope:",
+      bullets(ticket.outOfScope),
       "",
       "## Declared touch-set",
       bullets(ticket.touchSet, false, true),
@@ -108,7 +113,13 @@ export function renderTickets(plan, parent) {
       "",
       "## Dependencies",
       ticket.dependsOn.length > 0
-        ? bullets(ticket.dependsOn.map((key) => `Plan key: ${key}`))
+        ? bullets(
+            ticket.dependsOn.map((key) =>
+              issueNumbers[key]
+                ? `#${issueNumbers[key]} (plan key: \`${key}\`)`
+                : `Plan key: \`${key}\` (resolved before queueing)`,
+            ),
+          )
         : "- None",
     ].join("\n"),
   }));
@@ -130,6 +141,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.stderr.write(`${errors.join("\n")}\n`);
     process.exitCode = 1;
   } else if (process.argv[2] === "render") {
-    process.stdout.write(`${JSON.stringify(renderTickets(plan, Number(process.argv[3])))}\n`);
+    const issueNumbers = process.argv[4] ? JSON.parse(readFileSync(process.argv[4], "utf8")) : {};
+    process.stdout.write(
+      `${JSON.stringify(renderTickets(plan, Number(process.argv[3]), issueNumbers))}\n`,
+    );
   }
 }
