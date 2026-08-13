@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Agent workflow
+    url: https://github.com/LkxPro/insuredesk/blob/main/docs/agents/agent-loop.md
+    about: Run Grill Me locally, then publish the confirmed spec and tickets from that conversation.

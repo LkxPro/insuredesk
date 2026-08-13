@@ -1,0 +1,4 @@
+interface:
+  display_name: "Publish InsureDesk Spec"
+  short_description: "Publish a confirmed design as a durable spec"
+  default_prompt: "Use $to-spec to publish our confirmed design to GitHub."

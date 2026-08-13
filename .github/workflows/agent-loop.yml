@@ -1,0 +1,39 @@
+name: Agent loop
+
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled, closed, reopened]
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Bootstrap labels or refresh issue state
+        required: true
+        default: refresh
+        type: choice
+        options: [bootstrap, refresh]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  transition:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Ensure agent labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/agent-loop.sh bootstrap
+      - name: Transition changed issue
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/agent-loop.sh transition '${{ github.event.issue.number }}'
+      - name: Report dispatch frontier
+        if: github.event_name == 'issues' || (github.event_name == 'workflow_dispatch' && inputs.action == 'refresh')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/agent-loop.sh queue

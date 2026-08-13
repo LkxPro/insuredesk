@@ -1,0 +1,23 @@
+name: Agent PR health
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  requeue-failed-agent-work:
+    if: github.event.workflow_run.conclusion == 'failure' && startsWith(github.event.workflow_run.head_branch, 'codex/issue-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Requeue the issue only when its agent PR failed CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: sh scripts/agent-loop.sh reconcile-ci "$AGENT_BRANCH"

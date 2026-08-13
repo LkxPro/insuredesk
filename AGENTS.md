@@ -25,3 +25,15 @@ Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context: one `CONTEXT.md` at the repo root. See `docs/agents/domain.md`.
+
+## Automated issue work
+
+- Run Grill Me interactively in local Claude or Codex. GitHub Issues begin only after the human confirms the design.
+- For `to-spec`, publish the confirmed Markdown with `scripts/agent/publish-spec.sh`; never add `ready-for-agent` to the parent spec.
+- For `to-tickets`, emit the structured schema accepted by `scripts/agent/plan.mjs`, then call `scripts/agent/publish-tickets.sh`. The publisher owns child bodies, labels, sub-issue links, and native dependency edges.
+- `ready-for-agent` requires acceptance criteria, declared touch-set, logical locks, tests, and native dependency edges.
+- Change only the declared touch-set. New scope requires a ticket update and a fresh claim.
+- Autonomous worker model processes leave an uncommitted diff only. They never call GitHub, commit, push, or open/merge PRs; the controller owns publication. Interactive `to-spec`/`to-tickets` sessions may read Issues with `gh` and may mutate GitHub only through their deterministic publisher scripts.
+- Run focused tests during work and `make check` before handoff. Never weaken a quality gate.
+- On ambiguity or unsafe migration, apply `agent:blocked` with evidence; do not guess.
+- Executor and state-machine details: `docs/agents/agent-loop.md`.

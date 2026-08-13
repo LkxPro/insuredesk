@@ -1,0 +1,1 @@
+The attached issue's existing agent PR failed CI. Inspect the worktree and failure context included in the task, repair only the regression, and run relevant local checks. Do not call GitHub, commit, push, or open/merge a PR. The controller validates and publishes the repair.
