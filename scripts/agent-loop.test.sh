@@ -227,8 +227,8 @@ cat >"$claim_dir/gh-transition" <<'EOF'
 #!/bin/sh
 case "$*" in
   'issue view 10 --json number,state,body,labels')
-    printf '%s\n' '{"number":10,"state":"OPEN","body":"Confirmed","labels":[{"name":"grill-me"},{"name":"decision-confirmed"}]}' ;;
-  'issue edit 10 --add-label agent:brief,agent:queued --remove-label needs-triage,needs-info,ready-for-agent')
+    printf '%s\n' '{"number":10,"state":"OPEN","body":"Confirmed spec","labels":[{"name":"agent:spec"},{"name":"ready-for-agent"}]}' ;;
+  'issue edit 10 --remove-label ready-for-agent,agent:queued,agent:running,agent:task,needs-info')
     printf '%s\n' "$*" >"$TRANSITION_CAPTURE" ;;
   *) echo "unexpected gh command: $*" >&2; exit 1 ;;
 esac
@@ -236,7 +236,7 @@ EOF
 chmod +x "$claim_dir/gh-transition"
 TRANSITION_CAPTURE="$claim_dir/transition" AGENT_LOOP_GH="$claim_dir/gh-transition" \
   sh "$script_dir/agent-loop.sh" transition 10
-grep -Fqx 'issue edit 10 --add-label agent:brief,agent:queued --remove-label needs-triage,needs-info,ready-for-agent' \
+grep -Fqx 'issue edit 10 --remove-label ready-for-agent,agent:queued,agent:running,agent:task,needs-info' \
   "$claim_dir/transition"
 
 git -C "$claim_dir/repo" worktree add -q -b codex/issue-11 "$claim_dir/artifacts/issue-11" main
@@ -364,7 +364,7 @@ cat >"$repair_dir/bin/gh" <<'EOF'
 #!/bin/sh
 case "$*" in
   'issue view 9 --json number,title,body,comments,labels')
-    printf '%s\n' '{"number":9,"title":"Planning repair","body":"Confirmed","comments":[],"labels":[{"name":"agent:brief"},{"name":"agent:repair"}]}' ;;
+    printf '%s\n' '{"number":9,"title":"Task repair","body":"## Goal\nRepair\n## Scope\nTask\n## Declared touch-set\n- allowed.txt\n## Logical locks\n- None\n## Acceptance criteria\n- [ ] fixed\n## Dependencies\n- None\n## Test plan\n- test","comments":[],"labels":[{"name":"agent:task"},{"name":"agent:repair"}]}' ;;
   'run list --branch codex/issue-9 --status failure --limit 1 --json databaseId --jq .[0].databaseId') printf '88\n' ;;
   'run view 88 --log-failed') printf 'FAILED-CI-DIAGNOSTIC\n' ;;
 esac
@@ -385,7 +385,3 @@ if PATH="$repair_dir/bin:$PATH" \
 fi
 grep -Fq 'existing agent PR failed CI' "$repair_dir/task.md"
 grep -Fq 'FAILED-CI-DIAGNOSTIC' "$repair_dir/task.md"
-if grep -Fq 'Turn it into a durable specification' "$repair_dir/task.md"; then
-  echo 'brief prompt unexpectedly took precedence over repair' >&2
-  exit 1
-fi

@@ -66,9 +66,7 @@ bootstrap() {
   agent_loop_labels=$("$agent_loop_gh" label list --limit 100 --json name --jq '.[].name')
   ensure_label 'needs-info' 'Waiting for information needed to proceed' 'd876e3'
   ensure_label 'ready-for-human' 'Requires human implementation' 'fbca04'
-  ensure_label 'grill-me' 'Human decision clarification in progress' '8250df'
-  ensure_label 'decision-confirmed' 'Human confirmed the Grill Me decisions' '0e8a16'
-  ensure_label 'agent:brief' 'Agent turns confirmed decisions into executable tickets' '1d76db'
+  ensure_label 'agent:spec' 'Confirmed specification published from a local design session' '8250df'
   ensure_label 'agent:task' 'Validated executable implementation ticket' '1d76db'
   ensure_label 'agent:queued' 'Awaiting dependency-free agent dispatch' 'fbca04'
   ensure_label 'agent:running' 'Agent worker owns this issue' '0969da'
@@ -144,12 +142,12 @@ transition() {
     return 0
   fi
 
-  if has_label "$json" 'grill-me' && has_label "$json" 'decision-confirmed'; then
-    "$agent_loop_gh" issue edit "$issue" --add-label 'agent:brief,agent:queued' --remove-label 'needs-triage,needs-info,ready-for-agent' >/dev/null
+  if has_label "$json" 'agent:spec'; then
+    "$agent_loop_gh" issue edit "$issue" --remove-label 'ready-for-agent,agent:queued,agent:running,agent:task,needs-info' >/dev/null
     return 0
   fi
 
-  if has_label "$json" 'ready-for-agent' && ! has_label "$json" 'agent:brief'; then
+  if has_label "$json" 'ready-for-agent'; then
     if printf '%s' "$json" | jq -r .body | validate_body; then
       sync_dependencies "$issue" "$(printf '%s' "$json" | jq -r .body)"
       "$agent_loop_gh" issue edit "$issue" --add-label 'agent:task,agent:queued' --remove-label 'needs-triage,needs-info' >/dev/null

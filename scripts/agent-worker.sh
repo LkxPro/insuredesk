@@ -72,16 +72,9 @@ $agent_worker_gh issue view "$issue" --json number,title,body,comments,labels >"
 labels=$(jq -r '.labels[].name' "$issue_file")
 mode=task
 prompt_file="$root/.github/agent-prompts/task.md"
-planning=false
-if printf '%s\n' "$labels" | grep -Fqx 'agent:brief'; then
-  planning=true
-fi
 if printf '%s\n' "$labels" | grep -Fqx 'agent:repair'; then
   mode=repair
   prompt_file="$root/.github/agent-prompts/repair.md"
-elif [ "$planning" = true ]; then
-  mode=brief
-  prompt_file="$root/.github/agent-prompts/brief.md"
 fi
 
 repair_context=''
@@ -158,16 +151,7 @@ if [ -z "$failure" ] && [ -z "$changed" ]; then
   failure='Agent produced no repository change.'
 fi
 
-spec_dir="docs/specs/issue-$issue"
-if [ -z "$failure" ] && [ "$planning" = true ]; then
-  if [ ! -f "$worktree/$spec_dir/spec.md" ] || [ ! -f "$worktree/$spec_dir/tickets.json" ]; then
-    failure='Planning agent did not produce spec.md and tickets.json.'
-  elif ! node "$script_dir/agent/plan.mjs" <"$worktree/$spec_dir/tickets.json"; then
-    failure='Planning agent produced an invalid ticket DAG.'
-  elif printf '%s\n' "$changed" | awk -v prefix="$spec_dir/" 'index($0, prefix) != 1 {bad=1} END{exit bad ? 0 : 1}'; then
-    failure='Planning agent changed files outside its durable spec directory.'
-  fi
-elif [ -z "$failure" ]; then
+if [ -z "$failure" ]; then
   if ! { jq -c . "$issue_file"; printf '%s\n' "$changed"; } | node "$script_dir/agent/verify-touch-set.mjs"; then
     failure='Agent changed files outside the declared touch-set.'
   fi
@@ -192,11 +176,6 @@ if [ -z "$failure" ]; then
   git -C "$worktree" commit -m "agent: resolve issue #$issue"
   git -C "$worktree" push --set-upstream origin HEAD
   published=true
-
-  if [ "$planning" = true ] && ! "$script_dir/agent/materialize-plan.sh" "$issue" "$worktree/$spec_dir/tickets.json"; then
-    failure='Controller could not materialize the complete ticket DAG; parent remains open.'
-  fi
-
 fi
 
 if [ -z "$failure" ]; then

@@ -1,0 +1,119 @@
+#!/bin/sh
+set -eu
+
+parent=${1:?parent spec issue number required}
+plan_file=${2:?structured ticket plan path required}
+agent_publish_gh=${AGENT_LOOP_GH:-gh}
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+tmp=$(mktemp -d)
+lock_file="$tmp/publication.lock"
+guard=''
+cleanup() {
+  if [ -n "$guard" ]; then
+    kill "$guard" 2>/dev/null || true
+    wait "$guard" 2>/dev/null || true
+  fi
+  sh "$script_dir/publication-lock.sh" release tickets "$parent" "$lock_file"
+  rm -rf "$tmp"
+}
+abort() {
+  trap - HUP INT TERM
+  cleanup
+  exit 143
+}
+trap cleanup EXIT
+trap abort HUP INT TERM
+sh "$script_dir/publication-lock.sh" acquire tickets "$parent" "$lock_file"
+sh "$script_dir/publication-guard.sh" tickets "$parent" "$lock_file" "$$" & guard=$!
+
+gh_call() {
+  sh "$script_dir/publication-lock.sh" verify tickets "$parent" "$lock_file"
+  sh "$script_dir/github-call.sh" "$agent_publish_gh" "$@"
+}
+
+repo=$(gh_call repo view --json nameWithOwner --jq .nameWithOwner)
+
+parent_json=$(gh_call issue view "$parent" --json state,labels,comments)
+if [ "$(printf '%s' "$parent_json" | jq -r .state)" != OPEN ] || \
+  ! printf '%s' "$parent_json" | jq -e 'any(.labels[]; .name == "agent:spec")' >/dev/null; then
+  echo "parent #$parent must be an open agent:spec issue" >&2
+  exit 65
+fi
+
+node "$script_dir/plan.mjs" render "$parent" <"$plan_file" >"$tmp/rendered.json"
+printf '{}\n' >"$tmp/map.json"
+comments=$(printf '%s' "$parent_json" | jq -r '.comments[].body')
+all_tasks=$(gh_call api "repos/$repo/issues?state=all&labels=agent%3Atask&per_page=100" --paginate)
+
+post_edge() {
+  error="$tmp/api-error"
+  verify_path=$1
+  expected_id=$2
+  shift 2
+  if ! "$@" >/dev/null 2>"$error"; then
+    if ! gh_call api "$verify_path" --paginate --jq '.[].id' | grep -Fqx "$expected_id"; then
+      cat "$error" >&2
+      return 1
+    fi
+  fi
+}
+
+jq -c '.[]' "$tmp/rendered.json" | while IFS= read -r ticket; do
+  key=$(printf '%s' "$ticket" | jq -r .key)
+  existing=$(printf '%s\n' "$comments" | sed -n "s/.*<!-- agent-plan:$parent:$key:\([0-9][0-9]*\) -->.*/\1/p" | head -1)
+  if [ -z "$existing" ]; then
+    existing=$(printf '%s' "$all_tasks" | jq -r --arg marker "<!-- agent-plan:$parent:$key -->" \
+      '.[] | select(.body != null and (.body | contains($marker))) | .number' | head -1)
+  fi
+  if [ -n "$existing" ]; then
+    number=$existing
+    database_id=$(gh_call api "repos/$repo/issues/$number" --jq .id)
+  else
+    payload=$(printf '%s' "$ticket" | jq '{title, body, labels: ["agent:task"]}')
+    sh "$script_dir/publication-lock.sh" verify tickets "$parent" "$lock_file"
+    created=$(gh_call api --method POST "repos/$repo/issues" --input - <<EOF
+$payload
+EOF
+)
+    number=$(printf '%s' "$created" | jq -r .number)
+    database_id=$(printf '%s' "$created" | jq -r .id)
+    sh "$script_dir/publication-lock.sh" verify tickets "$parent" "$lock_file"
+    gh_call issue comment "$parent" --body "<!-- agent-plan:$parent:$key:$number --> Created #$number for plan key \`$key\`." >/dev/null
+  fi
+  jq --arg key "$key" --argjson number "$number" --argjson id "$database_id" \
+    '. + {($key): {number: $number, id: $id}}' "$tmp/map.json" >"$tmp/map.next.json"
+  mv "$tmp/map.next.json" "$tmp/map.json"
+  sh "$script_dir/publication-lock.sh" verify tickets "$parent" "$lock_file"
+  post_edge "repos/$repo/issues/$parent/sub_issues" "$database_id" \
+    gh_call api --method POST "repos/$repo/issues/$parent/sub_issues" -F sub_issue_id="$database_id"
+done
+
+jq 'with_entries(.value = .value.number)' "$tmp/map.json" >"$tmp/numbers.json"
+node "$script_dir/plan.mjs" render "$parent" "$tmp/numbers.json" <"$plan_file" >"$tmp/rendered.json"
+
+jq -c '.[]' "$tmp/rendered.json" | while IFS= read -r ticket; do
+  key=$(printf '%s' "$ticket" | jq -r .key)
+  number=$(jq -r --arg key "$key" '.[$key].number' "$tmp/map.json")
+  printf '%s' "$ticket" | jq -r .body >"$tmp/body-$number.md"
+  sh "$script_dir/publication-lock.sh" verify tickets "$parent" "$lock_file"
+  gh_call issue edit "$number" --body-file "$tmp/body-$number.md" >/dev/null
+  printf '%s' "$ticket" | jq -r '.dependsOn[]' | while IFS= read -r dependency; do
+    blocker_id=$(jq -r --arg key "$dependency" '.[$key].id' "$tmp/map.json")
+    sh "$script_dir/publication-lock.sh" verify tickets "$parent" "$lock_file"
+    post_edge "repos/$repo/issues/$number/dependencies/blocked_by" "$blocker_id" \
+      gh_call api --method POST "repos/$repo/issues/$number/dependencies/blocked_by" -F issue_id="$blocker_id"
+  done
+done
+
+jq -c '.[]' "$tmp/rendered.json" | while IFS= read -r ticket; do
+  key=$(printf '%s' "$ticket" | jq -r .key)
+  number=$(jq -r --arg key "$key" '.[$key].number' "$tmp/map.json")
+  labels='ready-for-agent,agent:queued'
+  if [ "$(printf '%s' "$ticket" | jq -r .serialOnly)" = true ]; then
+    labels="$labels,serial-only"
+  fi
+  sh "$script_dir/publication-lock.sh" verify tickets "$parent" "$lock_file"
+  gh_call issue edit "$number" --add-label "$labels" --remove-label needs-triage >/dev/null
+done
+
+jq 'with_entries(.value = .value.number)' "$tmp/map.json"

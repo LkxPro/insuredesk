@@ -1,711 +1,451 @@
-# Agent 开发闭环：安装、配置与使用
+# GitHub Issue Agent 开发闭环：团队上手与运行指南
 
-本文面向使用和维护 InsureDesk 的团队成员。它解释为什么需要这套闭环、第一次怎样启用、日常要看什么，以及失败时怎样安全恢复。人工只负责完成 **Grill Me** 并确认决策；确认后的规格沉淀、拆票、依赖编排、并行实现、复审、测试、提交、PR、CI、合并和下游解锁由本地 Claude 与 GitHub 自动完成。
+本文面向团队成员。正常流程只有设计阶段需要人：在本地 Claude/Codex 中完成 Grill Me，确认后调用 `to-spec` 与 `to-tickets`。GitHub 从“已确认规格”开始记录工作；本地 Claude daemon 自动并行实现、测试、复审、发 PR、修 CI 并合并。
 
-> `codex/issue-<n>` 只是当前分支命名约定。执行器默认是本地 Claude，不需要 Codex，也不会调用 `codex exec`。
+> GitHub Issue 不是 Grill Me 聊天窗口。不要把未确认的设计问题发布为 Issue。
 
-## 快速开始清单
+## 快速清单
 
-首次启用：
+- [ ] 安装 `git`、`gh`、`jq`、Node/pnpm、Docker、Claude CLI
+- [ ] `gh auth status` 成功，且有 Issue、PR、Actions、Contents 写权限
+- [ ] 配置 Claude provider 环境变量；密钥只放本机
+- [ ] GitHub 开启 auto-merge；`main` 要求 `lint-and-test`、`docker-build`
+- [ ] 运行一次 `sh scripts/agent-loop.sh bootstrap`
+- [ ] 启动 `make agent-loop-daemon`
+- [ ] 本地运行 Grill Me；明确确认设计
+- [ ] 调用 `to-spec`，取得父 Issue 号
+- [ ] 调用 `to-tickets`；child 自动建票、连依赖、入队
+- [ ] 用 `make agent-loop-queue`、`.worktrees/*.log`、PR Checks 观察
 
-- [ ] 合并包含本闭环的代码，并让运行机同步最新 `main`
-- [ ] 安装 Git、GitHub CLI、Node/pnpm、Docker、Claude Code 和 `jq`
-- [ ] `gh auth status` 正常，账号可写 Issues、分支和 PR
-- [ ] GitHub 开启 auto-merge、Actions 写权限和 `main` 分支保护
-- [ ] `main` 要求 `lint-and-test` 与 `docker-build` 两项检查
-- [ ] 运行 **Agent loop → Run workflow → bootstrap** 创建标签
-- [ ] 在运行机环境中注入 provider URL、model 和 key
-- [ ] `make agent-loop-queue` 可正常读取队列
-- [ ] `make agent-loop-daemon` 启动唯一 dispatcher
-
-每次需求：
-
-- [ ] 用 **Grill Me** issue 表单创建决策 issue
-- [ ] 完成讨论，把最终结论写入 **Confirmed decisions**
-- [ ] 添加 `grill-me`，确认无误后再添加 `decision-confirmed`
-- [ ] 之后不再手动拆票或派工，只关注 `agent:blocked`、PR 与 CI
-
-## 闭环如何工作
+## 1. 实际工作流
 
 ```mermaid
 flowchart LR
-  G["人工 Grill Me"] --> C["grill-me + decision-confirmed"]
-  C --> B["本地 Claude 规划"]
-  B --> S["spec.md + tickets.json"]
-  S --> D["子 Issues + 原生依赖 DAG"]
-  D --> P["规格 PR + CI + 自动合并"]
-  P --> Q["无阻塞执行前沿"]
-  Q --> W["独立 worktrees 并行实现"]
-  W --> R["复审 + make check + PR"]
-  R --> M["CI + 自动合并"]
-  M --> U["关闭 Issue 并解锁下游"]
-  U --> Q
+  G["本地 Claude/Codex：Grill Me 对话"] --> C["人确认设计"]
+  C --> S["to-spec：发布 agent:spec 父 Issue"]
+  S --> T["to-tickets：发布完整 child tickets + 原生 DAG"]
+  T --> F["daemon 领取无 blocker、无冲突 frontier"]
+  F --> W["隔离 worktree：Claude 实现 + 独立复审 + make check"]
+  W --> P["controller commit / push / PR"]
+  P --> CI["GitHub CI"]
+  CI -->|通过| M["自动 squash merge，Issue 关闭，下游解锁"]
+  CI -->|失败| R["agent:repair 回队，带失败日志修复"]
+  R --> W
 ```
 
-本地机器运行 `scripts/agent-loop.sh daemon`，GitHub Actions 只负责 issue 状态转换、CI 失败回写和受保护分支上的自动合并。Claude 进程只留下未提交 diff；controller 才能验证、提交、推送、创建 PR 和修改 Issues。
+人负责：
 
-### 人与系统的分工
+1. 在本地对话中回答 Grill Me 的单个设计问题。
+2. 明确确认已达成共同理解。
+3. 调用 `to-spec`，再调用 `to-tickets`。
 
-| 阶段 | 人要做什么 | 自动完成什么 |
-| --- | --- | --- |
-| 决策 | 创建 Grill Me issue、回答问题、写清最终决定并确认 | 不提前写代码 |
-| 规划 | 正常情况下无需操作 | 把决定写成持久规格，拆成有验收条件和依赖的 tickets |
-| 实现 | 只处理明确标记的异常 | 选择无阻塞 tickets，在隔离 worktree 并行实现、复审和测试 |
-| 集成 | 观察 PR/CI；失败需要新决定时介入 | 提交、推送、建 PR、修复 CI、自动合并、关闭 issue、解锁下游 |
+自动完成：
 
-核心原则：人确认“要做什么”，系统负责“怎样可靠地做完”；没有明确进入自动队列的 issue 不会被执行。
+- 规格和 ticket 正文标准化
+- child/sub-issue 创建
+- GitHub 原生 dependency edges
+- `ready-for-agent` 与队列状态
+- 无依赖 frontier 的并行领取
+- worktree、分支、实现、复审、测试、commit、PR
+- CI 失败回队、成功自动合并、下游解锁
 
-## 1. 前置条件
+## 2. 前置条件
 
-### GitHub 权限
+本机需要：
 
-运行 daemon 的 GitHub 账号至少需要：
+- POSIX shell（macOS/Linux）
+- `git`、`gh`、`jq`
+- 仓库要求的 Node、pnpm、Docker
+- Claude CLI；默认命令名为 `claude`
+- 本地 Claude/Codex 中可用 Grill Me skill 或同等的逐题设计访谈
 
-- 读取仓库、Issues、PR 与 Actions 日志
-- 创建和编辑 Issues、标签、sub-issues 与原生 dependency edges
-- 创建并推送 `codex/issue-<n>` 分支，以及短生命周期的 `agent-claims/issue-<n>` / `agent-slots/<n>` 协调分支
-- 创建和编辑 PR
-
-检查登录：
-
-```sh
-gh auth status
-gh repo view LkxPro/insuredesk --json nameWithOwner
-```
-
-### 本地工具
-
-运行机需要：
-
-- Git 与 GitHub CLI `gh`
-- Node.js：版本由仓库 `.nvmrc` 固定
-- pnpm：版本由 `package.json` 的 `packageManager` 固定
-- Docker：`make check` 的 API 测试使用 Testcontainers
-- `jq`
-- Claude Code CLI：命令名默认是 `claude`
-
-基础检查：
+检查：
 
 ```sh
 git --version
 gh --version
-node --version
-pnpm --version
-docker info
 jq --version
+docker version
 claude --version
-```
-
-从一个干净、长期保留的 clone 运行 daemon。不要从临时 worktree 或日常开发中的脏 clone 启动。
-
-## 2. 配置本地 Claude 与自定义 provider
-
-### 必需配置
-
-本项目的默认 adapter 是 `scripts/agent/executors/claude.sh`。对于自定义 Anthropic-compatible provider，运行 daemon 的进程环境需要：
-
-| 变量 | 必需性 | 说明 |
-| --- | --- | --- |
-| `ANTHROPIC_BASE_URL` | 自定义 provider 必需 | Provider/Gateway 的 Anthropic-compatible base URL |
-| `ANTHROPIC_AUTH_TOKEN` | 严格二选一 | Provider 使用 Bearer token 时设置 |
-| `ANTHROPIC_API_KEY` | 严格二选一 | Provider 使用 API key 时设置 |
-| `AGENT_MODEL` | 必需 | 传给 Claude CLI 的 `--model` |
-
-默认 Claude adapter 要求 `ANTHROPIC_BASE_URL`、`AGENT_MODEL`，并严格要求两个凭据变量只设置一个；缺失或同时设置会在调用模型前失败，避免把任务送入含糊的认证配置。安全示例：
-
-```sh
-export AGENT_EXECUTOR='claude'
-export AGENT_MODEL='<your-provider-model-name>'
-export ANTHROPIC_BASE_URL='https://llm-gateway.example.com'
-export ANTHROPIC_AUTH_TOKEN='<inject-from-your-secret-manager>'
-```
-
-如果 provider 要求 `x-api-key`：
-
-```sh
-unset ANTHROPIC_AUTH_TOKEN
-export ANTHROPIC_API_KEY='<inject-from-your-secret-manager>'
-```
-
-这些是占位符，不是可用凭据。不要把真实 key 写入仓库 `.env`、issue、PR、workflow、shell history 或团队文档。推荐由密码管理器、系统服务环境或 secrets manager 在进程启动时注入。
-
-Worker 会给 Claude 一个临时 `HOME`，不会依赖个人 `~/.claude` 登录状态；provider 凭据必须通过 daemon 环境传入。
-
-### 可选运行参数
-
-| 变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `AGENT_LOOP_MAX_PARALLEL` | `4` | 整个 clone 同时运行的最大 worker 数 |
-| `AGENT_LOOP_INTERVAL` | `30` | daemon 轮询间隔，单位秒 |
-| `AGENT_LOOP_WORKTREES` | `<repo>/.worktrees` | worktree、PID、日志与结果目录 |
-| `AGENT_CLAIM_HEARTBEAT_INTERVAL` | `60` | 远端 claim lease 心跳间隔，单位秒 |
-| `AGENT_CLAIM_STALE_SECONDS` | `300` | 无心跳多久后由其他 clone 自动回收 claim |
-| `AGENT_CLAUDE_BIN` | `claude` | Claude CLI 可执行文件 |
-| `AGENT_MAX_TURNS` | `80` | 单次 Claude 非交互运行最大 turns |
-| `AGENT_CLAUDE_ALLOWED_TOOLS` | `Bash,Read,Edit,Write,Glob,Grep` | Claude 可用工具 |
-| `AGENT_CLAUDE_PERMISSION_MODE` | `bypassPermissions` | Claude permission mode |
-| `AGENT_REVIEW_ENABLED` | `1` | `1` 时实现后再运行一次 review Agent |
-
-推荐先从并发 2 开始，确认 provider 限流、机器内存和 Docker 容量后再调高：
-
-```sh
-export AGENT_LOOP_MAX_PARALLEL=2
-export AGENT_LOOP_INTERVAL=30
-```
-
-### Provider-neutral adapter
-
-默认不需要改。如果未来不用 Claude，可设置：
-
-```sh
-export AGENT_EXECUTOR_ADAPTER='/absolute/path/to/custom-adapter'
-```
-
-自定义 adapter 会收到：
-
-- `AGENT_WORKTREE`：独立 worktree 路径
-- `AGENT_TASK_FILE`：本次 prompt/task 文件
-- `AGENT_OUTPUT_FILE`：执行结果输出路径
-
-成功必须退出 `0`；失败必须非零退出。也可设置 `AGENT_EXECUTOR=<name>`，加载仓库内 `scripts/agent/executors/<name>.sh`。
-
-## 3. 配置 GitHub 仓库
-
-需要仓库管理员完成一次。
-
-### 开启 auto-merge
-
-进入 **Settings → General → Pull Requests**：
-
-1. 开启 **Allow auto-merge**。
-2. 保持允许 squash merge；`Agent merge` workflow 使用 squash。
-
-### 保护 `main`
-
-进入 **Settings → Branches** 或仓库 Rulesets，为 `main` 建立规则：
-
-1. Require a pull request before merging。
-2. Require status checks to pass before merging。
-3. 选择精确检查名：
-   - `lint-and-test`
-   - `docker-build`
-4. 建议 Require branches to be up to date before merging。
-5. 禁止 force push 和删除 `main`。
-
-正常闭环要求无需人工 review 即可合并。若规则要求人工 approval，自动化会停在 PR 等待人工审批。
-
-### Actions 权限
-
-进入 **Settings → Actions → General → Workflow permissions**：
-
-1. 选择 **Read and write permissions**。
-2. 无需允许 Actions 创建或批准 PR；PR 由本地 controller 创建，workflow 只请求 auto-merge。
-
-仓库 workflow 使用内置 `GITHUB_TOKEN`，无需新增 provider secret；provider key 只存在于本地 daemon 环境。
-
-### Issue 功能
-
-确认仓库可使用：
-
-- GitHub Issues
-- sub-issues
-- native issue dependencies / blocked-by edges
-
-依赖边是调度唯一事实源。Issue 正文中的 `Dependencies` 用于输入；controller 会将其中的 `#<number>` 转为原生 blocked-by edge。
-
-## 4. 一次性初始化
-
-### 4.1 同步并验证 clone
-
-```sh
-git switch main
-git pull --ff-only origin main
+gh auth status
 make check
 ```
 
-### 4.2 创建闭环标签
+仓库内已提供 `to-spec`、`to-tickets` 的项目级技能适配。Claude Code 通常用 `/to-spec`、`/to-tickets`；Codex 用 `$to-spec`、`$to-tickets` 或直接说“使用 to-spec/to-tickets”。
 
-推荐从 GitHub UI 运行：
+## 3. 配置本地 Claude 与自定义 provider
 
-1. 打开 **Actions → Agent loop**。
-2. 选择 **Run workflow**。
-3. `action` 选择 `bootstrap`。
-4. 运行并确认 workflow 成功。
+必填：
 
-也可由有权限的本地账号执行：
+| 变量 | 含义 |
+| --- | --- |
+| `ANTHROPIC_BASE_URL` | 自定义 Anthropic 兼容 endpoint |
+| `AGENT_MODEL` | provider 提供的模型名 |
+| `ANTHROPIC_AUTH_TOKEN` 或 `ANTHROPIC_API_KEY` | 二选一，不能同时设置 |
+
+安全占位示例：
 
 ```sh
+export ANTHROPIC_BASE_URL='https://provider.example.invalid/anthropic'
+export AGENT_MODEL='provider-model-name'
+export ANTHROPIC_AUTH_TOKEN='<paste-token-in-your-local-shell>'
+unset ANTHROPIC_API_KEY
+```
+
+若 provider 使用 API key：
+
+```sh
+unset ANTHROPIC_AUTH_TOKEN
+export ANTHROPIC_API_KEY='<paste-key-in-your-local-shell>'
+```
+
+可选：
+
+```sh
+export AGENT_LOOP_MAX_PARALLEL=4
+export AGENT_LOOP_INTERVAL=30
+export AGENT_CLAUDE_BIN='claude'
+export AGENT_MAX_TURNS=80
+export AGENT_REVIEW_ENABLED=1
+```
+
+不要把真实值写进仓库、Issue、PR、shell history 示例或 worker log。推荐放入本机 secret manager，再注入 daemon 进程。
+
+## 4. GitHub 仓库配置
+
+### 4.1 Auto-merge 与合并方式
+
+在 **Settings → General → Pull Requests**：
+
+- 开启 **Allow auto-merge**
+- 开启 **Allow squash merging**
+- 推荐开启合并后自动删分支
+
+无需开启 “Allow GitHub Actions to create and approve pull requests”。PR 由本地 controller 创建；`Agent merge` workflow 只启用 auto-merge。
+
+### 4.2 `main` 保护或 ruleset
+
+要求：
+
+- 只能通过 PR 合并
+- required checks：`lint-and-test`、`docker-build`
+- 分支必须更新后才能合并（团队若启用此策略）
+- 不要求人工 review；agent 已有独立 review pass，目标是不新增人工门
+
+不要让 ruleset 阻止本地 controller 创建 `codex/issue-*` 分支，或更新内部 lease refs：
+
+- `agent-claims/issue-*`
+- `agent-slots/*`
+- `agent-publish-locks/*`
+
+### 4.3 GitHub 功能与权限
+
+- 启用 Issues、sub-issues、native issue dependencies
+- 本地 `gh` 身份可读写 Issues/PR、读 Actions logs
+- 同一本地身份可 push `codex/issue-*` 及内部 claim/slot refs
+- Actions workflow 可按仓库中的显式 `permissions` 写 Issue 和启用 auto-merge
+
+Publisher 遇到 sub-issue/dependency API 不可用或 edge 创建失败会失败关闭，不会把缺依赖的 child 加入队列。
+
+## 5. 一次性设置
+
+```sh
+git clone https://github.com/LkxPro/insuredesk.git
+cd insuredesk
+pnpm install --frozen-lockfile
+gh auth login
 sh scripts/agent-loop.sh bootstrap
+make check
 ```
 
-CLI 也可触发同一 workflow：
+`bootstrap` 幂等创建：
 
-```sh
-gh workflow run agent-loop.yml -f action=bootstrap
-gh run watch
-```
+- `agent:spec`
+- `agent:task`
+- `agent:queued`
+- `agent:running`
+- `agent:repair`
+- `agent:blocked`
+- `agent:automerge`
+- `serial-only`
+- `needs-info`、`ready-for-human`
 
-该操作是幂等的，只创建不存在的 Agent 标签。仓库原有的 `needs-triage` 和 `ready-for-agent` 也必须保留；可用 `gh label list` 检查。
+同时保留仓库 triage label：`needs-triage`、`ready-for-agent`、`wontfix`。
 
-### 4.3 验证环境和队列
+## 6. 从 Grill Me 到自动执行
 
-在已经注入 Claude/provider 环境变量的同一个终端中：
+### 6.1 本地 Grill Me
 
-```sh
-claude --version
-gh auth status
-make agent-loop-queue
-```
-
-`make agent-loop-queue` 是只读预览。stdout 输出本轮可派发的 issue number；stderr 可能显示 `blocked-by-dependency`、`logical-lock`、`touch-set`、`invalid-contract` 或 `capacity` 等跳过原因。
-
-## 5. 谁创建 Issue 都会自动运行吗？
-
-**作者身份不影响执行。** Workflow 和 dispatcher 都不检查 issue 作者、团队或创建方式。因此，其他团队成员创建的 issue 也能运行，但前提是团队明确把它加入自动闭环，并且满足全部准入条件。若创建者没有标签权限，由维护者完成最后的 opt-in。
-
-这不是“创建任意 issue 就立即执行”：
-
-- 普通 issue 只有 `needs-triage` 等标签时，不会进入队列。
-- Grill Me issue 必须是 open，并同时有 `grill-me` 与 `decision-confirmed`；workflow 才会把它加入独立的自动规划通道。
-- 手工 Agent task 必须是 open、添加 `ready-for-agent`，并完整填写 Goal、Scope、Acceptance criteria、Declared touch-set、Logical locks、Dependencies 和 Test plan。
-- 规划任务必须有 `agent:brief` 与 `agent:queued`；实现任务必须有 `ready-for-agent`、`agent:task` 与 `agent:queued`。两者还必须没有 open blocker、不与其他 worker 的 touch-set / logical lock 冲突，并且有空闲并发槽。
-
-`Agent loop` 会在 issue 创建、编辑、加/删标签、关闭或重开时重新检查。手工任务不完整却被添加 `ready-for-agent` 时，系统会移除 `ready-for-agent`、`agent:queued`、`agent:task`，添加 `needs-info`；dispatcher 领取前还会再次验证，因此缺字段不会靠竞态绕过检查。
-
-团队应这样明确选择：
-
-- **加入正常闭环：** 使用 Grill Me 表单；完成讨论后添加 `grill-me` 与 `decision-confirmed`。
-- **加入已明确的单任务快速通道：** 使用 Agent task 表单；维护者检查后添加 `ready-for-agent`。
-- **不加入：** 不添加上述确认标签；普通 bug、咨询和草稿 issue 保持常规 triage。
-- **领取前退出：** 手工任务移除 `ready-for-agent`。Grill Me 任务移除 `decision-confirmed`，并移除 `agent:queued`；关闭 issue 也会退出。
-- **已经 `agent:running`：** 不要只删标签；先按“停用、回滚与恢复”停止本地执行，再检查 worktree、PR 和 issue 状态。
-
-## 6. 人工如何完成 Grill Me 并交棒
-
-### 6.1 创建决策 Issue
-
-在 GitHub 选择 **New issue → Grill Me**，填写：
-
-- **Outcome to decide**：要确认的最终结果
-- **Context and constraints**：现状、约束、非目标、风险、相关链接
-- **Confirmed decisions**：先记录讨论中的决定，最终必须整理完整
-
-表单初始标签是 `needs-triage`。
-
-### 6.2 进行 Grill Me
-
-1. 给 issue 添加 `grill-me`，表示仍处于人工决策阶段。
-2. 逐项澄清产品、技术、边界、回滚和验收。
-3. 把最终共识写回 **Confirmed decisions**，不要只留在聊天记录中。
-4. 最后检查不存在待定选项、`TBD` 或互相冲突的决定。
-
-### 6.3 确认交棒
-
-只有决策最终确认后，才添加 `decision-confirmed`。必须同时存在：
-
-- `grill-me`
-- `decision-confirmed`
-
-`Agent loop` workflow 会添加 `agent:brief` 与 `agent:queued`。`agent:brief` 是自动规划通道，不是绕过 ticket contract 的实现票，因此此时不会添加 `ready-for-agent`。
-
-至此人工正常流程结束。不要手动创建子票、关闭父 issue 或添加 `agent:running`。
-
-## 7. 规划、Tickets 与依赖 DAG
-
-规划阶段会把决策转成两个可审查、可长期保存的文件：
+在同一段本地 Claude/Codex 对话中开始：
 
 ```text
-docs/specs/issue-<parent>/spec.md
-docs/specs/issue-<parent>/tickets.json
+使用 grill-me，逐题审视这个设计。每题给推荐答案；我确认前不要实现。
 ```
 
-`tickets.json` 中每张 ticket 必须包含：
+Claude/Codex 应一次只问一个决策问题；能从仓库查到的事实自行调查。最终由人明确回复“确认”或等价表达。
 
-- `key`：小写 kebab-case，且在 plan 内唯一
-- `title`、`goal`
-- 非空 `acceptanceCriteria`、`outOfScope`、`touchSet`、`testPlan`
-- `logicalLocks`、`dependsOn` 数组
-- `serialOnly` 布尔值
+不要在此阶段创建 GitHub Issue。若尚有产品/架构选择，不要调用 `to-spec`。
 
-系统会拒绝：
+### 6.2 发布规格
 
-- 缺字段或空字段
-- 未知依赖
-- dependency cycle
-- touch-set 或 logical lock 重叠、却没有依赖顺序的 tickets
+确认后，在同一对话调用：
 
-验证通过后，系统：
+```text
+/to-spec
+```
 
-1. 创建 GitHub child issues。
-2. 建立 sub-issue 关系。
-3. 让每个 child 都 blocked by 父 decision issue。
-4. 按 `dependsOn` 建立 child 之间的 native dependency edges。
-5. 把每个 child 的 Scope 写成明确的 in-scope touch-set / out-of-scope 清单，并把 Dependencies 更新为实际 `#<issue>` 引用。
-6. 给 child 添加 `agent:task`、`ready-for-agent`、`agent:queued`；需要独占时再加 `serial-only`。
-7. 创建 durable-spec PR，并添加 `agent:automerge`。
+或：
 
-父 issue 由 spec PR 的 `Closes #<parent>` 在合并时关闭。父 issue 未关闭前，所有 child 都被原生依赖阻塞，不会提前实现。
+```text
+$to-spec
+```
 
-### Agent task 快速通道（例外入口）
+项目技能会把已确认内容整理为固定章节，调用：
 
-默认团队流程必须经过 Grill Me 和自动规划。仅当已有完整、可直接验证的工程 ticket，且跳过规划确实能提高吞吐时，才使用 **New issue → Agent task** 快速通道，完整填写：
+```sh
+sh scripts/agent/publish-spec.sh "Spec: <short title>" <spec.md>
+```
 
-- Goal
-- Scope
-- Acceptance criteria（至少一个 checkbox）
-- Declared touch-set（不能是 `None`）
-- Logical locks（无锁填 `- None`）
-- Dependencies（无依赖填 `- None`；有依赖写 `#123`）
-- Test plan（不能是 `None`）
+预期结果：输出一个 GitHub URL；Issue 带 `agent:spec`，不带 `ready-for-agent`，daemon 永远不会实现父规格。
 
-表单只添加 `needs-triage`。维护者添加 `ready-for-agent` 即明确选择快速通道；workflow 验证正文、同步原生 dependency edges，然后添加 `agent:task` 与 `agent:queued`。验证失败会移除队列标签并添加 `needs-info`。不要用它承载仍需产品或架构决策的需求。
+如需人工/脚本直接调用，`spec.md` 必须有：Problem Statement、Solution、User Stories、Implementation Decisions、Testing Decisions、Out of Scope、Further Notes。
 
-## 8. 启动、查看和停止 daemon
+### 6.3 发布 tickets 与 DAG
 
-### 前台启动（推荐首次使用）
+仍在同一对话调用，并带上父 Issue 号：
+
+```text
+/to-tickets #<parent>
+```
+
+或：
+
+```text
+$to-tickets #<parent>
+```
+
+项目技能检查仓库后生成结构化 plan，调用：
+
+```sh
+sh scripts/agent/publish-tickets.sh <parent-number> <tickets.json>
+```
+
+每张票的结构化输入必须包含：
+
+- `key`、`title`、`goal`
+- `acceptanceCriteria`
+- `outOfScope`
+- `touchSet`
+- `logicalLocks`
+- `testPlan`
+- `dependsOn`
+- `serialOnly`
+
+Publisher 在任何 child 入队前验证完整 DAG、环、未知依赖及并行冲突，然后：
+
+1. 创建 child Issue 与 sub-issue link。
+2. 渲染 Goal、Scope、Acceptance criteria、Declared touch-set、Logical locks、Dependencies、Test plan。
+3. 把逻辑 `dependsOn` 转为真实 `#number` 和 GitHub native dependency edges。
+4. 添加 `agent:task`、`ready-for-agent`、`agent:queued`。
+5. 输出 `{ticket-key: issue-number}` 映射。
+
+无需人再补字段、加 label 或批准。daemon 下一轮自动领取无 blocker frontier。
+
+## 7. 启停 daemon
+
+前台启动：
 
 ```sh
 make agent-loop-daemon
 ```
 
-它每 `AGENT_LOOP_INTERVAL` 秒执行一次 dispatch。按 `Ctrl-C` 停止 dispatcher；已经启动的 worker 是独立后台进程，会继续完成当前任务，但不会再领取新任务。
-
-同一个 `AGENT_LOOP_WORKTREES` 只允许一个 daemon；第二个进程会立即退出。每轮 dispatch 也有本地互斥锁，避免重叠轮询超出并发上限。
-
-### 只跑一轮
+预览当前可领取 frontier：
 
 ```sh
 make agent-loop-queue
+```
+
+只调度一轮：
+
+```sh
 make agent-loop-dispatch
 ```
 
-- `agent-loop-queue`：只读预览当前 frontier。
-- `agent-loop-dispatch`：清理已关闭 worktree、恢复 stale claim，并启动一轮可执行 tickets。
+前台停止：按 `Ctrl-C`。生产式常驻请用团队已有的 launchd/systemd/supervisor，把第 3 节环境变量注入该进程；不要把 secret 写进 unit 文件的仓库副本。
 
-### 后台启动
+同一 clone 只允许一个 daemon；跨 clone 由远端 claim/slot refs 协调。默认最多 4 个 worker。
 
-`.worktrees/` 已被 gitignore，可用于 daemon 日志和 PID：
+## 8. 其他成员创建的 Issue 会自动执行吗？
 
-```sh
-mkdir -p .worktrees
-nohup sh scripts/agent-loop.sh daemon >.worktrees/daemon.log 2>&1 &
-echo $! >.worktrees/daemon.pid
-```
+作者身份不参与判断。任何成员、bot 或 publisher 创建的 Issue，只要满足相同条件，都可执行。
 
-查看和停止：
+正常路径的 child 会自动满足：
 
-```sh
-tail -f .worktrees/daemon.log
-kill "$(cat .worktrees/daemon.pid)"
-rm -f .worktrees/daemon.pid
-```
+- open
+- `agent:task` + `ready-for-agent` + `agent:queued`
+- 完整七段正文契约
+- native blockers 已建立且全部关闭
+- touch-set / logical lock 不与 running 或同批已选票冲突
+- 有全局并发 slot
 
-生产式长期运行建议由 launchd、systemd 或同类 supervisor 托管，并在 service 环境中注入变量。不要把 key 写入 service 文件仓库副本。
+普通 Issue、`agent:spec` 父 Issue、只有 `needs-triage` 的 Issue不会运行。
 
-上述日志路径假设未修改 `AGENT_LOOP_WORKTREES`。命令启动后，`tail` 应周期性显示派发结果；没有合格 issue 时保持空闲是正常状态。
+不完整 Issue 即使有人手工添加 `ready-for-agent`，`Agent loop` workflow 也会移除 `ready-for-agent`/队列状态并添加 `needs-info`；dispatcher 领取前还会再次校验。
 
-## 9. 标签与状态
+有意加入：首选 `to-tickets` publisher。已完全明确的单票可用 **Agent task** form，填完所有字段后手工添加 `ready-for-agent`，这是显式 fast lane。
 
-### Issue 标签
+有意退出：领取前移除 `ready-for-agent` 或关闭 Issue。已是 `agent:running` 时不要直接删 worktree；先停止 daemon/worker，再移除队列状态。
 
-| 标签 | 含义 | 谁设置 |
-| --- | --- | --- |
-| `needs-triage` | 尚待确认是否可执行 | Issue form / workflow |
-| `needs-info` | 合约缺失，需要补充 | workflow |
-| `ready-for-human` | 需要人工实现 | 维护者 |
-| `grill-me` | 正在进行人工 Grill Me | 人工 |
-| `decision-confirmed` | 人工确认最终决定 | 人工；正常流程唯一审批点 |
-| `ready-for-agent` | 完整实现 ticket 的快速调度入口 | controller / 经确认的快速通道票 |
-| `agent:brief` | 独立规划通道：生成 spec 与 tickets；不需要 `ready-for-agent` | workflow |
-| `agent:task` | 已验证的实现 ticket | controller / workflow |
-| `agent:queued` | 等待进入 dependency-free frontier | controller / workflow |
-| `agent:running` | 本地 worker 已领取 | dispatcher |
-| `agent:repair` | 现有 PR 的 CI 需要修复 | `Agent PR health` workflow |
-| `agent:blocked` | Agent 无法安全继续 | worker/controller |
-| `serial-only` | 必须独占全部并行槽位 | planning/controller |
+## 9. 并行、冲突与领取
 
-### PR 标签
+Daemon 只取 dependency-free frontier。每个 worker 使用：
+
+- 分支 `codex/issue-<n>`
+- worktree `.worktrees/issue-<n>`
+- 远端 claim `agent-claims/issue-<n>`
+- 全局 slot `agent-slots/<slot>`
+
+调度器保守比较 glob：`**` 会与任何路径冲突；`*.md` 也会保守阻止 `docs/readme.md`。相同 logical lock 不并行。重叠票必须在 plan 中有依赖路径，否则 publisher 拒绝整个 DAG。
+
+领取使用原子远端 refs、heartbeat、超时恢复和发布前 CAS fence。多个 clone 不会重复领取；失去 lease 的 worker不能发布。`serial-only` 独占全部并发容量。
+
+## 10. PR、CI、修复与合并
+
+Worker 顺序：
+
+1. Claude 只留下未提交 diff。
+2. 独立 review agent 检查并可修正 diff。
+3. controller 校验改动未超出 touch-set。
+4. 强制运行 `make check`。
+5. 再验证 claim 并 fence 发布。
+6. controller commit、push、创建 PR，添加 `agent:automerge`。
+
+`Agent merge` 等 required checks 通过后 squash merge，并由 `Closes #<issue>` 关闭 child。下游 native blocker 随即解除，daemon 自动领取下一层。
+
+CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued`。Repair worker尝试下载最近 failed Actions log，复用同一 worktree/branch/PR 修复；下载失败时用本地复现和现有 Issue 内容继续。
+
+## 11. 状态与标签
 
 | 标签 | 含义 |
 | --- | --- |
-| `agent:automerge` | `Agent merge` workflow 可请求 squash auto-merge |
+| `agent:spec` | 已确认、不可执行的父规格 |
+| `agent:task` | 已标准化的实现票 |
+| `ready-for-agent` | 明确可交给 agent；publisher 自动添加 |
+| `agent:queued` | 等待依赖、冲突和容量允许 |
+| `agent:running` | worker 持有有效 claim |
+| `agent:repair` | 现有 PR 需要 CI 修复 |
+| `agent:blocked` | 缺决策/外部权限或确定性门失败 |
+| `agent:automerge` | PR 通过 required checks 后自动合并 |
+| `serial-only` | 该票独占调度器 |
+| `needs-info` | fast-lane 票不完整，未进入队列 |
 
-不要手动添加 `agent:running`、`agent:repair` 或 `agent:automerge` 来跳过状态机。
+## 12. 日常操作
 
-## 10. 并行、依赖与冲突规则
-
-Scheduler 只选择同时满足以下条件的 issues：
-
-- open
-- 规划通道同时具有 `agent:brief` 与 `agent:queued`；或实现通道同时具有 `ready-for-agent`、`agent:task` 与 `agent:queued`
-- native `blocked_by` 数量为 0
-- 未超过 `AGENT_LOOP_MAX_PARALLEL`
-- 不与正在运行或本轮已选择 ticket 的 touch-set / logical locks 冲突
-
-### Declared touch-set
-
-Touch-set 是仓库相对路径或 glob，例如：
-
-```text
-- apps/api/src/services/**
-- packages/shared/src/ticket.ts
-```
-
-可能匹配同一路径的 glob 会保守地串行。例如 `apps/api/**` 与 `apps/api/src/index.ts`、`**` 与 `apps/api/**`、`*.md` 与 `docs/readme.md` 都按冲突处理。宁可少并行，也不让两个 worker 同时修改潜在重叠区域。Worker 完成后，controller 会检查实际 changed files；任何超出 touch-set 的修改都会进入 `agent:blocked`，不会发布 PR。
-
-### Logical locks
-
-Logical lock 用于路径无法表达的共享所有权，例如：
-
-```text
-- ticket-contract
-- prisma-schema
-```
-
-同名 lock 不能并行。无 lock 写 `- None`。
-
-### `serial-only`
-
-如果 ticket 必须独占整个仓库执行窗口，添加 `serial-only`：
-
-- 已有 `serial-only` 正在运行时，不派发任何新任务。
-- 可运行的 `serial-only` 在没有 running worker 时单独启动。
-
-## 11. Worker、PR、CI 与合并
-
-每个 issue 使用：
-
-- worktree：`.worktrees/issue-<n>`
-- branch：`codex/issue-<n>`
-- log：`.worktrees/issue-<n>.log`
-- implementation result：`.worktrees/issue-<n>.implementation.json`
-- review result：`.worktrees/issue-<n>.review.json`
-- PID：`.worktrees/issue-<n>.pid`
-- remote claim marker：`.worktrees/issue-<n>.claim`
-
-执行顺序：
-
-1. Implementation Agent 在隔离 worktree 修改代码。
-2. Review Agent 复查 diff，并可修复具体缺陷。
-3. Controller 验证未改 git history、修改未越过 touch-set；拒绝时把 worktree 恢复到领取前 HEAD，并删除本轮新建的普通与 ignored 文件，避免下次误发布模型 commit 或残留物。
-4. Controller 强制运行 `make check`。
-5. 全部通过后 controller commit、push、创建或更新 PR。
-6. PR 添加 `agent:automerge`。
-7. GitHub `CI` workflow 运行 `lint-and-test` 与 `docker-build`。
-8. `Agent merge` 请求 squash auto-merge。
-9. 合并关闭关联 issue；下游 native dependency 自动解除。
-10. daemon 下一轮计算新的 frontier。
-
-如果 CI 失败，`Agent PR health` 会给源 issue 添加 `agent:repair` 与 `agent:queued`。Repair 模式优先于 brief/task，controller 会尝试下载最近一次 failed Actions log 并注入修复上下文，然后复用同一 worktree、branch 和 PR，重新经过 review 与 `make check`。若 GitHub 日志下载失败，worker 仍会用现有 worktree 与 issue 内容尝试本地复现，错误详情保留在 worker log。
-
-## 12. 日常值守流程
-
-每天建议：
-
-1. 确认 daemon 存活。
-2. 预览 frontier 与跳过原因。
-3. 查看 `agent:blocked` 和 `needs-info`。
-4. 查看 agent PR 与 CI。
-5. 只处理真正需要决策或外部权限的异常。
-
-常用命令：
+每天：
 
 ```sh
-# 当前可执行前沿
+gh auth status
 make agent-loop-queue
-
-# 正在运行的 issues
-gh issue list --label agent:running --state open
-
-# 等待队列
-gh issue list --label agent:queued --state open
-
-# 需要人工诊断
-gh issue list --label agent:blocked --state open
-gh issue list --label needs-info --state open
-
-# Agent PR
-gh pr list --label agent:automerge --state open
-
-# 最近 CI
-gh run list --workflow CI --limit 10
+find .worktrees -maxdepth 1 -name 'issue-*.log' -print
+gh pr list --label agent:automerge
+gh issue list --label agent:blocked
 ```
 
-## 13. 可观测性与故障排查
+操作者通常只需处理：provider/网络/权限故障，或真正缺少新设计决策的 `agent:blocked`。不要手工合并 agent PR、改 dependency edges、复制 worktree，除非按故障恢复步骤定位到 controller 无法恢复。
 
-### Worker 在做什么？
+## 13. 排障与可观测性
+
+### Ticket 不运行
 
 ```sh
-tail -f .worktrees/issue-123.log
-jq . .worktrees/issue-123.implementation.json
-jq . .worktrees/issue-123.review.json
-git -C .worktrees/issue-123 status
-git -C .worktrees/issue-123 diff
+make agent-loop-queue
+gh issue view <n> --json state,labels,body,issueDependenciesSummary
 ```
 
-Issue 评论会记录 stale-claim 恢复、PR 发布和失败原因。再结合 branch、PR 与 Actions run 可串起完整链路。
+检查：完整 contract、`agent:task`/`ready-for-agent`/`agent:queued`、open blockers、touch-set/lock 冲突、`serial-only`、并发 slot。
 
-### `make agent-loop-queue` 没有输出
+### Publisher 失败
 
-依次检查：
+- 父 Issue 必须 open 且带 `agent:spec`
+- `tickets.json` 必须通过 `node scripts/agent/plan.mjs < tickets.json`
+- 冲突票必须有依赖路径
+- GitHub 必须支持 sub-issues/dependencies，`gh` 身份必须可写
 
-1. 规划任务是否有 `agent:brief` + `agent:queued`；实现任务是否有 `ready-for-agent` + `agent:task` + `agent:queued`。
-2. `Dependencies` 是否仍有 open blocker。
-3. 是否被 running ticket 的 touch-set / logical lock 挡住。
-4. 是否达到 `AGENT_LOOP_MAX_PARALLEL`。
-5. stderr 是否显示 `invalid-contract`、`invalid-touch-set`、`capacity` 等原因。
+Publisher 使用 `agent-publish-locks/*` 远端 lease 串行化同一 spec/parent 的发布。后台默认每 30 秒刷新；每次 mutation 前核对 token；GitHub 单次调用默认 120 秒超时，严格短于 300 秒 stale 窗口。失去 lease 会终止正在运行的发布调用，不再继续写入或加队列标签。spec 与 child 正文内 marker 是恢复真相。即使进程在 child 创建后、parent comment 前中断，重跑也会分页发现既有 child，而不是重复创建。部分创建后重新运行相同 parent/plan，不要手工复制 child。
 
-### Issue 进入 `agent:blocked`
-
-先查看：
+### Worker 失败
 
 ```sh
-gh issue view 123 --comments
-tail -n 200 .worktrees/issue-123.log
+tail -f .worktrees/issue-<n>.log
+gh issue view <n> --comments
+gh run list --branch codex/issue-<n>
 ```
 
-修复根因后，维护者可移除 `agent:blocked`，重新添加 `agent:queued`。不要在未理解失败原因时反复重试；provider、scope、测试、依赖或外部权限问题不会靠重跑自动消失。
+失败执行会恢复到保存的起点，并删除该次创建的普通/ignored 残留。确定性失败转 `agent:blocked`；CI 失败自动 repair。
 
-### `agent:running` 但没有进程
+### 看似占用 slot
 
-每个 running issue 应有 `.worktrees/issue-<n>.pid`。下一次 `dispatch` 会检查 PID；进程不存在时会移除 `agent:running`、恢复 `agent:queued` 并写 issue 评论：
+默认 heartbeat 60 秒；默认 300 秒后远端 lease 可判 stale。可配置：
 
 ```sh
-make agent-loop-dispatch
+export AGENT_CLAIM_HEARTBEAT_INTERVAL=60
+export AGENT_CLAIM_STALE_SECONDS=300
 ```
 
-Dispatcher 会用一次 atomic push 同时占用远端 `agent-claims/issue-<n>` 与 `agent-slots/<n>`。前者防止重复领取，后者在多个 clone 同时运行时仍限制全局并发。活跃 worker 定期刷新 lease；本 clone 只用本地 PID 回收自己领取的任务，其他 clone 的任务只有 lease 过期才自动回收。释放和发布前 fencing 都用 claim SHA 做 compare-and-swap；旧 worker 不能删除新 owner 的 lease，失去 lease 的 worker 会被终止且无法进入发布。正常结束或 stale recovery 会删除两个远端 ref。
+不要手删远端 claim refs。正常 dispatch 会按 claim token 进行 CAS 恢复，避免删除新 owner 的 lease。
 
-Issue 在 worker 仍存活时被关闭，dispatcher 会延迟清理，不删除 worktree、PID 或日志；worker 退出后下一轮才回收这些 artifacts。
+## 14. 安全与 secrets
 
-### CI 失败没有重试
+- provider key 只通过本地环境注入
+- 使用专用、受信任 runner 与最小权限 GitHub 身份
+- 不把 `.env`、token、失败日志中的 secret 提交或粘到 Issue
+- controller 会清空 model 进程的 GitHub 环境并覆盖 origin；这是防误操作分层措施，不是强安全 sandbox
+- Claude 仍能运行 shell；只在受控 clone/host 上运行，并保护其他主机凭据
+- 发布权由 controller 使用当前 `gh`/git 身份执行
 
-检查：
+## 15. 禁用、回滚与恢复
 
-```sh
-gh run list --workflow "Agent PR health" --limit 10
-gh pr view <pr-number> --json headRefName,labels,statusCheckRollup
-```
+临时停机：
 
-Agent branch 必须是 `codex/issue-<n>`，PR 必须仍 open 且有 `agent:automerge`，`Agent PR health` 才能映射回 issue。
+1. 停止 daemon（前台 `Ctrl-C` 或停止服务）。
+2. 等当前 `.pid` 消失，确认无活跃 worker。
+3. 不删除 Issue、PR、worktree；它们是恢复点。
 
-### PR 未自动合并
+阻止新工作：移除目标票的 `ready-for-agent`/`agent:queued`，或关闭票。
 
-确认：
+重新启用：恢复环境变量，运行 `make agent-loop-dispatch` 检查一轮，再启动 daemon。Stale local/remote claim 会自动按 token 恢复。
 
-- repository 已开启 **Allow auto-merge**
-- PR 不是 draft
-- PR 有 `agent:automerge`
-- `lint-and-test` 与 `docker-build` 均通过
-- `main` 规则没有额外人工 approval 或其他未满足检查
-- Actions 有写权限
-
-### Provider/Claude 失败
-
-从运行 daemon 的同一环境检查：
-
-```sh
-claude --version
-test -n "$ANTHROPIC_BASE_URL" && echo 'base URL set'
-test -n "${ANTHROPIC_AUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" && echo 'credential set'
-test -n "$AGENT_MODEL" && echo 'model set'
-```
-
-不要打印 credential 本身。认证、未知 model、429 或超时详情见 `.worktrees/issue-<n>.log`。
-
-## 14. Secrets 与运行机安全
-
-- 永远不要 commit provider key、token 或自定义 header。
-- 不要把 key 写进 GitHub issue、PR、Actions variable 或普通日志。
-- 给 daemon 使用专用 GitHub 账号/凭据，只授予本仓库所需权限。
-- 运行机应专用且可信；Claude 默认使用 unattended `bypassPermissions`。
-- Worker 启动 Claude 时清空 `GH_TOKEN`/`GITHUB_TOKEN`、使用临时 GitHub 配置，并用进程级 Git 配置覆盖 origin URL；这能降低误发布风险，但不是安全沙箱。
-- Claude 拥有本地 `Bash` 和 `bypassPermissions`，理论上可改变自身环境或读取运行账号可访问的文件。只在专用可信运行机上使用，避免该账号能读取无关凭据；controller 才是团队约定的唯一发布方。
-- 定期轮换 provider key，限制 provider 配额与并发。
-- `.worktrees/issue-<n>.log` 与结果可能含 issue 内容或模型输出，应按内部工程日志处理。
-
-## 15. 停用、回滚与恢复
-
-### 暂停领取新任务
-
-停止 daemon：
-
-```sh
-kill "$(cat .worktrees/daemon.pid)" 2>/dev/null || true
-rm -f .worktrees/daemon.pid
-```
-
-如果是前台运行，按 `Ctrl-C`。已启动 worker 会继续；仅停止 dispatcher 不会杀掉它们。
-
-### 请求停止所有本地 worker
-
-先确认目标 PID 文件只位于本仓库 `.worktrees`：
-
-```sh
-for pid_file in .worktrees/issue-*.pid; do
-  [ -f "$pid_file" ] || continue
-  kill "$(cat "$pid_file")"
-done
-```
-
-对应 issues 可能暂留 `agent:running`。保留 worktree 与日志用于诊断；重新启动后，下一轮 dispatch 会恢复 stale claims。
-
-PID 指向 worker wrapper；停止后用 `ps` 和日志确认其子进程也已退出。系统目前没有“一键强停并回滚所有执行”的事务操作，因此生产值守优先采用“停 daemon、等待已有 worker 完成”。
-
-### 禁用 GitHub 控制面
-
-在 **Actions** 中分别禁用：
-
-- `Agent loop`
-- `Agent merge`
-- `Agent PR health`
-
-同时停止本地 daemon。这样不会再自动转换 issue、回写 CI 或请求合并。已有 PR 不会自动撤销；按普通 GitHub 流程关闭或处理。
-
-### 从 `agent:blocked` 恢复
-
-1. 阅读 issue 评论与 `.worktrees/issue-<n>.log`。
-2. 修复 provider、依赖、scope、测试或权限问题。
-3. 必要时在 issue 中记录新的人工决定。
-4. 移除 `agent:blocked`，添加 `agent:queued`。
-5. 用 `make agent-loop-queue` 确认后，再运行 daemon/dispatch。
-
-### 回滚已合并代码
-
-闭环只使用普通 squash PR。业务代码回滚仍遵循仓库常规方式：为目标 merge commit 创建 revert PR，让现有 CI 检查通过后合并。不要删除 issue、spec 或 dependency 记录来伪造回滚状态。
+彻底禁用自动合并：关闭 GitHub auto-merge 或禁用 `Agent merge` workflow；已创建 PR 保留，可人工审查，但这会退出“无人干预”模式。
 
 ## 16. 术语表
 
-| 术语 | 通俗解释 |
+| 术语 | 含义 |
 | --- | --- |
-| Grill Me | 人工把模糊需求问清楚并作出最终决定的阶段 |
-| Agent loop / 闭环 | 从已确认决定到规划、实现、CI、合并和状态回写的整套自动流程 |
-| daemon / dispatcher | 长期运行在本地机器、定期寻找可执行 issue 并启动 worker 的进程 |
-| worker | 一次只负责一个 issue 的本地执行进程 |
-| controller | worker 中负责验证、测试、提交、推送和更新 GitHub 的确定性脚本；不是模型 |
-| adapter | 把统一任务交给具体模型 CLI 的薄接口；默认连接本地 Claude |
-| ticket contract | Agent task 必须完整提供的 Goal、Scope、验收、修改范围、锁、依赖和测试计划 |
-| DAG | 有向无环依赖图；保证上游完成后下游才开始，且依赖不会循环 |
-| frontier | 当前所有依赖都已满足、可立即领取的一组 tickets |
-| worktree | 同一 Git 仓库的隔离工作目录；每个 issue 在自己的目录和分支中修改 |
-| touch-set | ticket 声明允许修改的文件或目录范围，也是并行冲突判断依据 |
-| logical lock | 文件路径无法表达时，对共享契约、schema 等资源使用的互斥名称 |
-| stale claim | issue 标记为运行中，但对应本地进程已经不存在的过期领取状态 |
+| Grill Me | 本地 Claude/Codex 中逐题确认设计的交互会话 |
+| Spec | 人确认后发布的 `agent:spec` 父 Issue |
+| Ticket contract | executor 所需的七段可验证 Issue 正文 |
+| DAG | child tickets 的有向无环依赖图 |
+| Frontier | 所有 blocker 已关闭、当前可并行领取的票 |
+| Touch-set | ticket 允许修改的仓库路径/glob |
+| Logical lock | 无法只靠路径表达的共享契约/资源占用 |
+| Claim / slot | 防重复领取并限制跨 clone 总并发的远端 refs |
+| Fence | 发布前用 claim token 做的原子所有权确认 |
+| Controller | 确定性脚本；负责 GitHub、commit、push、PR |
+| Executor | 默认本地 Claude；只实现/review，不负责发布 |
+| Fast lane | 已完整明确的单票绕过 spec/ticket 拆分路径 |
 
-## 17. 故障定位文件索引
+## 17. 关键文件
 
-| 文件 | 职责 |
+| 文件 | 用途 |
 | --- | --- |
-| `.github/ISSUE_TEMPLATE/grill-me.yml` | 人工决策入口 |
-| `.github/ISSUE_TEMPLATE/agent-task.yml` | 手工完整任务的例外入口 |
-| `.github/workflows/agent-loop.yml` | 标签 bootstrap、issue 状态转换、frontier 报告 |
-| `.github/workflows/agent-pr-health.yml` | CI 失败回写 repair queue |
-| `.github/workflows/agent-merge.yml` | `agent:automerge` PR 的 squash auto-merge |
-| `scripts/agent-loop.sh` | queue、dispatch、daemon、stale recovery、cleanup |
-| `scripts/agent-worker.sh` | Agent、复审、验证、测试、发布与状态回写 |
-| `scripts/agent/frontier.mjs` | 依赖、并发、touch-set、logical-lock 调度 |
-| `scripts/agent/plan.mjs` | 规划 schema、DAG 与冲突验证 |
-| `scripts/agent/materialize-plan.sh` | child issues、sub-issues 与 native dependencies |
-| `scripts/agent/verify-touch-set.mjs` | 实际 changed files 范围检查 |
-| `scripts/agent/run-executor.sh` | Provider-neutral adapter 入口 |
-| `scripts/agent/executors/claude.sh` | 默认本地 Claude adapter |
+| `.agents/skills/to-spec/SKILL.md` | 本仓库规格发布适配 |
+| `.agents/skills/to-tickets/SKILL.md` | 本仓库 ticket/DAG 发布适配 |
+| `scripts/agent/publish-spec.sh` | 确定性创建 `agent:spec` |
+| `scripts/agent/publish-tickets.sh` | 验证、标准化、建 child 与 native edges、入队 |
+| `scripts/agent/plan.mjs` | 结构化 ticket schema、DAG 与冲突验证 |
+| `scripts/agent-loop.sh` | transition、frontier、claim、daemon、CI reconciliation |
+| `scripts/agent-worker.sh` | worktree 内实现、review、验证与 controller 发布 |
+| `.github/ISSUE_TEMPLATE/agent-task.yml` | 可选完整单票 fast lane |
+| `.github/workflows/agent-loop.yml` | label bootstrap 与 fast-lane contract transition |
+| `.github/workflows/agent-pr-health.yml` | CI 失败回队 |
+| `.github/workflows/agent-merge.yml` | required checks 后 auto-merge |

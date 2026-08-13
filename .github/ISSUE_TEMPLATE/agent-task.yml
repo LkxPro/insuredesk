@@ -5,7 +5,7 @@ labels: [needs-triage]
 body:
   - type: markdown
     attributes:
-      value: Use this fast lane only when no Grill Me decision remains. All fields are required so dependency-free tasks can dispatch safely in parallel.
+      value: Optional fast lane for already complete work. Design conversations belong in local Claude or Codex, not GitHub Issues.
   - type: textarea
     id: goal
     attributes:

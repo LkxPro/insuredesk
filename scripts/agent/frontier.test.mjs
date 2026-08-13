@@ -61,12 +61,7 @@ test("a running serial-only ticket blocks the whole frontier", () => {
   assert.deepEqual(result.selected, []);
 });
 
-test("planning briefs receive scheduler-owned scope while malformed tasks fail closed", () => {
-  const brief = normalizeIssue({
-    number: 42,
-    body: "confirmed decision",
-    labels: [{ name: "agent:queued" }, { name: "agent:brief" }],
-  });
+test("only complete implementation tickets enter the frontier", () => {
   const malformed = normalizeIssue({
     number: 43,
     body: "## Declared touch-set\n- apps/api/**",
@@ -77,8 +72,8 @@ test("planning briefs receive scheduler-owned scope while malformed tasks fail c
     body: "## Goal\nGoal\n## Scope\nScope\n## Declared touch-set\n- apps/api/**\n## Acceptance criteria\n- [ ] done\n## Dependencies\n- None\n## Test plan\n- test",
     labels: [{ name: "ready-for-agent" }, { name: "agent:queued" }],
   });
-  const result = planFrontier([brief, malformed, untyped], 4);
-  assert.deepEqual(result.selected, [42]);
+  const result = planFrontier([malformed, untyped], 4);
+  assert.deepEqual(result.selected, []);
   assert.deepEqual(result.skipped, [
     { number: 43, reason: "invalid-contract" },
     { number: 44, reason: "invalid-contract" },

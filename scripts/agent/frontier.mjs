@@ -60,7 +60,6 @@ export function touchSetsOverlap(left, right) {
 
 export function normalizeIssue(issue) {
   const issueLabels = labels(issue);
-  const brief = issueLabels.includes("agent:brief");
   const acceptance = section(issue.body, "Acceptance criteria");
   const testPlan = list(section(issue.body, "Test plan"));
   const goal = section(issue.body, "Goal");
@@ -70,18 +69,15 @@ export function normalizeIssue(issue) {
     number: issue.number,
     labels: issueLabels,
     openBlockers: issue.issue_dependencies_summary?.blocked_by ?? 0,
-    touchSet: brief
-      ? [`docs/specs/issue-${issue.number}/**`]
-      : list(section(issue.body, "Declared touch-set")),
-    logicalLocks: brief ? ["agent-planning"] : list(section(issue.body, "Logical locks")),
+    touchSet: list(section(issue.body, "Declared touch-set")),
+    logicalLocks: list(section(issue.body, "Logical locks")),
     contractValid:
-      brief ||
-      (issueLabels.includes("agent:task") &&
-        Boolean(goal) &&
-        Boolean(scope) &&
-        /- \[[ xX]\]/.test(acceptance) &&
-        testPlan.length > 0 &&
-        Boolean(dependencies)),
+      issueLabels.includes("agent:task") &&
+      Boolean(goal) &&
+      Boolean(scope) &&
+      /- \[[ xX]\]/.test(acceptance) &&
+      testPlan.length > 0 &&
+      Boolean(dependencies),
     serialOnly: issueLabels.includes("serial-only"),
   };
 }
@@ -89,9 +85,7 @@ export function normalizeIssue(issue) {
 export function planFrontier(issues, maxParallel) {
   const running = issues.filter((issue) => issue.labels.includes("agent:running"));
   const queued = issues.filter(
-    (issue) =>
-      issue.labels.includes("agent:queued") &&
-      (issue.labels.includes("agent:brief") || issue.labels.includes("ready-for-agent")),
+    (issue) => issue.labels.includes("agent:queued") && issue.labels.includes("ready-for-agent"),
   );
   const heldLocks = new Set(running.flatMap((issue) => issue.logicalLocks));
   const heldTouchSets = running.map((issue) => ({ number: issue.number, paths: issue.touchSet }));
