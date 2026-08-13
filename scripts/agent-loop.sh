@@ -350,6 +350,13 @@ dispatch() {
         "$agent_loop_gh" issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
         "$agent_loop_gh" issue comment "$running_issue" --body 'Recovered a stale local agent:running claim; requeued for dispatch.' >/dev/null
       else
+        remote_sha=$(git -C "$root" ls-remote origin "refs/heads/agent-claims/issue-$running_issue" | awk 'NR == 1 {print $1}')
+        if [ -z "$remote_sha" ]; then
+          # 孤儿 running：本地 pid/claim 与远端 claim 都不存在，无人会来释放。
+          "$agent_loop_gh" issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
+          "$agent_loop_gh" issue comment "$running_issue" --body 'Recovered an orphaned agent:running label; no live claim exists locally or remotely.' >/dev/null
+          continue
+        fi
         stale_sha=$(remote_claim_is_stale "$running_issue" || true)
         if [ -n "$stale_sha" ] && release_remote_claim "$running_issue" "$stale_sha"; then
           "$agent_loop_gh" issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
@@ -406,27 +413,34 @@ dispatch() {
     rm -f "$worktrees/issue-$issue.publishing"
     nohup sh -c '
       sh "$1" "$2" "$3" "$7" "$8" & worker=$!
+      misses=0
       while kill -0 "$worker" 2>/dev/null; do
         sleep "${AGENT_CLAIM_HEARTBEAT_INTERVAL:-60}"
         kill -0 "$worker" 2>/dev/null || break
         [ ! -f "$8" ] || break
-        if ! sh "$4" heartbeat-claim "$2" "$5"; then
-          [ ! -f "$8" ] || break
-          descendants=$(pgrep -P "$worker" 2>/dev/null || true)
-          for descendant in $descendants; do
-            pkill -TERM -P "$descendant" 2>/dev/null || true
-            kill -TERM "$descendant" 2>/dev/null || true
-          done
-          kill -TERM "$worker" 2>/dev/null || true
-          sleep 2
-          descendants=$(pgrep -P "$worker" 2>/dev/null || true)
-          for descendant in $descendants; do
-            pkill -KILL -P "$descendant" 2>/dev/null || true
-            kill -KILL "$descendant" 2>/dev/null || true
-          done
-          kill -KILL "$worker" 2>/dev/null || true
-          break
+        if sh "$4" heartbeat-claim "$2" "$5"; then
+          misses=0
+          continue
         fi
+        [ ! -f "$8" ] || break
+        # 单次网络抖动不该杀健康 worker；连续失败才认定 claim 丢失。
+        # 默认 3 次 × 60s 间隔，仍显著低于 300s stale 判定窗口。
+        misses=$((misses + 1))
+        [ "$misses" -lt "${AGENT_CLAIM_HEARTBEAT_MAX_MISSES:-3}" ] && continue
+        descendants=$(pgrep -P "$worker" 2>/dev/null || true)
+        for descendant in $descendants; do
+          pkill -TERM -P "$descendant" 2>/dev/null || true
+          kill -TERM "$descendant" 2>/dev/null || true
+        done
+        kill -TERM "$worker" 2>/dev/null || true
+        sleep 2
+        descendants=$(pgrep -P "$worker" 2>/dev/null || true)
+        for descendant in $descendants; do
+          pkill -KILL -P "$descendant" 2>/dev/null || true
+          kill -KILL "$descendant" 2>/dev/null || true
+        done
+        kill -KILL "$worker" 2>/dev/null || true
+        break
       done & heartbeat=$!
       wait "$worker"; status=$?
       kill "$heartbeat" 2>/dev/null || true

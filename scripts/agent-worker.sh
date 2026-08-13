@@ -41,7 +41,10 @@ acquire_check_lock() {
     rmdir "$check_lock" 2>/dev/null || sleep 5
   done
 }
+cleaned=''
 cleanup() {
+  [ -z "$cleaned" ] || return 0
+  cleaned=1
   release_check_lock
   if [ -n "$restore_head" ] && [ "$published" = false ]; then
     git -C "$worktree" reset --hard "$restore_head" >/dev/null 2>&1 || true
@@ -59,7 +62,7 @@ cleanup() {
   rm -rf "$run_dir"
 }
 abort() {
-  trap - HUP INT TERM
+  trap - EXIT HUP INT TERM
   cleanup
   exit 143
 }
