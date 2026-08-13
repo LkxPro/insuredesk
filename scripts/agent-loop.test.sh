@@ -261,6 +261,32 @@ chmod +x "$claim_dir/gh-cleanup"
 test -d "$claim_dir/artifacts/issue-11"
 rm -f "$claim_dir/artifacts/issue-11.pid"
 
+cat >"$claim_dir/gh-orphan" <<'EOF'
+#!/bin/sh
+case "$*" in
+  'issue view 11 --json state --jq .state') printf 'CLOSED\n' ;;
+  'issue list --state open --label agent:queued --limit 100 --json number,labels') printf '[]\n' ;;
+  'issue list --state open --label agent:running --limit 100 --json number,labels')
+    printf '%s\n' '[{"number":15,"labels":[{"name":"agent:running"}]}]' ;;
+  'issue edit 15 --add-label agent:queued --remove-label agent:running')
+    printf '%s\n' "$*" >"$ORPHAN_CAPTURE" ;;
+  'issue comment 15 --body Recovered an orphaned'*)
+    printf '%s\n' "$*" >"$ORPHAN_COMMENT_CAPTURE" ;;
+  'api repos/{owner}/{repo}/issues/15')
+    printf '%s\n' '{"number":15,"state":"OPEN","body":"","labels":[{"name":"agent:queued"}]}' ;;
+  *) echo "unexpected orphan command: $*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$claim_dir/gh-orphan"
+(
+  cd "$claim_dir/repo"
+  ORPHAN_CAPTURE="$claim_dir/orphan" ORPHAN_COMMENT_CAPTURE="$claim_dir/orphan-comment" \
+    AGENT_LOOP_GH="$claim_dir/gh-orphan" AGENT_LOOP_WORKTREES="$claim_dir/artifacts" \
+    sh "$script_dir/agent-loop.sh" dispatch >/dev/null
+)
+grep -Fqx 'issue edit 15 --add-label agent:queued --remove-label agent:running' "$claim_dir/orphan"
+grep -Fq 'Recovered an orphaned' "$claim_dir/orphan-comment"
+
 commit_dir="$worker_dir/commit-rejection"
 mkdir -p "$commit_dir/repo/.github/agent-prompts" "$commit_dir/bin"
 cp "$script_dir/../.github/agent-prompts/task.md" "$commit_dir/repo/.github/agent-prompts/task.md"
