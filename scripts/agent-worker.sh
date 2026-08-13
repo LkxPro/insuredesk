@@ -11,11 +11,38 @@ agent_worker_gh=${AGENT_LOOP_GH:-gh}
 run_dir=$(mktemp -d)
 restore_head=''
 published=false
+artifact_dir=$(dirname "$worktree")
+check_lock="$artifact_dir/.check.lock"
+check_lock_held=''
 ignored_snapshot="$run_dir/ignored-before"
 ignored_after="$run_dir/ignored-after"
 ignored_created="$run_dir/ignored-created"
 git -C "$worktree" ls-files --others --ignored --exclude-standard | sort >"$ignored_snapshot"
+release_check_lock() {
+  [ -n "$check_lock_held" ] || return 0
+  rm -f "$check_lock/pid"
+  rmdir "$check_lock" 2>/dev/null || true
+  check_lock_held=''
+}
+acquire_check_lock() {
+  while :; do
+    if mkdir "$check_lock" 2>/dev/null; then
+      printf '%s\n' "$$" >"$check_lock/pid"
+      check_lock_held=1
+      return 0
+    fi
+    owner=''
+    [ -f "$check_lock/pid" ] && owner=$(cat "$check_lock/pid")
+    case $owner in
+      *[!0-9]*|'') ;;
+      *) kill -0 "$owner" 2>/dev/null && { sleep 5; continue; } ;;
+    esac
+    rm -f "$check_lock/pid"
+    rmdir "$check_lock" 2>/dev/null || sleep 5
+  done
+}
 cleanup() {
+  release_check_lock
   if [ -n "$restore_head" ] && [ "$published" = false ]; then
     git -C "$worktree" reset --hard "$restore_head" >/dev/null 2>&1 || true
     git -C "$worktree" clean -fd >/dev/null 2>&1 || true
@@ -38,7 +65,7 @@ abort() {
 }
 trap cleanup EXIT
 trap abort HUP INT TERM
-mkdir -p "$run_dir/gh" "$run_dir/home" "$run_dir/config"
+mkdir -p "$run_dir/gh"
 
 claim_owned() {
   [ -z "$claim_file" ] && return 0
@@ -91,7 +118,8 @@ fi
 run_agent() {
   prompt=$1
   output=$2
-  HOME="$run_dir/home" XDG_CONFIG_HOME="$run_dir/config" GIT_CONFIG_GLOBAL=/dev/null \
+  # 保留 GitHub 发布隔离；HOME 不伪造，让 claude 读本机配置与凭据。
+  GIT_CONFIG_GLOBAL=/dev/null \
     GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.url \
     GIT_CONFIG_VALUE_0=disabled://agent-model-has-no-publish-authority \
     GH_CONFIG_DIR="$run_dir/gh" GH_TOKEN='' GITHUB_TOKEN='' SSH_AUTH_SOCK='' \
@@ -102,7 +130,6 @@ run_agent() {
 }
 
 task_file="$run_dir/task.md"
-artifact_dir=$(dirname "$worktree")
 implementation_result="$artifact_dir/issue-$issue.implementation.json"
 review_result="$artifact_dir/issue-$issue.review.json"
 {
@@ -123,12 +150,32 @@ start_head=$(git -C "$worktree" rev-parse --verify '@{upstream}^{commit}' 2>/dev
 git -C "$worktree" reset --hard "$start_head" >/dev/null
 git -C "$worktree" clean -fd >/dev/null
 restore_head=$start_head
+
+# failure_class: process=executor/环境类，自动重排队一次；
+# fatal=模型行为类（改历史/越界/零产出），立即 blocked；
+# exhausted=确定性门在修复预算内未过，立即 blocked。
+failure=''
+failure_class=process
+history_unchanged() {
+  [ "$(git -C "$worktree" rev-parse HEAD)" = "$start_head" ]
+}
+verify_touch_set() {
+  changed=$(git -C "$worktree" ls-files --modified --others --exclude-standard)
+  { jq -c . "$issue_file"; printf '%s\n' "$changed"; } | node "$script_dir/agent/verify-touch-set.mjs" >/dev/null
+}
+check_with_lock() {
+  acquire_check_lock
+  make -C "$worktree" check >"$run_dir/check.log" 2>&1
+  status=$?
+  release_check_lock
+  return "$status"
+}
+
 if ! run_agent "$task_file" "$implementation_result"; then
   failure='Agent implementation process failed.'
-elif [ "$(git -C "$worktree" rev-parse HEAD)" != "$start_head" ]; then
+elif ! history_unchanged; then
   failure='Agent changed git history instead of leaving a controller-owned diff.'
-else
-  failure=''
+  failure_class=fatal
 fi
 
 if [ -z "$failure" ] && [ "${AGENT_REVIEW_ENABLED:-1}" = 1 ]; then
@@ -141,25 +188,53 @@ if [ -z "$failure" ] && [ "${AGENT_REVIEW_ENABLED:-1}" = 1 ]; then
   } >"$review_file"
   if ! run_agent "$review_file" "$review_result"; then
     failure='Agent review process failed.'
-  elif [ "$(git -C "$worktree" rev-parse HEAD)" != "$start_head" ]; then
+  elif ! history_unchanged; then
     failure='Review agent changed git history instead of leaving a controller-owned diff.'
+    failure_class=fatal
   fi
-fi
-
-changed=$(git -C "$worktree" ls-files --modified --others --exclude-standard)
-if [ -z "$failure" ] && [ -z "$changed" ]; then
-  failure='Agent produced no repository change.'
 fi
 
 if [ -z "$failure" ]; then
-  if ! { jq -c . "$issue_file"; printf '%s\n' "$changed"; } | node "$script_dir/agent/verify-touch-set.mjs"; then
+  changed=$(git -C "$worktree" ls-files --modified --others --exclude-standard)
+  if [ -z "$changed" ]; then
+    failure='Agent produced no repository change.'
+    failure_class=fatal
+  elif ! verify_touch_set; then
     failure='Agent changed files outside the declared touch-set.'
+    failure_class=fatal
   fi
 fi
 
-if [ -z "$failure" ] && ! make -C "$worktree" check; then
-  failure='Deterministic make check failed.'
-fi
+fix_round=0
+max_fix_rounds=${AGENT_FIX_MAX_ROUNDS:-3}
+case $max_fix_rounds in *[!0-9]*) max_fix_rounds=3 ;; esac
+while [ -z "$failure" ]; do
+  check_with_lock && break
+  fix_round=$((fix_round + 1))
+  if [ "$fix_round" -gt "$max_fix_rounds" ]; then
+    failure="Deterministic make check failed after $max_fix_rounds fix rounds."
+    failure_class=exhausted
+    break
+  fi
+  fix_file="$run_dir/fix-$fix_round.md"
+  {
+    cat "$prompt_file"
+    printf '\n\n<issue_json>\n'
+    jq -c . "$issue_file"
+    printf '</issue_json>\n\n<failed_check_log>\n'
+    tail -n 200 "$run_dir/check.log"
+    printf '\n</failed_check_log>\n'
+  } >"$fix_file"
+  if ! run_agent "$fix_file" "$artifact_dir/issue-$issue.fix-$fix_round.json"; then
+    failure='Agent fix process failed.'
+  elif ! history_unchanged; then
+    failure='Fix agent changed git history instead of leaving a controller-owned diff.'
+    failure_class=fatal
+  elif ! verify_touch_set; then
+    failure='Fix agent changed files outside the declared touch-set.'
+    failure_class=fatal
+  fi
+done
 
 if [ -z "$failure" ] && ! claim_owned; then
   failure='Agent lost its distributed claim before publication.'
@@ -200,6 +275,23 @@ if [ "$published" = false ]; then
   git -C "$worktree" reset --hard "$start_head" >/dev/null
   git -C "$worktree" clean -fd >/dev/null
 fi
+
+# 进程级失败多为 transient（provider/网络/claim 竞争），自动重排队一次；
+# 再失败或行为类/预算耗尽失败转 blocked 叫人。
+if [ "$failure_class" = process ]; then
+  comments=$($agent_worker_gh issue view "$issue" --json comments --jq '[.comments[].body | select(contains("<!-- agent-requeue:"))] | length')
+  case $comments in *[!0-9]*|'') comments=1 ;; esac
+  if [ "$comments" -lt 1 ]; then
+    $agent_worker_gh issue comment "$issue" --body "<!-- agent-requeue:1 --> $failure Requeued automatically; a second process-level failure will block." >/dev/null
+    $agent_worker_gh issue edit "$issue" --add-label agent:queued --remove-label agent:running >/dev/null
+    exit 1
+  fi
+fi
+
 $agent_worker_gh issue edit "$issue" --add-label agent:blocked --remove-label 'agent:running,agent:queued' >/dev/null
 $agent_worker_gh issue comment "$issue" --body "$failure See .worktrees/issue-$issue.log for executor output." >/dev/null
+if command -v osascript >/dev/null 2>&1; then
+  osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' -- \
+    "$failure" "InsureDesk agent blocked: issue #$issue" >/dev/null 2>&1 || true
+fi
 exit 1

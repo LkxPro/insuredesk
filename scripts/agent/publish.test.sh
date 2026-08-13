@@ -180,6 +180,7 @@ PUBLISH_CAPTURE="$tmp/state" AGENT_PUBLISH_GIT_DIR="$tmp/lock-repo" AGENT_LOOP_G
 
 jq -e '.first == 101 and .second == 102' "$tmp/map.json" >/dev/null
 jq -e '.labels == ["agent:task"]' "$tmp/state/create-101.json" >/dev/null
+grep -Fq 'Part of #100.' "$tmp/state/body-101.md"
 for heading in Goal Scope 'Declared touch-set' 'Logical locks' 'Acceptance criteria' Dependencies 'Test plan'; do
   grep -Fq "## $heading" "$tmp/state/body-101.md"
 done
@@ -192,3 +193,58 @@ PUBLISH_CAPTURE="$tmp/state" AGENT_PUBLISH_GIT_DIR="$tmp/lock-repo" AGENT_LOOP_G
   sh "$script_dir/publish-tickets.sh" 100 "$tmp/plan.json" >"$tmp/map-rerun.json"
 jq -e '.first == 101 and .second == 102' "$tmp/map-rerun.json" >/dev/null
 [ "$(cat "$tmp/state/count")" = 102 ]
+
+cat >"$tmp/plan-solo.json" <<'EOF'
+{
+  "tickets": [
+    {
+      "key": "solo-fix",
+      "title": "Solo fix",
+      "goal": "Deliver the solo fix",
+      "acceptanceCriteria": ["Solo behavior works"],
+      "outOfScope": ["Unrelated behavior"],
+      "touchSet": ["apps/api/src/solo/**"],
+      "logicalLocks": [],
+      "testPlan": ["Run solo test"],
+      "dependsOn": [],
+      "serialOnly": false
+    }
+  ]
+}
+EOF
+
+cat >"$tmp/bin/gh-parentless" <<'EOF'
+#!/bin/sh
+case "$*" in
+  'repo view --json nameWithOwner --jq .nameWithOwner') printf '%s\n' 'LkxPro/insuredesk' ;;
+  'api repos/LkxPro/insuredesk/issues?state=all&labels=agent%3Atask&per_page=100 --paginate')
+    jq -n --rawfile solo "$PUBLISH_CAPTURE/body-201.md" \
+      '[{number: 201, id: 1201, body: $solo}]' 2>/dev/null || printf '[]\n' ;;
+  'api repos/LkxPro/insuredesk/issues/201 --jq .id') printf '1201\n' ;;
+  'api --method POST repos/LkxPro/insuredesk/issues --input -')
+    [ ! -f "$PUBLISH_CAPTURE/parentless-created" ] || { echo 'duplicate parentless create' >&2; exit 1; }
+    : >"$PUBLISH_CAPTURE/parentless-created"
+    tee "$PUBLISH_CAPTURE/create-201.json" >/dev/null
+    printf '{"number":201,"id":1201}\n' ;;
+  'issue edit 201 --body-file '*)
+    body_file=$(printf '%s\n' "$*" | awk '{print $5}')
+    cp "$body_file" "$PUBLISH_CAPTURE/body-201.md" ;;
+  'issue edit 201 --add-label '*)
+    printf '%s\n' "$*" >>"$PUBLISH_CAPTURE/parentless-labels" ;;
+  *) echo "parentless publish touched an unexpected surface: $*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$tmp/bin/gh-parentless"
+PUBLISH_CAPTURE="$tmp/state" AGENT_PUBLISH_GIT_DIR="$tmp/lock-repo" AGENT_LOOP_GH="$tmp/bin/gh-parentless" \
+  sh "$script_dir/publish-tickets.sh" 0 "$tmp/plan-solo.json" >"$tmp/map-parentless.json"
+jq -e '.["solo-fix"] == 201' "$tmp/map-parentless.json" >/dev/null
+jq -e '.labels == ["agent:task"]' "$tmp/state/create-201.json" >/dev/null
+grep -Fq '<!-- agent-plan:0:solo-fix -->' "$tmp/state/body-201.md"
+if grep -Fq 'Part of #' "$tmp/state/body-201.md"; then
+  echo 'parentless body unexpectedly references a parent' >&2
+  exit 1
+fi
+grep -Fq 'ready-for-agent,agent:queued' "$tmp/state/parentless-labels"
+PUBLISH_CAPTURE="$tmp/state" AGENT_PUBLISH_GIT_DIR="$tmp/lock-repo" AGENT_LOOP_GH="$tmp/bin/gh-parentless" \
+  sh "$script_dir/publish-tickets.sh" 0 "$tmp/plan-solo.json" >"$tmp/map-parentless-rerun.json"
+jq -e '.["solo-fix"] == 201' "$tmp/map-parentless-rerun.json" >/dev/null

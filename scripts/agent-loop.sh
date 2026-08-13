@@ -469,6 +469,20 @@ reconcile_ci() {
   case $issue in *[!0-9]*|'') exit 0;; esac
   pr=$("$agent_loop_gh" pr list --head "$branch" --state open --json number,labels --jq '.[] | select(any(.labels[]; .name == "agent:automerge")) | .number' | head -1)
   [ -n "$pr" ] || exit 0
+  max_attempts=${AGENT_REPAIR_MAX_ATTEMPTS:-3}
+  case $max_attempts in *[!0-9]*|'') max_attempts=3 ;; esac
+  attempts=$("$agent_loop_gh" issue view "$issue" --json comments \
+    --jq '[.comments[].body | select(contains("<!-- agent-attempts:"))] | length')
+  case $attempts in *[!0-9]*|'') attempts=0 ;; esac
+  if [ "$attempts" -ge "$max_attempts" ]; then
+    "$agent_loop_gh" issue edit "$issue" --add-label agent:blocked \
+      --remove-label 'agent:running,agent:queued,agent:repair' >/dev/null
+    "$agent_loop_gh" issue comment "$issue" \
+      --body "CI repair attempt budget ($max_attempts) exhausted; needs human attention." >/dev/null
+    exit 0
+  fi
+  "$agent_loop_gh" issue comment "$issue" \
+    --body "<!-- agent-attempts:$((attempts + 1)) --> CI failed on PR #$pr; requeued for repair (attempt $((attempts + 1))/$max_attempts)." >/dev/null
   "$agent_loop_gh" issue edit "$issue" --add-label 'agent:repair,agent:queued' --remove-label agent:running >/dev/null
 }
 
