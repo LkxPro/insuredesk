@@ -35,49 +35,38 @@ fi
 
 cat >"$tmp/bin/claude" <<'EOF'
 #!/bin/sh
+printf '%s\n' "$@" >"$CLAUDE_ARGS_LOG"
 cat >/dev/null
 printf '{"result":"ok"}\n'
 EOF
 chmod +x "$tmp/bin/claude"
 
-if AGENT_EXECUTOR=claude \
-  AGENT_CLAUDE_BIN="$tmp/bin/claude" \
-  ANTHROPIC_BASE_URL=https://provider.invalid \
-  AGENT_MODEL=test-model \
-  AGENT_WORKTREE="$tmp/worktree" \
-  AGENT_TASK_FILE="$tmp/prompt.md" \
-  AGENT_OUTPUT_FILE="$tmp/output.txt" \
-  "$repo/scripts/agent/run-executor.sh" >/dev/null 2>&1; then
-  echo 'Claude adapter unexpectedly accepted missing credentials' >&2
+# 无任何 provider/model 环境变量时也照常运行：账户配置由本机 claude 设置决定。
+AGENT_EXECUTOR=claude AGENT_CLAUDE_BIN="$tmp/bin/claude" \
+  CLAUDE_ARGS_LOG="$tmp/args.log" \
+  AGENT_WORKTREE="$tmp/worktree" AGENT_TASK_FILE="$tmp/prompt.md" \
+  AGENT_OUTPUT_FILE="$tmp/output.txt" "$repo/scripts/agent/run-executor.sh"
+grep -Fqx -- '--dangerously-skip-permissions' "$tmp/args.log"
+if grep -Fqx -- '--model' "$tmp/args.log" || grep -Fqx -- '--max-turns' "$tmp/args.log"; then
+  echo 'claude adapter passed --model/--max-turns without explicit configuration' >&2
   exit 1
 fi
 
-if AGENT_EXECUTOR=claude \
-  AGENT_CLAUDE_BIN="$tmp/bin/claude" \
-  ANTHROPIC_BASE_URL=https://provider.invalid \
-  ANTHROPIC_AUTH_TOKEN=token \
-  ANTHROPIC_API_KEY=key \
-  AGENT_MODEL=test-model \
-  AGENT_WORKTREE="$tmp/worktree" \
-  AGENT_TASK_FILE="$tmp/prompt.md" \
-  AGENT_OUTPUT_FILE="$tmp/output.txt" \
-  "$repo/scripts/agent/run-executor.sh" >/dev/null 2>&1; then
-  echo 'Claude adapter unexpectedly accepted two credential modes' >&2
+AGENT_EXECUTOR=claude AGENT_CLAUDE_BIN="$tmp/bin/claude" \
+  CLAUDE_ARGS_LOG="$tmp/args.log" \
+  AGENT_MODEL=test-model AGENT_MAX_TURNS=25 \
+  AGENT_WORKTREE="$tmp/worktree" AGENT_TASK_FILE="$tmp/prompt.md" \
+  AGENT_OUTPUT_FILE="$tmp/output.txt" "$repo/scripts/agent/run-executor.sh"
+grep -Fqx -- '--model' "$tmp/args.log" && grep -Fqx 'test-model' "$tmp/args.log"
+grep -Fqx -- '--max-turns' "$tmp/args.log" && grep -Fqx '25' "$tmp/args.log"
+
+AGENT_EXECUTOR=claude AGENT_CLAUDE_BIN="$tmp/bin/claude" \
+  CLAUDE_ARGS_LOG="$tmp/args.log" \
+  AGENT_CLAUDE_PERMISSION_MODE=acceptEdits \
+  AGENT_WORKTREE="$tmp/worktree" AGENT_TASK_FILE="$tmp/prompt.md" \
+  AGENT_OUTPUT_FILE="$tmp/output.txt" "$repo/scripts/agent/run-executor.sh"
+grep -Fqx -- '--permission-mode' "$tmp/args.log" && grep -Fqx 'acceptEdits' "$tmp/args.log"
+if grep -Fqx -- '--dangerously-skip-permissions' "$tmp/args.log"; then
+  echo 'claude adapter mixed bypassPermissions with explicit permission mode' >&2
   exit 1
 fi
-
-for credential in token key; do
-  if [ "$credential" = token ]; then
-    ANTHROPIC_AUTH_TOKEN=value ANTHROPIC_API_KEY='' \
-      AGENT_EXECUTOR=claude AGENT_CLAUDE_BIN="$tmp/bin/claude" \
-      ANTHROPIC_BASE_URL=https://provider.invalid AGENT_MODEL=test-model \
-      AGENT_WORKTREE="$tmp/worktree" AGENT_TASK_FILE="$tmp/prompt.md" \
-      AGENT_OUTPUT_FILE="$tmp/output.txt" "$repo/scripts/agent/run-executor.sh"
-  else
-    ANTHROPIC_AUTH_TOKEN='' ANTHROPIC_API_KEY=value \
-      AGENT_EXECUTOR=claude AGENT_CLAUDE_BIN="$tmp/bin/claude" \
-      ANTHROPIC_BASE_URL=https://provider.invalid AGENT_MODEL=test-model \
-      AGENT_WORKTREE="$tmp/worktree" AGENT_TASK_FILE="$tmp/prompt.md" \
-      AGENT_OUTPUT_FILE="$tmp/output.txt" "$repo/scripts/agent/run-executor.sh"
-  fi
-done

@@ -37,11 +37,25 @@ test("running tickets reserve capacity, touch-sets, and logical locks", () => {
   ]);
 });
 
-test("glob touch-sets conservatively reserve wildcard intersections", () => {
+test("glob touch-sets reserve wildcard intersections with glob-vs-glob prefix conservatism", () => {
   assert.equal(touchSetsOverlap(["**"], ["apps/api/**"]), true);
-  assert.equal(touchSetsOverlap(["*.md"], ["docs/readme.md"]), true);
-  assert.equal(touchSetsOverlap(["docs/**/*.md"], ["docs/runbook.txt"]), true);
   assert.equal(touchSetsOverlap(["apps/api/**"], ["apps/web/**"]), false);
+  assert.equal(touchSetsOverlap(["docs/api/**"], ["docs/**/api/**"]), true);
+});
+
+test("literal paths against globs use real glob semantics", () => {
+  assert.equal(touchSetsOverlap(["*.md"], ["docs/readme.md"]), false);
+  assert.equal(touchSetsOverlap(["*.md"], ["readme.md"]), true);
+  assert.equal(touchSetsOverlap(["docs/**/*.md"], ["docs/runbook.txt"]), false);
+  assert.equal(touchSetsOverlap(["docs/**/*.md"], ["docs/guide/readme.md"]), true);
+  assert.equal(touchSetsOverlap(["apps/api/**"], ["apps/api/src/index.ts"]), true);
+  assert.equal(touchSetsOverlap(["apps/*"], ["apps/api/src/index.ts"]), false);
+});
+
+test("literal paths overlap only when identical", () => {
+  assert.equal(touchSetsOverlap(["apps/a.ts"], ["apps/a.ts"]), true);
+  assert.equal(touchSetsOverlap(["apps/a.ts"], ["apps/b.ts"]), false);
+  assert.equal(touchSetsOverlap(["apps"], ["apps/x.ts"]), false);
 });
 
 test("blocks dependencies and makes serial-only exclusive", () => {

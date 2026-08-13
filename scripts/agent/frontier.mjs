@@ -42,20 +42,44 @@ function literalPrefix(pattern) {
     .replace(/\/$/, "");
 }
 
-export function touchSetsOverlap(left, right) {
-  return left.some((a) =>
-    right.some((b) => {
-      const aPrefix = literalPrefix(a);
-      const bPrefix = literalPrefix(b);
-      return (
-        !aPrefix ||
-        !bPrefix ||
-        aPrefix === bPrefix ||
-        aPrefix.startsWith(`${bPrefix}/`) ||
-        bPrefix.startsWith(`${aPrefix}/`)
-      );
-    }),
+function normalizePattern(pattern) {
+  return pattern.trim().replace(/^\.\//, "").replace(/\/$/, "");
+}
+
+// 与 verify-touch-set.mjs 共用同一套 glob 语义：`*` 不跨 `/`，`**` 跨任意深度，
+// 其余字符按字面处理。改动两者之一时必须保持同步。
+export function globMatcher(pattern) {
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (character === "*" && pattern[index + 1] === "*") {
+      source += ".*";
+      index += 1;
+    } else if (character === "*") source += "[^/]*";
+    else source += character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`);
+}
+
+function patternsOverlap(a, b) {
+  const aGlob = a.includes("*");
+  const bGlob = b.includes("*");
+  if (!aGlob && !bGlob) return normalizePattern(a) === normalizePattern(b);
+  if (!aGlob) return globMatcher(normalizePattern(b)).test(normalizePattern(a));
+  if (!bGlob) return globMatcher(normalizePattern(a)).test(normalizePattern(b));
+  const aPrefix = literalPrefix(a);
+  const bPrefix = literalPrefix(b);
+  return (
+    !aPrefix ||
+    !bPrefix ||
+    aPrefix === bPrefix ||
+    aPrefix.startsWith(`${bPrefix}/`) ||
+    bPrefix.startsWith(`${aPrefix}/`)
   );
+}
+
+export function touchSetsOverlap(left, right) {
+  return left.some((a) => right.some((b) => patternsOverlap(a, b)));
 }
 
 export function normalizeIssue(issue) {

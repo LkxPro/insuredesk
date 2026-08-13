@@ -87,8 +87,7 @@ export function renderTickets(plan, parent, issueNumbers = {}) {
     ...ticket,
     body: [
       `<!-- agent-plan:${parent}:${ticket.key} -->`,
-      `Part of #${parent}.`,
-      "",
+      ...(parent ? [`Part of #${parent}.`, ""] : []),
       "## Goal",
       ticket.goal,
       "",

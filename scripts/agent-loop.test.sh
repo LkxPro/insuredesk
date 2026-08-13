@@ -278,7 +278,13 @@ cat >"$commit_dir/bin/gh" <<'EOF'
 case "$*" in
   'issue view 8 --json number,title,body,comments,labels')
     printf '%s\n' '{"number":8,"title":"Commit rejection","body":"## Goal\nTest\n## Scope\nOnly test\n## Declared touch-set\n- allowed.txt\n## Logical locks\n- None\n## Acceptance criteria\n- [ ] done\n## Dependencies\n- None\n## Test plan\n- test","comments":[],"labels":[{"name":"agent:task"}]}' ;;
+  'issue edit 8 --add-label agent:blocked --remove-label agent:running,agent:queued')
+    printf '%s\n' "$*" >"$BLOCKED_CAPTURE" ;;
 esac
+EOF
+cat >"$commit_dir/bin/osascript" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >"$NOTIFY_CAPTURE"
 EOF
 cat >"$commit_dir/bin/claude" <<'EOF'
 #!/bin/sh
@@ -288,14 +294,13 @@ git add allowed.txt
 git commit -qm 'model-owned commit'
 printf '{"result":"done"}\n'
 EOF
-chmod +x "$commit_dir/bin/gh" "$commit_dir/bin/claude"
+chmod +x "$commit_dir/bin/gh" "$commit_dir/bin/claude" "$commit_dir/bin/osascript"
 if PATH="$commit_dir/bin:$PATH" \
   AGENT_LOOP_GH="$commit_dir/bin/gh" \
   AGENT_CLAUDE_BIN="$commit_dir/bin/claude" \
   AGENT_REVIEW_ENABLED=0 \
-  ANTHROPIC_BASE_URL=https://provider.invalid \
-  ANTHROPIC_AUTH_TOKEN=test \
-  AGENT_MODEL=test-model \
+  BLOCKED_CAPTURE="$commit_dir/blocked" \
+  NOTIFY_CAPTURE="$commit_dir/notify" \
   sh "$script_dir/agent-worker.sh" 8 "$commit_dir/repo" >/dev/null 2>&1; then
   echo 'worker unexpectedly accepted a model-owned commit' >&2
   exit 1
@@ -303,6 +308,9 @@ fi
 test "$(git -C "$commit_dir/repo" rev-parse HEAD)" = "$commit_start"
 test ! -e "$commit_dir/repo/allowed.txt"
 test ! -e "$commit_dir/repo/.env.agent-test"
+grep -Fqx 'issue edit 8 --add-label agent:blocked --remove-label agent:running,agent:queued' \
+  "$commit_dir/blocked"
+grep -Fq 'InsureDesk agent blocked: issue #8' "$commit_dir/notify"
 
 fence_dir="$worker_dir/fence"
 mkdir -p "$fence_dir/repo/.github/agent-prompts" "$fence_dir/bin" "$fence_dir/artifacts"
@@ -327,6 +335,10 @@ cat >"$fence_dir/bin/gh" <<'EOF'
 case "$*" in
   'issue view 12 --json number,title,body,comments,labels')
     printf '%s\n' '{"number":12,"title":"Fence","body":"## Goal\nTest\n## Scope\nOnly test\n## Declared touch-set\n- allowed.txt\n## Logical locks\n- None\n## Acceptance criteria\n- [ ] done\n## Dependencies\n- None\n## Test plan\n- test","comments":[],"labels":[{"name":"agent:task"}]}' ;;
+  'issue view 12 --json comments --jq'*) printf '0\n' ;;
+  'issue comment 12 --body'*) printf '%s\n' "$*" >"$REQUEUE_COMMENT_CAPTURE" ;;
+  'issue edit 12 --add-label agent:queued --remove-label agent:running')
+    printf '%s\n' "$*" >"$REQUEUE_CAPTURE" ;;
   *) echo "unexpected publish command: $*" >&2; exit 1 ;;
 esac
 EOF
@@ -344,12 +356,14 @@ git -C "$fence_dir/repo" push -q --atomic --force \
   origin HEAD:refs/heads/agent-claims/issue-12 HEAD:refs/heads/agent-slots/1
 if PATH="$fence_dir/bin:$PATH" AGENT_LOOP_GH="$fence_dir/bin/gh" \
   AGENT_CLAUDE_BIN="$fence_dir/bin/claude" AGENT_REVIEW_ENABLED=0 \
-  ANTHROPIC_BASE_URL=https://provider.invalid ANTHROPIC_AUTH_TOKEN=test AGENT_MODEL=test-model \
+  REQUEUE_CAPTURE="$fence_dir/requeue" REQUEUE_COMMENT_CAPTURE="$fence_dir/requeue-comment" \
   sh "$script_dir/agent-worker.sh" 12 "$fence_dir/repo" "$fence_dir/artifacts/issue-12.claim" \
   >/dev/null 2>&1; then
   echo 'worker unexpectedly published after losing its claim' >&2
   exit 1
 fi
+grep -Fqx 'issue edit 12 --add-label agent:queued --remove-label agent:running' "$fence_dir/requeue"
+grep -Fq '<!-- agent-requeue:1 -->' "$fence_dir/requeue-comment"
 
 repair_dir="$worker_dir/repair"
 mkdir -p "$repair_dir/repo/.github/agent-prompts" "$repair_dir/bin"
@@ -367,6 +381,9 @@ case "$*" in
     printf '%s\n' '{"number":9,"title":"Task repair","body":"## Goal\nRepair\n## Scope\nTask\n## Declared touch-set\n- allowed.txt\n## Logical locks\n- None\n## Acceptance criteria\n- [ ] fixed\n## Dependencies\n- None\n## Test plan\n- test","comments":[],"labels":[{"name":"agent:task"},{"name":"agent:repair"}]}' ;;
   'run list --branch codex/issue-9 --status failure --limit 1 --json databaseId --jq .[0].databaseId') printf '88\n' ;;
   'run view 88 --log-failed') printf 'FAILED-CI-DIAGNOSTIC\n' ;;
+  'issue view 9 --json comments --jq'*) printf '0\n' ;;
+  'issue edit 9 --add-label agent:queued --remove-label agent:running')
+    printf '%s\n' "$*" >"$REQUEUE_CAPTURE" ;;
 esac
 EOF
 cat >"$repair_dir/bin/capture-adapter" <<'EOF'
@@ -379,9 +396,117 @@ if PATH="$repair_dir/bin:$PATH" \
   AGENT_LOOP_GH="$repair_dir/bin/gh" \
   AGENT_EXECUTOR_ADAPTER="$repair_dir/bin/capture-adapter" \
   REPAIR_CAPTURE="$repair_dir/task.md" \
+  REQUEUE_CAPTURE="$repair_dir/requeue" \
   sh "$script_dir/agent-worker.sh" 9 "$repair_dir/repo" >/dev/null 2>&1; then
   echo 'failing repair adapter unexpectedly succeeded' >&2
   exit 1
 fi
 grep -Fq 'existing agent PR failed CI' "$repair_dir/task.md"
 grep -Fq 'FAILED-CI-DIAGNOSTIC' "$repair_dir/task.md"
+grep -Fqx 'issue edit 9 --add-label agent:queued --remove-label agent:running' "$repair_dir/requeue"
+
+fix_dir="$worker_dir/fix-loop"
+mkdir -p "$fix_dir/repo/.github/agent-prompts" "$fix_dir/bin"
+cp "$script_dir/../.github/agent-prompts/task.md" "$fix_dir/repo/.github/agent-prompts/task.md"
+git init -q --bare "$fix_dir/remote.git"
+git -C "$fix_dir/repo" init -q
+git -C "$fix_dir/repo" config user.name test
+git -C "$fix_dir/repo" config user.email test@example.com
+printf 'base\n' >"$fix_dir/repo/base.txt"
+git -C "$fix_dir/repo" add .
+git -C "$fix_dir/repo" commit -qm base
+git -C "$fix_dir/repo" branch -M codex/issue-13
+git -C "$fix_dir/repo" remote add origin "$fix_dir/remote.git"
+cat >"$fix_dir/bin/gh" <<'EOF'
+#!/bin/sh
+case "$*" in
+  'issue view 13 --json number,title,body,comments,labels')
+    printf '%s\n' '{"number":13,"title":"Fix loop","body":"## Goal\nFix\n## Scope\nOnly fix\n## Declared touch-set\n- allowed.txt\n## Logical locks\n- None\n## Acceptance criteria\n- [ ] fixed\n## Dependencies\n- None\n## Test plan\n- test","comments":[],"labels":[{"name":"agent:task"}]}' ;;
+  'pr list --head codex/issue-13 --state open --json number --jq .[0].number') printf '21\n' ;;
+esac
+EOF
+cat >"$fix_dir/bin/claude" <<'EOF'
+#!/bin/sh
+input=$(cat)
+printf '%s\n' call >>"$FIX_LOOP_CALLS"
+case $input in
+  *failed_check_log*)
+    printf '%s\n' "$input" >"$FIX_LOOP_FIX_STDIN"
+    : >"$FIX_LOOP_MARKER" ;;
+esac
+printf 'implemented\n' >"$PWD/allowed.txt"
+printf '{"result":"done"}\n'
+EOF
+cat >"$fix_dir/bin/make" <<'EOF'
+#!/bin/sh
+if [ -f "$FIX_LOOP_MARKER" ]; then exit 0; fi
+echo 'lint: simulated failure' >&2
+exit 1
+EOF
+chmod +x "$fix_dir/bin/gh" "$fix_dir/bin/claude" "$fix_dir/bin/make"
+PATH="$fix_dir/bin:$PATH" \
+  AGENT_LOOP_GH="$fix_dir/bin/gh" \
+  AGENT_CLAUDE_BIN="$fix_dir/bin/claude" \
+  AGENT_REVIEW_ENABLED=0 \
+  FIX_LOOP_CALLS="$fix_dir/calls" \
+  FIX_LOOP_MARKER="$fix_dir/fixed" \
+  FIX_LOOP_FIX_STDIN="$fix_dir/fix-stdin" \
+  sh "$script_dir/agent-worker.sh" 13 "$fix_dir/repo" >/dev/null 2>&1
+test "$(wc -l <"$fix_dir/calls" | tr -d ' ')" = 2
+grep -Fq 'lint: simulated failure' "$fix_dir/fix-stdin"
+test -n "$(git -C "$fix_dir/repo" ls-remote origin codex/issue-13)"
+
+exhaust_dir="$worker_dir/fix-exhaustion"
+mkdir -p "$exhaust_dir/repo/.github/agent-prompts" "$exhaust_dir/bin"
+cp "$script_dir/../.github/agent-prompts/task.md" "$exhaust_dir/repo/.github/agent-prompts/task.md"
+git -C "$exhaust_dir/repo" init -q
+git -C "$exhaust_dir/repo" config user.name test
+git -C "$exhaust_dir/repo" config user.email test@example.com
+printf 'base\n' >"$exhaust_dir/repo/base.txt"
+git -C "$exhaust_dir/repo" add .
+git -C "$exhaust_dir/repo" commit -qm base
+git -C "$exhaust_dir/repo" branch -M codex/issue-14
+cat >"$exhaust_dir/bin/gh" <<'EOF'
+#!/bin/sh
+case "$*" in
+  'issue view 14 --json number,title,body,comments,labels')
+    printf '%s\n' '{"number":14,"title":"Fix exhaustion","body":"## Goal\nFix\n## Scope\nOnly fix\n## Declared touch-set\n- allowed.txt\n## Logical locks\n- None\n## Acceptance criteria\n- [ ] fixed\n## Dependencies\n- None\n## Test plan\n- test","comments":[],"labels":[{"name":"agent:task"}]}' ;;
+  'issue edit 14 --add-label agent:blocked --remove-label agent:running,agent:queued')
+    printf '%s\n' "$*" >"$BLOCKED_CAPTURE" ;;
+  'issue comment 14 --body'*) printf '%s\n' "$*" >"$BLOCKED_COMMENT_CAPTURE" ;;
+esac
+EOF
+cat >"$exhaust_dir/bin/claude" <<'EOF'
+#!/bin/sh
+cat >/dev/null
+printf '%s\n' call >>"$EXHAUST_CALLS"
+printf 'implemented\n' >"$PWD/allowed.txt"
+printf '{"result":"done"}\n'
+EOF
+cat >"$exhaust_dir/bin/make" <<'EOF'
+#!/bin/sh
+echo 'permafail' >&2
+exit 1
+EOF
+cat >"$exhaust_dir/bin/osascript" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >"$NOTIFY_CAPTURE"
+EOF
+chmod +x "$exhaust_dir/bin/gh" "$exhaust_dir/bin/claude" "$exhaust_dir/bin/make" "$exhaust_dir/bin/osascript"
+if PATH="$exhaust_dir/bin:$PATH" \
+  AGENT_LOOP_GH="$exhaust_dir/bin/gh" \
+  AGENT_CLAUDE_BIN="$exhaust_dir/bin/claude" \
+  AGENT_REVIEW_ENABLED=0 \
+  EXHAUST_CALLS="$exhaust_dir/calls" \
+  BLOCKED_CAPTURE="$exhaust_dir/blocked" \
+  BLOCKED_COMMENT_CAPTURE="$exhaust_dir/blocked-comment" \
+  NOTIFY_CAPTURE="$exhaust_dir/notify" \
+  sh "$script_dir/agent-worker.sh" 14 "$exhaust_dir/repo" >/dev/null 2>&1; then
+  echo 'worker unexpectedly succeeded with a permanently failing check' >&2
+  exit 1
+fi
+test "$(wc -l <"$exhaust_dir/calls" | tr -d ' ')" = 4
+grep -Fqx 'issue edit 14 --add-label agent:blocked --remove-label agent:running,agent:queued' \
+  "$exhaust_dir/blocked"
+grep -Fq 'after 3 fix rounds' "$exhaust_dir/blocked-comment"
+grep -Fq 'InsureDesk agent blocked: issue #14' "$exhaust_dir/notify"

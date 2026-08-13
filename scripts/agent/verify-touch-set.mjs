@@ -1,21 +1,8 @@
 import { pathToFileURL } from "node:url";
-import { normalizeIssue } from "./frontier.mjs";
-
-function matcher(pattern) {
-  let source = "";
-  for (let index = 0; index < pattern.length; index += 1) {
-    const character = pattern[index];
-    if (character === "*" && pattern[index + 1] === "*") {
-      source += ".*";
-      index += 1;
-    } else if (character === "*") source += "[^/]*";
-    else source += character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-  return new RegExp(`^${source}$`);
-}
+import { globMatcher, normalizeIssue } from "./frontier.mjs";
 
 export function outsideTouchSet(patterns, files) {
-  const matchers = patterns.map((pattern) => matcher(pattern.replace(/^\.\//, "")));
+  const matchers = patterns.map((pattern) => globMatcher(pattern.replace(/^\.\//, "")));
   return files.filter((file) => !matchers.some((candidate) => candidate.test(file)));
 }
 

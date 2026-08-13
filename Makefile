@@ -42,8 +42,12 @@ agent-loop-queue:
 agent-loop-dispatch:
 	@sh scripts/agent-loop.sh dispatch
 
+# caffeinate 防合盖/空闲睡眠打断 heartbeat 导致 worker 被误判 stale 杀掉。
 agent-loop-daemon:
-	@sh scripts/agent-loop.sh daemon
+	@if command -v caffeinate >/dev/null 2>&1; then \
+	  exec caffeinate -dims sh scripts/agent-loop.sh daemon; \
+	fi; \
+	exec sh scripts/agent-loop.sh daemon
 
 # 一条命令升级生产到最新发版：解析最新 CalVer、迁前备份、钉版本、
 # 拉起。跑在宿主机（需 git + docker + 服务器 .env），故不经容器。
