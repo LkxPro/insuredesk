@@ -41,7 +41,7 @@ bootstrap() {
 
 validate_body() {
   body=$(cat)
-  for heading in Goal Scope 'Acceptance criteria' Dependencies; do
+  for heading in Goal Scope 'Declared touch-set' 'Logical locks' 'Acceptance criteria' Dependencies 'Test plan'; do
     if ! printf '%s\n' "$body" | grep -Eq "^#{2,3} $heading$"; then
       echo "missing required heading: $heading" >&2
       return 1
@@ -55,10 +55,45 @@ validate_body() {
     echo 'dependencies need an explicit list or - None' >&2
     return 1
   fi
+  for heading in 'Declared touch-set' 'Logical locks' 'Test plan'; do
+    if ! printf '%s\n' "$body" | awk -v heading="$heading" '$0 ~ "^#{2,3} " heading "$"{found=1; next} /^#{2,3} /{if (found) exit} found && /^- /{ok=1} END{exit !ok}'; then
+      echo "$heading needs an explicit list or - None" >&2
+      return 1
+    fi
+  done
+  for heading in 'Declared touch-set' 'Test plan'; do
+    if ! printf '%s\n' "$body" | awk -v heading="$heading" '$0 ~ "^#{2,3} " heading "$"{found=1; next} /^#{2,3} /{if (found) exit} found && /^- / && tolower($0) != "- none"{ok=1} END{exit !ok}'; then
+      echo "$heading cannot be None" >&2
+      return 1
+    fi
+  done
 }
 
 issue_json() {
   "$agent_loop_gh" issue view "$1" --json number,state,body,labels
+}
+
+sync_dependencies() {
+  issue=$1
+  body=$2
+  refs=$(printf '%s\n' "$body" | awk '
+    /^#{2,3} Dependencies$/{found=1; next}
+    /^#{2,3} /{if (found) exit}
+    found{print}
+  ' | grep -Eo '#[0-9]+' | tr -d '#' | sort -un || true)
+  for blocker in $refs; do
+    blocker_id=$("$agent_loop_gh" api "repos/{owner}/{repo}/issues/$blocker" --jq .id)
+    if ! "$agent_loop_gh" api --method POST "repos/{owner}/{repo}/issues/$issue/dependencies/blocked_by" \
+      -F issue_id="$blocker_id" >/dev/null 2>"${TMPDIR:-/tmp}/agent-dependency-error.$$"; then
+      if ! "$agent_loop_gh" api "repos/{owner}/{repo}/issues/$issue/dependencies/blocked_by" \
+        --paginate --jq '.[].id' | grep -Fqx "$blocker_id"; then
+        cat "${TMPDIR:-/tmp}/agent-dependency-error.$$" >&2
+        rm -f "${TMPDIR:-/tmp}/agent-dependency-error.$$"
+        return 1
+      fi
+    fi
+    rm -f "${TMPDIR:-/tmp}/agent-dependency-error.$$"
+  done
 }
 
 transition() {
@@ -77,15 +112,12 @@ transition() {
 
   if has_label "$json" 'ready-for-agent' && ! has_label "$json" 'agent:brief'; then
     if printf '%s' "$json" | jq -r .body | validate_body; then
+      sync_dependencies "$issue" "$(printf '%s' "$json" | jq -r .body)"
       "$agent_loop_gh" issue edit "$issue" --add-label 'agent:task,agent:queued' --remove-label 'needs-triage,needs-info' >/dev/null
     else
-      "$agent_loop_gh" issue edit "$issue" --add-label needs-info >/dev/null
+      "$agent_loop_gh" issue edit "$issue" --add-label needs-info --remove-label 'ready-for-agent,agent:queued,agent:task' >/dev/null
     fi
   fi
-}
-
-blocked_by_open_issue() {
-  "$agent_loop_gh" api "repos/{owner}/{repo}/issues/$1" --jq '.issue_dependencies_summary.blocked_by' | grep -Eq '^[1-9][0-9]*$'
 }
 
 queue_json() {
@@ -93,54 +125,56 @@ queue_json() {
 }
 
 queue() {
-  candidates=$(queue_json)
-  running=$(printf '%s' "$candidates" | jq '[.[] | select(any(.labels[]; .name == "agent:running"))] | length')
-  running_serial=$(printf '%s' "$candidates" | jq -r '.[] | select(any(.labels[]; .name == "agent:running")) | .number' |
+  max_parallel=${1:-${AGENT_LOOP_MAX_PARALLEL:-4}}
+  case $max_parallel in *[!0-9]*|'') echo 'AGENT_LOOP_MAX_PARALLEL must be a positive integer' >&2; exit 64;; esac
+  [ "$max_parallel" -gt 0 ] || { echo 'AGENT_LOOP_MAX_PARALLEL must be a positive integer' >&2; exit 64; }
+  root=$(git rev-parse --show-toplevel)
+  payload=$(queue_json | jq -r '.[].number' |
     while IFS= read -r issue; do
-      json=$(issue_json "$issue")
-      if has_label "$json" 'serial-only'; then
-        echo 1
-        break
-      fi
-    done)
-  if [ -n "$running_serial" ]; then
-    return 0
-  fi
-
-  serial=$(printf '%s' "$candidates" | jq -r '.[] | select(any(.labels[]; .name == "agent:queued") and any(.labels[]; .name == "serial-only")) | .number' |
-    while IFS= read -r issue; do
-      if ! blocked_by_open_issue "$issue"; then
-        printf '%s\n' "$issue"
-        break
-      fi
-    done)
-  if [ -n "$serial" ]; then
-    [ "$running" -eq 0 ] && printf '%s\n' "$serial"
-    return 0
-  fi
-
-  printf '%s\n' "$candidates" | jq -r '.[] | select(any(.labels[]; .name == "agent:queued") and (any(.labels[]; .name == "agent:task") or any(.labels[]; .name == "agent:brief"))) | .number' |
-  while IFS= read -r issue; do
-    [ -n "$issue" ] || continue
-    if blocked_by_open_issue "$issue"; then
-      continue
-    fi
-    json=$(issue_json "$issue")
-    has_label "$json" 'serial-only' && continue
-    if has_label "$json" 'agent:task' && ! printf '%s' "$json" | jq -r .body | validate_body; then
-      "$agent_loop_gh" issue edit "$issue" --add-label needs-info --remove-label agent:queued >/dev/null
-      continue
-    fi
-    printf '%s\n' "$issue"
-  done
+      "$agent_loop_gh" api "repos/{owner}/{repo}/issues/$issue"
+    done | jq -s .)
+  result=$(printf '%s' "$payload" | node "$root/scripts/agent/frontier.mjs" "$max_parallel")
+  printf '%s' "$result" | jq -r '.skipped[] | "skip #\(.number): \(.reason)"' >&2
+  printf '%s' "$result" | jq -r '.selected[]'
 }
 
 dispatch() {
   root=$(git rev-parse --show-toplevel)
   worktrees=${AGENT_LOOP_WORKTREES:-"$root/.worktrees"}
+  max_parallel=${AGENT_LOOP_MAX_PARALLEL:-4}
+  case $max_parallel in *[!0-9]*|'') echo 'AGENT_LOOP_MAX_PARALLEL must be a positive integer' >&2; exit 64;; esac
+  [ "$max_parallel" -gt 0 ] || { echo 'AGENT_LOOP_MAX_PARALLEL must be a positive integer' >&2; exit 64; }
   mkdir -p "$worktrees"
+  for closed_worktree in "$worktrees"/issue-*; do
+    [ -d "$closed_worktree" ] || continue
+    closed_issue=${closed_worktree##*/issue-}
+    case $closed_issue in *[!0-9]*|'') continue;; esac
+    if "$agent_loop_gh" issue view "$closed_issue" --json state --jq .state | grep -Fqx CLOSED; then
+      closed_branch=$(git -C "$closed_worktree" branch --show-current)
+      git worktree remove --force "$closed_worktree"
+      case $closed_branch in codex/issue-*) git branch -D "$closed_branch" >/dev/null 2>&1 || true;; esac
+      rm -f "$worktrees/issue-$closed_issue.pid" "$worktrees/issue-$closed_issue.log" \
+        "$worktrees/issue-$closed_issue.implementation.json" "$worktrees/issue-$closed_issue.review.json"
+    fi
+  done
+  queue_json | jq -r '.[] | select(any(.labels[]; .name == "agent:running")) | .number' |
+  while IFS= read -r running_issue; do
+    pid_file="$worktrees/issue-$running_issue.pid"
+    alive=false
+    if [ -f "$pid_file" ]; then
+      pid=$(cat "$pid_file")
+      case $pid in
+        *[!0-9]*|'') ;;
+        *) kill -0 "$pid" 2>/dev/null && alive=true ;;
+      esac
+    fi
+    if [ "$alive" = false ]; then
+      "$agent_loop_gh" issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
+      "$agent_loop_gh" issue comment "$running_issue" --body 'Recovered a stale agent:running claim; requeued for dispatch.' >/dev/null
+    fi
+  done
   git fetch origin main
-  queue | while IFS= read -r issue; do
+  queue "$max_parallel" | while IFS= read -r issue; do
     [ -n "$issue" ] || continue
     worktree="$worktrees/issue-$issue"
     branch="codex/issue-$issue"
@@ -152,7 +186,11 @@ dispatch() {
       fi
     fi
     "$agent_loop_gh" issue edit "$issue" --add-label agent:running --remove-label agent:queued >/dev/null
-    nohup sh "$root/scripts/agent-worker.sh" "$issue" "$worktree" >"$worktrees/issue-$issue.log" 2>&1 &
+    pid_file="$worktrees/issue-$issue.pid"
+    nohup sh -c 'sh "$1" "$2" "$3"; status=$?; rm -f "$4"; exit "$status"' sh \
+      "$root/scripts/agent-worker.sh" "$issue" "$worktree" "$pid_file" \
+      >"$worktrees/issue-$issue.log" 2>&1 &
+    printf '%s\n' "$!" >"$pid_file"
     echo "started #$issue in $worktree"
   done
 }

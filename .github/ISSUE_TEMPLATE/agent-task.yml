@@ -1,7 +1,7 @@
 name: Agent task
 description: A fully specified implementation ticket. Agents normally create these from a confirmed Grill Me issue.
 title: "Task: "
-labels: [ready-for-agent]
+labels: [needs-triage]
 body:
   - type: markdown
     attributes:
@@ -29,10 +29,33 @@ body:
     validations:
       required: true
   - type: textarea
+    id: touch-set
+    attributes:
+      label: Declared touch-set
+      description: One repository-relative file or glob per line. Parallel tickets must not overlap unless ordered by a dependency.
+      placeholder: "apps/api/src/services/**"
+    validations:
+      required: true
+  - type: textarea
+    id: logical-locks
+    attributes:
+      label: Logical locks
+      description: Shared contracts, schemas, or migrations this ticket owns. Use `None` when empty.
+      value: "- None"
+    validations:
+      required: true
+  - type: textarea
     id: dependencies
     attributes:
       label: Dependencies
       description: Native issue dependencies. Use `None` when independent.
       value: "- None"
+    validations:
+      required: true
+  - type: textarea
+    id: test-plan
+    attributes:
+      label: Test plan
+      description: Focused checks that prove each acceptance criterion.
     validations:
       required: true

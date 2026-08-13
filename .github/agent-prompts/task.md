@@ -1,3 +1,3 @@
-Own this issue end to end. Read the issue, its comments, `AGENTS.md`, and repository conventions. Implement only its scope; run focused tests and `make check` when practical. Review your diff, commit on the current `codex/issue-<n>` branch, push it, and open a non-draft PR whose body contains `Closes #<n>`. Do not merge the PR.
+Implement the issue from the attached JSON. Read `AGENTS.md` and repository conventions. Change only its declared touch-set, add focused tests, and run relevant checks.
 
-If the work is already satisfied, comment concise evidence and close the issue. If blocked by a missing Grill Me decision or external authority, comment the exact blocker and apply `agent:blocked`; do not guess.
+Do not call GitHub, commit, push, create or edit issues, or open/merge a PR. The controller validates and publishes the work. If blocked by a missing decision or external authority, exit non-zero and explain the exact blocker; do not guess.

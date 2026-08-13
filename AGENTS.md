@@ -25,3 +25,13 @@ Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context: one `CONTEXT.md` at the repo root. See `docs/agents/domain.md`.
+
+## Automated issue work
+
+- `decision-confirmed` is the only normal human approval point. Never add it without explicit confirmation.
+- `ready-for-agent` requires acceptance criteria, declared touch-set, logical locks, tests, and native dependency edges.
+- Change only the declared touch-set. New scope requires a ticket update and a fresh claim.
+- Model processes leave an uncommitted diff only. Never call GitHub, commit, push, or open/merge PRs; the controller owns publication.
+- Run focused tests during work and `make check` before handoff. Never weaken a quality gate.
+- On ambiguity or unsafe migration, apply `agent:blocked` with evidence; do not guess.
+- Executor and state-machine details: `docs/agents/agent-loop.md`.

@@ -1,1 +1,1 @@
-The CI run for this issue's open agent PR failed. Inspect the failed checks with `gh`, repair only the reported regression, run the relevant local checks, commit, and push to the existing branch. Do not open a second PR or merge.
+The attached issue's existing agent PR failed CI. Inspect the worktree and failure context included in the task, repair only the regression, and run relevant local checks. Do not call GitHub, commit, push, or open/merge a PR. The controller validates and publishes the repair.
