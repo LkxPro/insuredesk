@@ -1,0 +1,38 @@
+name: Agent task
+description: A fully specified implementation ticket. Agents normally create these from a confirmed Grill Me issue.
+title: "Task: "
+labels: [ready-for-agent]
+body:
+  - type: markdown
+    attributes:
+      value: Agents create this form after a decision is confirmed. All fields are required so dependency-free tasks can dispatch safely in parallel.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: User-visible outcome and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Files/areas to change, non-goals, and constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: One observable checkbox per required outcome.
+      value: "- [ ] "
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Native issue dependencies. Use `None` when independent.
+      value: "- None"
+    validations:
+      required: true

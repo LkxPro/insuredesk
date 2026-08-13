@@ -1,0 +1,1 @@
+The CI run for this issue's open agent PR failed. Inspect the failed checks with `gh`, repair only the reported regression, run the relevant local checks, commit, and push to the existing branch. Do not open a second PR or merge.
