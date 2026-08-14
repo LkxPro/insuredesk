@@ -1,4 +1,5 @@
 import {
+  isExternalRole,
   type TicketAssignInput,
   type TicketAutoAssignInput,
   type TicketBatchAssignInput,
@@ -63,6 +64,33 @@ export class AssigneeNotAssignableError extends Error {
   }
 }
 
+/** Target user active but their role cannot view and process tickets. */
+export class AssigneeNotProcessableError extends Error {
+  constructor() {
+    super("所选责任人无工单处理权限");
+    this.name = "AssigneeNotProcessableError";
+  }
+}
+
+/**
+ * 责任人候选的角色侧判定（启用由各调用点的 active 条件负责）。system 角色
+ * 恒满足——其库存权限数组是永不读取的空快照，不能按数组判定。外部角色持外部
+ * 专用点即出局，不论数组里还配了什么。
+ */
+function isAssigneeEligible(role: { system: boolean; permissions: readonly string[] }): boolean {
+  if (role.system) {
+    return true;
+  }
+  if (isExternalRole(role)) {
+    return false;
+  }
+  return role.permissions.includes("ticket.view") && role.permissions.includes("ticket.process");
+}
+
+const eligibilityRoleSelect = {
+  role: { select: { system: true, permissions: true } },
+} satisfies Prisma.UserSelect;
+
 const assignmentInclude = {
   // Current assignee's name feeds the `from` snapshot of the assign log
   assignee: { select: { name: true } },
@@ -73,10 +101,13 @@ type AssignableTicket = Prisma.TicketGetPayload<{ include: typeof assignmentIncl
 async function loadAssignee(tx: Prisma.TransactionClient, assigneeId: string) {
   const assignee = await tx.user.findUnique({
     where: { id: assigneeId },
-    select: { id: true, name: true, active: true },
+    select: { id: true, name: true, active: true, ...eligibilityRoleSelect },
   });
   if (!assignee?.active) {
     throw new AssigneeNotAssignableError();
+  }
+  if (!isAssigneeEligible(assignee.role)) {
+    throw new AssigneeNotProcessableError();
   }
   return assignee;
 }
@@ -246,10 +277,11 @@ export async function batchAssignTickets(
 }
 
 /**
- * Assign unassigned tickets among every currently-on-duty active user. Ticket
- * channel is deliberately absent from candidate selection. The least number
- * of live assigned/processing tickets wins; ties are random, and each pick is
- * added to the in-action load so a batch spreads naturally.
+ * Assign unassigned tickets among every currently-on-duty user who passes
+ * isAssigneeEligible. Ticket channel is deliberately absent from candidate
+ * selection. The least number of live assigned/processing tickets wins; ties
+ * are random, and each pick is added to the in-action load so a batch spreads
+ * naturally.
  */
 export async function autoAssignTicketsBySchedule(
   { prisma, clock }: TicketServiceDeps,
@@ -286,9 +318,13 @@ export async function autoAssignTicketsBySchedule(
     const candidateIds = await findOnDutyUserIds(tx, wallClock.date, wallClock.time);
     const candidates = await tx.user.findMany({
       where: { id: { in: candidateIds }, active: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, ...eligibilityRoleSelect },
     });
-    const nameById = new Map(candidates.map((user) => [user.id, user.name]));
+    const nameById = new Map(
+      candidates
+        .filter((user) => isAssigneeEligible(user.role))
+        .map((user) => [user.id, user.name]),
+    );
     const validCandidateIds = candidateIds.filter((id) => nameById.has(id));
 
     const loadRows = await tx.ticket.groupBy({
@@ -346,13 +382,17 @@ export async function autoAssignTicketsBySchedule(
 }
 
 /**
- * Users offered by the 责任人 picker: every active account. Deactivated users
- * stay assigned to their existing tickets but cannot receive new ones.
+ * Users offered by the 责任人 picker: active accounts passing
+ * isAssigneeEligible. Ineligible users silently vanish from the list — their
+ * existing tickets stay with them; only new assignments are gated.
  */
 export async function listAssigneeOptions({ prisma }: TicketServiceDeps) {
-  return prisma.user.findMany({
+  const users = await prisma.user.findMany({
     where: { active: true },
-    select: { id: true, name: true, username: true },
+    select: { id: true, name: true, username: true, ...eligibilityRoleSelect },
     orderBy: [{ name: "asc" }, { id: "asc" }],
   });
+  return users
+    .filter((user) => isAssigneeEligible(user.role))
+    .map(({ id, name, username }) => ({ id, name, username }));
 }

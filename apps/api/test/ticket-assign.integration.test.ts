@@ -1,8 +1,10 @@
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { seedExternalUserRole } from "../prisma/seed-data";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
 import { appRouter } from "../src/routers/index";
 import { localDateTimeParts } from "../src/services/schedule.service";
+import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
 
 /**
@@ -19,6 +21,8 @@ describe("ticket assignment (Testcontainers)", () => {
   let seeded: IntegrationHarness["seeded"];
   let cs2: User;
   let inactiveUser: User;
+  let externalUser: User;
+  let noViewUser: User;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
@@ -41,6 +45,26 @@ describe("ticket assignment (Testcontainers)", () => {
         name: "已停用客服",
         roleId: seeded.roles.frontline.id,
         active: false,
+      },
+    });
+    const externalRole = await seedExternalUserRole(prisma);
+    externalUser = await prisma.user.create({
+      data: {
+        username: "ext1",
+        name: "外部联系人",
+        roleId: externalRole.id,
+        active: true,
+      },
+    });
+    const noViewRole = await prisma.role.create({
+      data: { name: "仅处理无查看", permissions: ["dashboard.view", "ticket.process"] },
+    });
+    noViewUser = await prisma.user.create({
+      data: {
+        username: "noview",
+        name: "无查看客服",
+        roleId: noViewRole.id,
+        active: true,
       },
     });
   }, 180_000);
@@ -248,7 +272,54 @@ describe("ticket assignment (Testcontainers)", () => {
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
       await expect(
         manager().ticket.assign({ ticketId, assigneeId: inactiveUser.id }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "所选责任人不存在或已停用",
+      });
+    });
+
+    it("rejects assign and batchAssign to users whose roles cannot process tickets, with a distinct message", async () => {
+      const ticketId = await createTicket();
+
+      // 只读（无 ticket.process）、无 ticket.view、外部账号同一兜底文案
+      for (const assigneeId of [seeded.users.observer.id, noViewUser.id, externalUser.id]) {
+        await expect(manager().ticket.assign({ ticketId, assigneeId })).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: "所选责任人无工单处理权限",
+        });
+        await expect(
+          manager().ticket.batchAssign({ ticketIds: [ticketId], assigneeId }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "所选责任人无工单处理权限" });
+      }
+    });
+
+    it("leaves existing tickets untouched when the assignee's role is later stripped of ticket.process", async () => {
+      const ticketId = await createTicket();
+      await manager().ticket.assign({ ticketId, assigneeId: seeded.users.cs1.id });
+
+      const original = [...seeded.roles.frontline.permissions];
+      await prisma.role.update({
+        where: { id: seeded.roles.frontline.id },
+        data: { permissions: original.filter((point) => point !== "ticket.process") },
+      });
+      try {
+        const detail = await manager().ticket.detail({ id: ticketId });
+        expect(detail.assigneeId).toBe(seeded.users.cs1.id);
+        expect(detail.status).toBe("assigned");
+
+        const freshId = await createTicket();
+        await expect(
+          manager().ticket.assign({ ticketId: freshId, assigneeId: seeded.users.cs1.id }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "所选责任人无工单处理权限" });
+        await expect(
+          manager().ticket.batchAssign({ ticketIds: [freshId], assigneeId: cs2.id }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "所选责任人无工单处理权限" });
+      } finally {
+        await prisma.role.update({
+          where: { id: seeded.roles.frontline.id },
+          data: { permissions: original },
+        });
+      }
     });
 
     it("rejects unknown and soft-deleted tickets as NOT_FOUND", async () => {
@@ -444,12 +515,20 @@ describe("ticket assignment (Testcontainers)", () => {
   });
 
   describe("assignee options (人选下拉)", () => {
-    it("returns active users only, for holders of an assign permission", async () => {
+    it("只列合规责任人：启用 + 非外部角色 + 权限同含 ticket.view 与 ticket.process，system 角色恒在列", async () => {
       const options = await manager().ticket.assigneeOptions();
-      const names = options.map((option) => option.name);
-      expect(names).toContain(seeded.users.cs1.name);
-      expect(names).toContain(cs2.name);
-      expect(names).not.toContain(inactiveUser.name);
+      const ids = options.map((option) => option.id);
+      // 一线客服 / 主管 / 管理员在列
+      expect(ids).toContain(seeded.users.cs1.id);
+      expect(ids).toContain(cs2.id);
+      expect(ids).toContain(seeded.users.manager.id);
+      expect(ids).toContain(seeded.users.admin.id);
+      // 停用、无 ticket.process、无 ticket.view、外部账号静默消失
+      expect(ids).not.toContain(inactiveUser.id);
+      expect(ids).not.toContain(seeded.users.observer.id);
+      expect(ids).not.toContain(noViewUser.id);
+      expect(ids).not.toContain(externalUser.id);
+      // 无灰显或标注：选项只有 id/name/username
       for (const option of options) {
         expect(option).toEqual({
           id: expect.any(String),
@@ -475,6 +554,70 @@ describe("ticket assignment (Testcontainers)", () => {
       // cs2 无排班记录，仍须可选
       expect(ids).toContain(cs2.id);
       expect(ids).not.toContain(inactiveUser.id);
+    });
+  });
+
+  describe("按排班自动分配 (candidate filtering)", () => {
+    function localInstant(date: string, hour: number) {
+      const [year = 0, month = 1, day = 1] = date.split("-").map(Number);
+      return new Date(year, month - 1, day, hour);
+    }
+
+    function autoAssignAt(at: Date, ticketIds: string[]) {
+      return autoAssignTicketsBySchedule(
+        harness.depsAt(at),
+        harness.authUserFor(seeded.users.manager, seeded.roles.csManager),
+        { ticketIds },
+      );
+    }
+
+    it("在岗但不合规的用户不作为候选人", async () => {
+      const date = "2099-08-20";
+      const full = await prisma.shiftType.findUniqueOrThrow({ where: { name: "全班" } });
+      const eligibleDuty = await prisma.user.create({
+        data: {
+          username: "duty-cs",
+          name: "在岗客服",
+          roleId: seeded.roles.frontline.id,
+          active: true,
+        },
+      });
+      await prisma.schedule.create({ data: { date, userId: eligibleDuty.id, shiftId: full.id } });
+      // 同样在册但不可为候选：只读（无 ticket.process）与外部账号
+      await prisma.schedule.create({
+        data: { date, userId: seeded.users.observer.id, shiftId: full.id },
+      });
+      await prisma.schedule.create({ data: { date, userId: externalUser.id, shiftId: full.id } });
+
+      const ticketIds = [await createTicket(), await createTicket()];
+      const result = await autoAssignAt(localInstant(date, 10), ticketIds);
+
+      expect(result.skipped).toEqual([]);
+      expect(result.assigned.map((entry) => entry.assigneeName)).toEqual([
+        eligibleDuty.name,
+        eligibleDuty.name,
+      ]);
+    });
+
+    it("全部在岗者均不合规时工单走 no_on_duty 跳过", async () => {
+      const date = "2099-08-21";
+      const full = await prisma.shiftType.findUniqueOrThrow({ where: { name: "全班" } });
+      await prisma.schedule.create({
+        data: { date, userId: seeded.users.observer.id, shiftId: full.id },
+      });
+      await prisma.schedule.create({ data: { date, userId: externalUser.id, shiftId: full.id } });
+
+      const ticketId = await createTicket();
+      const result = await autoAssignAt(localInstant(date, 10), [ticketId]);
+
+      expect(result.assigned).toEqual([]);
+      expect(result.skipped).toEqual([
+        { ticketId, workOrderNumber: expect.any(String), reason: "no_on_duty" },
+      ]);
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.status).toBe("unassigned");
+      expect(detail.assigneeId).toBeNull();
     });
   });
 
