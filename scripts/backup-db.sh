@@ -16,6 +16,7 @@ set -eu
 # 仅在 sidecar 的 busybox ash 里跑，pipefail 受支持；POSIX sh 未定义此选项。
 # shellcheck disable=SC3040
 set -o pipefail
+umask 077
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 DB_HOST="${DB_HOST:-insuredesk-db-prod}"
@@ -37,6 +38,7 @@ backup_once() {
   # 账号/库/密码读容器环境（compose 从 .env 注入），与 db 服务同源一份。
   PGPASSWORD="$POSTGRES_PASSWORD" \
     pg_dump -h "$DB_HOST" -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip -c >"$tmp"
+  gzip -t "$tmp"
   mv "$tmp" "$out"
   trap - EXIT
 
