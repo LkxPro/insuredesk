@@ -1,4 +1,4 @@
-.PHONY: help dev down db-reset test typecheck lint check upgrade agent-loop-queue agent-loop-dispatch agent-loop-daemon
+.PHONY: help dev down db-reset test typecheck lint check upgrade agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-status
 
 help:
 	@echo "InsureDesk development commands:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make agent-loop-queue    - Preview dependency-free agent tickets"
 	@echo "  make agent-loop-dispatch - Start workers for dependency-free tickets"
 	@echo "  make agent-loop-daemon   - Continuously dispatch dependency-free tickets"
+	@echo "  make agent-loop-status   - Watch live worker status (phase, last event, stalls)"
 	@echo "  make upgrade   - Upgrade production to the latest release"
 
 dev:
@@ -37,17 +38,20 @@ check:
 	@sh scripts/ci.sh
 
 agent-loop-queue:
-	@sh scripts/agent-loop.sh queue
+	@node scripts/agent/main.ts queue
 
 agent-loop-dispatch:
-	@sh scripts/agent-loop.sh dispatch
+	@node scripts/agent/main.ts dispatch
+
+agent-loop-status:
+	@node scripts/agent/main.ts status --watch
 
 # caffeinate 防合盖/空闲睡眠打断 heartbeat 导致 worker 被误判 stale 杀掉。
 agent-loop-daemon:
 	@if command -v caffeinate >/dev/null 2>&1; then \
-	  exec caffeinate -dims sh scripts/agent-loop.sh daemon; \
+	  exec caffeinate -dims node scripts/agent/main.ts daemon; \
 	fi; \
-	exec sh scripts/agent-loop.sh daemon
+	exec node scripts/agent/main.ts daemon
 
 # 一条命令升级生产到最新发版：解析最新 CalVer、迁前备份、钉版本、
 # 拉起。跑在宿主机（需 git + docker + 服务器 .env），故不经容器。

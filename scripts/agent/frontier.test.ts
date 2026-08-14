@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeIssue, planFrontier, touchSetsOverlap } from "./frontier.mjs";
+import { type FrontierIssue, normalizeIssue, planFrontier, touchSetsOverlap } from "./frontier.ts";
 
-function issue(number, overrides = {}) {
+function issue(number: number, overrides: Partial<FrontierIssue> = {}): FrontierIssue {
   return {
     number,
     labels: ["ready-for-agent", "agent:queued"],
@@ -78,11 +78,13 @@ test("a running serial-only ticket blocks the whole frontier", () => {
 test("only complete implementation tickets enter the frontier", () => {
   const malformed = normalizeIssue({
     number: 43,
+    state: "OPEN",
     body: "## Declared touch-set\n- apps/api/**",
     labels: [{ name: "ready-for-agent" }, { name: "agent:queued" }, { name: "agent:task" }],
   });
   const untyped = normalizeIssue({
     number: 44,
+    state: "OPEN",
     body: "## Goal\nGoal\n## Scope\nScope\n## Declared touch-set\n- apps/api/**\n## Acceptance criteria\n- [ ] done\n## Dependencies\n- None\n## Test plan\n- test",
     labels: [{ name: "ready-for-agent" }, { name: "agent:queued" }],
   });

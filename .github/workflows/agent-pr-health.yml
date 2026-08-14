@@ -16,8 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # type stripping 需要 .nvmrc 钉的 Node ≥22.18,runner 自带版本不够。
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
       - name: Requeue the issue only when its agent PR failed CI
         env:
           GH_TOKEN: ${{ github.token }}
           AGENT_BRANCH: ${{ github.event.workflow_run.head_branch }}
-        run: sh scripts/agent-loop.sh reconcile-ci "$AGENT_BRANCH"
+        run: node scripts/agent/main.ts reconcile-ci "$AGENT_BRANCH"

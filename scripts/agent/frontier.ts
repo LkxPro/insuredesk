@@ -1,6 +1,21 @@
-import { pathToFileURL } from "node:url";
+import type { Issue } from "./gh.ts";
 
-function section(body, heading) {
+export interface FrontierIssue {
+  number: number;
+  labels: string[];
+  openBlockers: number;
+  touchSet: string[];
+  logicalLocks: string[];
+  contractValid: boolean;
+  serialOnly: boolean;
+}
+
+export interface FrontierPlan {
+  selected: number[];
+  skipped: Array<{ number: number; reason: string }>;
+}
+
+function section(body: string | undefined, heading: string): string {
   const lines = (body ?? "").split("\n");
   const start = lines.findIndex(
     (line) =>
@@ -16,7 +31,7 @@ function section(body, heading) {
     .trim();
 }
 
-function list(value) {
+function list(value: string): string[] {
   return value
     .split("\n")
     .map((line) =>
@@ -28,11 +43,7 @@ function list(value) {
     .filter((line) => line && line.toLowerCase() !== "none");
 }
 
-function labels(issue) {
-  return issue.labels.map((label) => (typeof label === "string" ? label : label.name));
-}
-
-function literalPrefix(pattern) {
+function literalPrefix(pattern: string): string {
   const normalized = pattern.trim().replace(/^\.\//, "");
   const magic = normalized.search(/[?*[{(]/);
   if (magic === -1) return normalized.replace(/\/$/, "");
@@ -42,17 +53,16 @@ function literalPrefix(pattern) {
     .replace(/\/$/, "");
 }
 
-function normalizePattern(pattern) {
+function normalizePattern(pattern: string): string {
   return pattern.trim().replace(/^\.\//, "").replace(/\/$/, "");
 }
 
-// 与 verify-touch-set.mjs 共用同一套 glob 语义：`*` 不跨 `/`，`**` 跨任意深度，
-// 其余字符按字面处理。改动两者之一时必须保持同步。
-export function globMatcher(pattern) {
+// `*` 不跨 `/`，`**` 跨任意深度，其余字符按字面处理。
+export function globMatcher(pattern: string): RegExp {
   let source = "";
   for (let index = 0; index < pattern.length; index += 1) {
-    const character = pattern[index];
-    if (character === "*" && pattern[index + 1] === "*") {
+    const character = pattern.charAt(index);
+    if (character === "*" && pattern.charAt(index + 1) === "*") {
       source += ".*";
       index += 1;
     } else if (character === "*") source += "[^/]*";
@@ -61,7 +71,7 @@ export function globMatcher(pattern) {
   return new RegExp(`^${source}$`);
 }
 
-function patternsOverlap(a, b) {
+function patternsOverlap(a: string, b: string): boolean {
   const aGlob = a.includes("*");
   const bGlob = b.includes("*");
   if (!aGlob && !bGlob) return normalizePattern(a) === normalizePattern(b);
@@ -78,12 +88,17 @@ function patternsOverlap(a, b) {
   );
 }
 
-export function touchSetsOverlap(left, right) {
+export function touchSetsOverlap(left: string[], right: string[]): boolean {
   return left.some((a) => right.some((b) => patternsOverlap(a, b)));
 }
 
-export function normalizeIssue(issue) {
-  const issueLabels = labels(issue);
+export function outsideTouchSet(patterns: string[], files: string[]): string[] {
+  const matchers = patterns.map((pattern) => globMatcher(pattern.replace(/^\.\//, "")));
+  return files.filter((file) => !matchers.some((candidate) => candidate.test(file)));
+}
+
+export function normalizeIssue(issue: Issue): FrontierIssue {
+  const issueLabels = issue.labels.map((label) => (typeof label === "string" ? label : label.name));
   const acceptance = section(issue.body, "Acceptance criteria");
   const testPlan = list(section(issue.body, "Test plan"));
   const goal = section(issue.body, "Goal");
@@ -106,7 +121,7 @@ export function normalizeIssue(issue) {
   };
 }
 
-export function planFrontier(issues, maxParallel) {
+export function planFrontier(issues: FrontierIssue[], maxParallel: number): FrontierPlan {
   const running = issues.filter((issue) => issue.labels.includes("agent:running"));
   const queued = issues.filter(
     (issue) => issue.labels.includes("agent:queued") && issue.labels.includes("ready-for-agent"),
@@ -114,8 +129,8 @@ export function planFrontier(issues, maxParallel) {
   const heldLocks = new Set(running.flatMap((issue) => issue.logicalLocks));
   const heldTouchSets = running.map((issue) => ({ number: issue.number, paths: issue.touchSet }));
   const available = Math.max(0, maxParallel - running.length);
-  const selected = [];
-  const skipped = [];
+  const selected: number[] = [];
+  const skipped: Array<{ number: number; reason: string }> = [];
 
   if (running.some((issue) => issue.serialOnly)) return { selected, skipped };
 
@@ -158,15 +173,4 @@ export function planFrontier(issues, maxParallel) {
     heldTouchSets.push({ number: issue.number, paths: issue.touchSet });
   }
   return { selected, skipped };
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const maxParallel = Number.parseInt(process.argv[2] ?? "4", 10);
-  if (!Number.isInteger(maxParallel) || maxParallel < 1)
-    throw new Error("maxParallel must be positive");
-  let input = "";
-  process.stdin.setEncoding("utf8");
-  for await (const chunk of process.stdin) input += chunk;
-  const issues = JSON.parse(input).map(normalizeIssue);
-  process.stdout.write(`${JSON.stringify(planFrontier(issues, maxParallel))}\n`);
 }

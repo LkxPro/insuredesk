@@ -11,7 +11,7 @@
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
-    "typecheck": "pnpm -r run typecheck",
+    "typecheck": "pnpm -r run typecheck && tsc -p scripts/agent",
     "lint": "sh -c 'if [ -f .git ]; then exec biome check --vcs-enabled=false .; else exec biome check .; fi'",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4",
+    "@types/node": "^22.20.0",
     "typescript": "^7.0.2"
   }
 }
