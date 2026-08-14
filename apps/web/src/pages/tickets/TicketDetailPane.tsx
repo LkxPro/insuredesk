@@ -218,6 +218,7 @@ export function TicketDetailPane({
           ) : (
             <TicketTimelineColumn
               logs={ticket.processLogs}
+              completionStatus={ticket.completionStatus}
               composer={
                 hasPermission("ticket.process") && isTicketInFlight(ticket.status) ? (
                   <AddCommentCard ticketId={ticket.id} />

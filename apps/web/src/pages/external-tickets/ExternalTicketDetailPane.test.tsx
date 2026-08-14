@@ -134,10 +134,13 @@ describe("处理记录时间线", () => {
     renderDetail({ processLogs: logs });
     await screen.findByText("处理记录");
 
-    expect(screen.getByText("工单创建")).toBeInTheDocument();
+    // 系统动作（创建）是合并的一行：只留标签与操作人，备注不展示
+    expect(screen.getByText(/创建工单/)).toBeInTheDocument();
+    expect(screen.queryByText("工单创建")).not.toBeInTheDocument();
+    // 沟通条目（跟进/留言）是气泡：类型徽章 + 操作人 + 备注全文
+    expect(screen.getByText("跟进记录")).toBeInTheDocument();
     expect(screen.getByText("已联系客户，正在核实")).toBeInTheDocument();
     expect(screen.getByText("客服小王")).toBeInTheDocument();
-    // 外部留言与内部跟进同列呈现，靠 action 标签区分
     expect(screen.getByText("外部留言")).toBeInTheDocument();
     expect(screen.getByText("补充：保单号 P123")).toBeInTheDocument();
   });
