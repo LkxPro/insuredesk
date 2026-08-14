@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { touchSetsOverlap } from "./frontier.mjs";
+import { touchSetsOverlap } from "./frontier.ts";
 
 const nonEmptyLists = ["acceptanceCriteria", "outOfScope", "touchSet", "testPlan"];
 const lists = [...nonEmptyLists, "logicalLocks", "dependsOn"];

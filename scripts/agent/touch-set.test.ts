@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { outsideTouchSet } from "./verify-touch-set.mjs";
+import { outsideTouchSet } from "./frontier.ts";
 
 test("accepts declared files and rejects everything else", () => {
   assert.deepEqual(

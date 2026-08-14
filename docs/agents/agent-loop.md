@@ -10,7 +10,7 @@
 - [ ] `gh auth status` 成功，且有 Issue、PR、Actions、Contents 写权限
 - [ ] 本机 `claude` 可正常交互使用（订阅登录或 settings.json provider）
 - [ ] GitHub 开启 auto-merge；`main` 要求 `lint-and-test`、`docker-build`
-- [ ] 运行一次 `sh scripts/agent-loop.sh bootstrap`
+- [ ] 运行一次 `node scripts/agent/main.ts bootstrap`
 - [ ] 启动 `make agent-loop-daemon`
 - [ ] 本地运行 Grill Me；明确确认设计
 - [ ] 调用 `to-spec`，取得父 Issue 号（小任务可跳过）
@@ -146,7 +146,7 @@ git clone https://github.com/LkxPro/insuredesk.git
 cd insuredesk
 pnpm install --frozen-lockfile
 gh auth login
-sh scripts/agent-loop.sh bootstrap
+node scripts/agent/main.ts bootstrap
 make check
 ```
 
@@ -319,7 +319,7 @@ CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued` + `ready
 
 Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队一次（评论 `agent-requeue` marker 计数），再失败转 blocked；改 git 历史、touch-set 越界、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知）。
 
-进程级失败判定前有两层就地吸收：executor 的 `error_during_execution`/CLI 崩溃按 `AGENT_EXECUTOR_ATTEMPTS` 在同 run 内退避重试；所有 gh/git 网络调用经 `scripts/agent/net-call.sh` 统一入口，传输层错误（connection reset、TLS、5xx 等）按 `AGENT_NET_CALL_*` 超时重试，确定性错误（lease 拒绝、4xx）立即回吐。daemon 单个 dispatch tick 失败不退出，下个 interval 继续。
+进程级失败判定前有两层就地吸收：executor 的 `error_during_execution`/CLI 崩溃按 `AGENT_EXECUTOR_ATTEMPTS` 在同 run 内退避重试；所有 gh/git 网络调用经 `scripts/agent/net.ts` 统一入口，传输层错误（connection reset、TLS、5xx 等）按 `AGENT_NET_CALL_*` 超时重试，确定性错误（lease 拒绝、4xx）立即回吐。daemon 单个 dispatch tick 失败不退出，下个 interval 继续。
 
 ## 11. 状态与标签
 
@@ -440,10 +440,14 @@ export AGENT_CLAIM_STALE_SECONDS=300
 | `scripts/agent/publish-spec.sh` | 确定性创建 `agent:spec` |
 | `scripts/agent/publish-tickets.sh` | 验证、标准化、建 child 与 native edges、入队 |
 | `scripts/agent/plan.mjs` | 结构化 ticket schema、DAG 与冲突验证 |
-| `scripts/agent-loop.sh` | transition、frontier、claim、daemon、CI reconciliation |
-| `scripts/agent-worker.sh` | worktree 内实现、review、验证与 controller 发布 |
-| `scripts/agent/net-call.sh` | gh/git 网络调用统一入口：超时、传输层错误退避重试 |
+| `scripts/agent/main.ts` | CLI 入口:bootstrap/transition/queue/dispatch/daemon/status/worker/reconcile-ci |
+| `scripts/agent/dispatch.ts` | transition、frontier 编排、claim 编排、daemon tick、CI reconciliation |
+| `scripts/agent/worker.ts` | worktree 内实现、review、验证与 controller 发布 |
+| `scripts/agent/claim.ts` | commit-tree + atomic lease 的分布式 claim/heartbeat/fence |
+| `scripts/agent/executor.ts` | claude stream-json 执行器:事件落盘 + status 聚合 |
+| `scripts/agent/status.ts` | status.json 双写者聚合、分相判死、status 渲染 |
+| `scripts/agent/net.ts` | gh/git 网络调用统一入口：超时、传输层错误退避重试 |
 | `.github/ISSUE_TEMPLATE/agent-task.yml` | 可选完整单票 fast lane |
 | `.github/workflows/agent-loop.yml` | label bootstrap 与 fast-lane contract transition |
 | `.github/workflows/agent-pr-health.yml` | CI 失败回队 |
-| `.github/workflows/agent-merge.yml` | required checks 后 auto-merge |
+| `.github/workflows/agent-merge.yml` | 等检查转绿后同步 merge 并关单 |
