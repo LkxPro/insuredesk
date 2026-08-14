@@ -91,7 +91,9 @@ describe("ticket creation + detail (Testcontainers)", () => {
     nuclearBodyStatus: "待核实",
     hasContacted: false,
     complaintLevel: "一般投诉",
-  } satisfies TicketCreateInput;
+    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
+    allowDuplicate: true,
+  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   it("seeds exactly one SLAPolicy per complaint level with the expected defaults", async () => {
     const policies = await prisma.slaPolicy.findMany();

@@ -14,6 +14,7 @@ import { applyTicketDataScope } from "./data-scope.service";
 import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service";
 import { TicketNotFoundError } from "./ticket-assign.service";
 import { ticketCategoryCatalog } from "./ticket-category.service";
+import { assertNoDuplicateTickets } from "./ticket-duplicate.service";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结
@@ -102,6 +103,7 @@ export async function editTicket(
   { prisma, clock }: TicketServiceDeps,
   actor: AuthenticatedUser,
   input: TicketEditData,
+  options?: { allowDuplicate?: boolean },
 ) {
   const now = clock.now();
   const { ticketId, ...fields } = input;
@@ -132,6 +134,25 @@ export async function editTicket(
       // Nothing changed → no update, no log: a remark with no field diffs
       // would violate its own contract (remark 记录改动的字段)
       return { id: ticket.id, workOrderNumber: ticket.workOrderNumber, changedFields };
+    }
+
+    // 提交兜底查重：仅查重相关字段实际改动才查 —— 无关字段的编辑不该被存量
+    // 重复阻塞；查重字段未改时自身旧值必中，excludeTicketId 挡的就是这发。
+    if (
+      !options?.allowDuplicate &&
+      changedFields.some(
+        (key) => key === "policyNumbers" || key === "phone" || key === "contactPhone",
+      )
+    ) {
+      await assertNoDuplicateTickets(
+        { prisma: tx, clock },
+        {
+          policyNumbers: next.policyNumbers,
+          phone: next.phone,
+          contactPhone: next.contactPhone,
+          excludeTicketId: ticketId,
+        },
+      );
     }
 
     // Only a NEWLY chosen catalog reference must exist and be active —

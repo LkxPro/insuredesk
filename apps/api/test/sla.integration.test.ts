@@ -78,7 +78,9 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     nuclearBodyStatus: "待核实",
     hasContacted: false,
     complaintLevel: "一般投诉",
-  } satisfies TicketCreateInput;
+    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
+    allowDuplicate: true,
+  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   /** dueAt − createdAt of a detail read, in whole hours. */
   function dueOffsetHours(detail: { createdAt: string; dueAt: string | null }): number {

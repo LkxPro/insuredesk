@@ -1,4 +1,5 @@
 import { TICKET_FIELDS, TICKET_SOURCE_LABELS, type TicketCreateFieldKey } from "@insuredesk/shared";
+import type { ReactNode } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { formatDateTime } from "@/lib/datetime";
 import { DetailItem as Item, DetailSection as Section } from "./DetailGrid";
@@ -22,10 +23,13 @@ export function TicketInfoColumn({
   ticket,
   editing,
   form,
+  fieldAddon,
 }: {
   ticket: TicketDetail;
   editing: boolean;
   form: UseFormReturn<TicketFormValues>;
+  /** 编辑态查重命中提示，仅保单号/手机号三个字段会拿到内容。 */
+  fieldAddon?: (name: TicketCreateFieldKey) => ReactNode;
 }) {
   const { dirtyFields, errors } = form.formState;
   const field = (name: TicketCreateFieldKey) => (
@@ -36,6 +40,7 @@ export function TicketInfoColumn({
       form={form}
       dirty={!!dirtyFields[name]}
       error={errors[name]?.message}
+      addon={fieldAddon?.(name)}
     />
   );
 
