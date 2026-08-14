@@ -26,6 +26,7 @@ import {
 } from "../services/ticket.service";
 import {
   AssigneeNotAssignableError,
+  AssigneeNotProcessableError,
   assignTicket,
   autoAssignTicketsBySchedule,
   batchAssignTickets,
@@ -67,7 +68,7 @@ function mapAssignmentError(error: unknown): never {
   if (error instanceof TicketNotAssignableError) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message, cause: error });
   }
-  if (error instanceof AssigneeNotAssignableError) {
+  if (error instanceof AssigneeNotAssignableError || error instanceof AssigneeNotProcessableError) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
   throw error;
@@ -324,7 +325,7 @@ export const ticketRouter = router({
     }),
 
   /**
-   * Active users for the 责任人 picker. Either assign permission unlocks it —
+   * 合规责任人候选 for the 责任人 picker. Either assign permission unlocks it —
    * the dropdown serves both the single and the batch dialog.
    */
   assigneeOptions: requireAnyPermission(["ticket.assign", "ticket.batch_assign"]).query(() =>
