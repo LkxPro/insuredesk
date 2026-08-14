@@ -1,4 +1,4 @@
 interface:
   display_name: "Publish InsureDesk Tickets"
   short_description: "Publish an executable dependency-aware ticket DAG"
-  default_prompt: "Use $to-tickets to publish executable tickets from this spec."
+  default_prompt: "Use $too-tickets to publish executable tickets from this spec."
