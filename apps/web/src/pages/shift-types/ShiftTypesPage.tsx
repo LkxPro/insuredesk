@@ -3,7 +3,6 @@ import { type ShiftSegment, shiftTypeCreateInputSchema } from "@insuredesk/share
 import type { inferRouterOutputs } from "@trpc/server";
 import { AlertCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 type ShiftTypeRow = inferRouterOutputs<AppRouter>["shiftType"]["list"][number];

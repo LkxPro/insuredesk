@@ -2,7 +2,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { type ChangeOwnPasswordInput, changeOwnPasswordInputSchema } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useForm } from "react-hook-form";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +9,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 /**

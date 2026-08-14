@@ -1,11 +1,11 @@
 import { AlertCircle } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 /**

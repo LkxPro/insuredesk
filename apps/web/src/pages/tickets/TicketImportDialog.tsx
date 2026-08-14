@@ -10,7 +10,6 @@ import {
 import type { inferRouterOutputs } from "@trpc/server";
 import { Download, FileUp } from "lucide-react";
 import { useRef, useState } from "react";
-import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +26,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { downloadFile } from "@/lib/download";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 /**

@@ -4,8 +4,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Toaster } from "@/components/ui/sonner";
+import { ToastHost } from "@/components/ToastHost";
 import type { AuthUser } from "@/contexts/AuthContext";
+import { toastStore } from "@/lib/toast-store";
 import { trpc } from "@/lib/trpc";
 import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
@@ -145,7 +146,7 @@ function renderCreate() {
           <MemoryRouter initialEntries={["/tickets/new"]}>
             <AppRoutes />
           </MemoryRouter>
-          <Toaster />
+          <ToastHost />
         </ThemeProvider>
       </QueryClientProvider>
     </trpc.Provider>,
@@ -157,6 +158,7 @@ beforeEach(() => {
   auth.isLoading = false;
   created = false;
   calls = [];
+  toastStore.clear();
 });
 
 describe("建单后留列表 (issue #116)", () => {

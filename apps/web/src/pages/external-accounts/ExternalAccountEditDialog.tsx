@@ -9,7 +9,6 @@ import {
 import { AlertCircle } from "lucide-react";
 import { useEffect } from "react";
 import { Controller, type UseFormReturn, useForm } from "react-hook-form";
-import { toast } from "sonner";
 import { z } from "zod";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -33,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { ExternalAccountRow } from "./ExternalAccountManagePage";
 

@@ -13,7 +13,6 @@ import { zhCN } from "date-fns/locale";
 import { AlertCircle, CalendarDays, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -39,6 +38,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 type ScheduleGrid = inferRouterOutputs<AppRouter>["schedule"]["list"];

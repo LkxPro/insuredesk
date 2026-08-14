@@ -3,7 +3,6 @@ import { type UserCreateInput, userCreateInputSchema } from "@insuredesk/shared"
 import { AlertCircle } from "lucide-react";
 import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 /**

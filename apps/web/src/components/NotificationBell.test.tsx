@@ -5,7 +5,8 @@ import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { Toaster } from "@/components/ui/sonner";
+import { ToastHost } from "@/components/ToastHost";
+import { toastStore } from "@/lib/toast-store";
 import { trpc } from "@/lib/trpc";
 
 /**
@@ -119,7 +120,7 @@ function renderBell() {
               <Route path="/external-tickets/:id" element={<ExternalTicketDetailProbe />} />
             </Routes>
           </MemoryRouter>
-          <Toaster />
+          <ToastHost />
         </ThemeProvider>
       </QueryClientProvider>
     </trpc.Provider>,
@@ -138,6 +139,7 @@ beforeEach(() => {
   canned.items = [];
   calls = [];
   auth.isExternal = false;
+  toastStore.clear();
 });
 
 describe("badge and inbox", () => {
@@ -238,8 +240,8 @@ describe("toast on arrival (来了弹 toast)", () => {
     expect(await screen.findByText("工单改派")).toBeInTheDocument();
     expect(screen.queryByText("新工单分配")).not.toBeInTheDocument();
 
-    // The toast's 查看 action behaves like an inbox click: mark read + jump
-    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    // 点击轻提示本体 = 收件箱点击：标已读 + 跳详情
+    fireEvent.click(screen.getByText("工单改派"));
     await waitFor(() =>
       expect(calls.find((call) => call.path === "notification.markRead")?.input).toEqual({
         id: "n2",
@@ -275,8 +277,8 @@ describe("toast on arrival (来了弹 toast)", () => {
     expect(await screen.findByText("你有 5 条新通知")).toBeInTheDocument();
     expect(screen.queryByText("新工单分配")).not.toBeInTheDocument();
 
-    // 查看 opens the inbox popover rather than jumping to one of five tickets
-    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    // 点击汇总轻提示打开收件箱，而不是跳到五张工单之一
+    fireEvent.click(screen.getByText("你有 5 条新通知"));
     expect(await screen.findAllByText("新工单分配")).toHaveLength(5);
   });
 });

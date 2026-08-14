@@ -1,7 +1,6 @@
 import type { CatalogSchemas } from "@insuredesk/shared";
 import { AlertCircle, Ban, CircleCheck, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { toast } from "@/lib/toast";
 
 /**
  * 字典目录管理段, shared by the 渠道/类别/完结状态 catalogs: list with 已停用

@@ -1,6 +1,5 @@
 import { AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 /**

@@ -27,3 +27,5 @@ coverage/
 
 # Per-issue agent worktrees (see AGENTS.md)
 .worktrees/
+# Claude Code session worktrees (.claude itself is tracked)
+.claude/worktrees/

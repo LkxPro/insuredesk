@@ -1,7 +1,6 @@
 import type { Permission, TicketCreateFieldKey } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { PermissionChecklist } from "./PermissionChecklist";
 import { RequiredFieldsChecklist } from "./RequiredFieldsChecklist";
