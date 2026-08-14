@@ -333,8 +333,18 @@ async function runPipeline(
   )
     .split("\n")
     .filter(Boolean);
-  if (changedFiles.length === 0)
-    throw new WorkerFailure("Agent produced no repository change.", "fatal");
+  if (changedFiles.length === 0) {
+    // 模型按规矩 exit 并解释的 blocker 写在 implementation result 里;
+    // 不进评论的话人只能翻日志,blocked 就失去信息量。
+    const explained = await readFile(ctx.artifact("implementation.json"), "utf8")
+      .then((text) => {
+        const result = (JSON.parse(text) as { result?: unknown }).result;
+        return typeof result === "string" && result.trim() ? result.trim() : null;
+      })
+      .catch(() => null);
+    const detail = explained ? `\n\nAgent's blocker report:\n${explained.slice(0, 2000)}` : "";
+    throw new WorkerFailure(`Agent produced no repository change.${detail}`, "fatal");
+  }
   await verifyTouchSet();
 
   const checkLock = new DirLock(join(worktrees, ".check.lock"));

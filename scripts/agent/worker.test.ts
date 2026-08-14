@@ -293,6 +293,21 @@ test("nudge 宽限耗尽 → stall abort → process 级失败自动重排队", 
   assert.ok(events.includes('"subtype":"nudge"'));
 });
 
+test("零产出 fatal → blocked 评论带上模型的 blocker 说明", async () => {
+  const claude = `while IFS= read -r line; do
+  printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"result":"BLOCKED: touch-set 与 AC 互斥,需要改票"}'
+done`;
+  const sandbox = await makeSandbox(claude, MAKE_OK);
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 1);
+  });
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls.includes("--add-label agent:blocked"));
+  assert.ok(calls.includes("BLOCKED: touch-set 与 AC 互斥"));
+  assert.ok(!calls.includes("--add-label agent:queued"));
+});
+
 test("发布前 claim 丢失 → process 失败,自动重排队一次", async () => {
   // heartbeat 间隔拉到 1 小时,模拟不到;直接让 fence 前的 claimOwned 失败:
   // claim 之后立刻由"另一克隆"把远端 refs 删掉。
