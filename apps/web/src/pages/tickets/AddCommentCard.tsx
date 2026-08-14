@@ -1,6 +1,5 @@
 import { AlertCircle } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { DateTimePicker } from "@/components/DateTimePicker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -15,6 +14,7 @@ import {
   localDateTimeToIso,
   splitLocalDateTime,
 } from "@/lib/local-date-time";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 /**

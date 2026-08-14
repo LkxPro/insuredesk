@@ -4,18 +4,19 @@ import type { inferRouterOutputs } from "@trpc/server";
 import { Bell } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
 /**
  * 轨 1 收件箱 bell: polls notification.list every 30 seconds — unread-count
- * red badge, a toast for each newly arrived notification, and a popover inbox
- * where clicking an entry marks it read and jumps to the ticket detail.
+ * red badge, a sticky top-center toast for each newly arrived notification
+ * (click = mark read + jump to the ticket), and a popover inbox where
+ * clicking an entry does the same.
  */
 
 /** Server list-item shape, inferred from the router — one contract, no drift. */
@@ -74,15 +75,14 @@ export function NotificationBell() {
       seen.add(item.id); // before toasting: StrictMode-safe
     }
     if (fresh.length > MAX_INDIVIDUAL_TOASTS) {
-      toast(`你有 ${fresh.length} 条新通知`, {
-        action: { label: "查看", onClick: () => setOpen(true) },
-      });
+      toast(`你有 ${fresh.length} 条新通知`, { onClick: () => setOpen(true) });
       return;
     }
     for (const item of fresh) {
+      // 点击轻提示本体 = 收件箱点击：标已读 + 跳工单详情
       toast(item.title, {
         description: item.content,
-        action: { label: "查看", onClick: () => openTicket(item) },
+        onClick: () => openTicket(item),
       });
     }
   });

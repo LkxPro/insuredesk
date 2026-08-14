@@ -29,17 +29,21 @@ const authState = vi.hoisted(() => ({
 /** Auth seam state: files set a default user in beforeEach, tests override per case. */
 export const auth = authState;
 
-// The Toaster outlet lives in main.tsx, outside this render tree — spy on the
-// imperative API instead of hunting for rendered toast text.
-const spies = vi.hoisted(() => ({
-  error: vi.fn(),
-  success: vi.fn(),
-  warning: vi.fn(),
-}));
+// The ToastHost outlet lives in App.tsx, outside this render tree — spy on the
+// imperative facade instead of hunting for rendered toast text. The base fn
+// covers plain toast(...) calls (NotificationBell arrivals).
+const spies = vi.hoisted(() =>
+  Object.assign(vi.fn(), {
+    error: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  }),
+);
 
 export const toastSpies = spies;
 
-vi.mock("sonner", () => ({ toast: spies }));
+vi.mock("@/lib/toast", () => ({ toast: spies }));
 
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
@@ -171,9 +175,11 @@ beforeEach(() => {
   auth.user = null;
   auth.isLoading = false;
   calls.length = 0;
+  toastSpies.mockReset();
   toastSpies.error.mockReset();
   toastSpies.success.mockReset();
   toastSpies.warning.mockReset();
+  toastSpies.info.mockReset();
   restFetch.mockReset();
   vi.stubGlobal("fetch", restFetch);
   // jsdom has no object-URL implementation; download paths need both ends

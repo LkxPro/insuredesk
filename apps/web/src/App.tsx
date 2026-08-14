@@ -1,5 +1,6 @@
 import { BrowserRouter } from "react-router";
 import { AppRoutes } from "@/AppRoutes";
+import { ToastHost } from "@/components/ToastHost";
 import { AuthProvider } from "@/contexts/AuthContext";
 
 export function App() {
@@ -7,6 +8,7 @@ export function App() {
     <BrowserRouter>
       <AuthProvider>
         <AppRoutes />
+        <ToastHost />
       </AuthProvider>
     </BrowserRouter>
   );

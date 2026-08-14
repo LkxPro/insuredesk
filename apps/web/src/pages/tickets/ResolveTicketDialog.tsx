@@ -1,7 +1,6 @@
 import { TICKET_COMPLETION_REMARK_LIMIT, TICKET_FIELDS } from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 /**

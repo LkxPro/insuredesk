@@ -1,7 +1,6 @@
 import type { TicketExportFormat } from "@insuredesk/shared";
 import { Download } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { toast } from "@/lib/toast";
 
 /**
  * 导出当前筛选结果 — the server re-applies scope and filters. 按钮只管交互

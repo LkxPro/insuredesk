@@ -4,7 +4,6 @@ import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "@/App";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { Toaster } from "@/components/ui/sonner";
 import { trpc } from "@/lib/trpc";
 import "@/index.css";
 
@@ -23,7 +22,6 @@ function Root() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <App />
-          <Toaster />
         </ThemeProvider>
       </QueryClientProvider>
     </trpc.Provider>
