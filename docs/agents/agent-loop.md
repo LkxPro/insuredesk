@@ -9,7 +9,7 @@
 - [ ] 安装 `git`、`gh`、`jq`、Node/pnpm、Docker、Claude CLI
 - [ ] `gh auth status` 成功，且有 Issue、PR、Actions、Contents 写权限
 - [ ] 本机 `claude` 可正常交互使用（订阅登录或 settings.json provider）
-- [ ] GitHub 开启 auto-merge；`main` 要求 `lint-and-test`、`docker-build`
+- [x] GitHub 开启 auto-merge；`main` 要求 `lint-and-test`、`docker-build`（ruleset `main-required-checks`）
 - [ ] 运行一次 `sh scripts/agent-loop.sh bootstrap`
 - [ ] 启动 `make agent-loop-daemon`
 - [ ] 本地运行 Grill Me；明确确认设计
