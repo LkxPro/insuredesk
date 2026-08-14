@@ -109,7 +109,7 @@ main() {
   fi
 
   local latest configured target_image running_image
-  latest="$(git ls-remote --tags origin 'refs/tags/v*' | resolve_latest_tag)"
+  latest="${LATEST_TAG:-$(git ls-remote --tags origin 'refs/tags/v*' | resolve_latest_tag)}"
   if [ -z "$latest" ]; then
     echo "upgrade: 远端没有 CalVer tag，无可升级版本" >&2
     exit 1
