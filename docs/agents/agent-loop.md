@@ -1,6 +1,6 @@
 # GitHub Issue Agent 开发闭环：团队上手与运行指南
 
-本文面向团队成员。正常流程只有设计阶段需要人：在本地 Claude/Codex 中完成 Grill Me，确认后调用 `to-tickets`（大改动先 `to-spec` 再 `to-tickets`；小任务可跳过 spec 直接 parentless 发布）。GitHub 从"已确认规格/票据"开始记录工作；本地 Claude daemon 自动并行实现、测试、复审、发 PR、修 CI 并合并。
+本文面向团队成员。正常流程只有设计阶段需要人：在本地 Claude/Codex 中完成 Grill Me，确认后调用 `too-tickets`（大改动先 `too-spec` 再 `too-tickets`；小任务可跳过 spec 直接 parentless 发布）。GitHub 从"已确认规格/票据"开始记录工作；本地 Claude daemon 自动并行实现、测试、复审、发 PR、修 CI 并合并。
 
 > GitHub Issue 不是 Grill Me 聊天窗口。不要把未确认的设计问题发布为 Issue。
 
@@ -13,8 +13,8 @@
 - [ ] 运行一次 `node scripts/agent/main.ts bootstrap`
 - [ ] 启动 `make agent-loop-daemon`
 - [ ] 本地运行 Grill Me；明确确认设计
-- [ ] 调用 `to-spec`，取得父 Issue 号（小任务可跳过）
-- [ ] 调用 `to-tickets`；child 自动建票、连依赖、入队
+- [ ] 调用 `too-spec`，取得父 Issue 号（小任务可跳过）
+- [ ] 调用 `too-tickets`；child 自动建票、连依赖、入队
 - [ ] 用 `make agent-loop-queue`、`.worktrees/*.log`、PR Checks 观察
 
 ## 1. 实际工作流
@@ -22,8 +22,8 @@
 ```mermaid
 flowchart LR
   G["本地 Claude/Codex：Grill Me 对话"] --> C["人确认设计"]
-  C --> S["to-spec：发布 agent:spec 父 Issue（可选）"]
-  S --> T["to-tickets：发布完整 child tickets + 原生 DAG"]
+  C --> S["too-spec：发布 agent:spec 父 Issue（可选）"]
+  S --> T["too-tickets：发布完整 child tickets + 原生 DAG"]
   C -->|parentless| T
   T --> F["daemon 领取无 blocker、无冲突 frontier"]
   F --> W["隔离 worktree：Claude 实现 + 独立复审 + make check（失败自修 ≤3 轮）"]
@@ -38,7 +38,7 @@ flowchart LR
 
 1. 在本地对话中回答 Grill Me 的单个设计问题。
 2. 明确确认已达成共同理解。
-3. 调用 `to-tickets`（大改动先 `to-spec` 再带 parent 调用；小任务 parent 传 0）。
+3. 调用 `too-tickets`（大改动先 `too-spec` 再带 parent 调用；小任务 parent 传 0）。
 
 自动完成：
 
@@ -72,7 +72,7 @@ gh auth status
 make check
 ```
 
-仓库内已提供 `to-spec`、`to-tickets` 的项目级技能适配。Claude Code 通常用 `/to-spec`、`/to-tickets`；Codex 用 `$to-spec`、`$to-tickets` 或直接说“使用 to-spec/to-tickets”。
+仓库内已提供 `too-spec`、`too-tickets` 的项目级技能适配。Claude Code 通常用 `/too-spec`、`/too-tickets`；Codex 用 `$too-spec`、`$too-tickets` 或直接说“使用 too-spec/too-tickets”。
 
 ## 3. 配置本地 Claude
 
@@ -176,20 +176,20 @@ make check
 
 Claude/Codex 应一次只问一个决策问题；能从仓库查到的事实自行调查。最终由人明确回复“确认”或等价表达。
 
-不要在此阶段创建 GitHub Issue。若尚有产品/架构选择，不要调用 `to-spec`。
+不要在此阶段创建 GitHub Issue。若尚有产品/架构选择，不要调用 `too-spec`。
 
 ### 6.2 发布规格
 
 确认后，在同一对话调用：
 
 ```text
-/to-spec
+/too-spec
 ```
 
 或：
 
 ```text
-$to-spec
+$too-spec
 ```
 
 项目技能会把已确认内容整理为固定章节，调用：
@@ -204,16 +204,16 @@ sh scripts/agent/publish-spec.sh "Spec: <short title>" <spec.md>
 
 ### 6.3 发布 tickets 与 DAG
 
-仍在同一对话调用，带上父 Issue 号；已确认的小任务可以跳过 `to-spec`，用 `0` 作为 parent 直接发布：
+仍在同一对话调用，带上父 Issue 号；已确认的小任务可以跳过 `too-spec`，用 `0` 作为 parent 直接发布：
 
 ```text
-/to-tickets #<parent>
+/too-tickets #<parent>
 ```
 
 或 parentless：
 
 ```text
-/to-tickets 0
+/too-tickets 0
 ```
 
 项目技能检查仓库后生成结构化 plan，调用：
@@ -284,7 +284,7 @@ make agent-loop-dispatch
 
 不完整 Issue 即使有人手工添加 `ready-for-agent`，`Agent loop` workflow 也会移除 `ready-for-agent`/队列状态并添加 `needs-info`；dispatcher 领取前还会再次校验。
 
-有意加入：首选 `to-tickets` publisher。已完全明确的单票可用 **Agent task** form，填完所有字段后手工添加 `ready-for-agent`，这是显式 fast lane。
+有意加入：首选 `too-tickets` publisher。已完全明确的单票可用 **Agent task** form，填完所有字段后手工添加 `ready-for-agent`，这是显式 fast lane。
 
 有意退出：领取前移除 `ready-for-agent` 或关闭 Issue。已是 `agent:running` 时不要直接删 worktree；先停止 daemon/worker，再移除队列状态。
 
@@ -435,8 +435,8 @@ export AGENT_CLAIM_STALE_SECONDS=300
 
 | 文件 | 用途 |
 | --- | --- |
-| `.agents/skills/to-spec/SKILL.md` | 本仓库规格发布适配 |
-| `.agents/skills/to-tickets/SKILL.md` | 本仓库 ticket/DAG 发布适配 |
+| `.agents/skills/too-spec/SKILL.md` | 本仓库规格发布适配 |
+| `.agents/skills/too-tickets/SKILL.md` | 本仓库 ticket/DAG 发布适配 |
 | `scripts/agent/publish-spec.sh` | 确定性创建 `agent:spec` |
 | `scripts/agent/publish-tickets.sh` | 验证、标准化、建 child 与 native edges、入队 |
 | `scripts/agent/plan.mjs` | 结构化 ticket schema、DAG 与冲突验证 |

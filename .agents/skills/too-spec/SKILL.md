@@ -1,6 +1,6 @@
 ---
-name: to-spec
-description: Publish the confirmed outcome of an InsureDesk Grill Me conversation as a durable parent specification in GitHub Issues. Use after the human explicitly confirms the design and asks for to-spec; do not use for implementation tickets.
+name: too-spec
+description: Publish the confirmed outcome of an InsureDesk Grill Me conversation as a durable parent specification in GitHub Issues. Use after the human explicitly confirms the design and asks for too-spec; do not use for implementation tickets.
 ---
 
 # Publish a confirmed specification

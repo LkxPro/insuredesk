@@ -1,5 +1,5 @@
 ---
-name: to-tickets
+name: too-tickets
 description: Convert confirmed InsureDesk design work into complete executable GitHub tickets with native dependency edges. Use after the human explicitly confirms the design — with a parent spec issue number, or 0 for parentless single tickets and small DAGs.
 ---
 
