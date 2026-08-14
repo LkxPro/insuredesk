@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-// 必须第一个导入：renderApp 模块在求值时注册 auth/toast 的 vi.mock
+import { formatDateTime } from "@/lib/datetime";
+// renderApp 模块在求值时注册 auth/toast 的 vi.mock，必须先于依赖它们的模块导入
 import { auth, callsTo, renderApp, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
@@ -130,6 +131,9 @@ describe("建单即时查重提示", () => {
     const link = screen.getByRole("link", { name: "WO100090" });
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("href", "/tickets/dup-1");
+    const row = link.closest("li") as HTMLElement;
+    expect(row).toHaveTextContent(formatDateTime(dupRow().activityAt));
+    expect(row).not.toHaveTextContent(formatDateTime(dupRow().createdAt));
     // 命中位置由 matchedFields 决定：保单号字段下没有提示
     expect(screen.queryByText(/个工单使用相同保单号/)).not.toBeInTheDocument();
   });

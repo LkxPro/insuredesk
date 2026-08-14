@@ -95,8 +95,7 @@ export async function findDuplicateTickets(
       policyNumbers: true,
       phone: true,
       contactPhone: true,
-      // 条目活动摘要＝最新一条 resolve/comment/external_note 留痕。完结单的沟通
-      // 止于 resolve（完结后不可再跟进/留言），故完结单取到的必是完结备注
+      // 完结单的沟通止于 resolve（完结后不可再跟进/留言），取到的必是完结备注
       processLogs: {
         select: { at: true, remark: true },
         where: { action: { in: ["resolve", "comment", "external_note"] } },
@@ -104,20 +103,30 @@ export async function findDuplicateTickets(
         take: 1,
       },
     },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: TICKET_DUPLICATES_LIMIT,
   });
 
   const now = clock.now();
-  return rows.map((row) => ({
+  const mapped = rows.map((row) => ({
     id: row.id,
     workOrderNumber: row.workOrderNumber,
     customerName: row.customerName,
-    createdAt: row.createdAt.toISOString(),
+    createdAt: row.createdAt,
     displayStatus: deriveDisplayStatus(ticketStatusSchema.parse(row.status), row.dueAt, now),
     matchedFields: matchedFieldsOf(row, query, policyNumbers),
-    activityAt: (row.processLogs[0]?.at ?? row.createdAt).toISOString(),
+    activityAt: row.processLogs[0]?.at ?? row.createdAt,
     activityText: row.processLogs[0]?.remark ?? "暂无处理记录",
+  }));
+  // Prisma 无法按 take-1 关联排序，只能全量取出后在内存按展示时间排序、再截上限
+  mapped.sort(
+    (a, b) =>
+      b.activityAt.getTime() - a.activityAt.getTime() ||
+      b.createdAt.getTime() - a.createdAt.getTime() ||
+      b.id.localeCompare(a.id),
+  );
+  return mapped.slice(0, TICKET_DUPLICATES_LIMIT).map((row) => ({
+    ...row,
+    createdAt: row.createdAt.toISOString(),
+    activityAt: row.activityAt.toISOString(),
   }));
 }
 
