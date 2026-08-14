@@ -43,6 +43,30 @@ describe("ticket 查重（Testcontainers）", () => {
     );
   });
 
+  it("「无」等占位保单号不参与查重：互不命中、不挡创建，同数组真保单照常命中", async () => {
+    await manager().ticket.create({ customerName: "占位-无", policyNumbers: ["无"] });
+    await manager().ticket.create({ customerName: "占位-无保单", policyNumbers: ["无保单信息"] });
+    await manager().ticket.create({ customerName: "占位-带真单", policyNumbers: ["无", "PXD900"] });
+
+    await expect(frontline().ticket.findDuplicates({ policyNumbers: ["无"] })).resolves.toEqual([]);
+    await expect(
+      frontline().ticket.findDuplicates({ policyNumbers: ["无保单信息"] }),
+    ).resolves.toEqual([]);
+
+    const hits = await frontline().ticket.findDuplicates({ policyNumbers: ["无", "PXD900"] });
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      customerName: "占位-带真单",
+      matchedFields: ["policyNumbers"],
+    });
+
+    const created = await manager().ticket.create({
+      customerName: "占位-再建",
+      policyNumbers: ["无"],
+    });
+    expect(created.id).toBeDefined();
+  });
+
   it("手机号 trim 后精确相等，不做归一化", async () => {
     await manager().ticket.create({ customerName: "手机精确", phone: "13811112222" });
     await manager().ticket.create({ customerName: "手机带空格", phone: "138 3333 4444" });
