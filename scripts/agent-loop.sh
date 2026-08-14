@@ -4,6 +4,19 @@ set -eu
 agent_loop_gh=${AGENT_LOOP_GH:-gh}
 agent_loop_daemon_lock=''
 agent_loop_dispatch_lock=''
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+# 短超时快失败：claim/心跳验证必须远快于 stale 窗口，长退避留给 dispatch 主路。
+gh_call() {
+  sh "$script_dir/agent/net-call.sh" "$agent_loop_gh" "$@"
+}
+git_call() {
+  sh "$script_dir/agent/net-call.sh" git "$@"
+}
+git_call_fast() {
+  AGENT_NET_CALL_ATTEMPTS=2 AGENT_NET_CALL_TIMEOUT_SECONDS=15 \
+    sh "$script_dir/agent/net-call.sh" git "$@"
+}
 
 usage() {
   echo "usage: $0 {bootstrap|validate-body|transition|queue|dispatch|daemon|claim|release-claim|release-remote-claim|heartbeat-claim|reconcile-ci} [arg]" >&2
@@ -58,12 +71,12 @@ has_label() {
 ensure_label() {
   name=$1 description=$2 color=$3
   if ! printf '%s\n' "$agent_loop_labels" | grep -Fqx "$name"; then
-    "$agent_loop_gh" label create "$name" --description "$description" --color "$color"
+    gh_call label create "$name" --description "$description" --color "$color"
   fi
 }
 
 bootstrap() {
-  agent_loop_labels=$("$agent_loop_gh" label list --limit 100 --json name --jq '.[].name')
+  agent_loop_labels=$(gh_call label list --limit 100 --json name --jq '.[].name')
   ensure_label 'needs-info' 'Waiting for information needed to proceed' 'd876e3'
   ensure_label 'ready-for-human' 'Requires human implementation' 'fbca04'
   ensure_label 'agent:spec' 'Confirmed specification published from a local design session' '8250df'
@@ -107,7 +120,7 @@ validate_body() {
 }
 
 issue_json() {
-  "$agent_loop_gh" issue view "$1" --json number,state,body,labels
+  gh_call issue view "$1" --json number,state,body,labels
 }
 
 sync_dependencies() {
@@ -119,10 +132,10 @@ sync_dependencies() {
     found{print}
   ' | grep -Eo '#[0-9]+' | tr -d '#' | sort -un || true)
   for blocker in $refs; do
-    blocker_id=$("$agent_loop_gh" api "repos/{owner}/{repo}/issues/$blocker" --jq .id)
-    if ! "$agent_loop_gh" api --method POST "repos/{owner}/{repo}/issues/$issue/dependencies/blocked_by" \
+    blocker_id=$(gh_call api "repos/{owner}/{repo}/issues/$blocker" --jq .id)
+    if ! gh_call api --method POST "repos/{owner}/{repo}/issues/$issue/dependencies/blocked_by" \
       -F issue_id="$blocker_id" >/dev/null 2>"${TMPDIR:-/tmp}/agent-dependency-error.$$"; then
-      if ! "$agent_loop_gh" api "repos/{owner}/{repo}/issues/$issue/dependencies/blocked_by" \
+      if ! gh_call api "repos/{owner}/{repo}/issues/$issue/dependencies/blocked_by" \
         --paginate --jq '.[].id' | grep -Fqx "$blocker_id"; then
         cat "${TMPDIR:-/tmp}/agent-dependency-error.$$" >&2
         rm -f "${TMPDIR:-/tmp}/agent-dependency-error.$$"
@@ -143,23 +156,23 @@ transition() {
   fi
 
   if has_label "$json" 'agent:spec'; then
-    "$agent_loop_gh" issue edit "$issue" --remove-label 'ready-for-agent,agent:queued,agent:running,agent:task,needs-info' >/dev/null
+    gh_call issue edit "$issue" --remove-label 'ready-for-agent,agent:queued,agent:running,agent:task,needs-info' >/dev/null
     return 0
   fi
 
   if has_label "$json" 'ready-for-agent'; then
     if printf '%s' "$json" | jq -r .body | validate_body; then
       sync_dependencies "$issue" "$(printf '%s' "$json" | jq -r .body)"
-      "$agent_loop_gh" issue edit "$issue" --add-label 'agent:task,agent:queued' --remove-label 'needs-triage,needs-info' >/dev/null
+      gh_call issue edit "$issue" --add-label 'agent:task,agent:queued' --remove-label 'needs-triage,needs-info' >/dev/null
     else
-      "$agent_loop_gh" issue edit "$issue" --add-label needs-info --remove-label 'ready-for-agent,agent:queued,agent:task' >/dev/null
+      gh_call issue edit "$issue" --add-label needs-info --remove-label 'ready-for-agent,agent:queued,agent:task' >/dev/null
     fi
   fi
 }
 
 queue_json() {
-  queued=$("$agent_loop_gh" issue list --state open --label agent:queued --limit 100 --json number,labels)
-  running=$("$agent_loop_gh" issue list --state open --label agent:running --limit 100 --json number,labels)
+  queued=$(gh_call issue list --state open --label agent:queued --limit 100 --json number,labels)
+  running=$(gh_call issue list --state open --label agent:running --limit 100 --json number,labels)
   jq -n --argjson queued "$queued" --argjson running "$running" \
     '$queued + $running | unique_by(.number)'
 }
@@ -171,7 +184,7 @@ queue() {
   root=$(git rev-parse --show-toplevel)
   payload=$(queue_json | jq -r '.[].number' |
     while IFS= read -r issue; do
-      "$agent_loop_gh" api "repos/{owner}/{repo}/issues/$issue"
+      gh_call api "repos/{owner}/{repo}/issues/$issue"
     done | jq -s .)
   result=$(printf '%s' "$payload" | node "$root/scripts/agent/frontier.mjs" "$max_parallel")
   printf '%s' "$result" | jq -r '.skipped[] | "skip #\(.number): \(.reason)"' >&2
@@ -234,9 +247,9 @@ release_claim() {
     *[!0-9]*|''|0) echo "refusing unexpected slot ref in $claim_file" >&2; return 1 ;;
   esac
   case $claim_sha in *[!0-9a-f]*|'') return 1;; esac
-  if ! git -C "$root" push --atomic \
+  if ! git_call -C "$root" push --atomic \
     --force-with-lease="$claim_ref:$claim_sha" --force-with-lease="$slot_ref:$claim_sha" \
-    origin ":$claim_ref" ":$slot_ref" >/dev/null 2>&1; then
+    origin ":$claim_ref" ":$slot_ref" >/dev/null; then
     return 1
   fi
   rm -f "$claim_file"
@@ -247,17 +260,17 @@ release_remote_claim() {
   expected_sha=${2:-}
   root=$(git rev-parse --show-toplevel)
   claim_ref="refs/heads/agent-claims/issue-$issue"
-  claim_sha=$(git -C "$root" ls-remote origin "$claim_ref" | awk 'NR == 1 {print $1}')
+  claim_sha=$(git_call_fast -C "$root" ls-remote origin "$claim_ref" | awk 'NR == 1 {print $1}')
   [ -n "$claim_sha" ] || return 0
   [ -z "$expected_sha" ] || [ "$claim_sha" = "$expected_sha" ] || return 1
-  git -C "$root" fetch -q origin "$claim_ref"
+  git_call -C "$root" fetch -q origin "$claim_ref"
   message=$(git -C "$root" log -1 --format=%B FETCH_HEAD)
   slot=$(printf '%s\n' "$message" | sed -n 's/^claim issue [0-9][0-9]* slot \([0-9][0-9]*\) by .*/\1/p')
   case $slot in *[!0-9]*|''|0) echo "cannot verify remote claim #$issue" >&2; return 1;; esac
   slot_ref="refs/heads/agent-slots/$slot"
-  slot_sha=$(git -C "$root" ls-remote origin "$slot_ref" | awk 'NR == 1 {print $1}')
+  slot_sha=$(git_call_fast -C "$root" ls-remote origin "$slot_ref" | awk 'NR == 1 {print $1}')
   [ "$slot_sha" = "$claim_sha" ] || { echo "claim/slot owner mismatch for #$issue" >&2; return 1; }
-  git -C "$root" push --atomic \
+  git_call -C "$root" push --atomic \
     --force-with-lease="$claim_ref:$claim_sha" --force-with-lease="$slot_ref:$claim_sha" \
     origin ":$claim_ref" ":$slot_ref" >/dev/null
 }
@@ -267,7 +280,7 @@ remote_claim_is_stale() {
   stale_seconds=${AGENT_CLAIM_STALE_SECONDS:-300}
   case $stale_seconds in *[!0-9]*|'') return 1;; esac
   claim_ref="refs/heads/agent-claims/issue-$issue"
-  git fetch -q origin "$claim_ref" || return 1
+  git_call fetch -q origin "$claim_ref" || return 1
   claimed_at=$(git log -1 --format=%ct FETCH_HEAD)
   now=$(date +%s)
   [ $((now - claimed_at)) -ge "$stale_seconds" ] || return 1
@@ -282,14 +295,14 @@ heartbeat_claim() {
   claim_ref=$(sed -n '1p' "$claim_file")
   slot_ref=$(sed -n '2p' "$claim_file")
   expected=$(sed -n '3p' "$claim_file")
-  current=$(git ls-remote origin "$claim_ref" | awk 'NR == 1 {print $1}')
-  slot_current=$(git ls-remote origin "$slot_ref" | awk 'NR == 1 {print $1}')
+  current=$(git_call_fast ls-remote origin "$claim_ref" | awk 'NR == 1 {print $1}')
+  slot_current=$(git_call_fast ls-remote origin "$slot_ref" | awk 'NR == 1 {print $1}')
   [ -n "$current" ] && [ "$current" = "$slot_current" ] && [ "$current" = "$expected" ] || return 1
   slot=${slot_ref#refs/heads/agent-slots/}
   heartbeat=$(git -c user.name=insuredesk-agent-claim \
     -c user.email=insuredesk-agent-claim@users.noreply.github.com \
     commit-tree "$current^{tree}" -p "$current" -m "claim issue $issue slot $slot by $$")
-  git push --atomic \
+  git_call push --atomic \
     --force-with-lease="$claim_ref:$current" --force-with-lease="$slot_ref:$current" \
     origin "$heartbeat:$claim_ref" "$heartbeat:$slot_ref" >/dev/null
   sed -i.bak "3s/.*/$heartbeat/" "$claim_file"
@@ -326,7 +339,7 @@ dispatch() {
     [ -d "$closed_worktree" ] || continue
     closed_issue=${closed_worktree##*/issue-}
     case $closed_issue in *[!0-9]*|'') continue;; esac
-    if "$agent_loop_gh" issue view "$closed_issue" --json state --jq .state | grep -Fqx CLOSED; then
+    if gh_call issue view "$closed_issue" --json state --jq .state | grep -Fqx CLOSED; then
       if pid_is_alive "$worktrees/issue-$closed_issue.pid"; then
         echo "defer cleanup #$closed_issue: worker is still active" >&2
         continue
@@ -347,27 +360,27 @@ dispatch() {
       if [ -f "$worktrees/issue-$running_issue.claim" ]; then
         release_claim "$running_issue" "$worktrees" || continue
         rm -f "$worktrees/issue-$running_issue.publishing"
-        "$agent_loop_gh" issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
-        "$agent_loop_gh" issue comment "$running_issue" --body 'Recovered a stale local agent:running claim; requeued for dispatch.' >/dev/null
+        gh_call issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
+        gh_call issue comment "$running_issue" --body 'Recovered a stale local agent:running claim; requeued for dispatch.' >/dev/null
       else
-        remote_sha=$(git -C "$root" ls-remote origin "refs/heads/agent-claims/issue-$running_issue" | awk 'NR == 1 {print $1}')
+        remote_sha=$(git_call_fast -C "$root" ls-remote origin "refs/heads/agent-claims/issue-$running_issue" | awk 'NR == 1 {print $1}')
         if [ -z "$remote_sha" ]; then
           # 孤儿 running：本地 pid/claim 与远端 claim 都不存在，无人会来释放。
-          "$agent_loop_gh" issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
-          "$agent_loop_gh" issue comment "$running_issue" --body 'Recovered an orphaned agent:running label; no live claim exists locally or remotely.' >/dev/null
+          gh_call issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
+          gh_call issue comment "$running_issue" --body 'Recovered an orphaned agent:running label; no live claim exists locally or remotely.' >/dev/null
           continue
         fi
         stale_sha=$(remote_claim_is_stale "$running_issue" || true)
         if [ -n "$stale_sha" ] && release_remote_claim "$running_issue" "$stale_sha"; then
-          "$agent_loop_gh" issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
-          "$agent_loop_gh" issue comment "$running_issue" --body 'Recovered an expired remote agent claim; requeued for dispatch.' >/dev/null
+          gh_call issue edit "$running_issue" --add-label agent:queued --remove-label agent:running >/dev/null
+          gh_call issue comment "$running_issue" --body 'Recovered an expired remote agent claim; requeued for dispatch.' >/dev/null
         else
           echo "leave #$running_issue running: another clone has a live lease" >&2
         fi
       fi
     fi
   done
-  git fetch origin main
+  git_call fetch origin main
   queue "$max_parallel" | while IFS= read -r issue; do
     [ -n "$issue" ] || continue
     if ! claim_issue "$issue" "$worktrees" "$max_parallel"; then
@@ -382,7 +395,7 @@ dispatch() {
     fi
     claim_payload=$(queue_json | jq -r '.[].number' |
       while IFS= read -r claim_candidate; do
-        "$agent_loop_gh" api "repos/{owner}/{repo}/issues/$claim_candidate"
+        gh_call api "repos/{owner}/{repo}/issues/$claim_candidate"
       done | jq -s .)
     claim_frontier=$(printf '%s' "$claim_payload" | node "$root/scripts/agent/frontier.mjs" "$max_parallel")
     if [ "$(printf '%s' "$claim_frontier" | jq -r --argjson issue "$issue" '.selected | index($issue) != null')" != true ]; then
@@ -405,12 +418,15 @@ dispatch() {
         fi
       fi
     fi
-    if ! "$agent_loop_gh" issue edit "$issue" --add-label agent:running --remove-label agent:queued >/dev/null; then
+    if ! gh_call issue edit "$issue" --add-label agent:running --remove-label agent:queued >/dev/null; then
       release_claim "$issue" "$worktrees" || true
       continue
     fi
     pid_file="$worktrees/issue-$issue.pid"
-    rm -f "$worktrees/issue-$issue.publishing"
+    # 上一轮残留的 run 产物会冒充本轮状态（如旧 fix-1.json 触发假 fix 信号）。
+    rm -f "$worktrees/issue-$issue.publishing" \
+      "$worktrees/issue-$issue.implementation.json" "$worktrees/issue-$issue.review.json" \
+      "$worktrees"/issue-"$issue".fix-*.json
     nohup sh -c '
       sh "$1" "$2" "$3" "$7" "$8" & worker=$!
       misses=0
@@ -472,7 +488,10 @@ daemon() {
   agent_loop_daemon_lock=$daemon_lock
   trap cleanup_locks EXIT HUP INT TERM
   while :; do
-    dispatch
+    # 网络抖动集中在 dispatch 里回吐；一个失败的 tick 不该杀死常驻 daemon。
+    if ! dispatch; then
+      echo "dispatch tick failed; retrying after $interval seconds" >&2
+    fi
     sleep "$interval"
   done
 }
@@ -481,23 +500,24 @@ reconcile_ci() {
   branch=${1:?branch required}
   issue=${branch#codex/issue-}
   case $issue in *[!0-9]*|'') exit 0;; esac
-  pr=$("$agent_loop_gh" pr list --head "$branch" --state open --json number,labels --jq '.[] | select(any(.labels[]; .name == "agent:automerge")) | .number' | head -1)
+  pr=$(gh_call pr list --head "$branch" --state open --json number,labels --jq '.[] | select(any(.labels[]; .name == "agent:automerge")) | .number' | head -1)
   [ -n "$pr" ] || exit 0
   max_attempts=${AGENT_REPAIR_MAX_ATTEMPTS:-3}
   case $max_attempts in *[!0-9]*|'') max_attempts=3 ;; esac
-  attempts=$("$agent_loop_gh" issue view "$issue" --json comments \
+  attempts=$(gh_call issue view "$issue" --json comments \
     --jq '[.comments[].body | select(contains("<!-- agent-attempts:"))] | length')
   case $attempts in *[!0-9]*|'') attempts=0 ;; esac
   if [ "$attempts" -ge "$max_attempts" ]; then
-    "$agent_loop_gh" issue edit "$issue" --add-label agent:blocked \
+    gh_call issue edit "$issue" --add-label agent:blocked \
       --remove-label 'agent:running,agent:queued,agent:repair' >/dev/null
-    "$agent_loop_gh" issue comment "$issue" \
+    gh_call issue comment "$issue" \
       --body "CI repair attempt budget ($max_attempts) exhausted; needs human attention." >/dev/null
     exit 0
   fi
-  "$agent_loop_gh" issue comment "$issue" \
+  gh_call issue comment "$issue" \
     --body "<!-- agent-attempts:$((attempts + 1)) --> CI failed on PR #$pr; requeued for repair (attempt $((attempts + 1))/$max_attempts)." >/dev/null
-  "$agent_loop_gh" issue edit "$issue" --add-label 'agent:repair,agent:queued' --remove-label agent:running >/dev/null
+  # frontier 要求 queued+ready-for-agent；worker 发布时已摘除后者，回队必须补齐。
+  gh_call issue edit "$issue" --add-label 'agent:repair,agent:queued,ready-for-agent' --remove-label agent:running >/dev/null
 }
 
 case ${1:-} in

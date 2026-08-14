@@ -134,6 +134,8 @@ case "$*" in
   'issue view 7 --json number,title,body,comments,labels')
     printf '%s\n' '{"number":7,"title":"Test task","body":"## Goal\nTest\n## Scope\nOnly test\n## Declared touch-set\n- allowed.txt\n## Logical locks\n- None\n## Acceptance criteria\n- [ ] done\n## Dependencies\n- None\n## Test plan\n- test","comments":[],"labels":[{"name":"agent:task"}]}' ;;
   'pr list --head codex/issue-7 --state open --json number --jq .[0].number') printf '12\n' ;;
+  'issue edit 7 --remove-label agent:running,agent:repair,ready-for-agent')
+    printf '%s\n' "$*" >"$PUBLISH_UNLABEL_CAPTURE" ;;
 esac
 EOF
 cat >"$worker_dir/bin/claude" <<'EOF'
@@ -159,12 +161,15 @@ PATH="$worker_dir/bin:$PATH" \
   AGENT_REVIEW_ENABLED=0 \
   ANTHROPIC_BASE_URL="https://provider.invalid" \
   ANTHROPIC_AUTH_TOKEN="test-provider-token" \
+  PUBLISH_UNLABEL_CAPTURE="$worker_dir/publish-unlabel" \
   AGENT_LOOP_TEST_CLAUDE_CWD="$worker_dir/claude-cwd" \
   AGENT_LOOP_TEST_CLAUDE_ARGS="$worker_dir/claude-args" \
   AGENT_LOOP_TEST_CLAUDE_STDIN="$worker_dir/claude-stdin" \
   AGENT_LOOP_TEST_PROVIDER_URL="$worker_dir/provider-url" \
   AGENT_LOOP_TEST_PROVIDER_TOKEN="$worker_dir/provider-token" \
   sh "$script_dir/agent-worker.sh" 7 "$worker_dir/repo"
+grep -Fqx 'issue edit 7 --remove-label agent:running,agent:repair,ready-for-agent' \
+  "$worker_dir/publish-unlabel"
 grep -Fqx "$worker_dir/repo" "$worker_dir/claude-cwd"
 grep -Fqx -- '--model' "$worker_dir/claude-args"
 grep -Fqx 'custom-provider-model' "$worker_dir/claude-args"
@@ -382,6 +387,7 @@ git -C "$fence_dir/repo" push -q --atomic --force \
   origin HEAD:refs/heads/agent-claims/issue-12 HEAD:refs/heads/agent-slots/1
 if PATH="$fence_dir/bin:$PATH" AGENT_LOOP_GH="$fence_dir/bin/gh" \
   AGENT_CLAUDE_BIN="$fence_dir/bin/claude" AGENT_REVIEW_ENABLED=0 \
+  AGENT_CLAIM_VERIFY_DELAY=0 \
   REQUEUE_CAPTURE="$fence_dir/requeue" REQUEUE_COMMENT_CAPTURE="$fence_dir/requeue-comment" \
   sh "$script_dir/agent-worker.sh" 12 "$fence_dir/repo" "$fence_dir/artifacts/issue-12.claim" \
   >/dev/null 2>&1; then
@@ -421,6 +427,7 @@ chmod +x "$repair_dir/bin/gh" "$repair_dir/bin/capture-adapter"
 if PATH="$repair_dir/bin:$PATH" \
   AGENT_LOOP_GH="$repair_dir/bin/gh" \
   AGENT_EXECUTOR_ADAPTER="$repair_dir/bin/capture-adapter" \
+  AGENT_EXECUTOR_RETRY_DELAY=0 \
   REPAIR_CAPTURE="$repair_dir/task.md" \
   REQUEUE_CAPTURE="$repair_dir/requeue" \
   sh "$script_dir/agent-worker.sh" 9 "$repair_dir/repo" >/dev/null 2>&1; then
@@ -536,3 +543,22 @@ grep -Fqx 'issue edit 14 --add-label agent:blocked --remove-label agent:running,
   "$exhaust_dir/blocked"
 grep -Fq 'after 3 fix rounds' "$exhaust_dir/blocked-comment"
 grep -Fq 'InsureDesk agent blocked: issue #14' "$exhaust_dir/notify"
+
+reconcile_dir="$worker_dir/reconcile"
+mkdir -p "$reconcile_dir/bin"
+cat >"$reconcile_dir/bin/gh" <<'EOF'
+#!/bin/sh
+case "$*" in
+  'pr list --head codex/issue-21 --state open --json number,labels --jq'*) printf '31\n' ;;
+  'issue view 21 --json comments --jq'*) printf '0\n' ;;
+  'issue comment 21 --body'*) : ;;
+  'issue edit 21 --add-label agent:repair,agent:queued,ready-for-agent --remove-label agent:running')
+    printf '%s\n' "$*" >"$RECONCILE_CAPTURE" ;;
+  *) echo "unexpected reconcile command: $*" >&2; exit 1 ;;
+esac
+EOF
+chmod +x "$reconcile_dir/bin/gh"
+RECONCILE_CAPTURE="$reconcile_dir/capture" AGENT_LOOP_GH="$reconcile_dir/bin/gh" \
+  sh "$script_dir/agent-loop.sh" reconcile-ci codex/issue-21
+grep -Fqx 'issue edit 21 --add-label agent:repair,agent:queued,ready-for-agent --remove-label agent:running' \
+  "$reconcile_dir/capture"

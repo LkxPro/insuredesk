@@ -90,6 +90,14 @@ export AGENT_REVIEW_ENABLED=1
 export AGENT_FIX_MAX_ROUNDS=3              # make check 失败后 worker 内部修复轮次
 export AGENT_REPAIR_MAX_ATTEMPTS=3         # PR CI 失败后回队修复上限
 export AGENT_CLAUDE_PERMISSION_MODE=bypassPermissions
+export AGENT_EXECUTOR_ATTEMPTS=2             # executor transient（provider/流断）同 run 内重试上限
+export AGENT_EXECUTOR_RETRY_DELAY=30         # executor 重试前退避秒数
+export AGENT_NET_CALL_ATTEMPTS=4             # gh/git 网络调用传输层错误重试上限
+export AGENT_NET_CALL_BASE_DELAY=2           # 网络重试退避基数（指数翻倍）
+export AGENT_NET_CALL_TIMEOUT_SECONDS=30     # 单次网络尝试看门狗超时
+export AGENT_CLAIM_VERIFY_ATTEMPTS=3         # 发布前 claim 校验复查次数（吸收心跳竞态）
+export AGENT_CLAIM_VERIFY_DELAY=2            # claim 校验复查退避秒数
+export AGENT_FENCE_ATTEMPTS=3                # fence 推送（lease 拒/抖动）重试上限
 ```
 
 不要把真实密钥写进仓库、Issue、PR、shell history 示例或 worker log。
@@ -301,13 +309,15 @@ Worker 顺序：
 3. controller 校验改动未超出 touch-set。
 4. 强制运行 `make check`（多 worker 间本地互斥串行）；失败把日志喂回 executor 修复，同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
 5. 再验证 claim 并 fence 发布。
-6. controller commit、push、创建 PR，添加 `agent:automerge`。
+6. controller commit、push、创建 PR，添加 `agent:automerge`，同时摘除 `agent:running`/`agent:repair`/`ready-for-agent`（否则 unlabeled 事件触发的 transition 会把 Issue 重新入队，与 CI/merge 关单窗口竞态出重复 worker）。
 
-`Agent merge` 等 required checks 通过后 squash merge，并由 `Closes #<issue>` 关闭 child。下游 native blocker 随即解除，daemon 自动领取下一层。
+`Agent merge` 等 required checks 通过后 squash merge；merge 事件再由 `close-linked-issues` 兜底关闭 PR body 里 `Closes #<issue>` 引用的 child（auto-merge 异步执行时 GitHub 原生关键字关单不可靠）。下游 native blocker 随即解除，daemon 自动领取下一层。
 
-CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued`，并在 Issue 评论计 `agent-attempts` marker；超过 `AGENT_REPAIR_MAX_ATTEMPTS`（默认 3）次转 `agent:blocked` 叫人。Repair worker尝试下载最近 failed Actions log，复用同一 worktree/branch/PR 修复；下载失败时用本地复现和现有 Issue 内容继续。
+CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued` + `ready-for-agent`（frontier 要求后两者），并在 Issue 评论计 `agent-attempts` marker；超过 `AGENT_REPAIR_MAX_ATTEMPTS`（默认 3）次转 `agent:blocked` 叫人。Repair worker尝试下载最近 failed Actions log，复用同一 worktree/branch/PR 修复；下载失败时用本地复现和现有 Issue 内容继续。
 
 Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队一次（评论 `agent-requeue` marker 计数），再失败转 blocked；改 git 历史、touch-set 越界、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知）。
+
+进程级失败判定前有两层就地吸收：executor 的 `error_during_execution`/CLI 崩溃按 `AGENT_EXECUTOR_ATTEMPTS` 在同 run 内退避重试；所有 gh/git 网络调用经 `scripts/agent/net-call.sh` 统一入口，传输层错误（connection reset、TLS、5xx 等）按 `AGENT_NET_CALL_*` 超时重试，确定性错误（lease 拒绝、4xx）立即回吐。daemon 单个 dispatch tick 失败不退出，下个 interval 继续。
 
 ## 11. 状态与标签
 
@@ -430,6 +440,7 @@ export AGENT_CLAIM_STALE_SECONDS=300
 | `scripts/agent/plan.mjs` | 结构化 ticket schema、DAG 与冲突验证 |
 | `scripts/agent-loop.sh` | transition、frontier、claim、daemon、CI reconciliation |
 | `scripts/agent-worker.sh` | worktree 内实现、review、验证与 controller 发布 |
+| `scripts/agent/net-call.sh` | gh/git 网络调用统一入口：超时、传输层错误退避重试 |
 | `.github/ISSUE_TEMPLATE/agent-task.yml` | 可选完整单票 fast lane |
 | `.github/workflows/agent-loop.yml` | label bootstrap 与 fast-lane contract transition |
 | `.github/workflows/agent-pr-health.yml` | CI 失败回队 |

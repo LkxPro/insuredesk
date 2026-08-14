@@ -8,6 +8,17 @@ publish_marker=${4:-}
 root=$(git -C "$worktree" rev-parse --show-toplevel)
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 agent_worker_gh=${AGENT_LOOP_GH:-gh}
+
+gh_call() {
+  sh "$script_dir/agent/net-call.sh" "$agent_worker_gh" "$@"
+}
+git_call() {
+  sh "$script_dir/agent/net-call.sh" git "$@"
+}
+git_call_fast() {
+  AGENT_NET_CALL_ATTEMPTS=2 AGENT_NET_CALL_TIMEOUT_SECONDS=15 \
+    sh "$script_dir/agent/net-call.sh" git "$@"
+}
 run_dir=$(mktemp -d)
 restore_head=''
 published=false
@@ -76,9 +87,20 @@ claim_owned() {
   claim_ref=$(sed -n '1p' "$claim_file")
   slot_ref=$(sed -n '2p' "$claim_file")
   expected=$(sed -n '3p' "$claim_file")
-  current=$(git -C "$worktree" ls-remote origin "$claim_ref" | awk 'NR == 1 {print $1}')
-  slot_current=$(git -C "$worktree" ls-remote origin "$slot_ref" | awk 'NR == 1 {print $1}')
-  [ -n "$expected" ] && [ "$current" = "$expected" ] && [ "$slot_current" = "$expected" ]
+  max=${AGENT_CLAIM_VERIFY_ATTEMPTS:-3}
+  case $max in *[!0-9]*|'') max=3 ;; esac
+  attempt=0
+  while :; do
+    attempt=$((attempt + 1))
+    current=$(git_call_fast -C "$worktree" ls-remote origin "$claim_ref" | awk 'NR == 1 {print $1}')
+    slot_current=$(git_call_fast -C "$worktree" ls-remote origin "$slot_ref" | awk 'NR == 1 {print $1}')
+    if [ -n "$expected" ] && [ "$current" = "$expected" ] && [ "$slot_current" = "$expected" ]; then
+      return 0
+    fi
+    # 两次 ls-remote 之间 heartbeat 可能推进 sha 造成假丢失；退避后复查再定性。
+    [ "$attempt" -lt "$max" ] || return 1
+    sleep "${AGENT_CLAIM_VERIFY_DELAY:-2}"
+  done
 }
 
 fence_claim() {
@@ -90,7 +112,7 @@ fence_claim() {
   fenced=$(git -C "$worktree" -c user.name=insuredesk-agent-claim \
     -c user.email=insuredesk-agent-claim@users.noreply.github.com \
     commit-tree "$expected^{tree}" -p "$expected" -m "publish issue $issue by $$")
-  git -C "$worktree" push --atomic \
+  git_call -C "$worktree" push --atomic \
     --force-with-lease="$claim_ref:$expected" --force-with-lease="$slot_ref:$expected" \
     origin "$fenced:$claim_ref" "$fenced:$slot_ref" >/dev/null || return 1
   sed -i.bak "3s/.*/$fenced/" "$claim_file"
@@ -98,7 +120,7 @@ fence_claim() {
 }
 
 issue_file="$run_dir/issue.json"
-$agent_worker_gh issue view "$issue" --json number,title,body,comments,labels >"$issue_file"
+gh_call issue view "$issue" --json number,title,body,comments,labels >"$issue_file"
 labels=$(jq -r '.labels[].name' "$issue_file")
 mode=task
 prompt_file="$root/.github/agent-prompts/task.md"
@@ -110,11 +132,11 @@ fi
 repair_context=''
 if [ "$mode" = repair ]; then
   branch=$(git -C "$worktree" branch --show-current)
-  failed_run=$($agent_worker_gh run list --branch "$branch" --status failure --limit 1 \
-    --json databaseId --jq '.[0].databaseId')
+  failed_run=$(gh_call run list --branch "$branch" --status failure --limit 1 \
+    --json databaseId --jq '.[0].databaseId' || true)
   if [ -n "$failed_run" ]; then
     repair_context=$run_dir/failed-ci.log
-    $agent_worker_gh run view "$failed_run" --log-failed >"$repair_context" 2>&1 || true
+    gh_call run view "$failed_run" --log-failed >"$repair_context" 2>&1 || true
   fi
 fi
 
@@ -130,6 +152,34 @@ run_agent() {
     AGENT_TASK_FILE="$prompt" \
     AGENT_OUTPUT_FILE="$output" \
     "$script_dir/agent/run-executor.sh"
+}
+
+# subtype=error_during_execution 或结果 JSON 缺失/不可解析（CLI 崩溃）属于
+# provider/网络 transient，同 run 内退避重试；error_max_turns 等行为类失败
+# 重试无益，直接失败。
+executor_transient() {
+  subtype=$(jq -r '.subtype // empty' "$1" 2>/dev/null || true)
+  case $subtype in ''|error_during_execution) return 0 ;; esac
+  return 1
+}
+
+run_agent_with_retry() {
+  prompt=$1
+  output=$2
+  max=${AGENT_EXECUTOR_ATTEMPTS:-2}
+  case $max in *[!0-9]*|'') max=2 ;; esac
+  [ "$max" -gt 0 ] || max=2
+  attempt=0
+  while :; do
+    attempt=$((attempt + 1))
+    if run_agent "$prompt" "$output"; then
+      return 0
+    fi
+    [ "$attempt" -lt "$max" ] || return 1
+    executor_transient "$output" || return 1
+    echo "executor attempt $attempt failed (transient); retrying" >&2
+    sleep "${AGENT_EXECUTOR_RETRY_DELAY:-30}"
+  done
 }
 
 task_file="$run_dir/task.md"
@@ -174,7 +224,7 @@ check_with_lock() {
   return "$status"
 }
 
-if ! run_agent "$task_file" "$implementation_result"; then
+if ! run_agent_with_retry "$task_file" "$implementation_result"; then
   failure='Agent implementation process failed.'
 elif ! history_unchanged; then
   failure='Agent changed git history instead of leaving a controller-owned diff.'
@@ -189,7 +239,7 @@ if [ -z "$failure" ] && [ "${AGENT_REVIEW_ENABLED:-1}" = 1 ]; then
     jq -c . "$issue_file"
     printf '</issue_json>\n'
   } >"$review_file"
-  if ! run_agent "$review_file" "$review_result"; then
+  if ! run_agent_with_retry "$review_file" "$review_result"; then
     failure='Agent review process failed.'
   elif ! history_unchanged; then
     failure='Review agent changed git history instead of leaving a controller-owned diff.'
@@ -228,7 +278,7 @@ while [ -z "$failure" ]; do
     tail -n 200 "$run_dir/check.log"
     printf '\n</failed_check_log>\n'
   } >"$fix_file"
-  if ! run_agent "$fix_file" "$artifact_dir/issue-$issue.fix-$fix_round.json"; then
+  if ! run_agent_with_retry "$fix_file" "$artifact_dir/issue-$issue.fix-$fix_round.json"; then
     failure='Agent fix process failed.'
   elif ! history_unchanged; then
     failure='Fix agent changed git history instead of leaving a controller-owned diff.'
@@ -243,34 +293,61 @@ if [ -z "$failure" ] && ! claim_owned; then
   failure='Agent lost its distributed claim before publication.'
 fi
 
-if [ -z "$failure" ] && ! fence_claim; then
-  failure='Agent could not fence its distributed claim for publication.'
-fi
+# fence 与 heartbeat 并发：lease 被拒或传输抖动都按可重试处理，fence_claim
+# 每次重读 claim 文件拿到 heartbeat 推进后的新 sha。
+fence_attempt=0
+fence_max=${AGENT_FENCE_ATTEMPTS:-3}
+case $fence_max in *[!0-9]*|'') fence_max=3 ;; esac
+while [ -z "$failure" ]; do
+  fence_attempt=$((fence_attempt + 1))
+  fence_claim && break
+  if [ "$fence_attempt" -ge "$fence_max" ]; then
+    failure='Agent could not fence its distributed claim for publication.'
+    break
+  fi
+  sleep $((fence_attempt * 2))
+done
 
 if [ -z "$failure" ]; then
   git -C "$worktree" config user.name 'insuredesk-agent'
   git -C "$worktree" config user.email 'insuredesk-agent@users.noreply.github.com'
   git -C "$worktree" add --all
   git -C "$worktree" commit -m "agent: resolve issue #$issue"
-  git -C "$worktree" push --set-upstream origin HEAD
-  published=true
+  if git_call -C "$worktree" push --set-upstream origin HEAD; then
+    published=true
+  else
+    failure='Agent could not push its publication branch.'
+  fi
 fi
 
 if [ -z "$failure" ]; then
   branch=$(git -C "$worktree" branch --show-current)
-  pr=$($agent_worker_gh pr list --head "$branch" --state open --json number --jq '.[0].number')
-  if [ -z "$pr" ]; then
+  if ! pr=$(gh_call pr list --head "$branch" --state open --json number --jq '.[0].number'); then
+    failure='Agent could not list pull requests for its publication branch.'
+  elif [ -z "$pr" ]; then
     title=$(jq -r .title "$issue_file")
     body_file="$run_dir/pr-body.md"
     printf 'Closes #%s\n\nAutomated implementation; review and `make check` passed before publication.\n' "$issue" >"$body_file"
-    pr_url=$($agent_worker_gh pr create --head "$branch" --base main --title "$title (#$issue)" \
-      --body-file "$body_file")
-    pr=${pr_url##*/}
+    if pr_url=$(gh_call pr create --head "$branch" --base main --title "$title (#$issue)" \
+      --body-file "$body_file"); then
+      pr=${pr_url##*/}
+    else
+      failure='Agent could not open its pull request.'
+    fi
   fi
-  $agent_worker_gh pr edit "$pr" --add-label agent:automerge >/dev/null
+fi
 
-  $agent_worker_gh issue edit "$issue" --remove-label 'agent:running,agent:repair' >/dev/null
-  $agent_worker_gh issue comment "$issue" --body "Agent PR #$pr published after scope, review, and full CI-equivalent checks." >/dev/null
+if [ -z "$failure" ]; then
+  gh_call pr edit "$pr" --add-label agent:automerge >/dev/null || \
+    failure='Agent published but could not label its pull request.'
+fi
+
+if [ -z "$failure" ]; then
+  # ready-for-agent 必须一并摘除：unlabeled 事件会触发 transition 工作流，
+  # 只要 ready-for-agent 还在就会被重新入队，与 CI/merge 关单窗口形成竞态。
+  # CI 失败回队由 reconcile-ci 重新补 ready-for-agent。
+  gh_call issue edit "$issue" --remove-label 'agent:running,agent:repair,ready-for-agent' >/dev/null
+  gh_call issue comment "$issue" --body "Agent PR #$pr published after scope, review, and full CI-equivalent checks." >/dev/null
   exit 0
 fi
 
@@ -282,17 +359,17 @@ fi
 # 进程级失败多为 transient（provider/网络/claim 竞争），自动重排队一次；
 # 再失败或行为类/预算耗尽失败转 blocked 叫人。
 if [ "$failure_class" = process ]; then
-  comments=$($agent_worker_gh issue view "$issue" --json comments --jq '[.comments[].body | select(contains("<!-- agent-requeue:"))] | length')
+  comments=$(gh_call issue view "$issue" --json comments --jq '[.comments[].body | select(contains("<!-- agent-requeue:"))] | length')
   case $comments in *[!0-9]*|'') comments=1 ;; esac
   if [ "$comments" -lt 1 ]; then
-    $agent_worker_gh issue comment "$issue" --body "<!-- agent-requeue:1 --> $failure Requeued automatically; a second process-level failure will block." >/dev/null
-    $agent_worker_gh issue edit "$issue" --add-label agent:queued --remove-label agent:running >/dev/null
+    gh_call issue comment "$issue" --body "<!-- agent-requeue:1 --> $failure Requeued automatically; a second process-level failure will block." >/dev/null
+    gh_call issue edit "$issue" --add-label agent:queued --remove-label agent:running >/dev/null
     exit 1
   fi
 fi
 
-$agent_worker_gh issue edit "$issue" --add-label agent:blocked --remove-label 'agent:running,agent:queued' >/dev/null
-$agent_worker_gh issue comment "$issue" --body "$failure See .worktrees/issue-$issue.log for executor output." >/dev/null
+gh_call issue edit "$issue" --add-label agent:blocked --remove-label 'agent:running,agent:queued' >/dev/null
+gh_call issue comment "$issue" --body "$failure See .worktrees/issue-$issue.log for executor output." >/dev/null
 if command -v osascript >/dev/null 2>&1; then
   osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' -- \
     "$failure" "InsureDesk agent blocked: issue #$issue" >/dev/null 2>&1 || true

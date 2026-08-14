@@ -2,18 +2,34 @@ name: Agent merge
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, labeled, ready_for_review]
+    types: [opened, reopened, synchronize, labeled, ready_for_review, closed]
 
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   enable-auto-merge:
-    if: contains(github.event.pull_request.labels.*.name, 'agent:automerge') && !github.event.pull_request.draft
+    if: github.event.action != 'closed' && contains(github.event.pull_request.labels.*.name, 'agent:automerge') && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - name: Queue squash merge after required checks pass
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh pr merge '${{ github.event.pull_request.number }}' --repo '${{ github.repository }}' --auto --squash --delete-branch
+
+  # auto-merge 由 GitHub 异步执行，PR body 的 "Closes #N" 不会可靠触发关单，显式兜底。
+  close-linked-issues:
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'agent:automerge')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close issues linked by closing keywords
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s\n' "$PR_BODY" | grep -Eio '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' \
+            | grep -Eo '[0-9]+' | sort -u | while read -r issue; do
+            gh issue close "$issue" --repo '${{ github.repository }}' || true
+          done

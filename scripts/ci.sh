@@ -15,6 +15,7 @@ export CI=true CHECKPOINT_DISABLE=1
 # here or they never execute in CI. Cheap and dep-free — do it first.
 sh scripts/upgrade.test.sh
 sh scripts/agent-loop.test.sh
+sh scripts/agent/net-call.test.sh
 sh scripts/agent/publish.test.sh
 sh scripts/agent/run-executor.test.sh
 node --test scripts/agent/*.test.mjs
