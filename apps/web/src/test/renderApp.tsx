@@ -93,6 +93,10 @@ function defaultData(path: string): unknown {
   if (path.endsWith(".filterOptions")) {
     return [];
   }
+  // 详情页条幅会查 ticket.findDuplicates；空数组 = 无命中，条幅不渲染
+  if (path === "ticket.findDuplicates") {
+    return [];
+  }
   return { items: [], total: 0, page: 1, pageSize: 20 };
 }
 

@@ -2,9 +2,10 @@ import type { AppRouter } from "@insuredesk/api";
 import { splitPolicyNumbers, type TicketDuplicateMatchField } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
 import type { inferRouterOutputs } from "@trpc/server";
-import { TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronUp, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { StatusBadge } from "./StatusBadge";
 import type { TicketFormValues } from "./TicketFormFields";
+import type { TicketDetail } from "./ticket-detail";
 
 /**
  * 建单/编辑的查重提示：保单号或手机号命中未软删历史工单时，在命中字段输入框
@@ -215,5 +217,87 @@ export function DuplicateConfirmDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 详情页头部下的重复工单条幅：该客户的其他未软删工单（保单号/手机号命中、
+ * 排除自身）。收起只显最近 1 条，「+N」原地展开全部（限高滚动）。条目两行：
+ * 工单号新标签链接 + 状态徽标 + 最新处理时间；第二行裸文本摘要（完结单即完结
+ * 备注）——不带「完结状态/最新记录」前缀，状态徽标已表达。无命中不渲染。
+ */
+export function DuplicateTicketsBanner({ ticket }: { ticket: TicketDetail }) {
+  const queryable =
+    ticket.policyNumbers.length > 0 || ticket.phone !== null || ticket.contactPhone !== null;
+  const query = trpc.ticket.findDuplicates.useQuery(
+    {
+      policyNumbers: ticket.policyNumbers,
+      phone: ticket.phone,
+      contactPhone: ticket.contactPhone,
+      excludeTicketId: ticket.id,
+    },
+    { enabled: queryable },
+  );
+
+  // 展开态绑在工单 id 上：切单后 expandedFor 失配即回落收起，无需 effect
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+  const expanded = expandedFor === ticket.id;
+
+  const dups = query.data ?? [];
+  if (dups.length === 0) {
+    return null;
+  }
+  const visible = expanded ? dups : dups.slice(0, 1);
+  const hidden = dups.length - visible.length;
+
+  return (
+    <div className="border-b bg-amber-500/5 px-4 py-2 text-xs">
+      <div className="flex items-start gap-3">
+        <span className="flex shrink-0 items-center gap-1.5 pt-0.5 font-medium text-amber-700 dark:text-amber-400">
+          <TriangleAlert className="size-3.5" />
+          该客户另有 {dups.length} 个工单
+        </span>
+        <ul className="max-h-64 min-w-0 flex-1 divide-y overflow-y-auto">
+          {visible.map((dup) => (
+            <li key={dup.id} className="flex flex-col gap-0.5 py-0.5">
+              <span className="flex items-center gap-1.5">
+                <a
+                  href={`/tickets/${dup.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 font-mono underline underline-offset-2"
+                >
+                  {dup.workOrderNumber}
+                </a>
+                <StatusBadge status={dup.displayStatus} />
+                <span className="text-muted-foreground">{formatDateTime(dup.activityAt)}</span>
+              </span>
+              <span className="pl-1 text-muted-foreground">{dup.activityText}</span>
+            </li>
+          ))}
+        </ul>
+        {hidden > 0 && (
+          <Badge
+            asChild
+            variant="secondary"
+            className="shrink-0 cursor-pointer tabular-nums"
+            aria-label={`展开其余 ${hidden} 个工单`}
+          >
+            <button type="button" onClick={() => setExpandedFor(ticket.id)}>
+              +{hidden}
+              <ChevronDown className="size-3" />
+            </button>
+          </Badge>
+        )}
+        {expanded && (
+          <Badge asChild variant="secondary" className="shrink-0 cursor-pointer" aria-label="收起">
+            <button type="button" onClick={() => setExpandedFor(null)}>
+              收起
+              <ChevronUp className="size-3" />
+            </button>
+          </Badge>
+        )}
+      </div>
+    </div>
   );
 }

@@ -29,6 +29,7 @@ import { formDefaults } from "./TicketDetailFields";
 import {
   DuplicateConfirmDialog,
   DuplicateFieldHint,
+  DuplicateTicketsBanner,
   useTicketDuplicates,
 } from "./TicketDuplicates";
 import {
@@ -209,6 +210,7 @@ export function TicketDetailPane({
           delete: hasPermission("ticket.delete"),
         }}
       />
+      {ticket && <DuplicateTicketsBanner ticket={ticket} />}
 
       {detailQuery.error ? (
         <Alert variant="destructive" className="m-4">
