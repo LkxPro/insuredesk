@@ -23,7 +23,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 is_transient() {
-  grep -Eiq 'connection (reset|refused|closed|aborted)|operation timed out|i/o timeout|timed out|could not resolve host|temporary failure in name resolution|no route to host|network (is )?unreachable|tls handshake timeout|context deadline exceeded|unexpected eof|eof$|gnutls recv error|http 5[0-9][0-9]|returned error: 5[0-9][0-9]|rate limit' "$err_file"
+  grep -Eiq 'connection (reset|refused|closed|aborted)|operation timed out|i/o timeout|timed out|could not resolve host|temporary failure in name resolution|no route to host|network (is )?unreachable|tls handshake timeout|context deadline exceeded|unexpected eof|eof$|gnutls recv error|http 5[0-9][0-9]|returned error: 5[0-9][0-9]|rate limit|ssl_error_syscall|ssl routines|sslv3 alert|tlsv1 alert|handshake failure|securetransport' "$err_file"
 }
 
 attempt=0
