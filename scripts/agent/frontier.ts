@@ -24,7 +24,7 @@ function section(body: string | undefined, heading: string): string {
   );
   if (start === -1) return "";
   const rest = lines.slice(start + 1);
-  const end = rest.findIndex((line) => /^##{2,3}\s/.test(line));
+  const end = rest.findIndex((line) => /^#{2,3}\s/.test(line));
   return rest
     .slice(0, end === -1 ? undefined : end)
     .join("\n")

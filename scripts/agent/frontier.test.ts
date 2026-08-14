@@ -95,3 +95,32 @@ test("only complete implementation tickets enter the frontier", () => {
     { number: 44, reason: "invalid-contract" },
   ]);
 });
+
+test("sections terminate at ## headings: locks and touch-set stay clean", () => {
+  // publisher 渲染七段全用 ##;Logical locks 后面的 ## 必须截段落,
+  // 否则 locks 吞掉后续 heading,同批票因假 lock 冲突无法并行。
+  const parsed = normalizeIssue({
+    number: 45,
+    state: "OPEN",
+    body: [
+      "## Goal",
+      "Goal",
+      "## Scope",
+      "Scope",
+      "## Declared touch-set",
+      "- apps/api/**",
+      "## Logical locks",
+      "- None",
+      "## Acceptance criteria",
+      "- [ ] done",
+      "## Test plan",
+      "- test",
+      "## Dependencies",
+      "- None",
+    ].join("\n"),
+    labels: [{ name: "ready-for-agent" }, { name: "agent:queued" }, { name: "agent:task" }],
+  });
+  assert.deepEqual(parsed.logicalLocks, []);
+  assert.deepEqual(parsed.touchSet, ["apps/api/**"]);
+  assert.equal(parsed.contractValid, true);
+});
