@@ -127,9 +127,10 @@ describe("右栏时间线", () => {
     const pane = await findPane();
     const timeline = within(pane).getByRole("list");
 
-    // 动作标签走 PROCESS_LOG_ACTION_LABELS，备注原文照登
-    expect(within(timeline).getByText("创建工单")).toBeInTheDocument();
-    expect(within(timeline).getByText("客户来电反映理赔慢")).toBeInTheDocument();
+    // 动作标签走 PROCESS_LOG_ACTION_LABELS；系统动作（创建）是合并的一行，不展示备注
+    expect(within(timeline).getByText(/创建工单/)).toBeInTheDocument();
+    expect(within(timeline).queryByText("客户来电反映理赔慢")).not.toBeInTheDocument();
+    // 沟通条目（跟进）是气泡：类型徽章 + 操作人 + 备注全文
     expect(within(timeline).getByText("跟进记录")).toBeInTheDocument();
     expect(within(timeline).getByText("已致电客户说明进度")).toBeInTheDocument();
     expect(within(timeline).getByText("李客服")).toBeInTheDocument();
