@@ -290,4 +290,44 @@ describe("新建工单", () => {
     expect(await screen.findByText("原文含有敏感信息")).toBeInTheDocument();
     expect(screen.getByLabelText("工单原文")).toHaveValue("客户电话 13800001111");
   });
+
+  it("提交成功后重开：textarea 是空白新单", async () => {
+    renderPage("/external-tickets", {
+      "externalTicket.submit": { id: "t9", workOrderNumber: "WO100009" },
+      "externalTicket.detail": detailPayload("t9"),
+    });
+    const box = await openDialog();
+
+    fireEvent.change(box, { target: { value: "客户要求退保" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交工单" }));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("工单原文")).not.toBeInTheDocument();
+    });
+
+    // 成功路径是父组件直接关窗跳详情，不经 onOpenChange——草稿靠 reset-on-open 清
+    const reopened = await openDialog();
+    expect(reopened).toHaveValue("");
+  });
+
+  it("提交失败 → X 关闭 → 重开：无「提交失败」Alert、textarea 空白", async () => {
+    renderPage("/external-tickets", {
+      "externalTicket.submit": () => {
+        throw new Error("原文含有敏感信息");
+      },
+    });
+    const box = await openDialog();
+
+    fireEvent.change(box, { target: { value: "客户电话 13800001111" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交工单" }));
+    expect(await screen.findByText("原文含有敏感信息")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("工单原文")).not.toBeInTheDocument();
+    });
+
+    const reopened = await openDialog();
+    expect(reopened).toHaveValue("");
+    expect(screen.queryByText("提交失败")).not.toBeInTheDocument();
+  });
 });

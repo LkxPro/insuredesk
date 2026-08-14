@@ -1,5 +1,5 @@
 import { AlertCircle } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -47,13 +47,15 @@ export function ExternalTicketSubmitDialog({
     },
   });
 
-  function handleOpenChange(next: boolean) {
-    if (!next) {
+  // 重置放在打开时：成功路径由父组件直接关窗（不经 onOpenChange），且 mutation
+  // 的 error 状态跨关闭存活——关闭时清空这两条都兜不住。
+  useEffect(() => {
+    if (open) {
       setSubmissionText("");
       setError("");
+      submit.reset();
     }
-    onOpenChange(next);
-  }
+  }, [open, submit.reset]);
 
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -71,7 +73,7 @@ export function ExternalTicketSubmitDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>新建工单</DialogTitle>
