@@ -19,9 +19,9 @@ jobs:
       # pnpm is not preinstalled on the runner, and setup-node's `cache: pnpm`
       # shells out to `pnpm store path` — so pnpm has to land on PATH first.
       # Version comes from the packageManager field, same as local dev.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
