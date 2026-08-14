@@ -23,15 +23,15 @@ export default defineConfig({
     testTimeout: 15000,
   },
   server: {
-    port: 5173,
+    // No strictPort: a colliding worktree auto-increments to a free port.
+    port: process.env.VITE_PORT ? Number(process.env.VITE_PORT) : 5173,
     // Default host 'localhost' resolves to ::1 first on macOS (Node 17+ uses
     // verbatim DNS order), so vite would bind IPv6 loopback only and direct
     // 127.0.0.1 access gets refused. Pin IPv4 loopback.
     host: "127.0.0.1",
     // Proxy API calls to the api in dev so the browser talks same-origin
     // (no CORS dance). /trpc carries queries; /api carries the login/logout
-    // REST endpoints (cookie handling). Parallel worktrees override
-    // VITE_API_URL with their own hash-assigned api port (scripts/dev-up.sh).
+    // REST endpoints (cookie handling).
     proxy: {
       "/trpc": {
         target: process.env.VITE_API_URL ?? "http://localhost:3000",

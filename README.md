@@ -35,7 +35,7 @@ make check       # CI 全套检查（push 前本地跑一遍）
 - 改 schema：在 `apps/api/prisma/schema.prisma` 修改后，运行 `cd apps/api && pnpm db:migrate` 生成迁移文件并应用到开发库。下次启动 api 会自动应用。
 - 切分支撞 schema：`make db-reset` 重建库（additive migration 通常无需此步）。
 - 受限网络：`pnpm config set registry <镜像地址>` 切换 npm 源；Prisma 下载引擎认 `PRISMA_ENGINES_MIRROR` 环境变量。
-- 并行 worktree（`.worktrees/…`）：一律用 `make dev` 启动。每个 worktree 按工程名 hash 分配独立端口（db / api / web），互不冲突。主仓库沿用默认端口（5432 / 3000 / 5173）。
+- 并行 worktree：一律用 `make dev` 启动。任何 linked worktree（与存放路径无关）按 git 内部 worktree 名 hash 分配独立端口（db / api / web），互不冲突；撞车自动换口重试。主仓库沿用默认端口（5432 / 3000 / 5173）。
 
 
 

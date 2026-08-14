@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# 启动开发环境：切换/安装 node → 按需装依赖 → 拉起 docker → 起 db →
-# 前台并行 api+web。api 和 web 跑在宿主机，只有 Postgres 在容器里。
+# api 和 web 跑在宿主机，只有 Postgres 在容器里。
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -10,7 +9,6 @@ cd "$root"
 . scripts/ensure-node.sh
 
 # --- 依赖 -------------------------------------------------------------------
-# 让 make dev 幂等且秒开。
 if [ ! -d node_modules ] || [ "pnpm-lock.yaml" -nt "node_modules" ]; then
   echo "→ pnpm install"
   pnpm install --frozen-lockfile
@@ -20,53 +18,15 @@ if [ ! -d node_modules ] || [ "pnpm-lock.yaml" -nt "node_modules" ]; then
 fi
 
 # --- 端口 -------------------------------------------------------------------
-# 并行 worktree 各自跑一套 db/api/web。db 端口经 compose .env 传给
-# docker-compose.yml，api 端口写进 apps/api/.env（Zod 在启动时校验它），
-# web 由 vite 从 5173 起自动递增、并通过 VITE_API_URL 反代到本 worktree 的 api。
-# 主仓库不写 compose .env，沿用 5432/3000/5173。
+# eval 把 dev-ports.sh 的 VITE_API_URL/VITE_PORT 带进本进程；少了
+# VITE_API_URL，web 会静默代理到主仓库的 :3000。
 api_env="apps/api/.env"
 if [ ! -f "$api_env" ]; then
   cp apps/api/.env.example "$api_env"
   echo "✓ 已从 .env.example 生成 $api_env"
 fi
 
-# sed -i 的参数在 BSD/GNU 下不兼容，故用临时文件绕开。
-set_env() {
-  local file="$1" key="$2" value="$3"
-  if grep -q "^${key}=" "$file"; then
-    awk -v k="$key" -v v="$value" \
-      'BEGIN{FS=OFS="="} $1==k{print k "=\"" v "\""; next} {print}' \
-      "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-  else
-    echo "${key}=\"${value}\"" >> "$file"
-  fi
-}
-
-case "$root" in
-  */.worktrees/*)
-    project="${COMPOSE_PROJECT_NAME:-$(basename "$root")}"
-    # cksum 只取决于输入字节，跨机器跨时间恒定——同一 worktree 每次拿到同一组
-    # 端口。mod 200 让 db 落在 15432+、api 落在 13000+，两段互不重叠。
-    h=$(printf '%s' "$project" | cksum | cut -d' ' -f1)
-    h=$((h % 200))
-
-    db_port=$((15432 + h))
-    api_port=$((13000 + h))
-
-    # 两个 worktree 落到同一个 h 时，换 COMPOSE_PROJECT_NAME 重算一组；手改这些
-    # 端口不成立——每次都按 hash 重写，DATABASE_URL 才不会跟 db 端口走散。
-    [ -f .env ] || printf '# 由 scripts/dev-up.sh 为 worktree 工程 %s 生成，隔离并行 worktree 的宿主机端口。\n' \
-      "$project" > .env
-    set_env .env POSTGRES_PORT "$db_port"
-
-    set_env "$api_env" PORT "$api_port"
-    set_env "$api_env" DATABASE_URL \
-      "postgresql://insuredesk:insuredesk_dev@localhost:$db_port/insuredesk?schema=public"
-    export VITE_API_URL="http://localhost:$api_port"
-
-    echo "✓ worktree '$project' 端口：db=$db_port api=$api_port web=5173+"
-    ;;
-esac
+eval "$(sh scripts/dev-ports.sh)"
 
 # --- Docker ------------------------------------------------------------------
 . scripts/ensure-docker.sh
@@ -76,7 +36,25 @@ esac
 # 覆盖首次 initdb）。--remove-orphans 清掉本工程下占着 3000/5173 的容器，否则
 # 宿主机上的 api 撞 EADDRINUSE。
 echo "→ docker compose up -d --wait --remove-orphans db"
-docker compose up -d --wait --remove-orphans db
+attempt=0
+while :; do
+  if out=$(docker compose up -d --wait --remove-orphans db 2>&1); then
+    [ -z "$out" ] || printf '%s\n' "$out"
+    break
+  fi
+  printf '%s\n' "$out" >&2
+  case "$out" in
+    *"port is already allocated"*|*"address already in use"*) ;;
+    *) exit 1 ;;
+  esac
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 5 ] || [ "${DEV_PORTS_MODE:-main}" != "linked" ]; then
+    echo "✗ db 端口被占且无法自愈，放弃" >&2
+    exit 1
+  fi
+  echo "→ db 端口被占，offset+1 重试（第 $attempt 次）"
+  eval "$(sh scripts/dev-ports.sh --bump)"
+done
 
 # --- 服务 -------------------------------------------------------------------
 # 迁移 + seed 由 api 侧的 dev-init 负责，不在本脚本里。
