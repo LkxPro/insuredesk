@@ -87,6 +87,7 @@ export AGENT_CLAUDE_BIN='claude'
 export AGENT_MODEL='override-model'        # 默认不传，用本机配置的模型
 export AGENT_MAX_TURNS=80                  # 默认不传，不限轮次
 export AGENT_REVIEW_ENABLED=1
+export AGENT_COMMENT_SWEEP_ENABLED=1        # make check 通过后跑注释清扫，删违规注释后有改动会重跑 check
 export AGENT_FIX_MAX_ROUNDS=3              # make check 失败后 worker 内部修复轮次
 export AGENT_REPAIR_MAX_ATTEMPTS=3         # PR CI 失败后回队修复上限
 export AGENT_CLAUDE_PERMISSION_MODE=bypassPermissions
@@ -305,11 +306,12 @@ Daemon 只取 dependency-free frontier。每个 worker 使用：
 Worker 顺序：
 
 1. Claude 只留下未提交 diff。
-2. 独立 review agent 检查并可修正 diff。
+2. 独立 review agent 检查并可修正 diff；注释规范（AGENTS.md）是必须项，diff 新增与触碰文件内的违规存量注释都删。
 3. controller 校验改动未超出 touch-set。
 4. 强制运行 `make check`（多 worker 间本地互斥串行）；失败把日志喂回 executor 修复，同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
-5. 再验证 claim 并 fence 发布。
-6. controller commit、push、创建 PR，添加 `agent:automerge`，同时摘除 `agent:running`/`agent:repair`/`ready-for-agent`（否则 unlabeled 事件触发的 transition 会把 Issue 重新入队，与 CI/merge 关单窗口竞态出重复 worker）。
+5. `make check` 通过后跑注释清扫（`comment-sweep.md`，只准删注释、存疑保留）；有删除就重跑 `make check`，挂则回 fix 轮，直到单次清扫零改动。`AGENT_COMMENT_SWEEP_ENABLED=0` 可关。
+6. 再验证 claim 并 fence 发布。
+7. controller commit、push、创建 PR，添加 `agent:automerge`，同时摘除 `agent:running`/`agent:repair`/`ready-for-agent`（否则 unlabeled 事件触发的 transition 会把 Issue 重新入队，与 CI/merge 关单窗口竞态出重复 worker）。
 
 `Agent merge` 等 required checks 通过后 squash merge；merge 事件再由 `close-linked-issues` 兜底关闭 PR body 里 `Closes #<issue>` 引用的 child（auto-merge 异步执行时 GitHub 原生关键字关单不可靠）。下游 native blocker 随即解除，daemon 自动领取下一层。
 
