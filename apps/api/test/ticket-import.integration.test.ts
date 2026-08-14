@@ -263,22 +263,22 @@ describe("ticket import upload (Testcontainers)", () => {
     }
   });
 
-  it("保单号列：空白分隔多值拆分去重入库，单个超长或超量整批拒绝", async () => {
+  it("保单号列：分隔符拆分多值去重入库，单个超长或超量整批拒绝", async () => {
     const session = await sessionFor("importer");
     const ok = await uploadRequest(
       session,
-      await buildFile([{ 客户姓名: "多保单客户", 保单号: "  P-1   P-2 P-1 " }]),
+      await buildFile([{ 客户姓名: "多保单客户", 保单号: "  PA1   PB2，PA1 " }]),
     );
     expect(ok.statusCode).toBe(200);
     const ticket = await prisma.ticket.findFirstOrThrow({
       where: { customerName: "多保单客户" },
     });
-    expect(ticket.policyNumbers).toEqual(["P-1", "P-2"]);
+    expect(ticket.policyNumbers).toEqual(["PA1", "PB2"]);
 
-    const offending = `坏单${"9".repeat(100)}`;
+    const offending = "9".repeat(101);
     const tooLong = await uploadRequest(
       session,
-      await buildFile([{ 保单号: `P-ok ${offending} P-fine` }]),
+      await buildFile([{ 保单号: `Pok ${offending} Pfine` }]),
     );
     expect(tooLong.statusCode).toBe(400);
     expect((tooLong.json() as { rowErrors: unknown[] }).rowErrors).toEqual([
@@ -291,7 +291,7 @@ describe("ticket import upload (Testcontainers)", () => {
 
     const tooMany = await uploadRequest(
       session,
-      await buildFile([{ 保单号: Array.from({ length: 51 }, (_, i) => `P-${i}`).join(" ") }]),
+      await buildFile([{ 保单号: Array.from({ length: 51 }, (_, i) => `P${i}`).join(" ") }]),
     );
     expect(tooMany.statusCode).toBe(400);
     expect((tooMany.json() as { rowErrors: unknown[] }).rowErrors).toEqual([

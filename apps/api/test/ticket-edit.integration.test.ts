@@ -85,7 +85,9 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     nuclearBodyStatus: "待核实",
     hasContacted: false,
     complaintLevel: "一般投诉",
-  } satisfies TicketCreateInput;
+    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
+    allowDuplicate: true,
+  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   /** Full edit payload for the ticket: the unchanged base fields + overrides. */
   function editInput(ticketId: string, overrides: Partial<TicketEditInput> = {}): TicketEditInput {

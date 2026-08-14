@@ -41,6 +41,7 @@ import {
   splitLocalDateTime,
 } from "@/lib/local-date-time";
 import { trpc } from "@/lib/trpc";
+import { DuplicateFieldHint, useTicketDuplicates } from "./TicketDuplicates";
 
 /**
  * The 建单 form body: the field set of 新建工单. 详情弹窗的原地编辑不走这里 ——
@@ -227,6 +228,9 @@ export function TicketFormFields({
     currentChannel,
   );
 
+  // 建单即时查重：命中提示贴身挂在保单号/手机号字段下（编辑面走 TicketDetailField 的 addon）
+  const duplicates = useTicketDuplicates(form);
+
   return (
     <>
       <FieldSet>
@@ -358,6 +362,7 @@ export function TicketFormFields({
               {...register("policyNumbers")}
             />
             <FieldError errors={[errors.policyNumbers]} />
+            <DuplicateFieldHint field="policyNumbers" duplicates={duplicates} />
           </Field>
           <Field data-invalid={!!errors.userComplaintChannel}>
             <FieldLabel htmlFor="userComplaintChannel">
@@ -412,6 +417,7 @@ export function TicketFormFields({
             </FieldLabel>
             <Input id="phone" type="tel" aria-invalid={!!errors.phone} {...register("phone")} />
             <FieldError errors={[errors.phone]} />
+            <DuplicateFieldHint field="phone" duplicates={duplicates} />
           </Field>
           <Field data-invalid={!!errors.contactPhone}>
             <FieldLabel htmlFor="contactPhone">
@@ -425,6 +431,7 @@ export function TicketFormFields({
               {...register("contactPhone")}
             />
             <FieldError errors={[errors.contactPhone]} />
+            <DuplicateFieldHint field="contactPhone" duplicates={duplicates} />
           </Field>
           <Field data-invalid={!!errors.nuclearBodyStatus}>
             <FieldLabel htmlFor="nuclearBodyStatus">

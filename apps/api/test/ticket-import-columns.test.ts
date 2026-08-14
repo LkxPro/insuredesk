@@ -40,10 +40,10 @@ describe("ticket import template columns", () => {
     expect(columnOf("project").note).toBe(`文本，最长 ${projectMax} 字；${importNoteSuffix}`);
   });
 
-  it("多值文本列句式：空格分隔与单个长度/数量上限", () => {
+  it("多值文本列句式：分隔符说明与单个长度/数量上限", () => {
     const { maxItemLength, maxItems } = TICKET_FIELDS.policyNumbers;
     expect(columnOf("policyNumbers").note).toBe(
-      `文本，可填多个（空格分隔，重复自动去重）；单个最长 ${maxItemLength} 字，最多 ${maxItems} 个`,
+      `文本，可填多个（空格/逗号/顿号等分隔，重复自动去重）；单个最长 ${maxItemLength} 字，最多 ${maxItems} 个`,
     );
   });
 

@@ -339,6 +339,7 @@ export function TicketDetailField({
   form,
   dirty,
   error,
+  addon,
 }: {
   name: TicketCreateFieldKey;
   ticket: EditableTicket;
@@ -347,6 +348,8 @@ export function TicketDetailField({
   /** 编辑态被用户改动过 → 标签后带「已修改」高亮。 */
   dirty: boolean;
   error?: string;
+  /** 编辑态控件下的附加块（查重命中提示）。 */
+  addon?: ReactNode;
 }) {
   const descriptor = TICKET_FIELDS[name];
   const overrides: TicketFieldOverrides | undefined =
@@ -370,6 +373,7 @@ export function TicketDetailField({
           <div className="flex flex-col gap-1">
             <EditControl name={name} ticket={ticket} form={form} invalid={!!error} />
             {error && <p className="m-0 text-xs text-destructive">{error}</p>}
+            {addon}
           </div>
         ) : (
           (readValue(name, ticket) ?? "—")

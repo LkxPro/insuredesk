@@ -263,9 +263,10 @@ export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS
 );
 
 /**
- * 保单号的空格分隔字符串形态 ⇄ 数组形态。多值字段各表面（表单输入、详情/
- * 列表展示、导入单元格、导出单元格）统一走这一对函数；取值经清洗后不含
- * 空白，join 出的文本总能无损 split 回同一数组。
+ * 保单号的分隔字符串形态 ⇄ 数组形态。多值字段各表面（表单输入、详情/
+ * 列表展示、导入单元格、导出单元格）统一走这一对函数；分隔符是任一非
+ * 字母数字字符（空格/逗号/顿号/换行/中文标点…），取值本身只含字母数字，
+ * join 出的文本总能无损 split 回同一数组。
  */
 
 /** trim 每项、去空、去重（大小写敏感），保留首次出现的顺序。 */
@@ -281,7 +282,7 @@ export function normalizePolicyNumbers(values: readonly string[]): string[] {
 }
 
 export function splitPolicyNumbers(text: string): string[] {
-  return normalizePolicyNumbers(text.split(/\s+/));
+  return normalizePolicyNumbers(text.split(/[^0-9A-Za-z]+/));
 }
 
 /** []（未填写）join 为空串，展示层沿用现有未填写样式。 */
@@ -297,7 +298,7 @@ export function policyNumbersError(values: readonly string[]): string | null {
   const { maxItemLength, maxItems } = TICKET_FIELDS.policyNumbers;
   const tooLong = values.find((value) => value.length > maxItemLength);
   if (tooLong !== undefined) {
-    // 单元格里多个空格分隔的保单号，得让用户知道是哪个超长
+    // 单元格里多个保单号，得让用户知道是哪个超长
     return `保单号「${tooLong}」超出最大长度 ${maxItemLength} 字（实际 ${tooLong.length} 字）`;
   }
   if (values.length > maxItems) {
@@ -332,7 +333,7 @@ export function ticketImportFieldNote(descriptor: TicketFieldDescriptor): string
       return suffix ? `${base}；${suffix}` : base;
     }
     case "textList":
-      return `文本，可填多个（空格分隔，重复自动去重）；单个最长 ${descriptor.maxItemLength} 字，最多 ${descriptor.maxItems} 个`;
+      return `文本，可填多个（空格/逗号/顿号等分隔，重复自动去重）；单个最长 ${descriptor.maxItemLength} 字，最多 ${descriptor.maxItems} 个`;
     case "date":
       return "格式 yyyy-MM-dd HH:mm（如 2026-07-09 14:30）；留空=未填写";
     case "enum": {

@@ -1,0 +1,269 @@
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// 必须第一个导入：renderApp 模块在求值时注册 auth/toast 的 vi.mock
+import { auth, callsTo, renderApp, userWith } from "@/test/renderApp";
+import { TEST_ROLES } from "@/test/roles";
+
+/**
+ * 建单/编辑查重的 UI 验收：即时提示的触发口径（手机号满 11 位或失焦、保单号
+ * 分隔符拆分）、命中提示挂在哪个字段下由服务端 matchedFields 决定、提示始终
+ * 展开且行新标签打开；提交被 409 拦下后确认框复用同一列表，「仍要」带
+ * allowDuplicate 重发，编辑场景排除工单自身。
+ */
+
+const NOW = new Date("2026-08-14T09:30:00.000Z");
+
+/** findDuplicates 的一条命中，matchedFields 由 resolver 按入参拼。 */
+function dupRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "dup-1",
+    workOrderNumber: "WO100090",
+    customerName: "王秀英",
+    createdAt: "2026-08-12T06:32:00.000Z",
+    displayStatus: "processing",
+    matchedFields: ["phone"],
+    ...overrides,
+  };
+}
+
+/** 命中字段跟随入参：哪个查重条件非空，matchedFields 就记哪个。 */
+function dupResolver(input: unknown) {
+  const query = input as {
+    policyNumbers?: string[];
+    phone?: string | null;
+    contactPhone?: string | null;
+  };
+  const matchedFields = [
+    query.policyNumbers?.length ? "policyNumbers" : null,
+    query.phone ? "phone" : null,
+    query.contactPhone ? "contactPhone" : null,
+  ].filter((field): field is string => field !== null);
+  return matchedFields.length > 0 ? [dupRow({ matchedFields })] : [];
+}
+
+function conflictError() {
+  return Object.assign(new Error("发现 1 个可能重复的工单"), { trpcCode: "CONFLICT" });
+}
+
+/** 详情 wire shape：查重用例只关心 id/工单号/手机号三件套，其余全空。 */
+function detailPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "t1",
+    workOrderNumber: "WO100001",
+    createdAt: "2026-07-10T02:00:00.000Z",
+    updatedAt: "2026-07-10T02:00:00.000Z",
+    feedbackTime: null,
+    source: "manual",
+    createdBy: "测试用户",
+    channel: null,
+    project: null,
+    brokerageEntity: null,
+    paymentChannel: null,
+    internalOrderNumber: null,
+    policyNumbers: [],
+    userComplaintChannel: null,
+    complaintReceiveChannel: null,
+    customerName: "张小可",
+    phone: "13800000000",
+    contactPhone: null,
+    customerRequest: null,
+    submissionText: null,
+    nuclearBodyStatus: null,
+    hasContacted: null,
+    contactTime: null,
+    contactId: null,
+    category: null,
+    complaintLevel: null,
+    priority: null,
+    followUpFrequency: null,
+    firstResponseRequirement: null,
+    status: "unassigned",
+    displayStatus: "unassigned",
+    assigneeId: null,
+    assigneeName: null,
+    assignedAt: null,
+    dueAt: null,
+    nextContactTime: null,
+    contactCount: 0,
+    processingResult: "",
+    completionTime: null,
+    completionStatus: null,
+    processLogs: [],
+    ...overrides,
+  };
+}
+
+function renderCreate(trpc: Record<string, unknown> = {}) {
+  return renderApp({
+    path: "/tickets/new",
+    trpc: {
+      "ticket.findDuplicates": dupResolver,
+      "channel.options": [],
+      "ticketCategory.options": [],
+      ...trpc,
+    },
+  });
+}
+
+beforeEach(() => {
+  auth.user = userWith(TEST_ROLES.CS_MANAGER);
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("建单即时查重提示", () => {
+  it("客户电话满 11 位触发查重，提示挂在该字段下、始终展开、行新标签打开", async () => {
+    renderCreate();
+    await screen.findByRole("heading", { name: "新建工单" });
+
+    fireEvent.change(screen.getByLabelText("客户电话（投保人）"), {
+      target: { value: "13800001111" },
+    });
+
+    expect(await screen.findByText("1 个工单使用相同客户电话，确认后再提交")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "WO100090" });
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("href", "/tickets/dup-1");
+    // 命中位置由 matchedFields 决定：保单号字段下没有提示
+    expect(screen.queryByText(/个工单使用相同保单号/)).not.toBeInTheDocument();
+  });
+
+  it("保单号按非字母数字分隔符拆分后参与查重", async () => {
+    renderCreate();
+    await screen.findByRole("heading", { name: "新建工单" });
+
+    fireEvent.change(screen.getByLabelText("保单号"), { target: { value: "PA1，PA2" } });
+
+    expect(await screen.findByText(/个工单使用相同保单号/)).toBeInTheDocument();
+    const query = callsTo("ticket.findDuplicates").at(-1);
+    expect(query?.input).toMatchObject({ policyNumbers: ["PA1", "PA2"] });
+  });
+
+  it("手机号不足 11 位且未失焦不查，失焦即查", async () => {
+    renderCreate();
+    await screen.findByRole("heading", { name: "新建工单" });
+
+    const phoneInput = screen.getByLabelText("客户电话（投保人）");
+    fireEvent.change(phoneInput, { target: { value: "138" } });
+    vi.advanceTimersByTime(1000);
+    expect(callsTo("ticket.findDuplicates")).toEqual([]);
+
+    fireEvent.blur(phoneInput);
+    expect(await screen.findByText(/个工单使用相同客户电话/)).toBeInTheDocument();
+    expect(callsTo("ticket.findDuplicates").at(-1)?.input).toMatchObject({ phone: "138" });
+  });
+});
+
+describe("建单提交 409 兜底", () => {
+  function renderCreateConflict() {
+    renderCreate({
+      "ticket.create": (input: unknown) => {
+        if ((input as { allowDuplicate?: boolean }).allowDuplicate) {
+          return { id: "t9", workOrderNumber: "WO100099" };
+        }
+        throw conflictError();
+      },
+    });
+  }
+
+  it("确认框列出重复工单，仍要创建带 allowDuplicate 重发", async () => {
+    renderCreateConflict();
+    await screen.findByRole("heading", { name: "新建工单" });
+    fireEvent.change(screen.getByLabelText("客户电话（投保人）"), {
+      target: { value: "13800001111" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
+
+    // 阻断确认框与即时提示共用同一行内容（工单号新标签链接）
+    const confirmButton = await screen.findByRole("button", { name: "仍要创建" });
+    const confirmDialog = confirmButton.closest('[role="dialog"]') as HTMLElement;
+    expect(await within(confirmDialog).findByRole("link", { name: "WO100090" })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
+
+    fireEvent.click(confirmButton);
+    await waitFor(() => expect(callsTo("ticket.create")).toHaveLength(2));
+    expect(callsTo("ticket.create")[1]?.input).toMatchObject({
+      phone: "13800001111",
+      allowDuplicate: true,
+    });
+    // 创建成功：弹窗收起到列表
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("取消确认框则不再提交，回到表单继续编辑", async () => {
+    renderCreateConflict();
+    await screen.findByRole("heading", { name: "新建工单" });
+    fireEvent.change(screen.getByLabelText("客户电话（投保人）"), {
+      target: { value: "13800001111" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
+
+    const confirmButton = await screen.findByRole("button", { name: "仍要创建" });
+    const confirmDialog = confirmButton.closest('[role="dialog"]') as HTMLElement;
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "取消" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "仍要创建" })).not.toBeInTheDocument(),
+    );
+    expect(callsTo("ticket.create")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "新建工单" })).toBeInTheDocument();
+  });
+});
+
+describe("编辑查重", () => {
+  function renderDetailEdit() {
+    renderApp({
+      path: "/tickets/t1",
+      trpc: {
+        "ticket.detail": detailPayload(),
+        "ticket.findDuplicates": dupResolver,
+        "ticket.edit": (input: unknown) => {
+          if ((input as { allowDuplicate?: boolean }).allowDuplicate) {
+            return { id: "t1", workOrderNumber: "WO100001", changedFields: ["phone"] };
+          }
+          throw conflictError();
+        },
+        "channel.options": [],
+        "ticketCategory.options": [],
+      },
+    });
+  }
+
+  it("编辑态即时查重排除自身；保存 409 后仍要保存带 allowDuplicate + ticketId", async () => {
+    renderDetailEdit();
+    const pane = await screen.findByRole("region", { name: "工单详情" });
+    await waitFor(() => expect(pane).toHaveTextContent("WO100001"));
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    await screen.findByRole("button", { name: "保存修改" });
+
+    // 预填的 11 位手机号直接触发查重，入参排除工单自身
+    await waitFor(() => expect(callsTo("ticket.findDuplicates").length).toBeGreaterThan(0));
+    expect(callsTo("ticket.findDuplicates")[0]?.input).toMatchObject({
+      phone: "13800000000",
+      excludeTicketId: "t1",
+    });
+    expect(await within(pane).findByText(/个工单使用相同客户电话/)).toBeInTheDocument();
+
+    fireEvent.change(within(pane).getByLabelText("客户电话（投保人）"), {
+      target: { value: "13900009999" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "仍要保存" }));
+    await waitFor(() => expect(callsTo("ticket.edit")).toHaveLength(2));
+    expect(callsTo("ticket.edit")[1]?.input).toMatchObject({
+      ticketId: "t1",
+      phone: "13900009999",
+      allowDuplicate: true,
+    });
+  });
+});

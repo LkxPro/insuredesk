@@ -116,6 +116,32 @@ export type TicketEditInput = z.input<typeof ticketEditInputSchema>;
 /** Server-side shape (after transforms) — what the service receives. */
 export type TicketEditData = z.output<typeof ticketEditInputSchema>;
 
+/** 查重命中字段（按输入侧字段命名）——命中位置决定提示挂在哪个输入框下。 */
+export const TICKET_DUPLICATE_MATCH_FIELDS = ["policyNumbers", "phone", "contactPhone"] as const;
+export type TicketDuplicateMatchField = (typeof TICKET_DUPLICATE_MATCH_FIELDS)[number];
+
+/** 查重历史范围上限：全部未软删工单按创建时间倒序取前 N 条。 */
+export const TICKET_DUPLICATES_LIMIT = 20;
+
+/**
+ * 查重 query contract，创建/编辑的即时查与提交兜底共用一套匹配语义：
+ * 保单号数组元素精确相等（大小写敏感）；手机号 trim 后精确相等、不做归一化；
+ * phone/contactPhone 2×2 交叉命中；保单号或手机号任一命中即判重。
+ */
+export const ticketFindDuplicatesInputSchema = z.object({
+  policyNumbers: z
+    .array(z.string())
+    .nullish()
+    .transform((values) => normalizePolicyNumbers(values ?? [])),
+  phone: optionalText(TICKET_TEXT_LIMITS.phone),
+  contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
+  /** 编辑场景排除工单自身。 */
+  excludeTicketId: z.string().min(1).optional(),
+});
+export type TicketFindDuplicatesInput = z.input<typeof ticketFindDuplicatesInputSchema>;
+/** Server-side shape (after transforms) — what the service receives. */
+export type TicketFindDuplicatesQuery = z.output<typeof ticketFindDuplicatesInputSchema>;
+
 /**
  * 删除工单 contract: a dangerous, UI-double-confirmed soft delete — the
  * server stamps deletedAt, nothing is physically removed, and this phase

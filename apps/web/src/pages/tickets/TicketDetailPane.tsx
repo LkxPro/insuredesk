@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { isTicketInFlight, type TicketEditData } from "@insuredesk/shared";
+import { isTicketInFlight, type TicketEditData, type TicketEditInput } from "@insuredesk/shared";
 import { AlertCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -26,6 +26,11 @@ import { ResolveTicketDialog } from "./ResolveTicketDialog";
 import { StatusBadge } from "./StatusBadge";
 import { SubmissionTextPane } from "./SubmissionTextPane";
 import { formDefaults } from "./TicketDetailFields";
+import {
+  DuplicateConfirmDialog,
+  DuplicateFieldHint,
+  useTicketDuplicates,
+} from "./TicketDuplicates";
 import {
   type TicketFormValues,
   ticketFormSchema,
@@ -79,6 +84,10 @@ export function TicketDetailPane({
   const [assignOpen, setAssignOpen] = useState(false);
   const [resolveOpen, setResolveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  /** 保存被 409 兜底拦下时的提交载荷；非空即显示查重确认框，「仍要保存」带 allowDuplicate 重发。 */
+  const [duplicateConflict, setDuplicateConflict] = useState<{
+    payload: TicketEditInput & { allowDuplicate?: boolean };
+  } | null>(null);
 
   const detailQuery = trpc.ticket.detail.useQuery({ id: ticketId }, { enabled: !!ticketId });
   const ticket = detailQuery.data ?? null;
@@ -88,13 +97,27 @@ export function TicketDetailPane({
     defaultValues: formDefaults(null),
   });
 
+  // 编辑态即时查重：排除工单自身，命中提示贴身挂在保单号/手机号控件下
+  const duplicates = useTicketDuplicates(form, {
+    excludeTicketId: ticketId,
+    enabled: editing,
+  });
+
   const edit = trpc.ticket.edit.useMutation({
     onSuccess: (result) => {
       toast.success(`工单 ${result.workOrderNumber} 已更新`);
       setEditing(false);
+      setDuplicateConflict(null);
       // 字段、SLA 派生与时间线都在服务端变，回读而非本地拼
       utils.ticket.detail.invalidate();
       utils.ticket.list.invalidate();
+    },
+    onError: (error, variables) => {
+      // 409 = 服务端兜底查重命中：拦下保存，弹阻断确认框；其余错误走顶部 Alert
+      if (error.data?.code === "CONFLICT") {
+        edit.reset();
+        setDuplicateConflict({ payload: variables });
+      }
     },
   });
 
@@ -208,7 +231,16 @@ export function TicketDetailPane({
                 <AlertDescription>{edit.error.message}</AlertDescription>
               </Alert>
             )}
-            <TicketInfoColumn ticket={ticket} editing={editing} form={form} />
+            <TicketInfoColumn
+              ticket={ticket}
+              editing={editing}
+              form={form}
+              fieldAddon={(name) =>
+                name === "policyNumbers" || name === "phone" || name === "contactPhone" ? (
+                  <DuplicateFieldHint field={name} duplicates={duplicates} />
+                ) : null
+              }
+            />
           </div>
           {editing &&
           ticket.source === "external_channel" &&
@@ -264,6 +296,25 @@ export function TicketDetailPane({
         open={pendingExit !== null}
         onOpenChange={(open) => !open && setPendingExit(null)}
         onDiscard={() => pendingExit && performExit(pendingExit)}
+      />
+
+      <DuplicateConfirmDialog
+        values={
+          duplicateConflict
+            ? {
+                policyNumbers: duplicateConflict.payload.policyNumbers ?? [],
+                phone: duplicateConflict.payload.phone ?? null,
+                contactPhone: duplicateConflict.payload.contactPhone ?? null,
+              }
+            : null
+        }
+        excludeTicketId={ticketId}
+        confirmLabel="仍要保存"
+        confirming={edit.isPending}
+        onConfirm={() =>
+          duplicateConflict && edit.mutate({ ...duplicateConflict.payload, allowDuplicate: true })
+        }
+        onCancel={() => setDuplicateConflict(null)}
       />
     </section>
   );

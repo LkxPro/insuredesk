@@ -25,6 +25,7 @@ import { channelCatalog } from "./channel.service";
 import { applyTicketDataScope } from "./data-scope.service";
 import { ticketCategoryCatalog } from "./ticket-category.service";
 import { displayStatusTicketWhere } from "./ticket-display-status";
+import { assertNoDuplicateTickets } from "./ticket-duplicate.service";
 
 /**
  * Ticket domain logic: manual creation and detail reads. Pure service
@@ -136,6 +137,7 @@ export async function createTicket(
   { prisma, clock }: TicketServiceDeps,
   creator: AuthenticatedUser,
   input: TicketCreateData,
+  options?: { allowDuplicate?: boolean },
 ) {
   const role = await prisma.role.findUnique({
     where: { id: creator.roleId },
@@ -149,6 +151,17 @@ export async function createTicket(
   const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, now);
 
   return prisma.$transaction(async (tx) => {
+    // 提交兜底查重：与插入同事务，命中即整体回滚；批量导入不经此路，天然豁免
+    if (!options?.allowDuplicate) {
+      await assertNoDuplicateTickets(
+        { prisma: tx, clock },
+        {
+          policyNumbers: input.policyNumbers,
+          phone: input.phone,
+          contactPhone: input.contactPhone,
+        },
+      );
+    }
     // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
     await ticketCategoryCatalog.resolveNewRef(tx, input.categoryId);
     await channelCatalog.resolveNewRef(tx, input.channelId);

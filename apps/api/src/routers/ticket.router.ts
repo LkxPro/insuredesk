@@ -6,6 +6,7 @@ import {
   ticketCreateInputSchema,
   ticketDeleteInputSchema,
   ticketEditInputSchema,
+  ticketFindDuplicatesInputSchema,
   ticketImportBatchListInputSchema,
   ticketImportRevokeInputSchema,
   ticketListInputSchema,
@@ -34,6 +35,10 @@ import {
 } from "../services/ticket-assign.service";
 import { addTicketComment, TicketNotProcessableError } from "../services/ticket-comment.service";
 import { deleteTicket } from "../services/ticket-delete.service";
+import {
+  DuplicateTicketsFoundError,
+  findDuplicateTickets,
+} from "../services/ticket-duplicate.service";
 import { editTicket } from "../services/ticket-edit.service";
 import {
   ImportBatchAlreadyRevokedError,
@@ -68,16 +73,26 @@ function mapAssignmentError(error: unknown): never {
   throw error;
 }
 
+/** 提交兜底查重命中 → 409；重复列表不入错误载荷，前端经 findDuplicates 重取。 */
+function mapDuplicateError(error: unknown): never {
+  if (error instanceof DuplicateTicketsFoundError) {
+    throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+  }
+  throw error;
+}
+
 export const ticketRouter = router({
   /**
    * Create a manually-entered ticket. Guarded by ticket.create — users
    * without it are rejected here regardless of what the UI shows.
+   * allowDuplicate 是前端确认「仍要创建」后的放行标记。
    */
   create: requirePermission("ticket.create")
-    .input(ticketCreateInputSchema)
+    .input(ticketCreateInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       try {
-        const ticket = await createTicket(deps, ctx.user, input);
+        const { allowDuplicate, ...data } = input;
+        const ticket = await createTicket(deps, ctx.user, data, { allowDuplicate });
         return { id: ticket.id, workOrderNumber: ticket.workOrderNumber };
       } catch (error) {
         if (error instanceof SlaPolicyNotConfiguredError) {
@@ -97,9 +112,14 @@ export const ticketRouter = router({
         if (error instanceof CatalogUnavailableError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
-        throw error;
+        mapDuplicateError(error);
       }
     }),
+
+  /** 建单/编辑的即时查重：命中即返回最小字段集 + 命中字段（输入侧命名）。 */
+  findDuplicates: requirePermission("ticket.view")
+    .input(ticketFindDuplicatesInputSchema)
+    .query(({ input }) => findDuplicateTickets(deps, input)),
 
   /**
    * Paged, filterable list for 工单管理. Data scope applies: without
@@ -196,10 +216,11 @@ export const ticketRouter = router({
    * keeps an editor without ticket.view_all on their own tickets.
    */
   edit: requirePermission("ticket.edit")
-    .input(ticketEditInputSchema)
+    .input(ticketEditInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await editTicket(deps, ctx.user, input);
+        const { allowDuplicate, ...data } = input;
+        return await editTicket(deps, ctx.user, data, { allowDuplicate });
       } catch (error) {
         if (error instanceof TicketNotFoundError) {
           throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
@@ -214,7 +235,7 @@ export const ticketRouter = router({
         if (error instanceof CatalogUnavailableError) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
-        throw error;
+        mapDuplicateError(error);
       }
     }),
 

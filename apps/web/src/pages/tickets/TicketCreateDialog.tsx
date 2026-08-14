@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import type { TicketCreateInput } from "@insuredesk/shared";
 import { format } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -19,6 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
+import { DuplicateConfirmDialog } from "./TicketDuplicates";
 import {
   buildTicketFormSchema,
   TicketFormFields,
@@ -82,6 +84,10 @@ export function TicketCreateDialog({
   const { user } = useAuth();
   const utils = trpc.useUtils();
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  /** 提交被 409 兜底拦下时的载荷；非空即显示查重确认框，「仍要创建」带 allowDuplicate 重发。 */
+  const [duplicateConflict, setDuplicateConflict] = useState<{
+    payload: TicketCreateInput & { allowDuplicate?: boolean };
+  } | null>(null);
 
   const requiredFields = user?.requiredTicketFields ?? [];
   const schema = buildTicketFormSchema(requiredFields);
@@ -105,8 +111,16 @@ export function TicketCreateDialog({
     onSuccess: (ticket) => {
       toast.success(`工单 ${ticket.workOrderNumber} 已创建`);
       utils.ticket.list.invalidate();
+      setDuplicateConflict(null);
       onCreated?.(ticket);
       onOpenChange(false);
+    },
+    onError: (error, variables) => {
+      // 409 = 服务端兜底查重命中：拦下创建，弹阻断确认框；其余错误走底部 Alert
+      if (error.data?.code === "CONFLICT") {
+        create.reset();
+        setDuplicateConflict({ payload: variables });
+      }
     },
   });
 
@@ -177,6 +191,24 @@ export function TicketCreateDialog({
           setConfirmDiscardOpen(false);
           onOpenChange(false);
         }}
+      />
+
+      <DuplicateConfirmDialog
+        values={
+          duplicateConflict
+            ? {
+                policyNumbers: duplicateConflict.payload.policyNumbers ?? [],
+                phone: duplicateConflict.payload.phone ?? null,
+                contactPhone: duplicateConflict.payload.contactPhone ?? null,
+              }
+            : null
+        }
+        confirmLabel="仍要创建"
+        confirming={create.isPending}
+        onConfirm={() =>
+          duplicateConflict && create.mutate({ ...duplicateConflict.payload, allowDuplicate: true })
+        }
+        onCancel={() => setDuplicateConflict(null)}
       />
     </>
   );

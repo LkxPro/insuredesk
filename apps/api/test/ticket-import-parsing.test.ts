@@ -302,15 +302,15 @@ describe("validateTicketImportRows", () => {
     expect(errors[5]?.message).toContain("50");
   });
 
-  it("splits a 保单号 cell on whitespace, deduping into the array", async () => {
-    const { tickets, errors } = await validate([{ 保单号: "  P-1   P-2 P-1 " }]);
+  it("splits a 保单号 cell on non-alphanumeric separators, deduping into the array", async () => {
+    const { tickets, errors } = await validate([{ 保单号: "  PA1   PB2，PC3、PA1 " }]);
     expect(errors).toEqual([]);
-    expect(first(tickets).policyNumbers).toEqual(["P-1", "P-2"]);
+    expect(first(tickets).policyNumbers).toEqual(["PA1", "PB2", "PC3"]);
   });
 
   it("names the specific over-length 保单号 among the cell's other valid values", async () => {
-    const offending = `坏保单${"0".repeat(100)}`;
-    const { errors } = await validate([{ 保单号: `P-good ${offending} P-also-good` }]);
+    const offending = `BAD${"0".repeat(100)}`;
+    const { errors } = await validate([{ 保单号: `Pgood ${offending} Palsogood` }]);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({ row: 2, column: "保单号" });
     expect(errors[0]?.message).toContain("超出最大长度");

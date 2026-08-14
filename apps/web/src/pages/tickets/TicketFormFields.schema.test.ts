@@ -56,9 +56,9 @@ describe("buildTicketFormSchema 保单号多值上限（描述表派生）", () 
   const { maxItemLength, maxItems } = TICKET_FIELDS.policyNumbers;
   const schema = buildTicketFormSchema([]);
 
-  it(`空格分隔多值，单个限长 ${maxItemLength}`, () => {
-    const atLimit = { ...BLANK_FORM, policyNumbers: `${"字".repeat(maxItemLength)} P2` };
-    const overLimit = { ...BLANK_FORM, policyNumbers: `${"字".repeat(maxItemLength + 1)} P2` };
+  it(`分隔符拆分多值，单个限长 ${maxItemLength}`, () => {
+    const atLimit = { ...BLANK_FORM, policyNumbers: `${"A".repeat(maxItemLength)} P2` };
+    const overLimit = { ...BLANK_FORM, policyNumbers: `${"A".repeat(maxItemLength + 1)} P2` };
     expect(schema.safeParse(atLimit).success).toBe(true);
     expect(schema.safeParse(overLimit).success).toBe(false);
   });
@@ -76,9 +76,9 @@ describe("buildTicketFormSchema 保单号多值上限（描述表派生）", () 
   it("必填时空白串被拒，正常多值放行", () => {
     const required = buildTicketFormSchema(["policyNumbers"]);
     expect(required.safeParse(BLANK_FORM).success).toBe(false);
-    expect(
-      required.safeParse({ ...BLANK_FORM, policyNumbers: "P2026-001 P2026-002" }).success,
-    ).toBe(true);
+    expect(required.safeParse({ ...BLANK_FORM, policyNumbers: "P2026001，P2026002" }).success).toBe(
+      true,
+    );
   });
 });
 

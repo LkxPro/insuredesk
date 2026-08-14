@@ -119,11 +119,17 @@ function fakeTrpcFetch(overrides: TrpcOverrides) {
               : override;
         return { result: { data } };
       } catch (error) {
+        // 抛出的 Error 可带 trpcCode（如 "CONFLICT"）来指定错误码，缺省 BAD_REQUEST
+        const trpcCode = (error as { trpcCode?: unknown }).trpcCode;
         return {
           error: {
             message: error instanceof Error ? error.message : String(error),
             code: -32600,
-            data: { code: "BAD_REQUEST", httpStatus: 400, path },
+            data: {
+              code: typeof trpcCode === "string" ? trpcCode : "BAD_REQUEST",
+              httpStatus: trpcCode === "CONFLICT" ? 409 : 400,
+              path,
+            },
           },
         };
       }

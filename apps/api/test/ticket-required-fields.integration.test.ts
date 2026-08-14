@@ -108,13 +108,15 @@ describe("role required ticket fields (Testcontainers)", () => {
     return callerFor(userWithRequired, roleWithRequired);
   }
 
-  const validInput = (): TicketCreateInput => ({
+  const validInput = (): TicketCreateInput & { allowDuplicate?: boolean } => ({
     feedbackTime: "2026-07-15T10:00:00.000Z",
     channelId: channelBaosi.id,
     customerName: "张三",
     phone: "13900000000",
     hasContacted: true,
     complaintLevel: "一般投诉" as const,
+    // fixture 有意复用相同手机号，绕过提交兜底查重
+    allowDuplicate: true,
   });
 
   describe("role.updateRequiredFields", () => {
