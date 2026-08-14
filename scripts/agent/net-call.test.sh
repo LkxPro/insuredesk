@@ -35,7 +35,18 @@ printf '%s\n' "$n" >"$CALLS"
 echo 'GraphQL: Could not resolve to an issue or pull request with the number of 999999.' >&2
 exit 1
 EOF
-chmod +x "$tmp/flaky" "$tmp/permanent" "$tmp/not-found"
+cat >"$tmp/ssl-flaky" <<'EOF'
+#!/bin/sh
+n=$(cat "$CALLS" 2>/dev/null || echo 0)
+n=$((n + 1))
+printf '%s\n' "$n" >"$CALLS"
+if [ "$n" -lt 3 ]; then
+  echo "fatal: unable to access 'https://github.com/x/y.git/': LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to github.com:443" >&2
+  exit 128
+fi
+printf 'eventual-ok\n'
+EOF
+chmod +x "$tmp/flaky" "$tmp/permanent" "$tmp/not-found" "$tmp/ssl-flaky"
 
 # 传输层错误重试到成功；半截 stdout 不放行，只有最终成功输出。
 : >"$tmp/calls"
@@ -70,3 +81,10 @@ if CALLS="$tmp/calls" AGENT_NET_CALL_BASE_DELAY=0 AGENT_NET_CALL_ATTEMPTS=2 \
   exit 1
 fi
 [ "$(cat "$tmp/calls")" = 2 ]
+
+# macOS LibreSSL 抖动特征是传输层错误，必须重试而不是首败即弃。
+: >"$tmp/calls"
+out=$(CALLS="$tmp/calls" AGENT_NET_CALL_BASE_DELAY=0 \
+  sh "$script_dir/net-call.sh" "$tmp/ssl-flaky")
+[ "$out" = eventual-ok ]
+[ "$(cat "$tmp/calls")" = 3 ]
