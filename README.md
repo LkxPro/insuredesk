@@ -28,6 +28,7 @@ make test        # 运行测试
 make typecheck   # 类型检查
 make lint        # 运行 linter
 make check       # CI 全套检查（push 前本地跑一遍）
+make agent-loop-status  # 实时监控 agent worker：当前 phase、最后事件、卡死判定
 ```
 
 - 清库重来：`make db-reset` 后重新 `make dev`。
