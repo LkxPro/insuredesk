@@ -37,7 +37,10 @@ export function AutoAssignDialog({
         toast.success(`已按排班自动分配 ${result.assigned.length} 个工单`);
       }
       if (result.skipped.length > 0) {
-        toast.warning(`当前无在岗人员，${result.skipped.length} 个工单未分配，请手动处理`);
+        // 需要手动跟进，无留档，常驻到用户亲自关掉
+        toast.warning(`当前无在岗人员，${result.skipped.length} 个工单未分配，请手动处理`, {
+          duration: "sticky",
+        });
       }
       utils.ticket.list.invalidate();
       utils.ticket.detail.invalidate();

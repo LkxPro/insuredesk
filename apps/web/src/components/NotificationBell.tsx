@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * 轨 1 收件箱 bell: polls notification.list every 30 seconds — unread-count
- * red badge, a sticky top-center toast for each newly arrived notification
+ * red badge, a top-center toast for each newly arrived notification
  * (click = mark read + jump to the ticket), and a popover inbox where
  * clicking an entry does the same.
  */
@@ -24,6 +24,9 @@ type NotificationItem = inferRouterOutputs<AppRouter>["notification"]["list"]["i
 
 /** Beyond this many arrivals in one poll, collapse into a single summary toast. */
 const MAX_INDIVIDUAL_TOASTS = 3;
+
+/** 异步到达的通知比操作回执曝光更久；消失后仍有未读徽标兜底。 */
+const ARRIVAL_TOAST_DURATION_MS = 15_000;
 
 export function NotificationBell() {
   const navigate = useNavigate();
@@ -75,13 +78,17 @@ export function NotificationBell() {
       seen.add(item.id); // before toasting: StrictMode-safe
     }
     if (fresh.length > MAX_INDIVIDUAL_TOASTS) {
-      toast(`你有 ${fresh.length} 条新通知`, { onClick: () => setOpen(true) });
+      toast(`你有 ${fresh.length} 条新通知`, {
+        duration: ARRIVAL_TOAST_DURATION_MS,
+        onClick: () => setOpen(true),
+      });
       return;
     }
     for (const item of fresh) {
       // 点击轻提示本体 = 收件箱点击：标已读 + 跳工单详情
       toast(item.title, {
         description: item.content,
+        duration: ARRIVAL_TOAST_DURATION_MS,
         onClick: () => openTicket(item),
       });
     }
