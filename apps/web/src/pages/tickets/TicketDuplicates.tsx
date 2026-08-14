@@ -23,10 +23,6 @@ import type { TicketFormValues } from "./TicketFormFields";
 import type { TicketDetail } from "./ticket-detail";
 
 /**
- * 建单/编辑的查重提示：保单号或手机号命中未软删历史工单时，在命中字段输入框
- * 正下方挂贴身警示块（始终展开、非阻断），行点击新标签打开对应工单。提交被
- * 服务端 409 兜底拦下时，DuplicateConfirmDialog 复用同一行内容做阻断确认。
- *
  * 提示挂哪个字段由服务端的 matchedFields（输入侧字段名）决定，前端不做二次
  * 匹配。查询无结果、查询失败、字段清空都视为「无提示」——查重是辅助，永不
  * 阻塞表单本身。
@@ -40,7 +36,6 @@ const FIELD_NOUN: Record<TicketDuplicateMatchField, string> = {
   contactPhone: "联系人电话",
 };
 
-/** 手机号满 11 位即触发即时查；不足位但失焦过（touched）也查。 */
 const PHONE_READY_LENGTH = 11;
 const DEBOUNCE_MS = 400;
 
@@ -49,10 +44,6 @@ function phoneQueryable(value: string | null | undefined, touched: boolean | und
   return trimmed.length >= PHONE_READY_LENGTH || (touched === true && trimmed.length > 0);
 }
 
-/**
- * watch 三个查重字段 → 防抖 400ms → findDuplicates。保单号拆出 token 即查；
- * 手机号满 11 位或失焦才查。查询条件全空则停查（enabled=false），表现为无命中。
- */
 export function useTicketDuplicates(
   form: UseFormReturn<TicketFormValues>,
   options?: { excludeTicketId?: string; enabled?: boolean },
@@ -97,7 +88,6 @@ export function useTicketDuplicates(
   return query.data ?? [];
 }
 
-/** 查重命中行：工单号（新标签打开）、状态、客户名、创建时间。提示块与提交确认框共用。 */
 export function DuplicateTicketList({ duplicates }: { duplicates: readonly DuplicateTicket[] }) {
   return (
     <ul className="space-y-1">
@@ -113,7 +103,7 @@ export function DuplicateTicketList({ duplicates }: { duplicates: readonly Dupli
           </a>
           <StatusBadge status={duplicate.displayStatus} />
           <span className="truncate text-muted-foreground">
-            {duplicate.customerName ?? "—"} · {formatDateTime(duplicate.createdAt)}
+            {duplicate.customerName ?? "—"} · {formatDateTime(duplicate.activityAt)}
           </span>
         </li>
       ))}
@@ -121,7 +111,6 @@ export function DuplicateTicketList({ duplicates }: { duplicates: readonly Dupli
   );
 }
 
-/** 字段贴身警示块：只展示经该字段命中的工单，始终展开、无收起。 */
 export function DuplicateFieldHint({
   field,
   duplicates,
@@ -153,10 +142,7 @@ export interface DuplicateConflictValues {
   contactPhone: string | null;
 }
 
-/**
- * 提交 409 的阻断确认框：列出重复工单（与即时提示同一行内容），「仍要」带
- * allowDuplicate 重发由调用方执行。values=null 等价于关闭。
- */
+/** 「仍要」带 allowDuplicate 的重发由调用方执行，组件只表达确认意图。 */
 export function DuplicateConfirmDialog({
   values,
   excludeTicketId,
@@ -167,7 +153,6 @@ export function DuplicateConfirmDialog({
 }: {
   values: DuplicateConflictValues | null;
   excludeTicketId?: string;
-  /** 「仍要创建」/「仍要保存」。 */
   confirmLabel: string;
   confirming?: boolean;
   onConfirm: () => void;
@@ -220,12 +205,7 @@ export function DuplicateConfirmDialog({
   );
 }
 
-/**
- * 详情页头部下的重复工单条幅：该客户的其他未软删工单（保单号/手机号命中、
- * 排除自身）。收起只显最近 1 条，「+N」原地展开全部（限高滚动）。条目两行：
- * 工单号新标签链接 + 状态徽标 + 最新处理时间；第二行裸文本摘要（完结单即完结
- * 备注）——不带「完结状态/最新记录」前缀，状态徽标已表达。无命中不渲染。
- */
+/** 摘要保持裸文本：不加「完结状态/最新记录」前缀——状态徽标已表达。 */
 export function DuplicateTicketsBanner({ ticket }: { ticket: TicketDetail }) {
   const queryable =
     ticket.policyNumbers.length > 0 || ticket.phone !== null || ticket.contactPhone !== null;

@@ -129,7 +129,8 @@ describe("ticket 查重（Testcontainers）", () => {
     ).resolves.toEqual([]);
   });
 
-  it("命中超过 20 条时按创建时间倒序取前 20", async () => {
+  it("命中超过 20 条时按最新处理时间倒序取前 20，有新高跟进的老单排在新建单前", async () => {
+    let oldestId = "";
     const ids: string[] = [];
     for (let index = 0; index < 21; index++) {
       const created = await manager().ticket.create({
@@ -137,6 +138,9 @@ describe("ticket 查重（Testcontainers）", () => {
         phone: "13300000007",
         allowDuplicate: true,
       });
+      if (index === 0) {
+        oldestId = created.id;
+      }
       ids.push(created.id);
     }
     // 钉死创建时间，消除同毫秒并列对排序断言的干扰
@@ -144,11 +148,16 @@ describe("ticket 查重（Testcontainers）", () => {
     for (const [index, id] of ids.entries()) {
       await prisma.ticket.update({ where: { id }, data: { createdAt: new Date(base + index) } });
     }
+    // 最老工单补一条跟进：其最新处理时间晚于所有新建单的创建时间
+    await manager().ticket.assign({ ticketId: oldestId, assigneeId: seeded.users.manager.id });
+    await manager().ticket.addComment({ ticketId: oldestId, remark: "老单新跟进" });
 
     const hits = await frontline().ticket.findDuplicates({ phone: "13300000007" });
     expect(hits).toHaveLength(20);
-    expect(hits[0]?.customerName).toBe("上限-20");
-    expect(hits.map((hit) => hit.customerName)).not.toContain("上限-0");
+    expect(hits[0]?.customerName).toBe("上限-0");
+    expect(hits[0]?.activityText).toBe("老单新跟进");
+    expect(hits[1]?.customerName).toBe("上限-20");
+    expect(hits.map((hit) => hit.customerName)).not.toContain("上限-1");
   });
 
   it("findDuplicates 由 ticket.view 把守：一线可查查重（含他人工单），空权限被拒", async () => {
