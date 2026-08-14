@@ -95,6 +95,7 @@ export async function runExecutor(options: ExecutorOptions): Promise<ExecutorRes
       }
       await appendEvent(options.worktrees, options.issue, event as Record<string, unknown>);
       if (typeof event.num_turns === "number") turns = event.num_turns;
+      else if (event.type === "assistant") turns += 1;
       const summary = summarize(event);
       const now = Date.now();
       if (summary && now - lastPatch >= 1000) {

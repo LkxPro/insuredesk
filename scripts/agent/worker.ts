@@ -449,6 +449,8 @@ async function handleFailure(
     issue,
     `${error.message} See .worktrees/issue-${issue}.log for executor output.`,
   );
+  // 桌面通知只在真实跑单时有意义;测试用 AGENT_BLOCK_NOTIFY=0 关掉。
+  if (process.env.AGENT_BLOCK_NOTIFY === "0") return;
   await netCall(
     "osascript",
     [

@@ -87,6 +87,7 @@ function sandboxEnv(sandbox: Sandbox): NodeJS.ProcessEnv {
     AGENT_TEST_CAPTURE: join(sandbox.dir, "gh-calls"),
     AGENT_REVIEW_ENABLED: "0",
     AGENT_CLAIM_HEARTBEAT_INTERVAL: "3600",
+    AGENT_BLOCK_NOTIFY: "0",
   };
 }
 
