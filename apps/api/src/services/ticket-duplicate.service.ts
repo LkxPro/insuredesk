@@ -35,13 +35,17 @@ type CandidateRow = {
   contactPhone: string | null;
 };
 
+/** 保单号只会是数字+字母；「无」「无保单信息」等占位值不参与查重，否则无保单客户互相误报。 */
+const MATCHABLE_POLICY_NUMBER = /^[0-9A-Za-z]+$/;
+
 /** 命中字段按输入侧命名：row 的哪个取值撞了 query 的哪个字段。 */
 function matchedFieldsOf(
   row: CandidateRow,
   query: TicketFindDuplicatesQuery,
+  policyNumbers: string[],
 ): TicketDuplicateMatchField[] {
   const fields: TicketDuplicateMatchField[] = [];
-  if (row.policyNumbers.some((value) => query.policyNumbers.includes(value))) {
+  if (row.policyNumbers.some((value) => policyNumbers.includes(value))) {
     fields.push("policyNumbers");
   }
   if (query.phone !== null && (row.phone === query.phone || row.contactPhone === query.phone)) {
@@ -60,12 +64,13 @@ export async function findDuplicateTickets(
   { prisma, clock }: TicketDuplicateDeps,
   query: TicketFindDuplicatesQuery,
 ) {
+  const policyNumbers = query.policyNumbers.filter((value) => MATCHABLE_POLICY_NUMBER.test(value));
   const phones = [query.phone, query.contactPhone].filter(
     (value): value is string => value !== null,
   );
   const branches: Prisma.TicketWhereInput[] = [];
-  if (query.policyNumbers.length > 0) {
-    branches.push({ policyNumbers: { hasSome: query.policyNumbers } });
+  if (policyNumbers.length > 0) {
+    branches.push({ policyNumbers: { hasSome: policyNumbers } });
   }
   if (phones.length > 0) {
     branches.push({ phone: { in: phones } }, { contactPhone: { in: phones } });
@@ -110,13 +115,12 @@ export async function findDuplicateTickets(
     customerName: row.customerName,
     createdAt: row.createdAt.toISOString(),
     displayStatus: deriveDisplayStatus(ticketStatusSchema.parse(row.status), row.dueAt, now),
-    matchedFields: matchedFieldsOf(row, query),
+    matchedFields: matchedFieldsOf(row, query, policyNumbers),
     activityAt: (row.processLogs[0]?.at ?? row.createdAt).toISOString(),
     activityText: row.processLogs[0]?.remark ?? "暂无处理记录",
   }));
 }
 
-/** 提交兜底：命中即抛 DuplicateTicketsFoundError。 */
 export async function assertNoDuplicateTickets(
   deps: TicketDuplicateDeps,
   query: TicketFindDuplicatesQuery,
