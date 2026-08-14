@@ -2,7 +2,7 @@ import { type ToastKind, type ToastOptions, toastStore } from "@/lib/toast-store
 
 /**
  * 轻提示入口，API 形状与 sonner 的 toast 对齐（调用点只换 import）。
- * 渲染由 ToastHost 负责：顶部居中、不自动消失、带关闭键。
+ * 渲染由 ToastHost 负责：顶部居中、默认 4 秒自动消失、带关闭键。
  */
 
 function push(kind: ToastKind) {

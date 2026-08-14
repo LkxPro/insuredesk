@@ -11,9 +11,10 @@ import { useState, useSyncExternalStore } from "react";
 import { type ToastItem, type ToastKind, toastStore } from "@/lib/toast-store";
 
 /**
- * 轻提示宿主：顶部正中央的胶囊队列，不自动消失，逐条带关闭键。
- * 平时只显示最新一条；多条时折叠为「N 条」徽标，点开逐条查看/关闭。
- * 带 onClick 的条目点击本体即触发（如跳转对应页面）并随之关闭。
+ * 轻提示宿主：顶部正中央的胶囊队列，逐条带关闭键；默认 4 秒自动消失，
+ * duration: "sticky" 的条目常驻。平时只显示最新一条；多条时折叠为
+ * 「N 条」徽标，点开逐条查看/关闭。带 onClick 的条目点击本体即触发
+ * （如跳转对应页面）并随之关闭。
  */
 
 const KIND_ICON = {
@@ -81,6 +82,7 @@ export function ToastHost() {
   return (
     <div
       aria-live="polite"
+      data-slot="toast-host"
       className="fixed left-1/2 top-4 z-[100] flex -translate-x-1/2 flex-col items-center"
     >
       <div className="flex max-w-[min(90vw,28rem)] items-center gap-2 rounded-full border bg-popover py-2 pl-4 pr-2 text-sm text-popover-foreground shadow-lg animate-in slide-in-from-top-2 fade-in duration-300">

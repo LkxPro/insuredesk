@@ -4,11 +4,13 @@ import { httpBatchLink } from "@trpc/client";
 import { useState } from "react";
 import { MemoryRouter } from "react-router";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { ToastHost } from "@/components/ToastHost";
+import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 
 /**
- * Issue #116 关闭逻辑统一: 新建工单 closes on outside click / X / Esc like any
+ * 关闭逻辑统一: 新建工单 closes on outside click / X / Esc like any
  * dialog, but a dirty form (anything beyond the prefilled feedbackTime
  * default) first asks 丢弃修改？ before discarding the draft. Same faked-fetch
  * client and useAuth-seam mock as the sibling create-dialog tests.
@@ -51,6 +53,7 @@ function Harness() {
         打开
       </button>
       <TicketCreateDialog open={open} onOpenChange={setOpen} />
+      <ToastHost />
     </>
   );
 }
@@ -152,6 +155,24 @@ describe("新建工单 关闭 with an edited form", () => {
 
     expect(await screen.findByText("丢弃修改？")).toBeInTheDocument();
     // The form dialog is still there behind the ask, draft intact
+    expect(screen.getByLabelText("客户姓名")).toHaveValue("王小明");
+  });
+
+  it("clicking a toast's 关闭键 is not an outside click: no ask, draft intact", async () => {
+    renderHarness();
+    await screen.findByRole("heading", { name: "新建工单" });
+    fireEvent.change(screen.getByLabelText("客户姓名"), { target: { value: "王小明" } });
+
+    toast.error("导出失败", { duration: "sticky" });
+    // Radix modal 给 dialog 外的内容挂 aria-hidden，toast 在树外因此 hidden: true
+    const closeButton = await screen.findByRole("button", { name: "关闭通知", hidden: true });
+    fireEvent.pointerDown(closeButton);
+    fireEvent.click(closeButton);
+
+    // toast 正常关闭，但表单 dialog 不问也不关
+    expect(screen.queryByText("导出失败")).not.toBeInTheDocument();
+    expect(screen.queryByText("丢弃修改？")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "新建工单" })).toBeInTheDocument();
     expect(screen.getByLabelText("客户姓名")).toHaveValue("王小明");
   });
 
