@@ -119,12 +119,13 @@ worker_dir=$(mktemp -d)
 trap 'rm -rf "$worker_dir"' EXIT HUP INT TERM
 mkdir -p "$worker_dir/bin" "$worker_dir/repo/.github/agent-prompts"
 cp "$script_dir/../.github/agent-prompts/task.md" "$worker_dir/repo/.github/agent-prompts/task.md"
+cp "$script_dir/../.github/agent-prompts/comment-sweep.md" "$worker_dir/repo/.github/agent-prompts/comment-sweep.md"
 git init -q --bare "$worker_dir/remote.git"
 git -C "$worker_dir/repo" init -q
 git -C "$worker_dir/repo" config user.name test
 git -C "$worker_dir/repo" config user.email test@example.com
 printf 'base\n' >"$worker_dir/repo/base.txt"
-git -C "$worker_dir/repo" add base.txt .github/agent-prompts/task.md
+git -C "$worker_dir/repo" add base.txt .github/agent-prompts
 git -C "$worker_dir/repo" commit -qm base
 git -C "$worker_dir/repo" branch -M codex/issue-7
 git -C "$worker_dir/repo" remote add origin "$worker_dir/remote.git"
@@ -144,12 +145,18 @@ printf '%s\n' "$PWD" >"$AGENT_LOOP_TEST_CLAUDE_CWD"
 printf '%s\n' "$@" >"$AGENT_LOOP_TEST_CLAUDE_ARGS"
 printf '%s\n' "$ANTHROPIC_BASE_URL" >"$AGENT_LOOP_TEST_PROVIDER_URL"
 printf '%s\n' "$ANTHROPIC_AUTH_TOKEN" >"$AGENT_LOOP_TEST_PROVIDER_TOKEN"
-tee "$AGENT_LOOP_TEST_CLAUDE_STDIN" >/dev/null
+input=$(cat)
+printf '%s\n' "$input" >"$AGENT_LOOP_TEST_CLAUDE_STDIN"
+case $input in
+  *'final comment sweep'*) printf '%s\n' sweep >>"$AGENT_LOOP_TEST_CLAUDE_CALLS" ;;
+  *) printf '%s\n' impl >>"$AGENT_LOOP_TEST_CLAUDE_CALLS" ;;
+esac
 printf 'implemented\n' >"$PWD/allowed.txt"
 printf '{"result":"done"}\n'
 EOF
 cat >"$worker_dir/bin/make" <<'EOF'
 #!/bin/sh
+printf '%s\n' check >>"$AGENT_LOOP_TEST_MAKE_CALLS"
 exit 0
 EOF
 chmod +x "$worker_dir/bin/gh" "$worker_dir/bin/claude"
@@ -165,6 +172,8 @@ PATH="$worker_dir/bin:$PATH" \
   AGENT_LOOP_TEST_CLAUDE_CWD="$worker_dir/claude-cwd" \
   AGENT_LOOP_TEST_CLAUDE_ARGS="$worker_dir/claude-args" \
   AGENT_LOOP_TEST_CLAUDE_STDIN="$worker_dir/claude-stdin" \
+  AGENT_LOOP_TEST_CLAUDE_CALLS="$worker_dir/claude-calls" \
+  AGENT_LOOP_TEST_MAKE_CALLS="$worker_dir/make-calls" \
   AGENT_LOOP_TEST_PROVIDER_URL="$worker_dir/provider-url" \
   AGENT_LOOP_TEST_PROVIDER_TOKEN="$worker_dir/provider-token" \
   sh "$script_dir/agent-worker.sh" 7 "$worker_dir/repo"
@@ -177,6 +186,94 @@ grep -Fqx -- '--dangerously-skip-permissions' "$worker_dir/claude-args"
 grep -Fq '"number":7' "$worker_dir/claude-stdin"
 grep -Fqx 'https://provider.invalid' "$worker_dir/provider-url"
 grep -Fqx 'test-provider-token' "$worker_dir/provider-token"
+printf 'impl\nsweep\n' | diff - "$worker_dir/claude-calls"
+printf 'check\n' | diff - "$worker_dir/make-calls"
+
+# worker 结尾会 commit+push，场景间复用 repo 会因零产出 fatal，故各自独立 sandbox。
+setup_worker_sandbox() {
+  sandbox=$1
+  mkdir -p "$sandbox/bin" "$sandbox/repo/.github/agent-prompts"
+  cp "$script_dir/../.github/agent-prompts/task.md" "$sandbox/repo/.github/agent-prompts/task.md"
+  cp "$script_dir/../.github/agent-prompts/comment-sweep.md" "$sandbox/repo/.github/agent-prompts/comment-sweep.md"
+  git init -q --bare "$sandbox/remote.git"
+  git -C "$sandbox/repo" init -q
+  git -C "$sandbox/repo" config user.name test
+  git -C "$sandbox/repo" config user.email test@example.com
+  printf 'base\n' >"$sandbox/repo/base.txt"
+  git -C "$sandbox/repo" add base.txt .github/agent-prompts
+  git -C "$sandbox/repo" commit -qm base
+  git -C "$sandbox/repo" branch -M codex/issue-7
+  git -C "$sandbox/repo" remote add origin "$sandbox/remote.git"
+  cat >"$sandbox/bin/gh" <<'EOF'
+#!/bin/sh
+case "$*" in
+  'issue view 7 --json number,title,body,comments,labels')
+    printf '%s\n' '{"number":7,"title":"Test task","body":"## Goal\nTest\n## Scope\nOnly test\n## Declared touch-set\n- allowed.txt\n## Logical locks\n- None\n## Acceptance criteria\n- [ ] done\n## Dependencies\n- None\n## Test plan\n- test","comments":[],"labels":[{"name":"agent:task"}]}' ;;
+  'pr list --head codex/issue-7 --state open --json number --jq .[0].number') printf '12\n' ;;
+esac
+EOF
+  cat >"$sandbox/bin/make" <<'EOF'
+#!/bin/sh
+printf '%s\n' check >>"$AGENT_LOOP_TEST_MAKE_CALLS"
+exit 0
+EOF
+  chmod +x "$sandbox/bin/gh" "$sandbox/bin/make"
+}
+
+setup_worker_sandbox "$worker_dir/recheck"
+cat >"$worker_dir/recheck/bin/claude" <<'EOF'
+#!/bin/sh
+input=$(cat)
+case $input in
+  *'final comment sweep'*)
+    printf '%s\n' sweep >>"$AGENT_LOOP_TEST_CLAUDE_CALLS"
+    sed -i.bak '/garbage/d' "$PWD/allowed.txt"
+    rm -f "$PWD/allowed.txt.bak" ;;
+  *)
+    printf '%s\n' impl >>"$AGENT_LOOP_TEST_CLAUDE_CALLS"
+    printf '// garbage: 原来是直接返回，现在改为走队列\nimplemented\n' >"$PWD/allowed.txt" ;;
+esac
+printf '{"result":"done"}\n'
+EOF
+chmod +x "$worker_dir/recheck/bin/claude"
+PATH="$worker_dir/recheck/bin:$PATH" \
+  AGENT_LOOP_GH="$worker_dir/recheck/bin/gh" \
+  AGENT_CLAUDE_BIN="$worker_dir/recheck/bin/claude" \
+  AGENT_REVIEW_ENABLED=0 \
+  PUBLISH_UNLABEL_CAPTURE="$worker_dir/recheck/publish-unlabel" \
+  AGENT_LOOP_TEST_CLAUDE_CALLS="$worker_dir/recheck/claude-calls" \
+  AGENT_LOOP_TEST_MAKE_CALLS="$worker_dir/recheck/make-calls" \
+  sh "$script_dir/agent-worker.sh" 7 "$worker_dir/recheck/repo"
+printf 'impl\nsweep\nsweep\n' | diff - "$worker_dir/recheck/claude-calls"
+printf 'check\ncheck\n' | diff - "$worker_dir/recheck/make-calls"
+if grep -Fq garbage "$worker_dir/recheck/repo/allowed.txt"; then
+  echo 'comment sweep left the garbage comment in place' >&2
+  exit 1
+fi
+
+setup_worker_sandbox "$worker_dir/sweep-off"
+cat >"$worker_dir/sweep-off/bin/claude" <<'EOF'
+#!/bin/sh
+input=$(cat)
+case $input in
+  *'final comment sweep'*) printf '%s\n' sweep >>"$AGENT_LOOP_TEST_CLAUDE_CALLS" ;;
+  *) printf '%s\n' impl >>"$AGENT_LOOP_TEST_CLAUDE_CALLS" ;;
+esac
+printf 'implemented\n' >"$PWD/allowed.txt"
+printf '{"result":"done"}\n'
+EOF
+chmod +x "$worker_dir/sweep-off/bin/claude"
+PATH="$worker_dir/sweep-off/bin:$PATH" \
+  AGENT_LOOP_GH="$worker_dir/sweep-off/bin/gh" \
+  AGENT_CLAUDE_BIN="$worker_dir/sweep-off/bin/claude" \
+  AGENT_REVIEW_ENABLED=0 \
+  AGENT_COMMENT_SWEEP_ENABLED=0 \
+  PUBLISH_UNLABEL_CAPTURE="$worker_dir/sweep-off/publish-unlabel" \
+  AGENT_LOOP_TEST_CLAUDE_CALLS="$worker_dir/sweep-off/claude-calls" \
+  AGENT_LOOP_TEST_MAKE_CALLS="$worker_dir/sweep-off/make-calls" \
+  sh "$script_dir/agent-worker.sh" 7 "$worker_dir/sweep-off/repo"
+printf 'impl\n' | diff - "$worker_dir/sweep-off/claude-calls"
+printf 'check\n' | diff - "$worker_dir/sweep-off/make-calls"
 
 claim_dir="$worker_dir/claim"
 mkdir -p "$claim_dir/repo" "$claim_dir/artifacts"
@@ -346,6 +443,7 @@ grep -Fq 'InsureDesk agent blocked: issue #8' "$commit_dir/notify"
 fence_dir="$worker_dir/fence"
 mkdir -p "$fence_dir/repo/.github/agent-prompts" "$fence_dir/bin" "$fence_dir/artifacts"
 cp "$script_dir/../.github/agent-prompts/task.md" "$fence_dir/repo/.github/agent-prompts/task.md"
+cp "$script_dir/../.github/agent-prompts/comment-sweep.md" "$fence_dir/repo/.github/agent-prompts/comment-sweep.md"
 git init -q --bare "$fence_dir/remote.git"
 git -C "$fence_dir/repo" init -q
 git -C "$fence_dir/repo" config user.name test
@@ -441,6 +539,7 @@ grep -Fqx 'issue edit 9 --add-label agent:queued --remove-label agent:running' "
 fix_dir="$worker_dir/fix-loop"
 mkdir -p "$fix_dir/repo/.github/agent-prompts" "$fix_dir/bin"
 cp "$script_dir/../.github/agent-prompts/task.md" "$fix_dir/repo/.github/agent-prompts/task.md"
+cp "$script_dir/../.github/agent-prompts/comment-sweep.md" "$fix_dir/repo/.github/agent-prompts/comment-sweep.md"
 git init -q --bare "$fix_dir/remote.git"
 git -C "$fix_dir/repo" init -q
 git -C "$fix_dir/repo" config user.name test
@@ -485,7 +584,7 @@ PATH="$fix_dir/bin:$PATH" \
   FIX_LOOP_MARKER="$fix_dir/fixed" \
   FIX_LOOP_FIX_STDIN="$fix_dir/fix-stdin" \
   sh "$script_dir/agent-worker.sh" 13 "$fix_dir/repo" >/dev/null 2>&1
-test "$(wc -l <"$fix_dir/calls" | tr -d ' ')" = 2
+test "$(wc -l <"$fix_dir/calls" | tr -d ' ')" = 3
 grep -Fq 'lint: simulated failure' "$fix_dir/fix-stdin"
 test -n "$(git -C "$fix_dir/repo" ls-remote origin codex/issue-13)"
 

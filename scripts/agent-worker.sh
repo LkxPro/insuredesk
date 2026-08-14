@@ -259,33 +259,69 @@ if [ -z "$failure" ]; then
 fi
 
 fix_round=0
+sweep_round=0
 max_fix_rounds=${AGENT_FIX_MAX_ROUNDS:-3}
 case $max_fix_rounds in *[!0-9]*) max_fix_rounds=3 ;; esac
+# 清扫可能误删 eslint-disable/@ts-ignore 等指令注释，有改动就必须重跑 check。
+worktree_fingerprint() {
+  { git -C "$worktree" diff --binary
+    git -C "$worktree" ls-files --others --exclude-standard \
+      | while IFS= read -r f; do
+          printf '%s ' "$f"
+          git -C "$worktree" hash-object -- "$f" 2>/dev/null || true
+        done
+  } | git hash-object --stdin
+}
 while [ -z "$failure" ]; do
-  check_with_lock && break
-  fix_round=$((fix_round + 1))
-  if [ "$fix_round" -gt "$max_fix_rounds" ]; then
-    failure="Deterministic make check failed after $max_fix_rounds fix rounds."
-    failure_class=exhausted
-    break
-  fi
-  fix_file="$run_dir/fix-$fix_round.md"
-  {
-    cat "$prompt_file"
-    printf '\n\n<issue_json>\n'
-    jq -c . "$issue_file"
-    printf '</issue_json>\n\n<failed_check_log>\n'
-    tail -n 200 "$run_dir/check.log"
-    printf '\n</failed_check_log>\n'
-  } >"$fix_file"
-  if ! run_agent_with_retry "$fix_file" "$artifact_dir/issue-$issue.fix-$fix_round.json"; then
-    failure='Agent fix process failed.'
-  elif ! history_unchanged; then
-    failure='Fix agent changed git history instead of leaving a controller-owned diff.'
-    failure_class=fatal
-  elif ! verify_touch_set; then
-    failure='Fix agent changed files outside the declared touch-set.'
-    failure_class=fatal
+  if check_with_lock; then
+    if [ "${AGENT_COMMENT_SWEEP_ENABLED:-1}" != 1 ]; then
+      break
+    fi
+    sweep_round=$((sweep_round + 1))
+    sweep_file="$run_dir/comment-sweep.md"
+    {
+      cat "$root/.github/agent-prompts/comment-sweep.md"
+      printf '\n\n<issue_json>\n'
+      jq -c . "$issue_file"
+      printf '</issue_json>\n'
+    } >"$sweep_file"
+    sweep_before=$(worktree_fingerprint)
+    if ! run_agent_with_retry "$sweep_file" "$artifact_dir/issue-$issue.sweep-$sweep_round.json"; then
+      failure='Agent comment sweep process failed.'
+    elif ! history_unchanged; then
+      failure='Comment sweep changed git history instead of leaving a controller-owned diff.'
+      failure_class=fatal
+    elif ! verify_touch_set; then
+      failure='Comment sweep changed files outside the declared touch-set.'
+      failure_class=fatal
+    elif [ "$sweep_before" = "$(worktree_fingerprint)" ]; then
+      break
+    fi
+  else
+    fix_round=$((fix_round + 1))
+    if [ "$fix_round" -gt "$max_fix_rounds" ]; then
+      failure="Deterministic make check failed after $max_fix_rounds fix rounds."
+      failure_class=exhausted
+      break
+    fi
+    fix_file="$run_dir/fix-$fix_round.md"
+    {
+      cat "$prompt_file"
+      printf '\n\n<issue_json>\n'
+      jq -c . "$issue_file"
+      printf '</issue_json>\n\n<failed_check_log>\n'
+      tail -n 200 "$run_dir/check.log"
+      printf '\n</failed_check_log>\n'
+    } >"$fix_file"
+    if ! run_agent_with_retry "$fix_file" "$artifact_dir/issue-$issue.fix-$fix_round.json"; then
+      failure='Agent fix process failed.'
+    elif ! history_unchanged; then
+      failure='Fix agent changed git history instead of leaving a controller-owned diff.'
+      failure_class=fatal
+    elif ! verify_touch_set; then
+      failure='Fix agent changed files outside the declared touch-set.'
+      failure_class=fatal
+    fi
   fi
 done
 
