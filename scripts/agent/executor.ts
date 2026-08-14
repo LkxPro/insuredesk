@@ -2,10 +2,8 @@ import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { appendEvent, patchStatus } from "./status.ts";
 
-export interface ExecutorOptions {
+export interface SessionOptions {
   worktree: string;
-  taskFile: string;
-  outputFile: string;
   worktrees: string;
   issue: number;
   env?: NodeJS.ProcessEnv;
@@ -39,115 +37,215 @@ function summarize(event: StreamEvent): { kind: string; summary: string } | null
   return null;
 }
 
-// claude -p --output-format stream-json --verbose：逐行 NDJSON,末行 result
-// 事件与 --output-format json 的结果 JSON 同形。原始事件全量落 events.jsonl,
-// 聚合心跳写 status.json(节流 1/s,写盘是 tmp+rename)。
-export async function runExecutor(options: ExecutorOptions): Promise<ExecutorResult> {
+export interface AgentSession {
+  // 发送一轮 prompt 并等待该轮的 result 事件。调用方串行,禁止并发 run。
+  run(promptFile: string, outputFile: string): Promise<ExecutorResult>;
+  // 软干预:向在途轮注入 user message(CLI 在下一 tool round 吸收),不等结果。
+  sendNudge(text: string): void;
+  inFlight(): boolean;
+  isAlive(): boolean;
+  close(): Promise<void>;
+}
+
+const userMessage = (text: string) =>
+  `${JSON.stringify({
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text }] },
+  })}\n`;
+
+// claude -p --input-format stream-json --output-format stream-json --verbose:
+// 每个 stdin user message 触发一轮,result 事件定界;进程跨轮存活,stdin 关闭后退出。
+// 原始事件全量落 events.jsonl,聚合心跳写 status.json(节流 1/s,写盘是 tmp+rename)。
+export function openAgentSession(options: SessionOptions): AgentSession {
   const claudeBin = process.env.AGENT_CLAUDE_BIN ?? "claude";
   const permissionMode = process.env.AGENT_CLAUDE_PERMISSION_MODE ?? "bypassPermissions";
-  // headless -p 下权限弹窗等于自动拒绝，必须显式 bypass。
-  const args = ["-p", "--output-format", "stream-json", "--verbose"];
+  // headless -p 下权限弹窗等于自动拒绝,必须显式 bypass。
+  const args = [
+    "-p",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+  ];
   if (process.env.AGENT_MAX_TURNS) args.push("--max-turns", process.env.AGENT_MAX_TURNS);
   if (permissionMode === "bypassPermissions") args.push("--dangerously-skip-permissions");
   else args.push("--permission-mode", permissionMode);
   if (process.env.AGENT_MODEL) args.push("--model", process.env.AGENT_MODEL);
 
-  const task = await readFile(options.taskFile, "utf8");
-  const executorEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...options.env,
-    AGENT_WORKTREE: options.worktree,
+  const child = spawn(claudeBin, args, {
+    cwd: options.worktree,
+    detached: true,
+    env: { ...process.env, ...options.env, AGENT_WORKTREE: options.worktree },
+    stdio: ["pipe", "pipe", "inherit"],
+  });
+  if (!child.stdin || !child.stdout) throw new Error("child stdio not piped");
+  const stdin = child.stdin;
+
+  let alive = !options.signal?.aborted;
+  let exited = false;
+  let flight = false;
+  let turns = 0;
+  let lastPatch = 0;
+  let lastKind = "";
+  let buffer = "";
+  let chain: Promise<void> = Promise.resolve();
+  let pending: { resolve: (r: ExecutorResult) => void; outputFile: string } | null = null;
+  let closedResolve!: () => void;
+  const closed = new Promise<void>((r) => {
+    closedResolve = r;
+  });
+
+  const killTree = () => {
+    try {
+      if (child.pid !== undefined) process.kill(-child.pid, "SIGTERM");
+    } catch {
+      child.kill("SIGTERM");
+    }
+    setTimeout(() => {
+      try {
+        if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+      } catch {}
+    }, 2000).unref();
+  };
+  const onAbort = () => killTree();
+  options.signal?.addEventListener("abort", onAbort, { once: true });
+
+  const failPending = async () => {
+    if (!pending) return;
+    const p = pending;
+    pending = null;
+    flight = false;
+    // CLI 崩溃/被杀:无 result 事件,按 transient 合成,交给重试层。
+    await writeFile(
+      p.outputFile,
+      `${JSON.stringify({ subtype: "error_during_execution", is_error: true, num_turns: turns })}\n`,
+    ).catch(() => {});
+    p.resolve({ ok: false, subtype: "error_during_execution", isError: true });
   };
 
-  return new Promise((resolve, reject) => {
-    const child = spawn(claudeBin, args, {
-      cwd: options.worktree,
-      detached: true,
-      env: executorEnv,
-      stdio: ["pipe", "pipe", "inherit"],
+  const handleEvent = async (event: StreamEvent) => {
+    await appendEvent(options.worktrees, options.issue, event as Record<string, unknown>);
+    const summary = summarize(event);
+    if (summary) lastKind = summary.kind;
+    // api_retry 等无摘要事件也刷新 lastEvent.ts,否则 provider 抖动期会被误判 stall。
+    const now = Date.now();
+    if (now - lastPatch >= 1000) {
+      lastPatch = now;
+      await patchStatus(options.worktrees, options.issue, {
+        lastEvent: {
+          ts: now,
+          kind: summary?.kind ?? (lastKind || event.type || "event"),
+          summary: summary?.summary ?? "",
+        },
+        turns,
+      }).catch(() => {});
+    }
+    if (event.type !== "result") return;
+    const { message: _message, ...result } = event;
+    // 无 pending 的 result 是 nudge 等孤儿轮的产物:落盘但不归因。
+    if (!pending) return;
+    const p = pending;
+    pending = null;
+    await writeFile(p.outputFile, `${JSON.stringify(result)}\n`);
+    await patchStatus(options.worktrees, options.issue, { turns }).catch(() => {});
+    p.resolve({
+      ok: result.is_error !== true,
+      subtype: result.subtype ?? "",
+      isError: result.is_error === true,
     });
-    const killTree = () => {
-      try {
-        if (child.pid !== undefined) process.kill(-child.pid, "SIGTERM");
-      } catch {
-        child.kill("SIGTERM");
-      }
-      setTimeout(() => {
-        try {
-          if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
-        } catch {}
-      }, 2000).unref();
-    };
-    const onAbort = () => killTree();
-    options.signal?.addEventListener("abort", onAbort, { once: true });
+  };
 
-    let buffer = "";
-    let resultEvent: StreamEvent | null = null;
-    let turns = 0;
-    let lastPatch = 0;
+  const handleLine = (line: string) => {
+    let event: StreamEvent;
+    try {
+      event = JSON.parse(line) as StreamEvent;
+    } catch {
+      return;
+    }
+    if (typeof event.num_turns === "number") turns = Math.max(turns, event.num_turns);
+    else if (event.type === "assistant") turns += 1;
+    // flight 同步复位,close 竞态窗口内 watchdog 不会把 nudge 错注进下一轮。
+    if (event.type === "result") flight = false;
+    chain = chain.then(() => handleEvent(event));
+  };
 
-    const handleLine = async (line: string) => {
-      let event: StreamEvent;
-      try {
-        event = JSON.parse(line) as StreamEvent;
-      } catch {
-        return;
-      }
-      await appendEvent(options.worktrees, options.issue, event as Record<string, unknown>);
-      if (typeof event.num_turns === "number") turns = event.num_turns;
-      else if (event.type === "assistant") turns += 1;
-      const summary = summarize(event);
-      const now = Date.now();
-      if (summary && now - lastPatch >= 1000) {
-        lastPatch = now;
-        await patchStatus(options.worktrees, options.issue, {
-          lastEvent: { ts: now, kind: summary.kind, summary: summary.summary },
-          turns,
-        }).catch(() => {});
-      }
-      if (event.type === "result") resultEvent = event;
-    };
-
-    let chain: Promise<void> = Promise.resolve();
-    if (!child.stdout) throw new Error("child stdout not piped");
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      buffer += chunk;
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        chain = chain.then(() => handleLine(line));
-      }
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      options.signal?.removeEventListener("abort", onAbort);
-      chain = chain.then(async () => {
-        if (buffer.trim()) await handleLine(buffer);
-        if (resultEvent !== null) {
-          const { message: _message, ...result } = resultEvent as StreamEvent & {
-            message?: unknown;
-          };
-          await writeFile(options.outputFile, `${JSON.stringify(result)}\n`);
-          await patchStatus(options.worktrees, options.issue, { turns });
-          resolve({
-            ok: code === 0 && resultEvent.is_error !== true,
-            subtype: resultEvent.subtype ?? "",
-            isError: resultEvent.is_error === true,
-          });
-        } else {
-          // CLI 崩溃/被杀：无 result 事件,按 transient 合成,交给重试层。
-          await writeFile(
-            options.outputFile,
-            `${JSON.stringify({ subtype: "error_during_execution", is_error: true, num_turns: turns })}\n`,
-          );
-          resolve({ ok: false, subtype: "error_during_execution", isError: true });
-        }
-      });
-      chain.catch(reject);
-    });
-    if (!child.stdin) throw new Error("child stdin not piped");
-    child.stdin.end(task);
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    buffer += chunk;
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.trim()) handleLine(line);
+    }
   });
+  child.on("error", () => {
+    alive = false;
+  });
+  child.on("close", () => {
+    exited = true;
+    alive = false;
+    options.signal?.removeEventListener("abort", onAbort);
+    chain = chain.then(async () => {
+      if (buffer.trim()) handleLine(buffer);
+      await failPending();
+      closedResolve();
+    });
+    chain.catch(() => closedResolve());
+  });
+  // 会话生于已中止信号(如 claim 已丢失):立即杀,close 处理器合成 transient 失败。
+  if (options.signal?.aborted) killTree();
+
+  return {
+    run(promptFile, outputFile) {
+      if (pending) throw new Error("concurrent run on agent session");
+      if (!alive)
+        return Promise.resolve({ ok: false, subtype: "error_during_execution", isError: true });
+      return new Promise<ExecutorResult>((resolve) => {
+        void (async () => {
+          const text = await readFile(promptFile, "utf8");
+          pending = { resolve, outputFile };
+          flight = true;
+          try {
+            stdin.write(userMessage(text));
+          } catch {
+            flight = false;
+            pending = null;
+            resolve({ ok: false, subtype: "error_during_execution", isError: true });
+          }
+        })().catch(() => {
+          flight = false;
+          pending = null;
+          resolve({ ok: false, subtype: "error_during_execution", isError: true });
+        });
+      });
+    },
+    sendNudge(text) {
+      if (!alive || !flight) return;
+      try {
+        stdin.write(userMessage(text));
+      } catch {}
+    },
+    inFlight: () => flight,
+    isAlive: () => alive,
+    async close() {
+      options.signal?.removeEventListener("abort", onAbort);
+      if (!exited) {
+        alive = false;
+        try {
+          stdin.end();
+        } catch {}
+        const delay = (ms: number) =>
+          new Promise<void>((r) => {
+            setTimeout(r, ms).unref();
+          });
+        await Promise.race([closed, delay(5000)]);
+        if (!exited) {
+          killTree();
+          await Promise.race([closed, delay(3000)]);
+        }
+      }
+      await failPending();
+    },
+  };
 }

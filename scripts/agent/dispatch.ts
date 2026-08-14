@@ -24,7 +24,7 @@ import {
 } from "./gh.ts";
 import { DirLock, pidFileAlive } from "./lock.ts";
 import { netCall, netCallFast } from "./net.ts";
-import { evaluateHealth, readStatus } from "./status.ts";
+import { daemonShouldKill, evaluateHealth, readStatus } from "./status.ts";
 
 const num = (key: string, fallback: number) => {
   const value = Number.parseInt(process.env[key] ?? "", 10);
@@ -262,19 +262,21 @@ export async function dispatchTick(root: string): Promise<void> {
       }
     }
 
-    // 卡死 worker 收割:机器判死,kill 后交给孤儿 running 恢复在下一 tick 重排队。
+    // 卡死 worker 收割:claude 相让出软干预窗口(见 daemonShouldKill),窗口耗尽才 kill,
+    // kill 后交给孤儿 running 恢复在下一 tick 重排队。
     for (const ref of await queueIssues()) {
       if (!hasLabel(ref, "agent:running")) continue;
       const status = await readStatus(worktrees, ref.number);
       if (!status) continue;
-      const health = evaluateHealth(status);
-      if (!health.stuck) continue;
+      if (!daemonShouldKill(status)) continue;
       const pidText = await readFile(join(worktrees, `issue-${ref.number}.pid`), "utf8").catch(
         () => "",
       );
       const pid = Number.parseInt(pidText.trim(), 10);
       if (!Number.isInteger(pid)) continue;
-      process.stderr.write(`killing stuck worker #${ref.number} (pid ${pid}): ${health.reason}\n`);
+      process.stderr.write(
+        `killing stuck worker #${ref.number} (pid ${pid}): ${evaluateHealth(status).reason}\n`,
+      );
       try {
         process.kill(-pid, "SIGTERM");
       } catch {

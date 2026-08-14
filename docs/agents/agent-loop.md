@@ -85,7 +85,7 @@ export AGENT_LOOP_MAX_PARALLEL=4
 export AGENT_LOOP_INTERVAL=30
 export AGENT_CLAUDE_BIN='claude'
 export AGENT_MODEL='override-model'        # 默认不传，用本机配置的模型
-export AGENT_MAX_TURNS=80                  # 默认不传，不限轮次
+export AGENT_MAX_TURNS=80                  # 默认不传，不限轮次;设了则按 implementation+fix 长存会话累计
 export AGENT_REVIEW_ENABLED=1
 export AGENT_COMMENT_SWEEP_ENABLED=1        # make check 通过后跑注释清扫，删违规注释后有改动会重跑 check
 export AGENT_FIX_MAX_ROUNDS=3              # make check 失败后 worker 内部修复轮次
@@ -93,6 +93,10 @@ export AGENT_REPAIR_MAX_ATTEMPTS=3         # PR CI 失败后回队修复上限
 export AGENT_CLAUDE_PERMISSION_MODE=bypassPermissions
 export AGENT_EXECUTOR_ATTEMPTS=2             # executor transient（provider/流断）同 run 内重试上限
 export AGENT_EXECUTOR_RETRY_DELAY=30         # executor 重试前退避秒数
+export AGENT_NUDGE_AFTER_SECONDS=600         # claude 相无事件多久后注入卡死软干预 nudge
+export AGENT_NUDGE_GRACE_SECONDS=600         # nudge 后恢复宽限;超时未恢复按 process 级失败杀掉
+export AGENT_NUDGE_MAX_PER_RUN=2             # 单 run 软干预次数上限(跨相累计)
+export AGENT_NUDGE_WATCHDOG_SECONDS=15       # worker 内 stall 巡检间隔
 export AGENT_NET_CALL_ATTEMPTS=4             # gh/git 网络调用传输层错误重试上限
 export AGENT_NET_CALL_BASE_DELAY=2           # 网络重试退避基数（指数翻倍）
 export AGENT_NET_CALL_TIMEOUT_SECONDS=30     # 单次网络尝试看门狗超时
@@ -308,9 +312,11 @@ Worker 顺序：
 1. Claude 只留下未提交 diff。
 2. 独立 review agent 检查并可修正 diff；注释规范（AGENTS.md）是必须项，diff 新增与触碰文件内的违规存量注释都删。
 3. controller 校验改动未超出 touch-set。
-4. 强制运行 `make check`（多 worker 间本地互斥串行）；失败把日志喂回 executor 修复，同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
-5. `make check` 通过后跑注释清扫（`comment-sweep.md`，只准删注释、存疑保留）；有删除就重跑 `make check`，挂则回 fix 轮，直到单次清扫零改动。`AGENT_COMMENT_SWEEP_ENABLED=0` 可关。
+4. 强制运行 `make check`（多 worker 间本地互斥串行）；失败把日志喂回**同一 implementation 会话**修复（fix 轮复用会话上下文，只注入失败日志与约束提醒；会话死亡自动重开并退化为完整 prompt 冷启动），同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
+5. `make check` 通过后跑注释清扫（`comment-sweep.md`，只准删注释、存疑保留）；review 与 sweep 都用独立会话，保持新鲜眼睛；有删除就重跑 `make check`，挂则回 fix 轮，直到单次清扫零改动。`AGENT_COMMENT_SWEEP_ENABLED=0` 可关。
 6. 再验证 claim 并 fence 发布。
+
+claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`）时 worker 先经 stdin 注入 `stuck-nudge.md` 软干预；宽限 `AGENT_NUDGE_GRACE_SECONDS` 内未恢复才按 process 级失败杀掉重排队。单 run 最多 nudge `AGENT_NUDGE_MAX_PER_RUN` 次。daemon 硬杀阈值相应推后到两者之和，作为 worker watchdog 失效的兜底；check/publish 相不让窗、卡即杀。nudge 只在 CLI 下一 tool round 生效：救得了慢/绕圈型 stall，救不了进程楔死。
 7. controller commit、push、创建 PR，添加 `agent:automerge`，同时摘除 `agent:running`/`agent:repair`/`ready-for-agent`（否则 unlabeled 事件触发的 transition 会把 Issue 重新入队，与 CI/merge 关单窗口竞态出重复 worker）。
 
 `Agent merge` 等 required checks 通过后 squash merge；merge 事件再由 `close-linked-issues` 兜底关闭 PR body 里 `Closes #<issue>` 引用的 child（auto-merge 异步执行时 GitHub 原生关键字关单不可靠）。下游 native blocker 随即解除，daemon 自动领取下一层。
@@ -444,8 +450,8 @@ export AGENT_CLAIM_STALE_SECONDS=300
 | `scripts/agent/dispatch.ts` | transition、frontier 编排、claim 编排、daemon tick、CI reconciliation |
 | `scripts/agent/worker.ts` | worktree 内实现、review、验证与 controller 发布 |
 | `scripts/agent/claim.ts` | commit-tree + atomic lease 的分布式 claim/heartbeat/fence |
-| `scripts/agent/executor.ts` | claude stream-json 执行器:事件落盘 + status 聚合 |
-| `scripts/agent/status.ts` | status.json 双写者聚合、分相判死、status 渲染 |
+| `scripts/agent/executor.ts` | claude stream-json 会话执行器：implementation+fix 复用长存会话，事件落盘 + status 聚合 |
+| `scripts/agent/status.ts` | status.json 双写者聚合、分相判死、daemon 硬杀窗口、status 渲染 |
 | `scripts/agent/net.ts` | gh/git 网络调用统一入口：超时、传输层错误退避重试 |
 | `.github/ISSUE_TEMPLATE/agent-task.yml` | 可选完整单票 fast lane |
 | `.github/workflows/agent-loop.yml` | label bootstrap 与 fast-lane contract transition |

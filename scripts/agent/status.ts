@@ -24,6 +24,7 @@ export interface WorkerStatus {
   phaseSince: number;
   turns: number;
   lastEvent: LastEvent | null;
+  nudgedAt?: number;
   updatedAt: number;
 }
 
@@ -62,7 +63,9 @@ async function writeStatus(worktrees: string, status: WorkerStatus): Promise<voi
 export async function patchStatus(
   worktrees: string,
   issue: number,
-  patch: Partial<Omit<WorkerStatus, "issue" | "updatedAt">>,
+  patch: Partial<Omit<WorkerStatus, "issue" | "updatedAt" | "nudgedAt">> & {
+    nudgedAt?: number | null;
+  },
 ): Promise<void> {
   const current = await readStatus(worktrees, issue);
   const next: WorkerStatus = {
@@ -74,6 +77,8 @@ export async function patchStatus(
     lastEvent: patch.lastEvent !== undefined ? patch.lastEvent : (current?.lastEvent ?? null),
     updatedAt: Date.now(),
   };
+  const nudgedAt = patch.nudgedAt === undefined ? current?.nudgedAt : (patch.nudgedAt ?? undefined);
+  if (nudgedAt !== undefined) next.nudgedAt = nudgedAt;
   await writeStatus(worktrees, next);
 }
 
@@ -88,6 +93,17 @@ export async function appendEvent(
 export interface Health {
   stuck: boolean;
   reason: string;
+}
+
+export function nudgeWindowSeconds(): { after: number; grace: number } {
+  const read = (key: string, fallback: number) => {
+    const value = Number.parseInt(process.env[key] ?? "", 10);
+    return Number.isInteger(value) && value > 0 ? value : fallback;
+  };
+  return {
+    after: read("AGENT_NUDGE_AFTER_SECONDS", 600),
+    grace: read("AGENT_NUDGE_GRACE_SECONDS", 600),
+  };
 }
 
 export function evaluateHealth(status: WorkerStatus, now = Date.now()): Health {
@@ -118,6 +134,16 @@ export function evaluateHealth(status: WorkerStatus, now = Date.now()): Health {
   return { stuck: false, reason: "" };
 }
 
+// daemon 硬杀让出 [after, after+grace] 窗口给 worker 内 watchdog 软干预;
+// 窗口耗尽仍 stuck 说明 worker watchdog 也死了,才归 daemon 收割。
+export function daemonShouldKill(status: WorkerStatus, now = Date.now()): boolean {
+  if (!evaluateHealth(status, now).stuck) return false;
+  if (status.phase === "check" || status.phase === "publish") return true;
+  const { after, grace } = nudgeWindowSeconds();
+  const lastTs = status.lastEvent?.ts ?? status.phaseSince;
+  return Math.floor((now - lastTs) / 1000) > after + grace;
+}
+
 function age(now: number, ts: number): string {
   const seconds = Math.max(0, Math.floor((now - ts) / 1000));
   if (seconds < 60) return `${seconds}s`;
@@ -130,7 +156,8 @@ export function renderStatusRow(status: WorkerStatus, now = Date.now()): string 
     ? `${status.lastEvent.kind} ${age(now, status.lastEvent.ts)} ago`
     : "-";
   const flag = health.stuck ? `STUCK(${health.reason})` : "ok";
-  return `#${status.issue}\t${status.phase}\t${last}\tturns=${status.turns}\t${flag}`;
+  const nudged = status.nudgedAt !== undefined ? "+nudged" : "";
+  return `#${status.issue}\t${status.phase}\t${last}\tturns=${status.turns}\t${flag}${nudged}`;
 }
 
 export async function renderAll(worktrees: string): Promise<string> {

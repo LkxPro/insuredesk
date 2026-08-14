@@ -2,12 +2,12 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { claimFileOf, claimOwned, fenceClaim, heartbeatClaim, releaseClaim } from "./claim.ts";
-import { runExecutor } from "./executor.ts";
+import { type AgentSession, type ExecutorResult, openAgentSession } from "./executor.ts";
 import { normalizeIssue, outsideTouchSet } from "./frontier.ts";
 import { commentIssue, editIssue, ghCall, ghJson } from "./gh.ts";
 import { DirLock } from "./lock.ts";
 import { netCall } from "./net.ts";
-import { patchStatus } from "./status.ts";
+import { appendEvent, patchStatus, readStatus } from "./status.ts";
 
 type FailureClass = "process" | "fatal" | "exhausted";
 
@@ -25,6 +25,9 @@ const num = (key: string, fallback: number) => {
   const value = Number.parseInt(raw ?? "", 10);
   return Number.isInteger(value) && value > 0 ? value : fallback;
 };
+
+const transient = (result: ExecutorResult) =>
+  result.subtype === "" || result.subtype === "error_during_execution";
 
 export async function runWorker(root: string, worktree: string, issue: number): Promise<number> {
   const worktrees = dirname(worktree);
@@ -55,13 +58,16 @@ export async function runWorker(root: string, worktree: string, issue: number): 
   heartbeat.unref();
 
   const runDir = await mkdtemp(join(tmpdir(), `agent-worker-${issue}-`));
+  const ctx: PipelineContext = {
+    claimFile,
+    publishMarker,
+    artifact,
+    sessions: [],
+    activeSession: { current: null },
+  };
   let startHead = "";
   try {
-    startHead = await runPipeline(root, worktree, issue, worktrees, runDir, abort.signal, {
-      claimFile,
-      publishMarker,
-      artifact,
-    });
+    startHead = await runPipeline(root, worktree, issue, worktrees, runDir, abort.signal, ctx);
     return 0;
   } catch (error) {
     if (error instanceof WorkerFailure) {
@@ -72,6 +78,8 @@ export async function runWorker(root: string, worktree: string, issue: number): 
   } finally {
     clearInterval(heartbeat);
     abort.abort();
+    if (ctx.watchdog) clearInterval(ctx.watchdog);
+    for (const session of ctx.sessions) await session.close().catch(() => {});
     await releaseClaim(root, worktrees, issue).catch(() => {});
     await rm(join(worktrees, `issue-${issue}.pid`), { force: true });
     await rm(publishMarker, { force: true });
@@ -83,6 +91,9 @@ interface PipelineContext {
   claimFile: string;
   publishMarker: string;
   artifact: (name: string) => string;
+  sessions: AgentSession[];
+  activeSession: { current: AgentSession | null };
+  watchdog?: NodeJS.Timeout;
 }
 
 async function git(worktree: string, args: string[]): Promise<string> {
@@ -179,27 +190,61 @@ async function runPipeline(
     SSH_AUTH_SOCK: "",
   };
 
-  // error_during_execution 等 provider/网络 transient 同 run 内退避重试；
+  // claim 丢失 abort 与 stall abort 都经 sessionSignal 杀会话;只有 stall 在重试层短路成失败。
+  const stallAbort = new AbortController();
+  const sessionSignal = AbortSignal.any([signal, stallAbort.signal]);
+
+  interface SessionHolder {
+    session: AgentSession | null;
+  }
+
+  // error_during_execution 等 provider/网络 transient 同 run 内退避重试;
   // error_max_turns 等行为类失败重试无益。
-  const runAgentWithRetry = async (prompt: string, outputName: string): Promise<void> => {
+  // 会话活着用 warm 短 prompt(上下文还在);死了重开并用 cold 完整 prompt 冷启动。
+  const runPhase = async (
+    holder: SessionHolder,
+    files: { warm: string; cold: string },
+    outputName: string,
+    keepAlive: boolean,
+  ): Promise<void> => {
     const max = num("AGENT_EXECUTOR_ATTEMPTS", 2);
     for (let attempt = 1; ; attempt += 1) {
-      const result = await runExecutor({
-        worktree,
-        taskFile: prompt,
-        outputFile: ctx.artifact(outputName),
-        worktrees,
-        issue,
-        env: executorEnv,
-        signal,
-      });
-      if (result.ok) return;
-      const transient = result.subtype === "" || result.subtype === "error_during_execution";
-      if (attempt >= max || !transient)
+      let promptFile = files.warm;
+      if (!holder.session?.isAlive()) {
+        if (holder.session) await holder.session.close().catch(() => {});
+        holder.session = openAgentSession({
+          worktree,
+          worktrees,
+          issue,
+          env: executorEnv,
+          signal: sessionSignal,
+        });
+        ctx.sessions.push(holder.session);
+        promptFile = files.cold;
+      }
+      ctx.activeSession.current = holder.session;
+      const result = await holder.session.run(promptFile, ctx.artifact(outputName));
+      ctx.activeSession.current = null;
+      if (result.ok) {
+        if (!keepAlive) {
+          await holder.session.close().catch(() => {});
+          holder.session = null;
+        }
+        return;
+      }
+      if (stallAbort.signal.aborted)
+        throw new WorkerFailure(
+          "Worker stalled and did not recover within the nudge grace period.",
+          "process",
+        );
+      if (attempt >= max || !transient(result)) {
+        await holder.session?.close().catch(() => {});
+        holder.session = null;
         throw new WorkerFailure(
           `executor failed: ${outputName} (${result.subtype || "unknown"})`,
           "process",
         );
+      }
       process.stderr.write(`executor attempt ${attempt} failed (transient); retrying\n`);
       await new Promise((resolve) =>
         setTimeout(resolve, num("AGENT_EXECUTOR_RETRY_DELAY", 30) * 1000),
@@ -207,8 +252,60 @@ async function runPipeline(
     }
   };
 
+  // stall 软干预:claude 相无事件超阈值就往在途轮注 nudge;宽限内未恢复才杀。
+  // nudge 只在 CLI 下一 tool round 生效,救得了慢/绕圈,救不了进程楔死。
+  const nudgeAfter = num("AGENT_NUDGE_AFTER_SECONDS", 600);
+  const nudgeGrace = num("AGENT_NUDGE_GRACE_SECONDS", 600);
+  const nudgeMax = num("AGENT_NUDGE_MAX_PER_RUN", 2);
+  const nudgeTemplate = await readFile(
+    join(root, ".github", "agent-prompts", "stuck-nudge.md"),
+    "utf8",
+  );
+  let nudgesUsed = 0;
+  let nudgePendingSince = 0;
+  const watchdog = setInterval(() => {
+    void (async () => {
+      const status = await readStatus(worktrees, issue);
+      if (!status) return;
+      if (["check", "publish", "done", "failed"].includes(status.phase)) return;
+      const now = Date.now();
+      if (nudgePendingSince > 0) {
+        if ((status.lastEvent?.ts ?? 0) > nudgePendingSince) {
+          nudgePendingSince = 0;
+          await patchStatus(worktrees, issue, { nudgedAt: null }).catch(() => {});
+          return;
+        }
+        if (now - nudgePendingSince > nudgeGrace * 1000) stallAbort.abort();
+        return;
+      }
+      const lastTs = status.lastEvent?.ts ?? status.phaseSince;
+      const silentSeconds = Math.floor((now - lastTs) / 1000);
+      if (silentSeconds <= nudgeAfter) return;
+      const session = ctx.activeSession.current;
+      if (!session?.inFlight() || !session.isAlive()) return;
+      if (nudgesUsed >= nudgeMax) {
+        stallAbort.abort();
+        return;
+      }
+      nudgesUsed += 1;
+      nudgePendingSince = now;
+      const reason = `${status.phase}: no executor event for ${Math.floor(silentSeconds / 60)}min`;
+      session.sendNudge(nudgeTemplate.replaceAll("{reason}", reason));
+      await appendEvent(worktrees, issue, {
+        type: "agent",
+        subtype: "nudge",
+        reason,
+        count: nudgesUsed,
+      }).catch(() => {});
+      await patchStatus(worktrees, issue, { nudgedAt: now }).catch(() => {});
+    })().catch(() => {});
+  }, num("AGENT_NUDGE_WATCHDOG_SECONDS", 15) * 1000);
+  watchdog.unref();
+  ctx.watchdog = watchdog;
+
   await patchStatus(worktrees, issue, { phase: "implementation" });
-  await runAgentWithRetry(taskFile, "implementation.json");
+  const implHolder: SessionHolder = { session: null };
+  await runPhase(implHolder, { warm: taskFile, cold: taskFile }, "implementation.json", true);
   if (!(await historyUnchanged()))
     throw new WorkerFailure(
       "Agent changed git history instead of leaving a controller-owned diff.",
@@ -222,7 +319,8 @@ async function runPipeline(
       reviewFile,
       `${await readFile(join(root, ".github", "agent-prompts", "review.md"), "utf8")}${issueBlock}`,
     );
-    await runAgentWithRetry(reviewFile, "review.json");
+    // review 必须独立于 implementation 会话,保持新鲜眼睛。
+    await runPhase({ session: null }, { warm: reviewFile, cold: reviewFile }, "review.json", false);
     if (!(await historyUnchanged()))
       throw new WorkerFailure(
         "Review agent changed git history instead of leaving a controller-owned diff.",
@@ -299,7 +397,13 @@ async function runPipeline(
         `${await readFile(join(root, ".github", "agent-prompts", "comment-sweep.md"), "utf8")}${issueBlock}`,
       );
       const before = await fingerprint();
-      await runAgentWithRetry(sweepFile, `sweep-${sweepRound}.json`);
+      // sweep 同 review:独立会话,避免实现会话偏护自己写的注释。
+      await runPhase(
+        { session: null },
+        { warm: sweepFile, cold: sweepFile },
+        `sweep-${sweepRound}.json`,
+        false,
+      );
       if (!(await historyUnchanged()))
         throw new WorkerFailure(
           "Comment sweep changed git history instead of leaving a controller-owned diff.",
@@ -320,12 +424,23 @@ async function runPipeline(
         .split("\n")
         .slice(-200)
         .join("\n");
-      const fixFile = join(runDir, "fix.md");
+      const fixColdFile = join(runDir, "fix.md");
       await writeFile(
-        fixFile,
-        `${await readFile(promptFile, "utf8")}${issueBlock}\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+        fixColdFile,
+        `${await readFile(promptFile, "utf8")}${issueBlock}\n<failed_check_log>\n${checkTail}\n</failed_check_log>\nFull log: ${checkLog}\n`,
       );
-      await runAgentWithRetry(fixFile, `fix-${fixRound}.json`);
+      // warm 路径会话里已有 task/issue 上下文,只带日志与约束提醒。
+      const fixWarmFile = join(runDir, "fix-warm.md");
+      await writeFile(
+        fixWarmFile,
+        `\`make check\` failed. Fix the failures below; stay within the declared touch-set and do not rewrite git history. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+      );
+      await runPhase(
+        implHolder,
+        { warm: fixWarmFile, cold: fixColdFile },
+        `fix-${fixRound}.json`,
+        true,
+      );
       if (!(await historyUnchanged()))
         throw new WorkerFailure(
           "Fix agent changed git history instead of leaving a controller-owned diff.",
@@ -335,6 +450,11 @@ async function runPipeline(
     }
   }
 
+  // publish 不再需要模型;先关会话,publish 挂起时不拖子进程。
+  if (implHolder.session) {
+    await implHolder.session.close().catch(() => {});
+    implHolder.session = null;
+  }
   if (!(await claimOwned(worktree, ctx.claimFile)))
     throw new WorkerFailure("Agent lost its distributed claim before publication.", "process");
 
