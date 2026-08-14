@@ -26,9 +26,20 @@ jobs:
       REPO: ${{ github.repository }}
     steps:
       - name: Wait for checks, squash merge, close linked issues
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -e
-          gh pr checks "$PR" --repo "$REPO" --watch
+          # 本 job 自身就是 PR 上的一个 check,等全部 checks 等于等自己,必须排除。
+          while :; do
+            runs=$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs" \
+              --jq '[.check_runs[] | select(.name != "merge-and-close")]')
+            pending=$(printf '%s' "$runs" | jq '[.[] | select(.status != "completed")] | length')
+            failed=$(printf '%s' "$runs" | jq '[.[] | select(.status == "completed" and (.conclusion | IN("success","skipped","neutral") | not))] | length')
+            [ "$failed" -eq 0 ] || { echo "checks failed"; exit 1; }
+            [ "$pending" -eq 0 ] && break
+            sleep 15
+          done
           gh pr merge "$PR" --repo "$REPO" --squash --delete-branch
           gh pr view "$PR" --repo "$REPO" --json body --jq .body \
             | grep -Eio '(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]+' \
