@@ -209,4 +209,42 @@ describe("ticket 查重（Testcontainers）", () => {
     });
     expect(selfEdit.changedFields).toEqual(["policyNumbers"]);
   });
+
+  it("命中条目带活动摘要：完结单=完结备注，未完结=最新处理记录，无记录退回创建时间", async () => {
+    const open = await manager().ticket.create({
+      customerName: "活动-未完结",
+      phone: "13199990000",
+      allowDuplicate: true,
+    });
+    await manager().ticket.assign({ ticketId: open.id, assigneeId: seeded.users.manager.id });
+    await manager().ticket.addComment({ ticketId: open.id, remark: "已电话联系客户" });
+
+    const done = await manager().ticket.create({
+      customerName: "活动-完结",
+      phone: "13199990000",
+      allowDuplicate: true,
+    });
+    await manager().ticket.assign({ ticketId: done.id, assigneeId: seeded.users.manager.id });
+    const completionStatus = await prisma.completionStatus.findFirstOrThrow();
+    await manager().ticket.resolve({
+      ticketId: done.id,
+      completionStatusId: completionStatus.id,
+      remark: "已按原路退回保费",
+    });
+
+    await manager().ticket.create({
+      customerName: "活动-无记录",
+      phone: "13199990000",
+      allowDuplicate: true,
+    });
+
+    const hits = await frontline().ticket.findDuplicates({ phone: "13199990000" });
+    const byName = (name: string) => hits.find((hit) => hit.customerName === name);
+
+    expect(byName("活动-未完结")).toMatchObject({ activityText: "已电话联系客户" });
+    expect(byName("活动-完结")).toMatchObject({ activityText: "已按原路退回保费" });
+    expect(byName("活动-无记录")).toMatchObject({ activityText: "暂无处理记录" });
+    // 无记录条目的 activityAt 退回其创建时间
+    expect(byName("活动-无记录")?.activityAt).toBe(byName("活动-无记录")?.createdAt);
+  });
 });

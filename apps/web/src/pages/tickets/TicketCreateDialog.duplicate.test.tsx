@@ -22,6 +22,8 @@ function dupRow(overrides: Record<string, unknown> = {}) {
     createdAt: "2026-08-12T06:32:00.000Z",
     displayStatus: "processing",
     matchedFields: ["phone"],
+    activityAt: "2026-08-12T09:05:00.000Z",
+    activityText: "客户补充提交了缴费凭证，待核身",
     ...overrides,
   };
 }
@@ -265,5 +267,68 @@ describe("编辑查重", () => {
       phone: "13900009999",
       allowDuplicate: true,
     });
+  });
+});
+
+describe("详情页重复工单条幅", () => {
+  const bannerDups = [
+    dupRow({
+      id: "d1",
+      workOrderNumber: "WO100091",
+      displayStatus: "completed",
+      activityAt: "2026-08-10T06:00:00.000Z",
+      activityText: "已按原路退回保费，客户确认到账",
+    }),
+    dupRow({
+      id: "d2",
+      workOrderNumber: "WO100092",
+      displayStatus: "processing",
+      activityAt: "2026-08-12T01:05:00.000Z",
+      activityText: "客户补充提交了缴费凭证，待核身",
+    }),
+  ];
+
+  function renderDetail(dups: unknown) {
+    renderApp({
+      path: "/tickets/t1",
+      trpc: {
+        "ticket.detail": detailPayload(),
+        "ticket.findDuplicates": dups,
+        "channel.options": [],
+        "ticketCategory.options": [],
+      },
+    });
+  }
+
+  it("收起只显最近 1 条，+N 原地展开全部；条目两行、裸文本无前缀", async () => {
+    renderDetail(bannerDups);
+    const pane = await screen.findByRole("region", { name: "工单详情" });
+    await waitFor(() => expect(pane).toHaveTextContent("WO100001"));
+
+    expect(await within(pane).findByText("该客户另有 2 个工单")).toBeInTheDocument();
+    expect(within(pane).getByRole("link", { name: "WO100091" })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
+    expect(within(pane).queryByRole("link", { name: "WO100092" })).not.toBeInTheDocument();
+    // 裸文本摘要：无「完结状态/最新记录」前缀（状态徽标已表达）
+    expect(within(pane).getByText("已按原路退回保费，客户确认到账")).toBeInTheDocument();
+    expect(within(pane).queryByText(/完结状态：/)).not.toBeInTheDocument();
+    expect(within(pane).queryByText(/最新记录/)).not.toBeInTheDocument();
+
+    fireEvent.click(within(pane).getByRole("button", { name: "展开其余 1 个工单" }));
+    expect(within(pane).getByRole("link", { name: "WO100092" })).toBeInTheDocument();
+    expect(within(pane).getByText("客户补充提交了缴费凭证，待核身")).toBeInTheDocument();
+
+    fireEvent.click(within(pane).getByRole("button", { name: "收起" }));
+    expect(within(pane).queryByRole("link", { name: "WO100092" })).not.toBeInTheDocument();
+  });
+
+  it("无重复工单不渲染条幅", async () => {
+    renderDetail([]);
+    const pane = await screen.findByRole("region", { name: "工单详情" });
+    await waitFor(() => expect(pane).toHaveTextContent("WO100001"));
+    await waitFor(() => expect(callsTo("ticket.findDuplicates").length).toBeGreaterThan(0));
+    expect(within(pane).queryByText(/该客户另有/)).not.toBeInTheDocument();
   });
 });

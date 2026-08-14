@@ -90,6 +90,14 @@ export async function findDuplicateTickets(
       policyNumbers: true,
       phone: true,
       contactPhone: true,
+      // 条目活动摘要＝最新一条 resolve/comment/external_note 留痕。完结单的沟通
+      // 止于 resolve（完结后不可再跟进/留言），故完结单取到的必是完结备注
+      processLogs: {
+        select: { at: true, remark: true },
+        where: { action: { in: ["resolve", "comment", "external_note"] } },
+        orderBy: [{ at: "desc" }, { id: "desc" }],
+        take: 1,
+      },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: TICKET_DUPLICATES_LIMIT,
@@ -103,6 +111,8 @@ export async function findDuplicateTickets(
     createdAt: row.createdAt.toISOString(),
     displayStatus: deriveDisplayStatus(ticketStatusSchema.parse(row.status), row.dueAt, now),
     matchedFields: matchedFieldsOf(row, query),
+    activityAt: (row.processLogs[0]?.at ?? row.createdAt).toISOString(),
+    activityText: row.processLogs[0]?.remark ?? "暂无处理记录",
   }));
 }
 
