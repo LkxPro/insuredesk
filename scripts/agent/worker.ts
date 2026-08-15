@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { claimFileOf, claimOwned, fenceClaim, heartbeatClaim, releaseClaim } from "./claim.ts";
 import { type AgentSession, type ExecutorResult, openAgentSession } from "./executor.ts";
 import { normalizeIssue, outsideTouchSet } from "./frontier.ts";
@@ -162,6 +162,16 @@ async function runPipeline(
   ).trim();
   await git(worktree, ["reset", "--hard", startHead]);
   await git(worktree, ["clean", "-fd"]);
+
+  // message 文件落在 worktree 内(executor 沙箱只保证能写 cwd),但要对所有 git 检测隐身。
+  const messageFile = ".agent-commit-message";
+  const excludeFile = resolve(
+    worktree,
+    (await git(worktree, ["rev-parse", "--git-path", "info/exclude"])).trim(),
+  );
+  const excludeRules = await readFile(excludeFile, "utf8").catch(() => "");
+  if (!excludeRules.split("\n").includes(messageFile))
+    await appendFile(excludeFile, `${messageFile}\n`);
 
   const historyUnchanged = async () =>
     (await git(worktree, ["rev-parse", "HEAD"])).trim() === startHead;
@@ -475,6 +485,30 @@ async function runPipeline(
     }
   }
 
+  // message 格式说明只进这个收尾轮,不进 task.md:实现阶段的注意力是稀缺资源。
+  await patchStatus(worktrees, issue, { phase: "message" });
+  const messageColdFile = join(runDir, "commit-message.md");
+  await writeFile(
+    messageColdFile,
+    `Inspect the uncommitted worktree diff (\`git diff\` and untracked files) against the attached issue JSON and write the commit message for this work to \`${messageFile}\` in the worktree root. Format — first line \`<type>: <one-line summary>\` with type one of feat, fix, refactor, chore, docs, test, perf (no scope); then a blank line, a 2–3 line summary of what changed, a blank line, and \`Refs #${issue}\`. Match the issue's language. Write only that file: do not commit, do not edit code.${issueBlock}`,
+  );
+  const messageWarmFile = join(runDir, "commit-message-warm.md");
+  await writeFile(
+    messageWarmFile,
+    `The work is done and all checks pass. Write the commit message for what you implemented to \`${messageFile}\` in the worktree root. Format — first line \`<type>: <one-line summary>\` with type one of feat, fix, refactor, chore, docs, test, perf (no scope); then a blank line, a 2–3 line summary of what changed, a blank line, and \`Refs #${issue}\`. Match the issue's language. Write only that file: do not commit, do not edit code.\n`,
+  );
+  await runPhase(
+    implHolder,
+    { warm: messageWarmFile, cold: messageColdFile },
+    "commit-message.json",
+    false,
+  );
+  if (!(await historyUnchanged()))
+    throw new WorkerFailure(
+      "Commit-message agent changed git history instead of leaving a controller-owned diff.",
+      "fatal",
+    );
+
   // publish 不再需要模型;先关会话,publish 挂起时不拖子进程。
   if (implHolder.session) {
     await implHolder.session.close().catch(() => {});
@@ -500,14 +534,22 @@ async function runPipeline(
     }
   }
 
-  // commit 前收集,commit 后 ls-files 干净就看不到了。
   const outside = await collectOutsideTouchSet();
+  // 缺 message 不阻断发布,兜底降级。
+  const authored = await readFile(join(worktree, messageFile), "utf8")
+    .then((text) => text.trim())
+    .catch(() => "");
+  const fallback = `chore: ${parsed.title}\n\nRefs #${issue}`;
+  const messagePath = join(runDir, "commit-message.txt");
+  await writeFile(messagePath, authored || fallback);
   await git(worktree, ["config", "user.name", "insuredesk-agent"]);
   await git(worktree, ["config", "user.email", "insuredesk-agent@users.noreply.github.com"]);
   await git(worktree, ["add", "--all"]);
-  await git(worktree, ["commit", "-m", `agent: resolve issue #${issue}`]);
+  // repair 复跑改写已推送的 commit,顺带覆盖修复内容。
+  await git(worktree, ["commit", ...(repair ? ["--amend"] : []), "-F", messagePath]);
   try {
-    await git(worktree, ["push", "--set-upstream", "origin", "HEAD"]);
+    // amend 后远端已有旧 commit,必须 lease 覆盖。
+    await git(worktree, ["push", "--set-upstream", "--force-with-lease", "origin", "HEAD"]);
   } catch {
     throw new WorkerFailure("Agent could not push its publication branch.", "process");
   }
@@ -553,9 +595,12 @@ async function runPipeline(
     outside.length > 0
       ? `\n\nChanged files outside the declared touch-set (allowed; touch-set is the parallel-scheduling contract, not a hard boundary): ${outside.map((f) => `\`${f}\``).join(", ")}`
       : "";
+  const messageNote = authored
+    ? ""
+    : "\n\nWorker did not produce a commit message; used the fallback `chore: <issue title>`.";
   await commentIssue(
     issue,
-    `Agent PR #${pr} published after review and full CI-equivalent checks.${outsideNote}`,
+    `Agent PR #${pr} published after review and full CI-equivalent checks.${outsideNote}${messageNote}`,
   );
   await patchStatus(worktrees, issue, { phase: "done" });
   return startHead;

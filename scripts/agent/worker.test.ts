@@ -118,6 +118,7 @@ const CLAUDE_HAPPY = `while IFS= read -r line; do
   printf '%s\\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write"}]},"num_turns":1}'
   case $line in
     *'final comment sweep'*) : ;;
+    *'commit message'*) printf '%b\\n' 'feat: 实现工单\\n\\n实现 allowed.txt。\\n\\nRefs #7' >"$PWD/.agent-commit-message" ;;
     *) printf 'implemented\\n' >"$PWD/allowed.txt" ;;
   esac
   printf '%s\\n' '${RESULT_EVENT}'
@@ -148,6 +149,12 @@ test("worker 全管线：impl→check→sweep→publish→摘标签→claim 释�
   assert.equal(
     await git(sandbox.origin, ["rev-parse", "--verify", claimRefOf(7)]).catch(() => "gone"),
     "gone",
+  );
+  // 发布分支恰好一个 commit,message 是 worker 自写的 conventional 格式(squash 后直接成为 main 记录)。
+  assert.equal(await git(sandbox.origin, ["rev-list", "--count", "main..codex/issue-7"]), "1");
+  assert.equal(
+    await git(sandbox.origin, ["log", "-1", "--format=%s", "codex/issue-7"]),
+    "feat: 实现工单",
   );
   // 摘标签与关单评论发生过。
   const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
@@ -216,6 +223,10 @@ done`;
   assert.ok(captured.includes("Continue."));
   const events = await readFile(join(sandbox.worktrees, "issue-7.events.jsonl"), "utf8");
   assert.ok(events.includes('"subtype":"pause-continue"'));
+  assert.equal(
+    await git(sandbox.origin, ["log", "-1", "--format=%s", "codex/issue-7"]),
+    "chore: Test task",
+  );
 });
 
 test("fix 轮复用 implementation 会话(warm 短 prompt)", async () => {
