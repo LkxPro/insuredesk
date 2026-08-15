@@ -123,8 +123,14 @@ export function normalizeIssue(issue: Issue): FrontierIssue {
 
 export function planFrontier(issues: FrontierIssue[], maxParallel: number): FrontierPlan {
   const running = issues.filter((issue) => issue.labels.includes("agent:running"));
+  // running∩queued 的标签叠加态(如 transition 竞态残留的 queued)不是候选,
+  // 否则一张票会和自己的 touch-set/lock 自相冲突,甚至被重复领取。
+  const runningNumbers = new Set(running.map((issue) => issue.number));
   const queued = issues.filter(
-    (issue) => issue.labels.includes("agent:queued") && issue.labels.includes("ready-for-agent"),
+    (issue) =>
+      issue.labels.includes("agent:queued") &&
+      issue.labels.includes("ready-for-agent") &&
+      !runningNumbers.has(issue.number),
   );
   const heldLocks = new Set(running.flatMap((issue) => issue.logicalLocks));
   const heldTouchSets = running.map((issue) => ({ number: issue.number, paths: issue.touchSet }));

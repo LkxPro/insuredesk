@@ -67,6 +67,16 @@ test("blocks dependencies and makes serial-only exclusive", () => {
   assert.deepEqual(result.skipped, [{ number: 1, reason: "blocked-by-dependency" }]);
 });
 
+test("running∩queued 叠加态不再参选(不自相冲突、不被重复领取)", () => {
+  // transition 竞态可留下 queued+running 同票的中间态;候选必须排除 running。
+  const result = planFrontier(
+    [issue(9, { labels: ["agent:running", "agent:queued", "ready-for-agent"] }), issue(1)],
+    3,
+  );
+  assert.deepEqual(result.selected, [1]);
+  assert.ok(!result.skipped.some((s) => s.number === 9));
+});
+
 test("a running serial-only ticket blocks the whole frontier", () => {
   const result = planFrontier(
     [issue(9, { labels: ["agent:running"], serialOnly: true }), issue(1)],

@@ -299,6 +299,12 @@ export async function dispatchTick(root: string): Promise<void> {
       process.stderr.write(`skip #${skipped.number}: ${skipped.reason}\n`);
     for (const issue of frontier.selected) {
       if (!(await claimIssue(root, worktrees, issue, maxParallel))) {
+        // 本地 pid 活着 = 本 clone 有活 worker 在跑;远端租约老化只说明网络风暴
+        // 堵了心跳推送,等网络自愈,绝不能"回收"活 claim 造成双重领取。
+        if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) {
+          process.stderr.write(`skip #${issue}: local worker alive, claim recovery deferred\n`);
+          continue;
+        }
         // 分裂态恢复:本地文件残留但远端已无主,直接摘文件重领;
         // 远端 stale 则强释放远端——之后本地文件同属死掉的旧代,一并摘掉。
         if (!(await dropLocalClaimIfRemoteGone(root, worktrees, issue))) {
