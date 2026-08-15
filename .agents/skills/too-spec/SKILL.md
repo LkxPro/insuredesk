@@ -17,12 +17,13 @@ Do not ask new design questions. Synthesize only decisions already confirmed in 
    - `## Out of Scope`
    - `## Further Notes`
 3. Make requirements observable and preserve explicit non-goals. Do not include unstable implementation snippets.
-4. Run:
+4. Present the drafted Markdown for review and wait for explicit user approval — Grill Me confirmed the design, this step confirms the document.
+5. Run:
 
    ```sh
    sh scripts/agent/publish-spec.sh "Spec: <short title>" <temporary-markdown-file>
    ```
 
-5. Return the parent Issue URL/number. Do not add `ready-for-agent`; the parent is a durable `agent:spec`, not executable work.
+6. Return the parent Issue URL/number. Do not add `ready-for-agent`; the parent is a durable `agent:spec`, not executable work.
 
 The publisher is idempotent for identical Markdown content. GitHub access is allowed only for this deterministic publisher command.
