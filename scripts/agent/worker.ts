@@ -555,7 +555,7 @@ async function handleFailure(
     await git(worktree, ["clean", "-fd"]).catch(() => {});
   }
 
-  // 进程级失败多为 transient,自动重排队一次;再失败或行为类失败转 blocked。
+  // 进程级失败多为 transient,自动重排队(默认 ≤2 次);再失败或行为类失败转 blocked。
   if (error.failureClass === "process") {
     const comments = await ghJson<Array<{ body: string }>>([
       "issue",
@@ -567,10 +567,11 @@ async function handleFailure(
       ".comments",
     ]).catch(() => []);
     const requeues = comments.filter((c) => c.body.includes("<!-- agent-requeue:")).length;
-    if (requeues < 1) {
+    const requeueMax = num("AGENT_REQUEUE_MAX", 2);
+    if (requeues < requeueMax) {
       await commentIssue(
         issue,
-        `<!-- agent-requeue:1 --> ${error.message} Requeued automatically; a second process-level failure will block.`,
+        `<!-- agent-requeue:${requeues + 1} --> ${error.message} Requeued automatically (${requeues + 1}/${requeueMax}); a further process-level failure will block.`,
       );
       await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
       return;

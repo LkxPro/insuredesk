@@ -134,3 +134,34 @@ test("claimOwned 在 heartbeat 推进后认新 sha", async () => {
   assert.equal(await claimOwned(root, claimFileOf(worktrees, issue)), true);
   await releaseClaim(root, worktrees, issue);
 });
+
+test("releaseClaim 本地 sha 已过期且无人刷新时,重试耗尽也不删他人 ref", async () => {
+  const issue = 106;
+  await claimIssue(root, worktrees, issue, 2);
+  // 远端被"他人"推进(等价于在途心跳晚于 release 读取落地,但无人再刷新本地文件)。
+  const current = await remoteSha(claimRefOf(issue));
+  const foreign = await git(root, [
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@t",
+    "commit-tree",
+    `${current}^{tree}`,
+    "-p",
+    current,
+    "-m",
+    `claim issue ${issue} slot 1 by foreign`,
+  ]);
+  await git(root, [
+    "push",
+    "-q",
+    "--force",
+    "origin",
+    `${foreign}:${claimRefOf(issue)}`,
+    `${foreign}:refs/heads/agent-slots/1`,
+  ]);
+  await assert.rejects(releaseClaim(root, worktrees, issue));
+  assert.equal(await remoteSha(claimRefOf(issue)), foreign);
+  assert.equal(await remoteSha("refs/heads/agent-slots/1"), foreign);
+  await rm(claimFileOf(worktrees, issue), { force: true });
+});

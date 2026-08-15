@@ -97,6 +97,7 @@ export AGENT_NUDGE_AFTER_SECONDS=600         # claude 相无事件多久后注�
 export AGENT_NUDGE_GRACE_SECONDS=600         # nudge 后恢复宽限;超时未恢复按 process 级失败杀掉
 export AGENT_NUDGE_MAX_PER_RUN=2             # 单 run 软干预次数上限(跨相累计)
 export AGENT_NUDGE_WATCHDOG_SECONDS=15       # worker 内 stall 巡检间隔
+export AGENT_REQUEUE_MAX=2                   # 进程级失败自动重排队上限
 export AGENT_NET_CALL_ATTEMPTS=4             # gh/git 网络调用传输层错误重试上限
 export AGENT_NET_CALL_BASE_DELAY=2           # 网络重试退避基数（指数翻倍）
 export AGENT_NET_CALL_TIMEOUT_SECONDS=30     # 单次网络尝试看门狗超时
@@ -323,7 +324,7 @@ claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`）时 worker 先经 
 
 CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued` + `ready-for-agent`（frontier 要求后两者），并在 Issue 评论计 `agent-attempts` marker；超过 `AGENT_REPAIR_MAX_ATTEMPTS`（默认 3）次转 `agent:blocked` 叫人。Repair worker尝试下载最近 failed Actions log，复用同一 worktree/branch/PR 修复；下载失败时用本地复现和现有 Issue 内容继续。
 
-Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队一次（评论 `agent-requeue` marker 计数），再失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。
+Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队（评论 `agent-requeue` marker 计数，上限 `AGENT_REQUEUE_MAX`，默认 2），超上限或行为类失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。
 
 进程级失败判定前有两层就地吸收：executor 的 `error_during_execution`/CLI 崩溃按 `AGENT_EXECUTOR_ATTEMPTS` 在同 run 内退避重试；所有 gh/git 网络调用经 `scripts/agent/net.ts` 统一入口，传输层错误（connection reset、TLS、5xx 等）按 `AGENT_NET_CALL_*` 超时重试，确定性错误（lease 拒绝、4xx）立即回吐。daemon 单个 dispatch tick 失败不退出，下个 interval 继续。
 

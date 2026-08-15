@@ -124,19 +124,27 @@ export async function claimIssue(
 
 export async function releaseClaim(root: string, worktrees: string, issue: number): Promise<void> {
   const claimFile = claimFileOf(worktrees, issue);
-  const claim = await readClaimFile(claimFile);
-  if (claim === null) return;
-  validateClaimFile(issue, claim);
-  const ok = await pushAtomic(
-    root,
-    [`:${claim.claimRef}`, `:${claim.slotRef}`],
-    [
-      [claim.claimRef, claim.sha],
-      [claim.slotRef, claim.sha],
-    ],
-  );
-  if (!ok) throw new Error(`release claim failed for #${issue}`);
-  await rm(claimFile, { force: true });
+  // 退出路径上与在途心跳有一次性竞态:心跳落地会推进远端 sha,先读到的 sha 即 stale。
+  // 文件 sha 只被自己的心跳改写,重读重试安全;若远端已被他人接管,CAS 永远失败,自然放弃。
+  for (let attempt = 1; ; attempt += 1) {
+    const claim = await readClaimFile(claimFile);
+    if (claim === null) return;
+    validateClaimFile(issue, claim);
+    const ok = await pushAtomic(
+      root,
+      [`:${claim.claimRef}`, `:${claim.slotRef}`],
+      [
+        [claim.claimRef, claim.sha],
+        [claim.slotRef, claim.sha],
+      ],
+    );
+    if (ok) {
+      await rm(claimFile, { force: true });
+      return;
+    }
+    if (attempt >= 3) throw new Error(`release claim failed for #${issue}`);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
 }
 
 export async function releaseRemoteClaim(
