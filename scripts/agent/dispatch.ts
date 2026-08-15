@@ -4,8 +4,11 @@ import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  claimFileOf,
   claimIssue,
   claimRefOf,
+  dropLocalClaimIfRemoteGone,
+  forceReleaseDeadLocalClaim,
   releaseClaim,
   releaseRemoteClaim,
   remoteClaimStaleSha,
@@ -24,7 +27,7 @@ import {
 } from "./gh.ts";
 import { DirLock, pidFileAlive } from "./lock.ts";
 import { netCall, netCallFast } from "./net.ts";
-import { evaluateHealth, readStatus } from "./status.ts";
+import { daemonShouldKill, evaluateHealth, readStatus } from "./status.ts";
 
 const num = (key: string, fallback: number) => {
   const value = Number.parseInt(process.env[key] ?? "", 10);
@@ -189,7 +192,7 @@ export async function dispatchTick(root: string): Promise<void> {
       if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) continue;
       const json = await issueView(issue);
       if (!hasLabel(json, "agent:running"))
-        await releaseClaim(root, worktrees, issue).catch(() => {});
+        await forceReleaseDeadLocalClaim(root, worktrees, issue).catch(() => {});
     }
 
     // 已关单 issue 的 worktree 清理。
@@ -225,7 +228,11 @@ export async function dispatchTick(root: string): Promise<void> {
         `issue-${issue}.claim`,
       );
       if (hasLocalClaim) {
-        await releaseClaim(root, worktrees, issue);
+        // 清理不彻底就保持 running 等下轮(stale 窗口未到的情形会自然收敛)。
+        if (!(await forceReleaseDeadLocalClaim(root, worktrees, issue))) {
+          process.stderr.write(`defer #${issue}: local claim not releasable yet\n`);
+          continue;
+        }
         await rm(join(worktrees, `issue-${issue}.publishing`), { force: true });
         await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
         await commentIssue(
@@ -262,19 +269,21 @@ export async function dispatchTick(root: string): Promise<void> {
       }
     }
 
-    // 卡死 worker 收割:机器判死,kill 后交给孤儿 running 恢复在下一 tick 重排队。
+    // 卡死 worker 收割:claude 相让出软干预窗口(见 daemonShouldKill),窗口耗尽才 kill,
+    // kill 后交给孤儿 running 恢复在下一 tick 重排队。
     for (const ref of await queueIssues()) {
       if (!hasLabel(ref, "agent:running")) continue;
       const status = await readStatus(worktrees, ref.number);
       if (!status) continue;
-      const health = evaluateHealth(status);
-      if (!health.stuck) continue;
+      if (!daemonShouldKill(status)) continue;
       const pidText = await readFile(join(worktrees, `issue-${ref.number}.pid`), "utf8").catch(
         () => "",
       );
       const pid = Number.parseInt(pidText.trim(), 10);
       if (!Number.isInteger(pid)) continue;
-      process.stderr.write(`killing stuck worker #${ref.number} (pid ${pid}): ${health.reason}\n`);
+      process.stderr.write(
+        `killing stuck worker #${ref.number} (pid ${pid}): ${evaluateHealth(status).reason}\n`,
+      );
       try {
         process.kill(-pid, "SIGTERM");
       } catch {
@@ -290,17 +299,27 @@ export async function dispatchTick(root: string): Promise<void> {
       process.stderr.write(`skip #${skipped.number}: ${skipped.reason}\n`);
     for (const issue of frontier.selected) {
       if (!(await claimIssue(root, worktrees, issue, maxParallel))) {
-        const staleSha = await remoteClaimStaleSha(root, issue);
-        if (
-          staleSha &&
-          (await releaseRemoteClaim(root, issue, staleSha)) &&
-          (await claimIssue(root, worktrees, issue, maxParallel))
-        ) {
-          process.stderr.write(`recovered expired claim for #${issue}\n`);
-        } else {
+        // 本地 pid 活着 = 本 clone 有活 worker 在跑;远端租约老化只说明网络风暴
+        // 堵了心跳推送,等网络自愈,绝不能"回收"活 claim 造成双重领取。
+        if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) {
+          process.stderr.write(`skip #${issue}: local worker alive, claim recovery deferred\n`);
+          continue;
+        }
+        // 分裂态恢复:本地文件残留但远端已无主,直接摘文件重领;
+        // 远端 stale 则强释放远端——之后本地文件同属死掉的旧代,一并摘掉。
+        if (!(await dropLocalClaimIfRemoteGone(root, worktrees, issue))) {
+          const staleSha = await remoteClaimStaleSha(root, issue);
+          if (!(staleSha && (await releaseRemoteClaim(root, issue, staleSha)))) {
+            process.stderr.write(`skip #${issue}: already claimed\n`);
+            continue;
+          }
+          await rm(claimFileOf(worktrees, issue), { force: true });
+        }
+        if (!(await claimIssue(root, worktrees, issue, maxParallel))) {
           process.stderr.write(`skip #${issue}: already claimed\n`);
           continue;
         }
+        process.stderr.write(`recovered expired claim for #${issue}\n`);
       }
       // claim 后资格复核:frontier 可能已变(如人工加 serial-only)。
       const recheck = await queue(maxParallel);

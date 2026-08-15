@@ -124,19 +124,27 @@ export async function claimIssue(
 
 export async function releaseClaim(root: string, worktrees: string, issue: number): Promise<void> {
   const claimFile = claimFileOf(worktrees, issue);
-  const claim = await readClaimFile(claimFile);
-  if (claim === null) return;
-  validateClaimFile(issue, claim);
-  const ok = await pushAtomic(
-    root,
-    [`:${claim.claimRef}`, `:${claim.slotRef}`],
-    [
-      [claim.claimRef, claim.sha],
-      [claim.slotRef, claim.sha],
-    ],
-  );
-  if (!ok) throw new Error(`release claim failed for #${issue}`);
-  await rm(claimFile, { force: true });
+  // 退出路径上与在途心跳有一次性竞态:心跳落地会推进远端 sha,先读到的 sha 即 stale。
+  // 文件 sha 只被自己的心跳改写,重读重试安全;若远端已被他人接管,CAS 永远失败,自然放弃。
+  for (let attempt = 1; ; attempt += 1) {
+    const claim = await readClaimFile(claimFile);
+    if (claim === null) return;
+    validateClaimFile(issue, claim);
+    const ok = await pushAtomic(
+      root,
+      [`:${claim.claimRef}`, `:${claim.slotRef}`],
+      [
+        [claim.claimRef, claim.sha],
+        [claim.slotRef, claim.sha],
+      ],
+    );
+    if (ok) {
+      await rm(claimFile, { force: true });
+      return;
+    }
+    if (attempt >= 3) throw new Error(`release claim failed for #${issue}`);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
 }
 
 export async function releaseRemoteClaim(
@@ -196,9 +204,11 @@ export async function heartbeatClaim(
   const claim = await readClaimFile(claimFile);
   if (claim === null) return false;
   const { claimRef, slotRef, sha: expected } = claim;
+  // 心跳误判的代价是杀掉健康 worker:ls-remote 走全重试路径,
+  // false 必须意味着真丢租约或持续多分钟的中断,而不是半分钟抖动。
   const [current, slotCurrent] = await Promise.all([
-    lsRemoteSha(root, claimRef, true),
-    lsRemoteSha(root, slotRef, true),
+    lsRemoteSha(root, claimRef),
+    lsRemoteSha(root, slotRef),
   ]);
   if (!current || current !== slotCurrent || current !== expected) return false;
   const slot = validateClaimFile(issue, claim);
@@ -260,4 +270,41 @@ export async function claimOwned(worktree: string, claimFile: string): Promise<b
     if (attempt >= max) return false;
     await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
   }
+}
+
+// 本地 claim 文件残留但远端 ref 已无主(释放竞态/崩溃窗口留下的分裂态):
+// 远端活着就轮到 stale 流程,不动;远端没了,本地文件只是死掉的残留,摘掉。
+// 返回 true = 摘了文件,可以重领。
+export async function dropLocalClaimIfRemoteGone(
+  root: string,
+  worktrees: string,
+  issue: number,
+): Promise<boolean> {
+  const claimFile = claimFileOf(worktrees, issue);
+  if ((await readClaimFile(claimFile)) === null) return false;
+  if (await lsRemoteSha(root, claimRefOf(issue), true)) return false;
+  await rm(claimFile, { force: true });
+  return true;
+}
+
+// pid 已死且 issue 非 running 时的兜底清理。常规 CAS 失败说明本地 sha 已过期
+// (崩溃发生在心跳 push 与文件落盘之间);远端无主则摘本地文件,远端 stale
+// 则强释放远端后摘文件。心跳死透是前置条件,远端推进只可能来自他人新 claim,
+// 此时 stale 判定不过,什么都不动。返回 true = 本地文件已清,可重领/回队。
+export async function forceReleaseDeadLocalClaim(
+  root: string,
+  worktrees: string,
+  issue: number,
+): Promise<boolean> {
+  const claimFile = claimFileOf(worktrees, issue);
+  if ((await readClaimFile(claimFile)) === null) return true;
+  await releaseClaim(root, worktrees, issue).catch(() => {});
+  if ((await readClaimFile(claimFile)) === null) return true;
+  if (await dropLocalClaimIfRemoteGone(root, worktrees, issue)) return true;
+  const staleSha = await remoteClaimStaleSha(root, issue);
+  if (staleSha && (await releaseRemoteClaim(root, issue, staleSha))) {
+    await rm(claimFile, { force: true });
+    return true;
+  }
+  return false;
 }

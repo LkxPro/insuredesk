@@ -34,7 +34,7 @@ Single-context: one `CONTEXT.md` at the repo root. See `docs/agents/domain.md`.
 - For `too-spec`, publish the confirmed Markdown with `scripts/agent/publish-spec.sh`; never add `ready-for-agent` to the parent spec.
 - For `too-tickets`, emit the structured schema accepted by `scripts/agent/plan.mjs`, then call `scripts/agent/publish-tickets.sh`. The publisher owns child bodies, labels, sub-issue links, and native dependency edges. Parentless plans share the `agent-plan:0:*` marker namespace — prefix keys with an area.
 - `ready-for-agent` requires acceptance criteria, declared touch-set, logical locks, tests, and native dependency edges.
-- Change only the declared touch-set. New scope requires a ticket update and a fresh claim.
+- The declared touch-set is the parallel-scheduling contract, not a hard boundary. Workers may make minimal out-of-set changes when acceptance criteria require them, and must report every out-of-set file in the final report.
 - Autonomous worker model processes leave an uncommitted diff only. They never call GitHub, commit, push, or open/merge PRs; the controller owns publication. Interactive `too-spec`/`too-tickets` sessions may read Issues with `gh` and may mutate GitHub only through their deterministic publisher scripts.
 - Run focused tests during work and `make check` before handoff. Never weaken a quality gate.
 - On ambiguity or unsafe migration, apply `agent:blocked` with evidence; do not guess.

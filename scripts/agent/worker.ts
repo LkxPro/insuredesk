@@ -2,12 +2,12 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { claimFileOf, claimOwned, fenceClaim, heartbeatClaim, releaseClaim } from "./claim.ts";
-import { runExecutor } from "./executor.ts";
+import { type AgentSession, type ExecutorResult, openAgentSession } from "./executor.ts";
 import { normalizeIssue, outsideTouchSet } from "./frontier.ts";
 import { commentIssue, editIssue, ghCall, ghJson } from "./gh.ts";
 import { DirLock } from "./lock.ts";
 import { netCall } from "./net.ts";
-import { patchStatus } from "./status.ts";
+import { appendEvent, patchStatus, readStatus } from "./status.ts";
 
 type FailureClass = "process" | "fatal" | "exhausted";
 
@@ -25,6 +25,12 @@ const num = (key: string, fallback: number) => {
   const value = Number.parseInt(raw ?? "", 10);
   return Number.isInteger(value) && value > 0 ? value : fallback;
 };
+
+// subtype=success + is_error 是 transport/API 层失败的矛盾组合,按 transient 重试。
+const transient = (result: ExecutorResult) =>
+  result.subtype === "" ||
+  result.subtype === "error_during_execution" ||
+  result.subtype === "success";
 
 export async function runWorker(root: string, worktree: string, issue: number): Promise<number> {
   const worktrees = dirname(worktree);
@@ -55,13 +61,16 @@ export async function runWorker(root: string, worktree: string, issue: number): 
   heartbeat.unref();
 
   const runDir = await mkdtemp(join(tmpdir(), `agent-worker-${issue}-`));
+  const ctx: PipelineContext = {
+    claimFile,
+    publishMarker,
+    artifact,
+    sessions: [],
+    activeSession: { current: null },
+  };
   let startHead = "";
   try {
-    startHead = await runPipeline(root, worktree, issue, worktrees, runDir, abort.signal, {
-      claimFile,
-      publishMarker,
-      artifact,
-    });
+    startHead = await runPipeline(root, worktree, issue, worktrees, runDir, abort.signal, ctx);
     return 0;
   } catch (error) {
     if (error instanceof WorkerFailure) {
@@ -72,6 +81,8 @@ export async function runWorker(root: string, worktree: string, issue: number): 
   } finally {
     clearInterval(heartbeat);
     abort.abort();
+    if (ctx.watchdog) clearInterval(ctx.watchdog);
+    for (const session of ctx.sessions) await session.close().catch(() => {});
     await releaseClaim(root, worktrees, issue).catch(() => {});
     await rm(join(worktrees, `issue-${issue}.pid`), { force: true });
     await rm(publishMarker, { force: true });
@@ -83,6 +94,9 @@ interface PipelineContext {
   claimFile: string;
   publishMarker: string;
   artifact: (name: string) => string;
+  sessions: AgentSession[];
+  activeSession: { current: AgentSession | null };
+  watchdog?: NodeJS.Timeout;
 }
 
 async function git(worktree: string, args: string[]): Promise<string> {
@@ -153,18 +167,14 @@ async function runPipeline(
     (await git(worktree, ["rev-parse", "HEAD"])).trim() === startHead;
 
   const frontierIssue = normalizeIssue(JSON.parse(issueJson));
-  const verifyTouchSet = async () => {
+  // touch-set 只是并行调度的冲突参考,越界不判失败;发布时列出供审计。
+  const collectOutsideTouchSet = async (): Promise<string[]> => {
     const changed = (
       await git(worktree, ["ls-files", "--modified", "--others", "--exclude-standard"])
     )
       .split("\n")
       .filter(Boolean);
-    const outside = outsideTouchSet(frontierIssue.touchSet, changed);
-    if (outside.length > 0)
-      throw new WorkerFailure(
-        `Agent changed files outside the declared touch-set: ${outside.join(", ")}`,
-        "fatal",
-      );
+    return outsideTouchSet(frontierIssue.touchSet, changed);
   };
 
   const executorEnv: NodeJS.ProcessEnv = {
@@ -179,36 +189,136 @@ async function runPipeline(
     SSH_AUTH_SOCK: "",
   };
 
-  // error_during_execution 等 provider/网络 transient 同 run 内退避重试；
+  // claim 丢失 abort 与 stall abort 都经 sessionSignal 杀会话;只有 stall 在重试层短路成失败。
+  const stallAbort = new AbortController();
+  const sessionSignal = AbortSignal.any([signal, stallAbort.signal]);
+
+  interface SessionHolder {
+    session: AgentSession | null;
+  }
+
+  // error_during_execution 等 provider/网络 transient 同 run 内退避重试;
   // error_max_turns 等行为类失败重试无益。
-  const runAgentWithRetry = async (prompt: string, outputName: string): Promise<void> => {
-    const max = num("AGENT_EXECUTOR_ATTEMPTS", 2);
+  // 会话活着用 warm 短 prompt(上下文还在);死了重开并用 cold 完整 prompt 冷启动。
+  const runPhase = async (
+    holder: SessionHolder,
+    files: { warm: string; cold: string; resume?: string },
+    outputName: string,
+    keepAlive: boolean,
+  ): Promise<void> => {
+    const max = num("AGENT_EXECUTOR_ATTEMPTS", 4);
     for (let attempt = 1; ; attempt += 1) {
-      const result = await runExecutor({
-        worktree,
-        taskFile: prompt,
-        outputFile: ctx.artifact(outputName),
-        worktrees,
-        issue,
-        env: executorEnv,
-        signal,
-      });
-      if (result.ok) return;
-      const transient = result.subtype === "" || result.subtype === "error_during_execution";
-      if (attempt >= max || !transient)
+      let promptFile = files.warm;
+      if (!holder.session?.isAlive()) {
+        const resumeId = holder.session?.sessionId() ?? null;
+        if (holder.session) await holder.session.close().catch(() => {});
+        holder.session = openAgentSession({
+          worktree,
+          worktrees,
+          issue,
+          env: executorEnv,
+          signal: sessionSignal,
+          resumeSessionId: resumeId ?? undefined,
+        });
+        ctx.sessions.push(holder.session);
+        // 有 session_id 优先 --resume 续跑(transcript 保留,长票不必从零再烧);
+        // 未 init 即死没得续,退完整 prompt 冷启动。
+        promptFile = resumeId ? (files.resume ?? files.warm) : files.cold;
+      }
+      ctx.activeSession.current = holder.session;
+      const result = await holder.session.run(promptFile, ctx.artifact(outputName));
+      ctx.activeSession.current = null;
+      if (result.ok) {
+        if (!keepAlive) {
+          await holder.session.close().catch(() => {});
+          holder.session = null;
+        }
+        return;
+      }
+      if (stallAbort.signal.aborted)
+        throw new WorkerFailure(
+          "Worker stalled and did not recover within the nudge grace period.",
+          "process",
+        );
+      if (attempt >= max || !transient(result)) {
+        await holder.session?.close().catch(() => {});
+        holder.session = null;
         throw new WorkerFailure(
           `executor failed: ${outputName} (${result.subtype || "unknown"})`,
           "process",
         );
+      }
       process.stderr.write(`executor attempt ${attempt} failed (transient); retrying\n`);
-      await new Promise((resolve) =>
-        setTimeout(resolve, num("AGENT_EXECUTOR_RETRY_DELAY", 30) * 1000),
-      );
+      // 指数退避对抗分钟级网络风暴;resume 让重试只重跑尾巴,不贵。
+      const delay = num("AGENT_EXECUTOR_RETRY_DELAY", 30) * 2 ** (attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, delay * 1000));
     }
   };
 
+  // stall 软干预:claude 相无事件超阈值就往在途轮注 nudge;宽限内未恢复才杀。
+  // nudge 只在 CLI 下一 tool round 生效,救得了慢/绕圈,救不了进程楔死。
+  const nudgeAfter = num("AGENT_NUDGE_AFTER_SECONDS", 600);
+  const nudgeGrace = num("AGENT_NUDGE_GRACE_SECONDS", 600);
+  const nudgeMax = num("AGENT_NUDGE_MAX_PER_RUN", 2);
+  const nudgeTemplate = await readFile(
+    join(root, ".github", "agent-prompts", "stuck-nudge.md"),
+    "utf8",
+  );
+  let nudgesUsed = 0;
+  let nudgePendingSince = 0;
+  const watchdog = setInterval(() => {
+    void (async () => {
+      const status = await readStatus(worktrees, issue);
+      if (!status) return;
+      if (["check", "publish", "done", "failed"].includes(status.phase)) return;
+      const now = Date.now();
+      if (nudgePendingSince > 0) {
+        if ((status.lastEvent?.ts ?? 0) > nudgePendingSince) {
+          nudgePendingSince = 0;
+          await patchStatus(worktrees, issue, { nudgedAt: null }).catch(() => {});
+          return;
+        }
+        if (now - nudgePendingSince > nudgeGrace * 1000) stallAbort.abort();
+        return;
+      }
+      const lastTs = status.lastEvent?.ts ?? status.phaseSince;
+      const silentSeconds = Math.floor((now - lastTs) / 1000);
+      if (silentSeconds <= nudgeAfter) return;
+      const session = ctx.activeSession.current;
+      if (!session?.inFlight() || !session.isAlive()) return;
+      if (nudgesUsed >= nudgeMax) {
+        stallAbort.abort();
+        return;
+      }
+      nudgesUsed += 1;
+      nudgePendingSince = now;
+      const reason = `${status.phase}: no executor event for ${Math.floor(silentSeconds / 60)}min`;
+      session.sendNudge(nudgeTemplate.replaceAll("{reason}", reason));
+      await appendEvent(worktrees, issue, {
+        type: "agent",
+        subtype: "nudge",
+        reason,
+        count: nudgesUsed,
+      }).catch(() => {});
+      await patchStatus(worktrees, issue, { nudgedAt: now }).catch(() => {});
+    })().catch(() => {});
+  }, num("AGENT_NUDGE_WATCHDOG_SECONDS", 15) * 1000);
+  watchdog.unref();
+  ctx.watchdog = watchdog;
+
   await patchStatus(worktrees, issue, { phase: "implementation" });
-  await runAgentWithRetry(taskFile, "implementation.json");
+  const implHolder: SessionHolder = { session: null };
+  const continueFile = join(runDir, "continue.md");
+  await writeFile(
+    continueFile,
+    "The previous turn was interrupted by a transport failure. Continue the task from the current worktree state; the issue JSON and instructions are in the earlier conversation.\n",
+  );
+  await runPhase(
+    implHolder,
+    { warm: taskFile, cold: taskFile, resume: continueFile },
+    "implementation.json",
+    true,
+  );
   if (!(await historyUnchanged()))
     throw new WorkerFailure(
       "Agent changed git history instead of leaving a controller-owned diff.",
@@ -222,7 +332,8 @@ async function runPipeline(
       reviewFile,
       `${await readFile(join(root, ".github", "agent-prompts", "review.md"), "utf8")}${issueBlock}`,
     );
-    await runAgentWithRetry(reviewFile, "review.json");
+    // review 必须独立于 implementation 会话,保持新鲜眼睛。
+    await runPhase({ session: null }, { warm: reviewFile, cold: reviewFile }, "review.json", false);
     if (!(await historyUnchanged()))
       throw new WorkerFailure(
         "Review agent changed git history instead of leaving a controller-owned diff.",
@@ -235,9 +346,18 @@ async function runPipeline(
   )
     .split("\n")
     .filter(Boolean);
-  if (changedFiles.length === 0)
-    throw new WorkerFailure("Agent produced no repository change.", "fatal");
-  await verifyTouchSet();
+  if (changedFiles.length === 0) {
+    // 模型按规矩 exit 并解释的 blocker 写在 implementation result 里;
+    // 不进评论的话人只能翻日志,blocked 就失去信息量。
+    const explained = await readFile(ctx.artifact("implementation.json"), "utf8")
+      .then((text) => {
+        const result = (JSON.parse(text) as { result?: unknown }).result;
+        return typeof result === "string" && result.trim() ? result.trim() : null;
+      })
+      .catch(() => null);
+    const detail = explained ? `\n\nAgent's blocker report:\n${explained.slice(0, 2000)}` : "";
+    throw new WorkerFailure(`Agent produced no repository change.${detail}`, "fatal");
+  }
 
   const checkLock = new DirLock(join(worktrees, ".check.lock"));
   const checkLog = join(runDir, "check.log");
@@ -299,13 +419,18 @@ async function runPipeline(
         `${await readFile(join(root, ".github", "agent-prompts", "comment-sweep.md"), "utf8")}${issueBlock}`,
       );
       const before = await fingerprint();
-      await runAgentWithRetry(sweepFile, `sweep-${sweepRound}.json`);
+      // sweep 同 review:独立会话,避免实现会话偏护自己写的注释。
+      await runPhase(
+        { session: null },
+        { warm: sweepFile, cold: sweepFile },
+        `sweep-${sweepRound}.json`,
+        false,
+      );
       if (!(await historyUnchanged()))
         throw new WorkerFailure(
           "Comment sweep changed git history instead of leaving a controller-owned diff.",
           "fatal",
         );
-      await verifyTouchSet();
       // 清扫可能误删指令注释,有改动就必须重跑 check。
       if (before === (await fingerprint())) break;
     } else {
@@ -320,21 +445,41 @@ async function runPipeline(
         .split("\n")
         .slice(-200)
         .join("\n");
-      const fixFile = join(runDir, "fix.md");
+      const fixColdFile = join(runDir, "fix.md");
       await writeFile(
-        fixFile,
-        `${await readFile(promptFile, "utf8")}${issueBlock}\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+        fixColdFile,
+        `${await readFile(promptFile, "utf8")}${issueBlock}\n<failed_check_log>\n${checkTail}\n</failed_check_log>\nFull log: ${checkLog}\n`,
       );
-      await runAgentWithRetry(fixFile, `fix-${fixRound}.json`);
+      // warm 路径会话里已有 task/issue 上下文,只带日志与约束提醒。
+      const fixWarmFile = join(runDir, "fix-warm.md");
+      await writeFile(
+        fixWarmFile,
+        `\`make check\` failed. Fix the failures below; keep changes minimal and do not rewrite git history. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+      );
+      const fixResumeFile = join(runDir, "fix-resume.md");
+      await writeFile(
+        fixResumeFile,
+        `The previous turn was interrupted by a transport failure. Continue fixing the \`make check\` failures from the current worktree state. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+      );
+      await runPhase(
+        implHolder,
+        { warm: fixWarmFile, cold: fixColdFile, resume: fixResumeFile },
+        `fix-${fixRound}.json`,
+        true,
+      );
       if (!(await historyUnchanged()))
         throw new WorkerFailure(
           "Fix agent changed git history instead of leaving a controller-owned diff.",
           "fatal",
         );
-      await verifyTouchSet();
     }
   }
 
+  // publish 不再需要模型;先关会话,publish 挂起时不拖子进程。
+  if (implHolder.session) {
+    await implHolder.session.close().catch(() => {});
+    implHolder.session = null;
+  }
   if (!(await claimOwned(worktree, ctx.claimFile)))
     throw new WorkerFailure("Agent lost its distributed claim before publication.", "process");
 
@@ -355,6 +500,8 @@ async function runPipeline(
     }
   }
 
+  // commit 前收集,commit 后 ls-files 干净就看不到了。
+  const outside = await collectOutsideTouchSet();
   await git(worktree, ["config", "user.name", "insuredesk-agent"]);
   await git(worktree, ["config", "user.email", "insuredesk-agent@users.noreply.github.com"]);
   await git(worktree, ["add", "--all"]);
@@ -402,9 +549,13 @@ async function runPipeline(
   await ghCall(["pr", "edit", String(pr), "--add-label", "agent:automerge"]);
   // ready-for-agent 必须一并摘除:unlabeled 事件触发 transition,留着会被重新入队。
   await editIssue(issue, { remove: ["agent:running", "agent:repair", "ready-for-agent"] });
+  const outsideNote =
+    outside.length > 0
+      ? `\n\nChanged files outside the declared touch-set (allowed; touch-set is the parallel-scheduling contract, not a hard boundary): ${outside.map((f) => `\`${f}\``).join(", ")}`
+      : "";
   await commentIssue(
     issue,
-    `Agent PR #${pr} published after scope, review, and full CI-equivalent checks.`,
+    `Agent PR #${pr} published after review and full CI-equivalent checks.${outsideNote}`,
   );
   await patchStatus(worktrees, issue, { phase: "done" });
   return startHead;
@@ -423,7 +574,7 @@ async function handleFailure(
     await git(worktree, ["clean", "-fd"]).catch(() => {});
   }
 
-  // 进程级失败多为 transient,自动重排队一次;再失败或行为类失败转 blocked。
+  // 进程级失败多为 transient,自动重排队(默认 ≤2 次);再失败或行为类失败转 blocked。
   if (error.failureClass === "process") {
     const comments = await ghJson<Array<{ body: string }>>([
       "issue",
@@ -435,10 +586,11 @@ async function handleFailure(
       ".comments",
     ]).catch(() => []);
     const requeues = comments.filter((c) => c.body.includes("<!-- agent-requeue:")).length;
-    if (requeues < 1) {
+    const requeueMax = num("AGENT_REQUEUE_MAX", 2);
+    if (requeues < requeueMax) {
       await commentIssue(
         issue,
-        `<!-- agent-requeue:1 --> ${error.message} Requeued automatically; a second process-level failure will block.`,
+        `<!-- agent-requeue:${requeues + 1} --> ${error.message} Requeued automatically (${requeues + 1}/${requeueMax}); a further process-level failure will block.`,
       );
       await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
       return;
