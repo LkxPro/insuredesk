@@ -27,7 +27,7 @@ flowchart LR
   C -->|parentless| T
   T --> F["daemon 领取无 blocker、无冲突 frontier"]
   F --> W["隔离 worktree：Claude 实现 + 独立复审 + make check（失败自修 ≤3 轮）"]
-  W --> P["controller commit / push / PR"]
+  W --> P["controller commit（message 由 worker 生成）/ push / PR"]
   P --> CI["GitHub CI"]
   CI -->|通过| M["自动 squash merge，Issue 关闭，下游解锁"]
   CI -->|失败| R["agent:repair 回队，带失败日志修复（≤3 次）"]
@@ -315,10 +315,10 @@ Worker 顺序：
 3. controller 收集超出 touch-set 的文件清单，发布时列入 Issue 评论供审计（touch-set 只是并行调度的冲突参考，越界不判失败）。
 4. 强制运行 `make check`（多 worker 间本地互斥串行）；失败把日志喂回**同一 implementation 会话**修复（fix 轮复用会话上下文，只注入失败日志与约束提醒；会话死亡优先 `--resume` 续跑保留 transcript，未 init 即死才退化为完整 prompt 冷启动），同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
 5. `make check` 通过后跑注释清扫（`comment-sweep.md`，只准删注释、存疑保留）；review 与 sweep 都用独立会话，保持新鲜眼睛；有删除就重跑 `make check`，挂则回 fix 轮，直到单次清扫零改动。`AGENT_COMMENT_SWEEP_ENABLED=0` 可关。
-6. 再验证 claim 并 fence 发布。
-
+6. check 全过后实现会话先跑收尾 message 轮：按 conventional 格式（`<type>: <摘要>`，type ∈ feat/fix/refactor/chore/docs/test/perf，无 scope；2–3 行 body；`Refs #<issue>`；跟随 issue 语言）把 commit message 写进 `.agent-commit-message`（经 git exclude 对所有 git 检测隐身）；格式说明只出现在这个一次性 warm prompt 里，不占实现阶段注意力。
+7. 再验证 claim 并 fence 发布。
 claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`）时 worker 先经 stdin 注入 `stuck-nudge.md` 软干预；宽限 `AGENT_NUDGE_GRACE_SECONDS` 内未恢复才按 process 级失败杀掉重排队。单 run 最多 nudge `AGENT_NUDGE_MAX_PER_RUN` 次。daemon 硬杀阈值相应推后到两者之和，作为 worker watchdog 失效的兜底；check/publish 相不让窗、卡即杀。nudge 只在 CLI 下一 tool round 生效：救得了慢/绕圈型 stall，救不了进程楔死。
-7. controller commit、push、创建 PR，添加 `agent:automerge`，同时摘除 `agent:running`/`agent:repair`/`ready-for-agent`（否则 unlabeled 事件触发的 transition 会把 Issue 重新入队，与 CI/merge 关单窗口竞态出重复 worker）。
+8. controller 用 message 文件 `-F` commit（缺失则兜底 `chore: <issue 标题>` + `Refs #<issue>` 并在 Issue 评论留痕；repair 复跑 `--amend` 改写已推送的 commit），`--force-with-lease` push、创建 PR，添加 `agent:automerge`，同时摘除 `agent:running`/`agent:repair`/`ready-for-agent`（否则 unlabeled 事件触发的 transition 会把 Issue 重新入队，与 CI/merge 关单窗口竞态出重复 worker）。squash merge 时单 commit PR 的标题直接取该 message，即 main 上的最终记录。
 
 `Agent merge` 等 required checks 通过后 squash merge；merge 事件再由 `close-linked-issues` 兜底关闭 PR body 里 `Closes #<issue>` 引用的 child（auto-merge 异步执行时 GitHub 原生关键字关单不可靠）。下游 native blocker 随即解除，daemon 自动领取下一层。
 
@@ -434,7 +434,7 @@ export AGENT_CLAIM_STALE_SECONDS=300
 | Logical lock | 无法只靠路径表达的共享契约/资源占用 |
 | Claim / slot | 防重复领取并限制跨 clone 总并发的远端 refs |
 | Fence | 发布前用 claim token 做的原子所有权确认 |
-| Controller | 确定性脚本；负责 GitHub、commit、push、PR |
+| Controller | 确定性脚本；负责 GitHub、commit（message 由 worker 收尾生成）、push、PR |
 | Executor | 默认本地 Claude；只实现/review，不负责发布 |
 | Fast lane | 已完整明确的单票绕过 spec/ticket 拆分路径 |
 

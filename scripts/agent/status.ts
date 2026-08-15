@@ -7,6 +7,7 @@ export type Phase =
   | "check"
   | "fix"
   | "sweep"
+  | "message"
   | "publish"
   | "done"
   | "failed";
