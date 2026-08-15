@@ -164,18 +164,14 @@ async function runPipeline(
     (await git(worktree, ["rev-parse", "HEAD"])).trim() === startHead;
 
   const frontierIssue = normalizeIssue(JSON.parse(issueJson));
-  const verifyTouchSet = async () => {
+  // touch-set 只是并行调度的冲突参考,越界不判失败;发布时列出供审计。
+  const collectOutsideTouchSet = async (): Promise<string[]> => {
     const changed = (
       await git(worktree, ["ls-files", "--modified", "--others", "--exclude-standard"])
     )
       .split("\n")
       .filter(Boolean);
-    const outside = outsideTouchSet(frontierIssue.touchSet, changed);
-    if (outside.length > 0)
-      throw new WorkerFailure(
-        `Agent changed files outside the declared touch-set: ${outside.join(", ")}`,
-        "fatal",
-      );
+    return outsideTouchSet(frontierIssue.touchSet, changed);
   };
 
   const executorEnv: NodeJS.ProcessEnv = {
@@ -345,7 +341,6 @@ async function runPipeline(
     const detail = explained ? `\n\nAgent's blocker report:\n${explained.slice(0, 2000)}` : "";
     throw new WorkerFailure(`Agent produced no repository change.${detail}`, "fatal");
   }
-  await verifyTouchSet();
 
   const checkLock = new DirLock(join(worktrees, ".check.lock"));
   const checkLog = join(runDir, "check.log");
@@ -419,7 +414,6 @@ async function runPipeline(
           "Comment sweep changed git history instead of leaving a controller-owned diff.",
           "fatal",
         );
-      await verifyTouchSet();
       // 清扫可能误删指令注释,有改动就必须重跑 check。
       if (before === (await fingerprint())) break;
     } else {
@@ -443,7 +437,7 @@ async function runPipeline(
       const fixWarmFile = join(runDir, "fix-warm.md");
       await writeFile(
         fixWarmFile,
-        `\`make check\` failed. Fix the failures below; stay within the declared touch-set and do not rewrite git history. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+        `\`make check\` failed. Fix the failures below; keep changes minimal and do not rewrite git history. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
       );
       await runPhase(
         implHolder,
@@ -456,7 +450,6 @@ async function runPipeline(
           "Fix agent changed git history instead of leaving a controller-owned diff.",
           "fatal",
         );
-      await verifyTouchSet();
     }
   }
 
@@ -485,6 +478,8 @@ async function runPipeline(
     }
   }
 
+  // commit 前收集,commit 后 ls-files 干净就看不到了。
+  const outside = await collectOutsideTouchSet();
   await git(worktree, ["config", "user.name", "insuredesk-agent"]);
   await git(worktree, ["config", "user.email", "insuredesk-agent@users.noreply.github.com"]);
   await git(worktree, ["add", "--all"]);
@@ -532,9 +527,13 @@ async function runPipeline(
   await ghCall(["pr", "edit", String(pr), "--add-label", "agent:automerge"]);
   // ready-for-agent 必须一并摘除:unlabeled 事件触发 transition,留着会被重新入队。
   await editIssue(issue, { remove: ["agent:running", "agent:repair", "ready-for-agent"] });
+  const outsideNote =
+    outside.length > 0
+      ? `\n\nChanged files outside the declared touch-set (allowed; touch-set is the parallel-scheduling contract, not a hard boundary): ${outside.map((f) => `\`${f}\``).join(", ")}`
+      : "";
   await commentIssue(
     issue,
-    `Agent PR #${pr} published after scope, review, and full CI-equivalent checks.`,
+    `Agent PR #${pr} published after review and full CI-equivalent checks.${outsideNote}`,
   );
   await patchStatus(worktrees, issue, { phase: "done" });
   return startHead;

@@ -308,6 +308,25 @@ done`;
   assert.ok(!calls.includes("--add-label agent:queued"));
 });
 
+test("touch-set 越界不再 fatal:放行并在发布评论列出越界文件", async () => {
+  const claude = `while IFS= read -r line; do
+  case $line in
+    *'final comment sweep'*) : ;;
+    *) printf 'implemented\\n' >"$PWD/allowed.txt"; printf 'ripple\\n' >"$PWD/disallowed.txt" ;;
+  esac
+  printf '%s\\n' '${RESULT_EVENT}'
+done`;
+  const sandbox = await makeSandbox(claude, MAKE_OK);
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls.includes("pr create"));
+  assert.ok(calls.includes("outside the declared touch-set"));
+  assert.ok(calls.includes("disallowed.txt"));
+});
+
 test("发布前 claim 丢失 → process 失败,自动重排队一次", async () => {
   // heartbeat 间隔拉到 1 小时,模拟不到;直接让 fence 前的 claimOwned 失败:
   // claim 之后立刻由"另一克隆"把远端 refs 删掉。

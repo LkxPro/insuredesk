@@ -1,4 +1,4 @@
-Implement the issue from the attached JSON. Read `AGENTS.md` and repository conventions. Change only its declared touch-set.
+Implement the issue from the attached JSON. Read `AGENTS.md` and repository conventions. The declared touch-set is the parallel-scheduling contract, not a hard boundary: when the acceptance criteria require changes outside it, make the minimal out-of-set change and list every out-of-set file in your final report.
 
 Work test-first at the seams declared in the ticket's test plan: write the failing test, then implement. Exempt only mechanical changes (config, docs, renames, scaffolding). While working, run `make typecheck` and the test files covering your changes regularly — do not save all verification for the end. Tests must verify behavior through public interfaces: never mock internal collaborators, never assert values recomputed the way the code computes them, never write all tests before all implementation.
 

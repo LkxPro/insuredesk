@@ -311,7 +311,7 @@ Worker 顺序：
 
 1. Claude 只留下未提交 diff。
 2. 独立 review agent 检查并可修正 diff；注释规范（AGENTS.md）是必须项，diff 新增与触碰文件内的违规存量注释都删。
-3. controller 校验改动未超出 touch-set。
+3. controller 收集超出 touch-set 的文件清单，发布时列入 Issue 评论供审计（touch-set 只是并行调度的冲突参考，越界不判失败）。
 4. 强制运行 `make check`（多 worker 间本地互斥串行）；失败把日志喂回**同一 implementation 会话**修复（fix 轮复用会话上下文，只注入失败日志与约束提醒；会话死亡自动重开并退化为完整 prompt 冷启动），同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
 5. `make check` 通过后跑注释清扫（`comment-sweep.md`，只准删注释、存疑保留）；review 与 sweep 都用独立会话，保持新鲜眼睛；有删除就重跑 `make check`，挂则回 fix 轮，直到单次清扫零改动。`AGENT_COMMENT_SWEEP_ENABLED=0` 可关。
 6. 再验证 claim 并 fence 发布。
@@ -323,7 +323,7 @@ claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`）时 worker 先经 
 
 CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued` + `ready-for-agent`（frontier 要求后两者），并在 Issue 评论计 `agent-attempts` marker；超过 `AGENT_REPAIR_MAX_ATTEMPTS`（默认 3）次转 `agent:blocked` 叫人。Repair worker尝试下载最近 failed Actions log，复用同一 worktree/branch/PR 修复；下载失败时用本地复现和现有 Issue 内容继续。
 
-Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队一次（评论 `agent-requeue` marker 计数），再失败转 blocked；改 git 历史、touch-set 越界、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知）。
+Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队一次（评论 `agent-requeue` marker 计数），再失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。
 
 进程级失败判定前有两层就地吸收：executor 的 `error_during_execution`/CLI 崩溃按 `AGENT_EXECUTOR_ATTEMPTS` 在同 run 内退避重试；所有 gh/git 网络调用经 `scripts/agent/net.ts` 统一入口，传输层错误（connection reset、TLS、5xx 等）按 `AGENT_NET_CALL_*` 超时重试，确定性错误（lease 拒绝、4xx）立即回吐。daemon 单个 dispatch tick 失败不退出，下个 interval 继续。
 
@@ -429,7 +429,7 @@ export AGENT_CLAIM_STALE_SECONDS=300
 | Ticket contract | executor 所需的七段可验证 Issue 正文 |
 | DAG | child tickets 的有向无环依赖图 |
 | Frontier | 所有 blocker 已关闭、当前可并行领取的票 |
-| Touch-set | ticket 允许修改的仓库路径/glob |
+| Touch-set | ticket 声明的影响面（路径/glob），供并行调度判冲突；不是 worker 的硬边界 |
 | Logical lock | 无法只靠路径表达的共享契约/资源占用 |
 | Claim / slot | 防重复领取并限制跨 clone 总并发的远端 refs |
 | Fence | 发布前用 claim token 做的原子所有权确认 |
