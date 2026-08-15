@@ -204,9 +204,11 @@ export async function heartbeatClaim(
   const claim = await readClaimFile(claimFile);
   if (claim === null) return false;
   const { claimRef, slotRef, sha: expected } = claim;
+  // 心跳误判的代价是杀掉健康 worker:ls-remote 走全重试路径,
+  // false 必须意味着真丢租约或持续多分钟的中断,而不是半分钟抖动。
   const [current, slotCurrent] = await Promise.all([
-    lsRemoteSha(root, claimRef, true),
-    lsRemoteSha(root, slotRef, true),
+    lsRemoteSha(root, claimRef),
+    lsRemoteSha(root, slotRef),
   ]);
   if (!current || current !== slotCurrent || current !== expected) return false;
   const slot = validateClaimFile(issue, claim);
