@@ -150,10 +150,49 @@ async function issueWorktrees(worktrees: string): Promise<WorktreeEntry[]> {
 async function artifactCleanup(worktrees: string, issue: number): Promise<void> {
   const names = (await readdir(worktrees).catch(() => [] as string[])).filter((name) =>
     new RegExp(
-      `^issue-${issue}\\.(claim|pid|log|publishing|status\\.json|events\\.jsonl|implementation\\.json|review\\.json|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
+      `^issue-${issue}\\.(claim|pid|killing|log|publishing|status\\.json|events\\.jsonl|implementation\\.json|review\\.json|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
     ).test(name),
   );
   for (const name of names) await rm(join(worktrees, name), { force: true });
+}
+
+// .killing 跨 tick 记录上轮 SIGTERM 的 pid:pid 变了说明是新 worker,升级计数重置。
+export async function killLiveWorker(worktrees: string, issue: number): Promise<void> {
+  const pidText = await readFile(join(worktrees, `issue-${issue}.pid`), "utf8").catch(() => "");
+  const pid = Number.parseInt(pidText.trim(), 10);
+  if (!Number.isInteger(pid)) return;
+  const killFile = join(worktrees, `issue-${issue}.killing`);
+  const marked = Number.parseInt((await readFile(killFile, "utf8").catch(() => "")).trim(), 10);
+  const signal = marked === pid ? "SIGKILL" : "SIGTERM";
+  process.stderr.write(`killing worker of closed #${issue} (pid ${pid}, ${signal})\n`);
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    try {
+      process.kill(pid, signal);
+    } catch {}
+  }
+  if (signal === "SIGTERM") await writeFile(killFile, `${pid}\n`);
+}
+
+export async function cleanupClosedIssue(
+  root: string,
+  worktrees: string,
+  issue: number,
+  path: string,
+): Promise<void> {
+  await releaseClaim(root, worktrees, issue).catch(() => {});
+  // git 注册被带外清除时 show-current 必败,分支名按约定兜底。
+  const branch = await git(path, ["branch", "--show-current"])
+    .then((out) => out.trim())
+    .catch(() => `codex/issue-${issue}`);
+  // 注册缺失时 remove 必败:prune 收 git 侧残迹,rm 收目录壳。
+  await git(root, ["worktree", "remove", "--force", path]).catch(async () => {
+    await git(root, ["worktree", "prune"]).catch(() => "");
+    await rm(path, { recursive: true, force: true });
+  });
+  if (branch.startsWith("codex/issue-")) await git(root, ["branch", "-D", branch]).catch(() => "");
+  await artifactCleanup(worktrees, issue);
 }
 
 async function git(root: string, args: string[]): Promise<string> {
@@ -195,28 +234,28 @@ export async function dispatchTick(root: string): Promise<void> {
         await forceReleaseDeadLocalClaim(root, worktrees, issue).catch(() => {});
     }
 
-    // 已关单 issue 的 worktree 清理。
+    // 已关单 issue 的 worktree 清理:pid 活着先杀,死了再走清理序列。
+    // 单条目失败不得拖垮整个 tick。
     for (const { issue, path } of await issueWorktrees(worktrees)) {
-      const state = await ghCall([
-        "issue",
-        "view",
-        String(issue),
-        "--json",
-        "state",
-        "--jq",
-        ".state",
-      ]);
-      if (state.trim() !== "CLOSED") continue;
-      if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) {
-        process.stderr.write(`defer cleanup #${issue}: worker is still active\n`);
-        continue;
+      try {
+        const state = await ghCall([
+          "issue",
+          "view",
+          String(issue),
+          "--json",
+          "state",
+          "--jq",
+          ".state",
+        ]);
+        if (state.trim() !== "CLOSED") continue;
+        if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) {
+          await killLiveWorker(worktrees, issue);
+          continue;
+        }
+        await cleanupClosedIssue(root, worktrees, issue, path);
+      } catch (error) {
+        process.stderr.write(`cleanup #${issue} failed: ${error}; continuing\n`);
       }
-      await releaseClaim(root, worktrees, issue).catch(() => {});
-      const branch = (await git(path, ["branch", "--show-current"])).trim();
-      await git(root, ["worktree", "remove", "--force", path]);
-      if (branch.startsWith("codex/issue-"))
-        await git(root, ["branch", "-D", branch]).catch(() => "");
-      await artifactCleanup(worktrees, issue);
     }
 
     // agent:running 但无活 pid 的恢复：本地 claim 直接还；远端 claim 看 stale。
@@ -359,7 +398,7 @@ export async function dispatchTick(root: string): Promise<void> {
       // 上一轮残留产物会冒充本轮状态。
       for (const name of (await readdir(worktrees).catch(() => [] as string[])).filter((n) =>
         new RegExp(
-          `^issue-${issue}\\.(publishing|implementation\\.json|review\\.json|status\\.json|events\\.jsonl|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
+          `^issue-${issue}\\.(publishing|killing|implementation\\.json|review\\.json|status\\.json|events\\.jsonl|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
         ).test(n),
       ))
         await rm(join(worktrees, name), { force: true });
