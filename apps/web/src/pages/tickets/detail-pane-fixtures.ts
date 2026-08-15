@@ -46,7 +46,6 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
     dueAt: "2026-07-11T02:00:00.000Z",
     nextContactTime: null,
     contactCount: 1,
-    processingResult: "已电话联系客户",
     completionTime: null,
     completionStatus: null,
     processLogs: [

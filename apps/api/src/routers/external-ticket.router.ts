@@ -40,7 +40,7 @@ type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclu
 /**
  * Wire shape for the external surface: dates as ISO-8601 strings (no
  * transformer on the tRPC link) and 目录引用 paired with the名字.
- * All valued fields are exposed; visibleFields whitelist no longer filters output.
+ * All valued fields are exposed.
  */
 function serializeExternalTicket(ticket: TicketWithCatalogs) {
   return {
@@ -71,7 +71,6 @@ function serializeExternalTicket(ticket: TicketWithCatalogs) {
     categoryName: ticket.category?.name ?? null,
     complaintLevel: ticket.complaintLevel,
     priority: ticket.priority === null ? null : prioritySchema.parse(ticket.priority),
-    processingResult: ticket.processingResult,
     completionStatusId: ticket.completionStatusId,
     completionStatusName: ticket.completionStatus?.name ?? null,
     completionTime: ticket.completionTime?.toISOString() ?? null,
@@ -343,7 +342,7 @@ export const externalTicketRouter = router({
 
   /**
    * AddNote: external user adds a note to a ticket they submitted.
-   * Writes action=external_note ProcessLog, does NOT modify contactCount/processingResult/nextContactTime.
+   * Writes action=external_note ProcessLog, does NOT modify contactCount/nextContactTime.
    * Notifies current assignee (or broadcasts to ticket.assign holders if unassigned).
    */
   addNote: requirePermission("ticket.process_external")

@@ -11,12 +11,12 @@ import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
 /**
- * Issue #43 UI regression, adjusted for #62: the 新建工单 form submits with
+ * 空白提交回归: the 新建工单 form submits with
  * only feedbackTime prefilled (打开对话框的时刻) — no required-field validation
  * errors, every OTHER unfilled field reaching the wire as null — no label
  * carries 选填/非必填 wording, and the detail dialog renders a null-heavy ticket
  * with consistent 未知 placeholders. Clearing feedbackTime restores the null
- * (未填写) semantics #43 relied on. Same faked-fetch tRPC pipeline and
+ * (未填写) semantics. Same faked-fetch tRPC pipeline and
  * useAuth-seam mock as the sibling ticket tests.
  */
 
@@ -92,7 +92,6 @@ function blankDetailPayload() {
     dueAt: null,
     nextContactTime: null,
     contactCount: 0,
-    processingResult: "",
     completionTime: null,
     completionStatus: null,
     processLogs: [
@@ -209,7 +208,7 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       policyNumbers: [],
     });
 
-    // 建单后留列表 (issue #116): the dialog closes onto 工单管理, no detail opens
+    // 建单后留列表: the dialog closes onto 工单管理, no detail opens
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument();
     });

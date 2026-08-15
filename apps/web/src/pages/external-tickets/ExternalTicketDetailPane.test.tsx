@@ -35,7 +35,6 @@ function ticket(overrides: Record<string, unknown> = {}) {
     categoryName: null,
     complaintLevel: null,
     priority: "high",
-    processingResult: null,
     completionStatusId: null,
     completionStatusName: null,
     completionTime: null,

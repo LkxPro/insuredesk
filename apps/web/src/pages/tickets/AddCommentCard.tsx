@@ -20,8 +20,8 @@ import { trpc } from "@/lib/trpc";
 /**
  * 添加跟进 composer，钉在分栏详情右栏底部 —— one submission = one actual
  * customer contact. 调用方按 ticket.process 与在途状态门控渲染；一切派生
- * （contactCount、processingResult、assigned → processing 及其 ProcessLog 对）
- * 都在服务端的 ticket.addComment 里发生。
+ * （contactCount、assigned → processing 及其 ProcessLog 对）都在服务端的
+ * ticket.addComment 里发生。
  *
  * 无 Card 外壳：它是右栏的固定页脚，边框与内边距由容器给，自身保持紧凑，
  * 免得挤掉时间线的可视高度。
@@ -45,7 +45,7 @@ export function AddCommentCard({ ticketId }: { ticketId: string }) {
       setNextContactTime("");
       setNextContactTimeError("");
       setInternalOnly(false);
-      // Status, 联系次数, 处理结果 and the timeline all change server-side
+      // Status, 联系次数 and the timeline all change server-side
       utils.ticket.detail.invalidate();
       utils.ticket.list.invalidate();
     },

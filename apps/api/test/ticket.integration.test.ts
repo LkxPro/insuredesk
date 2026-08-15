@@ -126,7 +126,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(detail.source).toBe("manual");
       expect(detail.assigneeId).toBeNull();
       expect(detail.contactCount).toBe(0);
-      expect(detail.processingResult).toBe("");
+      expect(detail).not.toHaveProperty("processingResult");
       expect(detail.priority).toBeNull(); // free label defaults to empty
       expect(detail.feedbackTime).toBe(baseInput.feedbackTime);
       expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");

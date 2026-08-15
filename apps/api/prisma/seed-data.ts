@@ -413,7 +413,6 @@ interface DemoTicketSpec {
   assignee?: keyof SeededUsersAndRoles["users"];
   status?: "unassigned" | "assigned" | "processing" | "completed";
   contactCount?: number;
-  processingResult?: string;
   nextContactHoursFromNow?: number;
   /** 同 categoryName：按名称解析为 completionStatusId，解析不到回退为未填写。 */
   completionStatusName?: string;
@@ -560,7 +559,6 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     assignee: "cs1",
     status: "processing",
     contactCount: 2,
-    processingResult: "已与客户确认补充材料，等待保司反馈。",
     nextContactHoursFromNow: 6,
     channelName: "保司",
     input: demoInput("DEMO-POL-1006", {
@@ -594,6 +592,12 @@ const demoTicketSpecs: DemoTicketSpec[] = [
         remark: "客户已补充材料照片，已转保司复核。",
         atHoursAgo: 4,
       },
+      {
+        action: "comment",
+        operator: "cs1",
+        remark: "已与客户确认补充材料，等待保司反馈。",
+        atHoursAgo: 3,
+      },
     ],
   },
   {
@@ -603,7 +607,6 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     assignee: "manager",
     status: "processing",
     contactCount: 1,
-    processingResult: "已升级主管处理，等待支付渠道核查回执。",
     nextContactHoursFromNow: -2,
     channelName: "支付",
     input: demoInput("DEMO-POL-1007", {
@@ -630,6 +633,12 @@ const demoTicketSpecs: DemoTicketSpec[] = [
         remark: "已联系支付渠道排查扣款流水。",
         atHoursAgo: 30,
       },
+      {
+        action: "comment",
+        operator: "manager",
+        remark: "已升级主管处理，等待支付渠道核查回执。",
+        atHoursAgo: 28,
+      },
     ],
   },
   {
@@ -639,7 +648,6 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     assignee: "cs1",
     status: "completed",
     contactCount: 2,
-    processingResult: "客户认可解释，工单正常完结。",
     completionStatusName: "正常完结",
     completionHoursAgo: 10,
     channelName: "保司",
@@ -658,6 +666,12 @@ const demoTicketSpecs: DemoTicketSpec[] = [
         atHoursAgo: 18,
       },
       {
+        action: "comment",
+        operator: "cs1",
+        remark: "客户认可解释，工单正常完结。",
+        atHoursAgo: 12,
+      },
+      {
         action: "resolve",
         operator: "cs1",
         remark: "客户确认问题已解决。",
@@ -672,7 +686,6 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     assignee: "manager",
     status: "completed",
     contactCount: 3,
-    processingResult: "经多轮沟通后协商解决。",
     completionStatusName: "已协商解决",
     completionHoursAgo: 6,
     channelName: "监管",
@@ -692,6 +705,12 @@ const demoTicketSpecs: DemoTicketSpec[] = [
         atHoursAgo: 60,
       },
       {
+        action: "comment",
+        operator: "manager",
+        remark: "经多轮沟通后协商解决。",
+        atHoursAgo: 8,
+      },
+      {
         action: "resolve",
         operator: "manager",
         remark: "双方已就补偿方案达成一致。",
@@ -706,7 +725,6 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     assignee: "cs1",
     status: "processing",
     contactCount: 1,
-    processingResult: "特急件已电话首响，持续滚动跟进。",
     nextContactHoursFromNow: 2,
     channelName: "监管",
     input: demoInput("DEMO-POL-1010", {
@@ -732,6 +750,12 @@ const demoTicketSpecs: DemoTicketSpec[] = [
         operator: "cs1",
         remark: "已完成首次电话联系，约定两小时内反馈下一步。",
         atHoursAgo: 5,
+      },
+      {
+        action: "comment",
+        operator: "cs1",
+        remark: "特急件已电话首响，持续滚动跟进。",
+        atHoursAgo: 1,
       },
     ],
   },
@@ -846,7 +870,6 @@ async function applyDemoState(
       data: {
         status,
         contactCount: spec.contactCount ?? 0,
-        processingResult: spec.processingResult ?? "",
         nextContactTime:
           spec.nextContactHoursFromNow === undefined
             ? null

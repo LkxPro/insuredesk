@@ -6,12 +6,12 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 /**
  * Acceptance tests against a real Postgres: adding a follow-up (跟进备注)
- * maintains contactCount / processingResult / nextContactTime in one action
- * (单点维护), the FIRST follow-up moves assigned → processing with the
- * comment + status_change ProcessLog pair, and later follow-ups append a
- * single comment entry with no transition. Runs
- * through appRouter.createCaller — the same procedure pipeline (permission
- * middleware included) the HTTP adapter uses.
+ * maintains contactCount / nextContactTime in one action (单点维护), the FIRST
+ * follow-up moves assigned → processing with the comment + status_change
+ * ProcessLog pair, and later follow-ups append a single comment entry with no
+ * transition. 跟进内容只落 ProcessLog —— 工单上没有快照字段，时间线是唯一
+ * 展示面. Runs through appRouter.createCaller — the same procedure pipeline
+ * (permission middleware included) the HTTP adapter uses.
  */
 describe("ticket follow-up comments (Testcontainers)", () => {
   let harness: IntegrationHarness;
@@ -101,7 +101,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
   }
 
   describe("first follow-up (首次跟进: assigned → processing)", () => {
-    it("maintains contactCount/processingResult/nextContactTime in one action and writes comment + status_change logs in order", async () => {
+    it("maintains contactCount/nextContactTime in one action and writes comment + status_change logs in order", async () => {
       const ticketId = await createAssignedTicket();
 
       const result = await frontline().ticket.addComment({
@@ -118,7 +118,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.status).toBe("processing");
       expect(detail.contactCount).toBe(1);
-      expect(detail.processingResult).toBe("已电话联系客户，解释核算口径");
+      expect(detail).not.toHaveProperty("processingResult");
       expect(detail.nextContactTime).toBe("2026-07-12T02:00:00.000Z");
 
       // Two log entries beyond create/assign/status_change, in order: the
@@ -171,7 +171,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
   });
 
   describe("subsequent follow-ups (持续跟进: status unchanged)", () => {
-    it("appends one comment log only, keeps counting, and tracks the latest remark", async () => {
+    it("appends one comment log only and keeps counting, latest remark visible on the timeline", async () => {
       const ticketId = await createAssignedTicket();
       await frontline().ticket.addComment({ ticketId, remark: "第一次联系" });
 
@@ -184,7 +184,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.status).toBe("processing");
       expect(detail.contactCount).toBe(2);
-      expect(detail.processingResult).toBe("第二次联系，客户接受方案");
+      expect(detail).not.toHaveProperty("processingResult");
 
       // Exactly one new entry — no second assigned → processing transition
       expect(detail.processLogs.map((log) => log.action)).toEqual([
@@ -195,6 +195,10 @@ describe("ticket follow-up comments (Testcontainers)", () => {
         "status_change",
         "comment",
       ]);
+      expect(detail.processLogs.at(-1)).toMatchObject({
+        action: "comment",
+        remark: "第二次联系，客户接受方案",
+      });
     });
 
     it("owns nextContactTime per follow-up: a new value replaces the old, omitting it clears the stale plan", async () => {
@@ -245,6 +249,31 @@ describe("ticket follow-up comments (Testcontainers)", () => {
         from: "assigned",
         to: "processing",
       });
+    });
+  });
+
+  describe("internalOnly 跟进", () => {
+    it("lands the internalOnly flag on the comment ProcessLog, defaulting to false", async () => {
+      const internalTicket = await createAssignedTicket();
+      await frontline().ticket.addComment({
+        ticketId: internalTicket,
+        remark: "内部协商口径，不对客",
+        internalOnly: true,
+      });
+
+      const internalLog = await prisma.processLog.findFirstOrThrow({
+        where: { ticketId: internalTicket, action: "comment" },
+      });
+      expect(internalLog.remark).toBe("内部协商口径，不对客");
+      expect(internalLog.internalOnly).toBe(true);
+
+      const publicTicket = await createAssignedTicket();
+      await frontline().ticket.addComment({ ticketId: publicTicket, remark: "电话告知客户" });
+
+      const publicLog = await prisma.processLog.findFirstOrThrow({
+        where: { ticketId: publicTicket, action: "comment" },
+      });
+      expect(publicLog.internalOnly).toBe(false);
     });
   });
 

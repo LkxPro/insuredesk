@@ -35,6 +35,12 @@ const exportInclude = {
   category: { select: { name: true } },
   channel: { select: { name: true } },
   completionStatus: { select: { name: true } },
+  // internalOnly 不过滤：内部导出照常包含
+  processLogs: {
+    where: { action: "comment" },
+    orderBy: [{ at: "asc" }, { id: "asc" }],
+    select: { at: true, operatorName: true, remark: true },
+  },
 } satisfies Prisma.TicketInclude;
 
 type TicketExportRow = Prisma.TicketGetPayload<{ include: typeof exportInclude }>;
@@ -99,7 +105,13 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: "联系次数", value: (t) => t.contactCount },
   { header: "跟进频次", value: (t) => t.followUpFrequency ?? "" },
   { header: "首响要求", value: (t) => t.firstResponseRequirement ?? "" },
-  { header: "处理结果", value: (t) => t.processingResult ?? "" },
+  {
+    header: "跟进记录",
+    value: (t, { formatDate }) =>
+      t.processLogs
+        .map((log) => `[${formatDate(log.at)}] ${log.operatorName ?? ""}：${log.remark}`)
+        .join("\n"),
+  },
   { header: "完结时间", value: (t, { formatDate }) => formatDate(t.completionTime) },
   { header: "完结状态", value: (t) => t.completionStatus?.name ?? "" },
 ];

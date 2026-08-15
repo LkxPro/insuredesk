@@ -34,6 +34,10 @@ _Avoid_: 按完结状态做看板聚合——本期明确不做
 **ProcessLog（处理记录）**：
 工单操作的审计日志，构成详情页时间线，记录"当时发生的事实"（7 种 action）。只服务追溯与展示，不承担考核统计——考核走 assigneeId。
 
+**跟进记录（Follow-up）**：
+一次实际客户联系 = 一条 action=comment 的 ProcessLog，全量跟进只存这一处：详情页右栏时间线是唯一展示面，内部导出的"跟进记录"列读时按 at 升序拼接全部 comment（含 internalOnly，不含 resolve 完结备注）。internalOnly=true 的跟进不进外部账号的任何响应。
+_Avoid_: 在 tickets 表冗余"最新跟进/处理结果"快照字段——快照只装得下最后一条，且绕过 internalOnly 过滤泄漏到外部
+
 **Attachment（附件）**：
 工单处理过程中上传的文件材料。
 

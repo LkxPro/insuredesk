@@ -88,7 +88,6 @@ function detailPayload(overrides: Record<string, unknown> = {}) {
     dueAt: null,
     nextContactTime: null,
     contactCount: 0,
-    processingResult: "",
     completionTime: null,
     completionStatus: null,
     processLogs: [],

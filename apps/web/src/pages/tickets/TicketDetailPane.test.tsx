@@ -59,7 +59,8 @@ describe("左栏工单信息", () => {
     expect(within(pane).getByText("24小时内累计跟进1次")).toBeInTheDocument();
     expect(within(pane).getByText("120分钟内完成首次响应")).toBeInTheDocument();
     expect(within(pane).getByText("联系次数")).toBeInTheDocument();
-    expect(within(pane).getByText("已电话联系客户")).toBeInTheDocument();
+    // 跟进记录的唯一展示面是右栏时间线
+    expect(within(pane).queryByText("处理结果")).not.toBeInTheDocument();
   });
 
   it("未填写字段落到 — ，不是空白", async () => {
