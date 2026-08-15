@@ -1,3 +1,4 @@
+import type { AppRouter } from "@insuredesk/api";
 import {
   externalTicketListInputSchema,
   TICKET_FIELDS,
@@ -6,76 +7,60 @@ import {
   type TicketStatus,
 } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
-import { AlertCircle, Inbox, SlidersHorizontal } from "lucide-react";
+import type { inferRouterOutputs } from "@trpc/server";
+import { Inbox } from "lucide-react";
 import { useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { CreatedRangeFilter } from "@/components/ticket-list/CreatedRangeFilter";
-import { ListSkeletonRows } from "@/components/ticket-list/ListSkeletonRows";
-import { MultiSelectFilter } from "@/components/ticket-list/MultiSelectFilter";
-import { PolicyNumbersCell } from "@/components/ticket-list/PolicyNumbersCell";
-import { TicketExportButton } from "@/components/ticket-list/TicketExportButton";
-import { TicketListFilterBar } from "@/components/ticket-list/TicketListFilterBar";
-import { TicketListPagination } from "@/components/ticket-list/TicketListPagination";
-import { TicketListSearch } from "@/components/ticket-list/TicketListSearch";
-import { Unknown } from "@/components/ticket-list/Unknown";
-import { useTicketListUrl } from "@/components/ticket-list/useTicketListUrl";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link, useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
-import { detailNav, useCrossPageNav } from "@/pages/tickets/detail-navigation";
-import { StatusBadge } from "@/pages/tickets/StatusBadge";
-import { TicketNarrowList } from "@/pages/tickets/TicketNarrowList";
+import { CreatedRangeFilter } from "@/pages/ticket-surface/CreatedRangeFilter";
+import { MultiSelectFilter } from "@/pages/ticket-surface/MultiSelectFilter";
+import { PolicyNumbersCell } from "@/pages/ticket-surface/PolicyNumbersCell";
+import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
+import { TicketExportButton } from "@/pages/ticket-surface/TicketExportButton";
+import { TicketListSearch } from "@/pages/ticket-surface/TicketListSearch";
+import { type SurfaceColumn, TicketSurface } from "@/pages/ticket-surface/TicketSurface";
+import { Unknown } from "@/pages/ticket-surface/Unknown";
 import { ExternalTicketDetailPane } from "./ExternalTicketDetailPane";
 import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
 import { downloadExternalTicketExport } from "./external-ticket-export";
 
 /**
- * 外部端主页：/external-tickets 是全宽表格一级列表（筛选与分页住在 URL query
- * 里），整行点进 /external-tickets/:id 详情态——两态结构与内部 /tickets 同：
- * 列表压缩成左侧窄列（客户名/状态/反馈时间），右侧详情区；压缩态下筛选器收起
- * 为一行摘要＋展开按钮，分页退场。跟进为主的外部方进来最上面是该说话的单
- * （服务端把客服新发言的工单排在最前，列序即服务端排定的序，无列头排序）；
- * 新建是顶部按钮唤起对话框，提交成功进新单详情。
- *
- * 详情页保留翻单：nav 由同一份列表查询按当前筛选与页码算出，方向键/prev/next
- * 与越界翻页契约同内部 /tickets（detail-navigation）。筛选串随链接带走，深链
- * 与刷新都不丢上下文。
+ * 外部端 adapter：只声明槽位——解析器、externalTicket.list 查询（offset/limit
+ * 由页码折算）、状态/创建时间/搜索三个筛选维度、七列固定序列（列序即服务端
+ * 排定的「该说话的单」序，无列头排序）、导出与新建动作、提交对话框与详情
+ * pane。三态骨架、URL 筛选态与翻单契约都在 ticket-surface 深模块，本文件
+ * 不含编排 JSX，与内部工单页模块零共享。
  */
 
+type ListItem = inferRouterOutputs<AppRouter>["externalTicket"]["list"]["items"][number];
+
+type ExternalListQuery = {
+  status: TicketStatus[];
+  search: string;
+  createdFrom?: string | undefined;
+  createdTo?: string | undefined;
+  page: number;
+  pageSize: number;
+};
+
 const PAGE_SIZE = 20;
-const COLUMN_COUNT = 7;
 
 /** URL → 查询参数；单个参数畸形只退回它自己的缺省，不连坐其他筛选。 */
-function parseQuery(params: URLSearchParams) {
+function parseQuery(params: URLSearchParams): ExternalListQuery {
   const rawStatus = params.get("status")?.split(",").filter(Boolean) ?? [];
   const status = rawStatus.filter((value): value is TicketStatus =>
     TICKET_STATUSES.includes(value as TicketStatus),
   );
-  const page = Math.max(1, Number(params.get("page")) || 1);
   return {
     status,
     search: params.get("q") ?? "",
     createdFrom: salvageDateTime(params.get("createdFrom")),
     createdTo: salvageDateTime(params.get("createdTo")),
-    page,
+    page: Math.max(1, Number(params.get("page")) || 1),
+    pageSize: PAGE_SIZE,
   };
 }
 
@@ -86,97 +71,103 @@ function salvageDateTime(raw: string | null) {
     : undefined;
 }
 
-export function ExternalTicketsPage() {
-  const { id: selectedId } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { query, searchDraft, setSearchDraft, submitSearch, setParam, setParams } =
-    useTicketListUrl(parseQuery);
-  const [submitOpen, setSubmitOpen] = useState(false);
-
+function useExternalTicketList(query: ExternalListQuery) {
   const listQuery = trpc.externalTicket.list.useQuery(
     {
       status: query.status.length > 0 ? query.status : undefined,
       search: query.search || undefined,
       createdFrom: query.createdFrom,
       createdTo: query.createdTo,
-      offset: (query.page - 1) * PAGE_SIZE,
-      limit: PAGE_SIZE,
+      offset: (query.page - 1) * query.pageSize,
+      limit: query.pageSize,
     },
     { placeholderData: keepPreviousData },
   );
-
-  const items = listQuery.data?.items ?? [];
-  const total = listQuery.data?.total ?? 0;
-
-  // 详情的翻单面：当前页切片里的前后单（行序即服务端排定的序）+ 页边界
-  const nav = detailNav(items, selectedId, { page: query.page, pageSize: PAGE_SIZE, total });
-
-  /** 选中单的路径：id 住 path，筛选参数随链接带走。 */
-  function ticketPath(ticketId: string) {
-    return `/external-tickets/${ticketId}${location.search}`;
-  }
-
-  /** 列表进详情 push（Back 回到列表），详情内翻单 replace（翻单是扫描动作）。 */
-  function select(ticketId: string) {
-    navigate(ticketPath(ticketId), { replace: selectedId !== undefined });
-  }
-
-  const crossPage = useCrossPageNav({
-    items,
-    page: query.page,
+  return {
+    items: listQuery.data?.items ?? [],
+    total: listQuery.data?.total ?? 0,
+    isLoading: listQuery.isLoading,
     isPlaceholderData: listQuery.isPlaceholderData,
-    select,
-    setPage: (page) => setParam("page", String(page), { resetPage: false }),
-  });
+    error: listQuery.error,
+  };
+}
 
-  const detailOpen = selectedId !== undefined;
-  // 详情态的筛选器折叠：默认收起（屏幕预算给详情），展开后保持展开
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  /** 收起态摘要用的「有几个筛选条件在生效」——搜索词与创建时间区间各算一个。 */
-  const activeFilterCount = [
-    query.status.length,
-    query.search ? 1 : 0,
-    query.createdFrom || query.createdTo ? 1 : 0,
-  ].filter((count) => count > 0).length;
+const columns: ReadonlyArray<SurfaceColumn<ListItem, ExternalListQuery>> = [
+  {
+    key: "workOrderNumber",
+    header: "工单号",
+    render: (ticket, ctx) => (
+      <span className="flex items-center gap-1.5">
+        <Link
+          to={ctx.ticketPath(ticket.id)}
+          className="font-medium hover:underline"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {ticket.workOrderNumber}
+        </Link>
+        {/* 最新一条可见记录是客服发言 = 球在你这边 */}
+        {ticket.latestLog?.action === "comment" && <Badge>客服新发言</Badge>}
+      </span>
+    ),
+  },
+  {
+    key: "feedbackTime",
+    header: TICKET_FIELDS.feedbackTime.label,
+    render: (ticket) => (ticket.feedbackTime ? formatDateTime(ticket.feedbackTime) : <Unknown />),
+  },
+  {
+    key: "policyNumbers",
+    header: TICKET_FIELDS.policyNumbers.label,
+    render: (ticket) => <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />,
+  },
+  {
+    key: "customerName",
+    header: TICKET_FIELDS.customerName.label,
+    render: (ticket) => ticket.customerName ?? <Unknown />,
+  },
+  {
+    key: "status",
+    header: "状态",
+    render: (ticket) => <StatusBadge status={ticket.status} />,
+  },
+  {
+    key: "latestLog",
+    header: "客服最近跟进记录",
+    // 无人跟进（create 日志 remark 为空）时留空，不占 — 占位
+    render: (ticket) =>
+      ticket.latestLog?.remark ? (
+        <span className="block max-w-72 truncate" title={ticket.latestLog.remark}>
+          {ticket.latestLog.remark}
+        </span>
+      ) : null,
+  },
+  {
+    key: "completionStatus",
+    header: TICKET_FIELDS.completionStatusId.label,
+    render: (ticket) =>
+      ticket.completionStatusName ?? <span className="text-muted-foreground">未完结</span>,
+  },
+];
+
+export function ExternalTicketsPage() {
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col", detailOpen ? "gap-3" : "gap-4")}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">我的工单</h1>
-          {/* 详情态把这行纵向预算让给详情 */}
-          {!detailOpen && (
-            <p className="text-sm text-muted-foreground">客服有新发言的工单排在最前。</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
+    <TicketSurface
+      basePath="/external-tickets"
+      parseQuery={parseQuery}
+      useList={useExternalTicketList}
+      title="我的工单"
+      subtitle="客服有新发言的工单排在最前。"
+      headerActions={({ query }) => (
+        <>
           <TicketExportButton onExport={(format) => downloadExternalTicketExport(query, format)} />
           <Button onClick={() => setSubmitOpen(true)}>新建工单</Button>
-        </div>
-      </div>
-
-      {/* 详情态默认收起筛选器：URL 里的筛选值不变，只是不占屏 */}
-      {detailOpen && !filtersOpen && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span>
-            共 {total} 条
-            {activeFilterCount > 0 ? ` · ${activeFilterCount} 个筛选条件` : " · 未筛选"}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => setFiltersOpen(true)}>
-            <SlidersHorizontal data-icon="inline-start" />
-            展开筛选
-          </Button>
-        </div>
+        </>
       )}
-
-      {(!detailOpen || filtersOpen) && (
-        <TicketListFilterBar>
-          {detailOpen && (
-            <Button variant="ghost" size="sm" onClick={() => setFiltersOpen(false)}>
-              收起筛选
-            </Button>
-          )}
+      filters={({ query, searchDraft, setSearchDraft, submitSearch, setParam, setParams }) => (
+        <>
           <MultiSelectFilter
             label="状态"
             values={query.status}
@@ -201,151 +192,44 @@ export function ExternalTicketsPage() {
             onSubmit={submitSearch}
             placeholder="工单号 / 保单号 / 工单原文"
           />
-        </TicketListFilterBar>
+        </>
       )}
-
-      {listQuery.error ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>工单列表加载失败</AlertTitle>
-          <AlertDescription>{listQuery.error.message}</AlertDescription>
-        </Alert>
-      ) : selectedId !== undefined ? (
-        // 详情态：窄列 + 详情。窄屏 (<1024px) 无 lg → 详情占满，窄列让位
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]">
-          <div className="hidden min-h-0 rounded-md border lg:flex lg:flex-col">
-            <TicketNarrowList
-              items={items.map((ticket) => ({
-                id: ticket.id,
-                customerName: ticket.customerName,
-                status: ticket.status,
-                time: ticket.feedbackTime,
-              }))}
-              selectedId={selectedId}
-              onSelect={select}
-            />
-          </div>
-          <div className="flex min-h-0 flex-col rounded-md border">
-            <ExternalTicketDetailPane
-              ticketId={selectedId}
-              nav={nav}
-              onSwitch={select}
-              onCrossPage={crossPage}
-              onClose={() => navigate(`/external-tickets${location.search}`)}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
-          <Table>
-            {/* 表头随行滚动会丢失列语义，钉在滚动容器顶部 */}
-            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
-              <TableRow>
-                <TableHead>工单号</TableHead>
-                <TableHead>{TICKET_FIELDS.feedbackTime.label}</TableHead>
-                <TableHead>{TICKET_FIELDS.policyNumbers.label}</TableHead>
-                <TableHead>{TICKET_FIELDS.customerName.label}</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>客服最近跟进记录</TableHead>
-                <TableHead>{TICKET_FIELDS.completionStatusId.label}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {listQuery.isLoading ? (
-                <ListSkeletonRows columnCount={COLUMN_COUNT} />
-              ) : items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={COLUMN_COUNT} className="p-0">
-                    <Empty className="border-0">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <Inbox />
-                        </EmptyMedia>
-                        <EmptyTitle>没有工单</EmptyTitle>
-                        <EmptyDescription>
-                          {query.status.length > 0 ||
-                          query.search ||
-                          query.createdFrom ||
-                          query.createdTo ? (
-                            "当前筛选条件下没有工单，换个条件试试。"
-                          ) : (
-                            <>点右上角「新建工单」，把客户反馈原文交给客服团队。</>
-                          )}
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((ticket) => (
-                  <TableRow
-                    key={ticket.id}
-                    className="cursor-pointer"
-                    // 筛选串随车带走，返回列表时上下文不丢
-                    onClick={() => navigate(ticketPath(ticket.id))}
-                  >
-                    <TableCell>
-                      <span className="flex items-center gap-1.5">
-                        <Link
-                          to={ticketPath(ticket.id)}
-                          className="font-medium hover:underline"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          {ticket.workOrderNumber}
-                        </Link>
-                        {/* 最新一条可见记录是客服发言 = 球在你这边 */}
-                        {ticket.latestLog?.action === "comment" && <Badge>客服新发言</Badge>}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {ticket.feedbackTime ? formatDateTime(ticket.feedbackTime) : <Unknown />}
-                    </TableCell>
-                    <TableCell>
-                      <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />
-                    </TableCell>
-                    <TableCell>{ticket.customerName ?? <Unknown />}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={ticket.status} />
-                    </TableCell>
-                    <TableCell>
-                      {/* 无人跟进（create 日志 remark 为空）时留空，不占 — 占位 */}
-                      {ticket.latestLog?.remark ? (
-                        <span className="block max-w-72 truncate" title={ticket.latestLog.remark}>
-                          {ticket.latestLog.remark}
-                        </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>
-                      {ticket.completionStatusName ?? (
-                        <span className="text-muted-foreground">未完结</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!listQuery.error && !detailOpen && (
-        <TicketListPagination
-          total={total}
-          page={query.page}
-          pageSize={PAGE_SIZE}
-          isLoading={listQuery.isLoading}
-          onPageChange={(page) => setParam("page", String(page), { resetPage: false })}
+      activeFilterCount={(query) =>
+        [
+          query.status.length,
+          query.search ? 1 : 0,
+          query.createdFrom || query.createdTo ? 1 : 0,
+        ].filter((count) => count > 0).length
+      }
+      columns={columns}
+      emptyState={{
+        icon: <Inbox />,
+        title: "没有工单",
+        description: (query) =>
+          query.status.length > 0 || query.search || query.createdFrom || query.createdTo ? (
+            "当前筛选条件下没有工单，换个条件试试。"
+          ) : (
+            <>点右上角「新建工单」，把客户反馈原文交给客服团队。</>
+          ),
+      }}
+      narrowItem={(ticket) => ({
+        id: ticket.id,
+        customerName: ticket.customerName,
+        status: ticket.status,
+        time: ticket.feedbackTime,
+      })}
+      renderDetail={(props) => <ExternalTicketDetailPane {...props} />}
+      dialogs={({ ticketPath }) => (
+        <ExternalTicketSubmitDialog
+          open={submitOpen}
+          onOpenChange={setSubmitOpen}
+          onSubmitted={(ticket) => {
+            setSubmitOpen(false);
+            navigate(ticketPath(ticket.id));
+          }}
         />
       )}
-
-      <ExternalTicketSubmitDialog
-        open={submitOpen}
-        onOpenChange={setSubmitOpen}
-        onSubmitted={(ticket) => {
-          setSubmitOpen(false);
-          navigate(ticketPath(ticket.id));
-        }}
-      />
-    </div>
+      listGapClassName="gap-4"
+    />
   );
 }
