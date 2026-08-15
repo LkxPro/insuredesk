@@ -202,7 +202,7 @@ async function runPipeline(
   // 会话活着用 warm 短 prompt(上下文还在);死了重开并用 cold 完整 prompt 冷启动。
   const runPhase = async (
     holder: SessionHolder,
-    files: { warm: string; cold: string },
+    files: { warm: string; cold: string; resume?: string },
     outputName: string,
     keepAlive: boolean,
   ): Promise<void> => {
@@ -210,6 +210,7 @@ async function runPipeline(
     for (let attempt = 1; ; attempt += 1) {
       let promptFile = files.warm;
       if (!holder.session?.isAlive()) {
+        const resumeId = holder.session?.sessionId() ?? null;
         if (holder.session) await holder.session.close().catch(() => {});
         holder.session = openAgentSession({
           worktree,
@@ -217,9 +218,12 @@ async function runPipeline(
           issue,
           env: executorEnv,
           signal: sessionSignal,
+          resumeSessionId: resumeId ?? undefined,
         });
         ctx.sessions.push(holder.session);
-        promptFile = files.cold;
+        // 有 session_id 优先 --resume 续跑(transcript 保留,长票不必从零再烧);
+        // 未 init 即死没得续,退完整 prompt 冷启动。
+        promptFile = resumeId ? (files.resume ?? files.warm) : files.cold;
       }
       ctx.activeSession.current = holder.session;
       const result = await holder.session.run(promptFile, ctx.artifact(outputName));
@@ -304,7 +308,17 @@ async function runPipeline(
 
   await patchStatus(worktrees, issue, { phase: "implementation" });
   const implHolder: SessionHolder = { session: null };
-  await runPhase(implHolder, { warm: taskFile, cold: taskFile }, "implementation.json", true);
+  const continueFile = join(runDir, "continue.md");
+  await writeFile(
+    continueFile,
+    "The previous turn was interrupted by a transport failure. Continue the task from the current worktree state; the issue JSON and instructions are in the earlier conversation.\n",
+  );
+  await runPhase(
+    implHolder,
+    { warm: taskFile, cold: taskFile, resume: continueFile },
+    "implementation.json",
+    true,
+  );
   if (!(await historyUnchanged()))
     throw new WorkerFailure(
       "Agent changed git history instead of leaving a controller-owned diff.",
@@ -442,9 +456,14 @@ async function runPipeline(
         fixWarmFile,
         `\`make check\` failed. Fix the failures below; keep changes minimal and do not rewrite git history. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
       );
+      const fixResumeFile = join(runDir, "fix-resume.md");
+      await writeFile(
+        fixResumeFile,
+        `The previous turn was interrupted by a transport failure. Continue fixing the \`make check\` failures from the current worktree state. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+      );
       await runPhase(
         implHolder,
-        { warm: fixWarmFile, cold: fixColdFile },
+        { warm: fixWarmFile, cold: fixColdFile, resume: fixResumeFile },
         `fix-${fixRound}.json`,
         true,
       );

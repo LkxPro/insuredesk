@@ -8,6 +8,7 @@ export interface SessionOptions {
   issue: number;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  resumeSessionId?: string;
 }
 
 export interface ExecutorResult {
@@ -19,6 +20,7 @@ export interface ExecutorResult {
 interface StreamEvent {
   type?: string;
   subtype?: string;
+  session_id?: string;
   is_error?: boolean;
   num_turns?: number;
   message?: { content?: Array<{ type: string; name?: string; text?: string }> };
@@ -44,6 +46,8 @@ export interface AgentSession {
   sendNudge(text: string): void;
   inFlight(): boolean;
   isAlive(): boolean;
+  // init 事件落定的 session_id,供崩溃后 --resume 续跑;未 init 即死返回 null。
+  sessionId(): string | null;
   close(): Promise<void>;
 }
 
@@ -72,6 +76,7 @@ export function openAgentSession(options: SessionOptions): AgentSession {
   if (permissionMode === "bypassPermissions") args.push("--dangerously-skip-permissions");
   else args.push("--permission-mode", permissionMode);
   if (process.env.AGENT_MODEL) args.push("--model", process.env.AGENT_MODEL);
+  if (options.resumeSessionId) args.push("--resume", options.resumeSessionId);
 
   const child = spawn(claudeBin, args, {
     cwd: options.worktree,
@@ -89,6 +94,7 @@ export function openAgentSession(options: SessionOptions): AgentSession {
   let lastPatch = 0;
   let lastKind = "";
   let buffer = "";
+  let sessionId: string | null = null;
   let chain: Promise<void> = Promise.resolve();
   let pending: { resolve: (r: ExecutorResult) => void; outputFile: string } | null = null;
   let closedResolve!: () => void;
@@ -165,6 +171,8 @@ export function openAgentSession(options: SessionOptions): AgentSession {
     }
     if (typeof event.num_turns === "number") turns = Math.max(turns, event.num_turns);
     else if (event.type === "assistant") turns += 1;
+    if (event.type === "system" && event.subtype === "init" && typeof event.session_id === "string")
+      sessionId = event.session_id;
     // flight 同步复位,close 竞态窗口内 watchdog 不会把 nudge 错注进下一轮。
     if (event.type === "result") flight = false;
     chain = chain.then(() => handleEvent(event));
@@ -228,6 +236,7 @@ export function openAgentSession(options: SessionOptions): AgentSession {
     },
     inFlight: () => flight,
     isAlive: () => alive,
+    sessionId: () => sessionId,
     async close() {
       options.signal?.removeEventListener("abort", onAbort);
       if (!exited) {

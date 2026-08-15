@@ -86,6 +86,7 @@ function sandboxEnv(sandbox: Sandbox): NodeJS.ProcessEnv {
     AGENT_CLAUDE_BIN: join(sandbox.bin, "claude"),
     AGENT_TEST_CAPTURE: join(sandbox.dir, "gh-calls"),
     AGENT_TEST_CLAUDE_STDIN: join(sandbox.dir, "claude-stdin"),
+    AGENT_TEST_CLAUDE_ARGS: join(sandbox.dir, "claude-args"),
     AGENT_REVIEW_ENABLED: "0",
     AGENT_CLAIM_HEARTBEAT_INTERVAL: "3600",
     AGENT_BLOCK_NOTIFY: "0",
@@ -210,10 +211,12 @@ fi`;
   assert.ok(captured.includes("failed_check_log"));
 });
 
-test("implementation 会话死亡 → fix 轮重开会话冷启动(cold 完整 prompt)", async () => {
-  // 会话在 implementation 轮后退出;fix 轮检测死亡 → 重开 + 完整 prompt。
-  const claude = `while IFS= read -r line; do
+test("implementation 会话死亡 → fix 轮以 --resume 续跑同会话", async () => {
+  // 会话在 implementation 轮后退出;fix 轮检测死亡 → 带 session_id 以 --resume 重开。
+  const claude = `printf '%s\\n' "$*" >>"$AGENT_TEST_CLAUDE_ARGS"
+while IFS= read -r line; do
   printf '%s\\n' "$line" >>"$AGENT_TEST_CLAUDE_STDIN"
+  printf '%s\\n' '{"type":"system","subtype":"init","session_id":"sess-7"}'
   case $line in
     *'final comment sweep'*) : ;;
     *) printf 'implemented\\n' >"$PWD/allowed.txt" ;;
@@ -231,11 +234,37 @@ fi`;
     assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
     assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
   });
+  const args = await readFile(join(sandbox.dir, "claude-args"), "utf8");
+  assert.ok(args.includes("--resume sess-7"));
   const captured = await readFile(join(sandbox.dir, "claude-stdin"), "utf8");
-  const lines = captured.split("\n").filter(Boolean);
-  // impl + 冷启动 fix 各带一份完整 task.md;warm 短指令从未使用。
-  assert.equal(lines.filter((l) => l.includes("Implement the issue")).length, 2);
-  assert.ok(!captured.includes("`make check` failed. Fix"));
+  // 续跑收到的是中断续跑 prompt;完整 task.md 只发过一次(首轮)。
+  assert.ok(captured.includes("interrupted by a transport failure"));
+  assert.equal(captured.split("\n").filter((l) => l.includes("Implement the issue")).length, 1);
+});
+
+test("会话未 init 即死(无 session_id)→ 完整 prompt 冷启动,无 --resume", async () => {
+  // 首个进程不出任何事件直接退出;重开时无 session_id 可续,走 cold。
+  const claude = `printf '%s\\n' "$*" >>"$AGENT_TEST_CLAUDE_ARGS"
+n=$(cat "$AGENT_TEST_CAPTURE.n" 2>/dev/null || echo 0)
+n=$((n+1))
+printf '%s\\n' "$n" >"$AGENT_TEST_CAPTURE.n"
+if [ $n -eq 1 ]; then exit 1; fi
+while IFS= read -r line; do
+  printf '%s\\n' "$line" >>"$AGENT_TEST_CLAUDE_STDIN"
+  printf '%s\\n' '{"type":"system","subtype":"init","session_id":"sess-8"}'
+  case $line in
+    *'final comment sweep'*) : ;;
+    *) printf 'implemented\\n' >"$PWD/allowed.txt" ;;
+  esac
+  printf '%s\\n' '${RESULT_EVENT}'
+done`;
+  const sandbox = await makeSandbox(claude, MAKE_OK);
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const args = await readFile(join(sandbox.dir, "claude-args"), "utf8");
+  assert.ok(!args.includes("--resume"));
 });
 
 test("stall 后 nudge 软干预恢复,pipeline 照常完成", async () => {
