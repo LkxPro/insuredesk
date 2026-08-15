@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { buildTicketExportUrl } from "@/components/ticket-list/ticket-export";
+import { buildTicketExportUrl } from "@/pages/ticket-surface/ticket-export";
 import { auth, renderApp, restFetch, toastSpies, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 

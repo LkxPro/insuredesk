@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { isTicketInFlight, type TicketEditData, type TicketEditInput } from "@insuredesk/shared";
 import { AlertCircle, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { DiscardChangesDialog } from "@/components/DiscardChangesDialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -11,19 +11,18 @@ import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
+import { DetailPaneShell } from "@/pages/ticket-surface/DetailPaneShell";
+import type {
+  CrossPageDirection,
+  DetailNav,
+  DetailNavStep,
+} from "@/pages/ticket-surface/detail-navigation";
+import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
+import { TicketTimelineColumn } from "@/pages/ticket-surface/TicketTimelineColumn";
 import { AddCommentCard } from "./AddCommentCard";
 import { AssignTicketDialog } from "./AssignTicketDialog";
 import { DeleteTicketDialog } from "./DeleteTicketDialog";
-import { DetailNavButtons } from "./DetailNavButtons";
-import {
-  type CrossPageDirection,
-  type DetailNav,
-  type DetailNavStep,
-  detailNavStep,
-  handleDetailArrowKey,
-} from "./detail-navigation";
 import { ResolveTicketDialog } from "./ResolveTicketDialog";
-import { StatusBadge } from "./StatusBadge";
 import { SubmissionTextPane } from "./SubmissionTextPane";
 import { formDefaults } from "./TicketDetailFields";
 import {
@@ -38,13 +37,13 @@ import {
   ticketFormValuesToInput,
 } from "./TicketFormFields";
 import { TicketInfoColumn } from "./TicketInfoColumn";
-import { TicketTimelineColumn } from "./TicketTimelineColumn";
-import type { TicketDetail } from "./ticket-detail";
 
 /**
- * 分栏详情区：头部（工单号 + 状态 + 四个操作）、左栏工单信息、右栏时间线与钉底
- * 跟进框。/tickets/:id 的选中态就是这块，不是弹窗 —— 二级弹窗（分配/完结/删除/
- * 丢弃确认）叠在它之上，处理现场（左侧窄列 + 本区）始终在背景里。
+ * 分栏详情区：头部操作、左栏工单信息、右栏时间线与钉底跟进框。/tickets/:id 的
+ * 选中态就是这块，不是弹窗 —— 二级弹窗（分配/完结/删除/丢弃确认）叠在它之上，
+ * 处理现场（左侧窄列 + 本区）始终在背景里。骨架（可聚焦 section、方向键翻单、
+ * 头部行与 prev/next 按钮）由 DetailPaneShell 承载，本组件只留编辑状态机、
+ * 头部操作槽与两栏正文。
  *
  * 编辑是整单模式：点「编辑」后左栏可编辑字段原位变控件，一次「保存修改」＝一条
  * edit 留痕（投诉等级变更时服务端按新等级重算 dueAt 与跟进/首响要求）。取消与
@@ -68,7 +67,6 @@ export function TicketDetailPane({
   onClose,
   onSwitch,
   onCrossPage,
-  /** 方向键与 prev/next 按钮共用的导航面。 */
   nav,
 }: {
   ticketId: string;
@@ -79,7 +77,6 @@ export function TicketDetailPane({
 }) {
   const { hasPermission } = useAuth();
   const utils = trpc.useUtils();
-  const paneRef = useRef<HTMLElement>(null);
   const [editing, setEditing] = useState(false);
   const [pendingExit, setPendingExit] = useState<PendingExit | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -127,8 +124,6 @@ export function TicketDetailPane({
   useEffect(() => {
     setEditing(false);
     setPendingExit(null);
-    // ↑/↓ 翻单靠 keydown 冒泡到本区，焦点留在窄列按钮上时事件到不了这里
-    paneRef.current?.focus({ preventScroll: true });
   }, [ticketId]);
 
   const dirty = editing && form.formState.isDirty;
@@ -182,34 +177,87 @@ export function TicketDetailPane({
   }
 
   return (
-    <section
-      ref={paneRef}
-      aria-label="工单详情"
-      className="flex min-h-0 flex-1 flex-col outline-hidden"
-      tabIndex={-1}
-      onKeyDown={(event) => handleDetailArrowKey(event, nav, applyStep)}
+    <DetailPaneShell
+      focusKey={ticketId}
+      nav={nav}
+      onStep={applyStep}
+      title={ticket?.workOrderNumber}
+      status={ticket && <StatusBadge status={ticket.displayStatus} />}
+      actions={
+        ticket && (
+          <>
+            {editing && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => requestExit({ kind: "read" })}
+                  disabled={edit.isPending}
+                >
+                  取消
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={form.handleSubmit(save)}
+                  disabled={edit.isPending}
+                >
+                  {edit.isPending && <Spinner data-icon="inline-start" />}
+                  {edit.isPending ? "保存中…" : "保存修改"}
+                </Button>
+              </>
+            )}
+            {/* 编辑态换成取消/保存，其余操作退场避免歧义 */}
+            {!editing && (
+              <>
+                {hasPermission("ticket.edit") && (
+                  <Button type="button" variant="outline" size="sm" onClick={startEditing}>
+                    编辑
+                  </Button>
+                )}
+                {hasPermission("ticket.assign") && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAssignOpen(true)}
+                  >
+                    {ticket.assigneeId ? "改派" : "分配"}
+                  </Button>
+                )}
+                {hasPermission("ticket.process") && isTicketInFlight(ticket.status) && (
+                  <Button type="button" size="sm" onClick={() => setResolveOpen(true)}>
+                    完结工单
+                  </Button>
+                )}
+                {hasPermission("ticket.delete") && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    删除
+                  </Button>
+                )}
+              </>
+            )}
+          </>
+        )
+      }
+      trailing={
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="关闭详情"
+          onClick={() => requestExit({ kind: "close" })}
+        >
+          <X />
+        </Button>
+      }
     >
-      <PaneHeader
-        ticket={ticket}
-        editing={editing}
-        saving={edit.isPending}
-        prevStep={detailNavStep("prev", nav)}
-        nextStep={detailNavStep("next", nav)}
-        onStep={applyStep}
-        onClose={() => requestExit({ kind: "close" })}
-        onEdit={startEditing}
-        onCancelEdit={() => requestExit({ kind: "read" })}
-        onSave={form.handleSubmit(save)}
-        onAssign={() => setAssignOpen(true)}
-        onResolve={() => setResolveOpen(true)}
-        onDelete={() => setDeleteOpen(true)}
-        can={{
-          edit: hasPermission("ticket.edit"),
-          assign: hasPermission("ticket.assign"),
-          process: hasPermission("ticket.process"),
-          delete: hasPermission("ticket.delete"),
-        }}
-      />
       {ticket && <DuplicateTicketsBanner ticket={ticket} />}
 
       {detailQuery.error ? (
@@ -318,100 +366,6 @@ export function TicketDetailPane({
         }
         onCancel={() => setDuplicateConflict(null)}
       />
-    </section>
-  );
-}
-
-/** 头部：标识 + 状态 + 操作。编辑态换成取消/保存，其余操作退场避免歧义。 */
-function PaneHeader({
-  ticket,
-  editing,
-  saving,
-  prevStep,
-  nextStep,
-  onStep,
-  onClose,
-  onEdit,
-  onCancelEdit,
-  onSave,
-  onAssign,
-  onResolve,
-  onDelete,
-  can,
-}: {
-  ticket: TicketDetail | null;
-  editing: boolean;
-  saving: boolean;
-  prevStep: DetailNavStep | null;
-  nextStep: DetailNavStep | null;
-  onStep: (step: DetailNavStep) => void;
-  onClose: () => void;
-  onEdit: () => void;
-  onCancelEdit: () => void;
-  onSave: () => void;
-  onAssign: () => void;
-  onResolve: () => void;
-  onDelete: () => void;
-  can: { edit: boolean; assign: boolean; process: boolean; delete: boolean };
-}) {
-  return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-3">
-      <h2 className="m-0 text-lg font-semibold">{ticket?.workOrderNumber ?? "工单详情"}</h2>
-      {ticket && <StatusBadge status={ticket.displayStatus} />}
-      <div className="flex-1" />
-
-      {ticket && editing && (
-        <>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onCancelEdit}
-            disabled={saving}
-          >
-            取消
-          </Button>
-          <Button type="button" size="sm" onClick={onSave} disabled={saving}>
-            {saving && <Spinner data-icon="inline-start" />}
-            {saving ? "保存中…" : "保存修改"}
-          </Button>
-        </>
-      )}
-
-      {ticket && !editing && (
-        <>
-          {can.edit && (
-            <Button type="button" variant="outline" size="sm" onClick={onEdit}>
-              编辑
-            </Button>
-          )}
-          {can.assign && !ticket.assigneeId && (
-            <Button type="button" variant="outline" size="sm" onClick={onAssign}>
-              分配
-            </Button>
-          )}
-          {can.assign && ticket.assigneeId && (
-            <Button type="button" variant="outline" size="sm" onClick={onAssign}>
-              改派
-            </Button>
-          )}
-          {can.process && isTicketInFlight(ticket.status) && (
-            <Button type="button" size="sm" onClick={onResolve}>
-              完结工单
-            </Button>
-          )}
-          {can.delete && (
-            <Button type="button" variant="destructive" size="sm" onClick={onDelete}>
-              删除
-            </Button>
-          )}
-        </>
-      )}
-
-      <DetailNavButtons prevStep={prevStep} nextStep={nextStep} onStep={onStep} />
-      <Button type="button" variant="ghost" size="icon" aria-label="关闭详情" onClick={onClose}>
-        <X />
-      </Button>
-    </div>
+    </DetailPaneShell>
   );
 }

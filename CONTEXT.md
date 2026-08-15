@@ -40,6 +40,10 @@ _Avoid_: 按完结状态做看板聚合——本期明确不做
 **软删除**：
 删除工单 = 设 deletedAt，默认列表与一切统计排除，ProcessLog/附件保留；本期只删不恢复。
 
+**工单表面（Ticket Surface）**：
+内外两个工单列表页共用的深模块（`apps/web/src/pages/ticket-surface/`）：三态骨架（全宽表格 / 窄列+详情主从 / 处理态筛选折叠）、URL 筛选态（查询串是唯一事实源，筛选变更回第 1 页）、翻单契约（切片内方向键 + 越界翻页）、可选 selection 与 DetailPaneShell，只维护一份。两个页面各退为薄 adapter：basePath、查询 hook、列定义（含可选排序）、筛选维度、头部动作、对话框、详情 pane 全部经槽位注入；深模块不认识任何具体动作与权限点，接口上无 capability 布尔 flag——门控在 adapter 层展开为槽位的有无。
+_Avoid_: 出现第三套工单列表表面时先扩 adapter 槽位接入深模块，而不是另起一套平行编排
+
 ### SLA 与提醒
 
 **ComplaintLevel（投诉等级）**：

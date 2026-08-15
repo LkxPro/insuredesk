@@ -1,5 +1,5 @@
 import { joinPolicyNumbers } from "@insuredesk/shared";
-import { DetailGrid, DetailItem } from "@/pages/tickets/DetailGrid";
+import { DetailGrid, DetailItem } from "@/pages/ticket-surface/DetailGrid";
 import {
   EXTERNAL_INFO_FIELDS,
   type ExternalInfoField,

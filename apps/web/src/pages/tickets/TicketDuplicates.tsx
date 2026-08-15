@@ -18,7 +18,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
-import { StatusBadge } from "./StatusBadge";
+import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
 import type { TicketFormValues } from "./TicketFormFields";
 import type { TicketDetail } from "./ticket-detail";
 

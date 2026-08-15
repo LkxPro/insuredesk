@@ -5,7 +5,6 @@ import {
 } from "@insuredesk/shared";
 import { AlertCircle, Users } from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import { CreatedRangeFilter } from "@/components/ticket-list/CreatedRangeFilter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +28,7 @@ import { createdRangeLabel } from "@/lib/created-range";
 import { formatDurationMs } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { CreatedRangeFilter } from "@/pages/ticket-surface/CreatedRangeFilter";
 import { buildChannelTicketListUrl, buildTicketListUrl } from "./build-ticket-list-url";
 import { useCreatedRangeQueryParams } from "./useCreatedRangeQueryParams";
 

@@ -2,8 +2,8 @@ import { TICKET_FIELDS, TICKET_SOURCE_LABELS, type TicketCreateFieldKey } from "
 import type { ReactNode } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { formatDateTime } from "@/lib/datetime";
-import { DetailItem as Item, DetailSection as Section } from "./DetailGrid";
-import { StatusBadge } from "./StatusBadge";
+import { DetailItem as Item, DetailSection as Section } from "@/pages/ticket-surface/DetailGrid";
+import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
 import { SubmissionTextCollapse } from "./SubmissionTextCollapse";
 import { TicketDetailField } from "./TicketDetailFields";
 import type { TicketFormValues } from "./TicketFormFields";

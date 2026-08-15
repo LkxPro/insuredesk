@@ -1,19 +1,16 @@
 import { AlertCircle, ArrowLeft } from "lucide-react";
-import { useEffect, useRef } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
-import { DetailNavButtons } from "@/pages/tickets/DetailNavButtons";
-import {
-  type CrossPageDirection,
-  type DetailNav,
-  type DetailNavStep,
-  detailNavStep,
-  handleDetailArrowKey,
-} from "@/pages/tickets/detail-navigation";
-import { StatusBadge } from "@/pages/tickets/StatusBadge";
-import { TicketTimelineColumn } from "@/pages/tickets/TicketTimelineColumn";
+import { DetailPaneShell } from "@/pages/ticket-surface/DetailPaneShell";
+import type {
+  CrossPageDirection,
+  DetailNav,
+  DetailNavStep,
+} from "@/pages/ticket-surface/detail-navigation";
+import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
+import { TicketTimelineColumn } from "@/pages/ticket-surface/TicketTimelineColumn";
 import { ExternalNoteCard } from "./ExternalNoteCard";
 import { ExternalTicketInfoColumn } from "./ExternalTicketInfoColumn";
 
@@ -22,7 +19,8 @@ import { ExternalTicketInfoColumn } from "./ExternalTicketInfoColumn";
  * 信息（原文折叠+白名单字段），右栏处理记录时间线与钉底留言框。已完结是终态，
  * 只读（无留言框）。时间线内容已由服务端过滤（create + comment 非 internal +
  * external_note + resolve）；从外部方视角客服跟进（comment）是"对方发出"，
- * 落左侧气泡。
+ * 落左侧气泡。骨架（可聚焦 section、方向键翻单、头部行与 prev/next 按钮）由
+ * DetailPaneShell 承载，本组件只留数据与两栏正文。
  *
  * 方向键（↑/↓/←/→）与 prev/next 按钮按列表顺序翻单，越界翻页（nav 由页面
  * 按当前筛选与页码算出，无路可走则按钮禁用、按键死停）；输入控件内的方向
@@ -34,7 +32,6 @@ export function ExternalTicketDetailPane({
   onClose,
   onSwitch,
   onCrossPage,
-  /** 方向键与 prev/next 按钮共用的导航面。 */
   nav,
 }: {
   ticketId: string;
@@ -46,13 +43,6 @@ export function ExternalTicketDetailPane({
   const detailQuery = trpc.externalTicket.detail.useQuery({ ticketId });
   const data = detailQuery.data;
   const ticket = data?.ticket ?? null;
-  const paneRef = useRef<HTMLElement>(null);
-
-  // ↑/↓ 翻单靠 keydown 冒泡到本区，焦点留在窄列按钮上时事件到不了这里
-  // biome-ignore lint/correctness/useExhaustiveDependencies: ticketId 是触发聚焦的信号，不在 effect 体内使用
-  useEffect(() => {
-    paneRef.current?.focus({ preventScroll: true });
-  }, [ticketId]);
 
   /** 键盘与 prev/next 按钮同一入口。 */
   function applyStep(step: DetailNavStep) {
@@ -63,29 +53,19 @@ export function ExternalTicketDetailPane({
     }
   }
 
-  const prevStep = detailNavStep("prev", nav);
-  const nextStep = detailNavStep("next", nav);
-
   return (
-    <section
-      ref={paneRef}
-      aria-label="工单详情"
-      className="flex min-h-0 flex-1 flex-col outline-hidden"
-      tabIndex={-1}
-      onKeyDown={(event) => handleDetailArrowKey(event, nav, applyStep)}
-    >
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-3">
+    <DetailPaneShell
+      focusKey={ticketId}
+      nav={nav}
+      onStep={applyStep}
+      leading={
         <Button variant="ghost" size="icon" aria-label="返回列表" onClick={onClose}>
           <ArrowLeft />
         </Button>
-        <h2 className="m-0 text-lg font-semibold tracking-tight">
-          {ticket?.workOrderNumber ?? "工单详情"}
-        </h2>
-        {ticket && <StatusBadge status={ticket.status} />}
-        <div className="flex-1" />
-        <DetailNavButtons prevStep={prevStep} nextStep={nextStep} onStep={applyStep} />
-      </div>
-
+      }
+      title={ticket?.workOrderNumber}
+      status={ticket && <StatusBadge status={ticket.status} />}
+    >
       {detailQuery.error ? (
         <Alert variant="destructive" className="m-4">
           <AlertCircle />
@@ -123,6 +103,6 @@ export function ExternalTicketDetailPane({
           />
         </div>
       )}
-    </section>
+    </DetailPaneShell>
   );
 }

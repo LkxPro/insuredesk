@@ -1,3 +1,4 @@
+import type { AppRouter } from "@insuredesk/api";
 import {
   BATCH_ASSIGN_LIMIT,
   COMPLAINT_LEVELS,
@@ -9,99 +10,46 @@ import {
   TICKET_SOURCES,
   TICKET_STATUS_LABELS,
   type TicketListQuery,
-  type TicketSortField,
   ticketListInputSchema,
 } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  Plus,
-  SlidersHorizontal,
-  Ticket,
-  Upload,
-  UserPlus,
-  Zap,
-} from "lucide-react";
+import type { inferRouterOutputs } from "@trpc/server";
+import { Plus, Ticket, Upload, UserPlus, Zap } from "lucide-react";
 import { useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { CreatedRangeFilter } from "@/components/ticket-list/CreatedRangeFilter";
-import { ListSkeletonRows } from "@/components/ticket-list/ListSkeletonRows";
-import { MultiSelectFilter } from "@/components/ticket-list/MultiSelectFilter";
-import { PolicyNumbersCell } from "@/components/ticket-list/PolicyNumbersCell";
-import { TicketExportButton } from "@/components/ticket-list/TicketExportButton";
-import { TicketListFilterBar } from "@/components/ticket-list/TicketListFilterBar";
-import { TicketListPagination } from "@/components/ticket-list/TicketListPagination";
-import { TicketListSearch } from "@/components/ticket-list/TicketListSearch";
-import { downloadTicketExport } from "@/components/ticket-list/ticket-export";
-import { Unknown } from "@/components/ticket-list/Unknown";
-import { useTicketListUrl } from "@/components/ticket-list/useTicketListUrl";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+import { CreatedRangeFilter } from "@/pages/ticket-surface/CreatedRangeFilter";
+import { MultiSelectFilter } from "@/pages/ticket-surface/MultiSelectFilter";
+import { PolicyNumbersCell } from "@/pages/ticket-surface/PolicyNumbersCell";
+import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
+import { TicketExportButton } from "@/pages/ticket-surface/TicketExportButton";
+import { TicketListSearch } from "@/pages/ticket-surface/TicketListSearch";
+import { type SurfaceColumn, TicketSurface } from "@/pages/ticket-surface/TicketSurface";
+import { downloadTicketExport } from "@/pages/ticket-surface/ticket-export";
+import { Unknown } from "@/pages/ticket-surface/Unknown";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
-import { detailNav, useCrossPageNav } from "./detail-navigation";
 import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
-import { StatusBadge } from "./StatusBadge";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { TicketDetailPane } from "./TicketDetailPane";
 import { TicketImportDialog } from "./TicketImportDialog";
-import { TicketNarrowList } from "./TicketNarrowList";
 
 /**
- * 工单管理 list: filters (状态 incl. the computed statuses, 渠道, 完结状态,
- * 投诉等级, 来源), 工单号/客户姓名/保单号/电话 search, 创建时间/处理时限 sort, and
- * pagination. All list state lives in the URL — same deep-link treatment as
- * /tickets/new — and is parsed through the shared ticketListInputSchema, so an
- * edited query string degrades to defaults instead of crashing. Data scope is
- * enforced server-side; this page renders whatever the viewer may see.
+ * 内部工单页 adapter：只声明槽位——解析器、ticket.list 查询、9 个筛选维度、
+ * 列定义（创建时间/处理时限双轴排序）、批量分配 selection、头部动作（导出/
+ * 导入/新建）、对话框槽与详情 pane。三态骨架、URL 筛选态、翻单契约与选中
+ * 状态机都在 ticket-surface 深模块，本文件不含编排 JSX。
  *
- * 两态主从分栏 (issue #164): /tickets 是默认态——全宽表格，筛选/批量操作/导入
- * 导出原样在位。/tickets/:id 是处理态——同一份列表数据压缩成左侧窄列（客户名/
- * 状态/处理时限），右侧 ~75% 是 TicketDetailPane。压缩态下筛选器收起为一行摘要
- * ＋展开按钮（筛选值仍在 URL 里，切态不丢），批量选择与导入导出退场：处理态的
- * 屏幕预算属于详情。窄屏 (<1024px) 降级为详情覆盖窄列，桌面优先。
- *
- * Creation stays a modal dialog over this page, driven by the /tickets/new
- * route (`createOpen`), shown only to holders of ticket.create. The filter
- * query string rides along into /tickets/:id and back, so closing the detail
- * lands on the list exactly as it was.
- *
- * Assignment adds two permission-gated entry points: a per-row 分配/改派
- * action (ticket.assign) and multi-select checkboxes feeding 批量分配
- * (ticket.batch_assign). Selection is kept as id → AssignTarget so it survives
- * paging; completed tickets are terminal and not selectable.
- *
- * The 操作 cell is a hover-revealed quick-action strip: 分配/改派 and 自动分配
- * (ticket.assign, non-terminal rows) plus 完结 (ticket.process, in-flight
- * rows) jump straight into their dialogs without opening the detail — the
- * same gates the detail header applies. The buttons stay in the DOM (and the
- * strip reveals on focus) so keyboard users reach them too.
+ * 门控全部在本层展开：ticket.batch_assign 决定给不给 selection 槽，
+ * ticket.assign/process 决定有没有「操作」列，ticket.create/import/export
+ * 决定头部动作的有无——深模块只看到槽位的有无，看不到权限点。
  */
 
-const BASE_COLUMN_COUNT = 10;
+/** ticket.list 行类型，从 router 推导——列定义与 selection 共用一个真源。 */
+type ListItem = inferRouterOutputs<AppRouter>["ticket"]["list"]["items"][number];
 
 /**
  * URL query string → validated list query. Each param is salvaged on its own,
@@ -152,33 +100,30 @@ function serializeSelection(
   return sameSet ? null : values.join(",");
 }
 
-function SortHead({
-  field,
-  label,
-  query,
-  onToggle,
-}: {
-  field: TicketSortField;
-  label: string;
-  query: TicketListQuery;
-  onToggle: (field: TicketSortField) => void;
-}) {
-  const active = query.sortBy === field;
-  const Icon = active ? (query.sortOrder === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
-  return (
-    <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => onToggle(field)}>
-      {label}
-      <Icon data-icon="inline-end" className={active ? "" : "text-muted-foreground"} />
-    </Button>
-  );
+function useTicketList(query: TicketListQuery) {
+  const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
+  return {
+    items: listQuery.data?.items ?? [],
+    total: listQuery.data?.total ?? 0,
+    isLoading: listQuery.isLoading,
+    isPlaceholderData: listQuery.isPlaceholderData,
+    error: listQuery.error,
+  };
+}
+
+function toTarget(ticket: ListItem): AssignTarget {
+  return {
+    id: ticket.id,
+    workOrderNumber: ticket.workOrderNumber,
+    assigneeId: ticket.assigneeId,
+    assigneeName: ticket.assigneeName,
+    dueAt: ticket.dueAt,
+  };
 }
 
 export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
-  // /tickets/:id renders this same page with the detail dialog open
-  const { id: detailId } = useParams<{ id: string }>();
-  const location = useLocation();
   const canCreate = hasPermission("ticket.create");
   const canAssign = hasPermission("ticket.assign");
   const canBatchAssign = hasPermission("ticket.batch_assign");
@@ -187,12 +132,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const canImport = hasPermission("ticket.import");
   const canRowActions = canAssign || canProcess;
 
-  const { query, searchDraft, setSearchDraft, submitSearch, setParam, setParams } =
-    useTicketListUrl(parseListQuery);
-
-  // 批量分配 selection: id → target so it survives paging (the dialog needs
-  // more than the id, and page 2 replaces `items`)
-  const [selected, setSelected] = useState<ReadonlyMap<string, AssignTarget>>(new Map());
   const [singleTarget, setSingleTarget] = useState<AssignTarget | null>(null);
   const [resolveTarget, setResolveTarget] = useState<ResolveTarget | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
@@ -200,113 +139,150 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [importOpen, setImportOpen] = useState(false);
   // 建单成功留在列表：新建行高亮，直到下一次建单或离开本页
   const [highlightId, setHighlightId] = useState<string | null>(null);
-  // 处理态的筛选器折叠：默认收起（屏幕预算给详情），展开后保持展开
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const detailOpen = detailId !== undefined;
-  /** 收起态摘要用的「有几个筛选条件在生效」——搜索词与创建时间区间各算一个。 */
-  const activeFilterCount = [
-    query.status?.length,
-    query.channelId?.length,
-    query.categoryId?.length,
-    query.completionStatusId?.length,
-    query.complaintLevel?.length,
-    query.search ? 1 : 0,
-    query.createdFrom || query.createdTo ? 1 : 0,
-  ].filter((count) => (count ?? 0) > 0).length;
-
-  const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
   const channelOptions = trpc.channel.filterOptions.useQuery().data ?? [];
   const categoryOptions = trpc.ticketCategory.filterOptions.useQuery().data ?? [];
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
 
-  function toggleSort(field: TicketSortField) {
-    // 处理时限 defaults to soonest-first — that's the queue-working order
-    const initialOrder = field === "dueAt" ? "asc" : "desc";
-    setParams({
-      sortBy: field,
-      sortOrder:
-        query.sortBy === field ? (query.sortOrder === "desc" ? "asc" : "desc") : initialOrder,
-    });
-  }
-
-  const items = listQuery.data?.items ?? [];
-  const total = listQuery.data?.total ?? 0;
-
-  // 详情的翻单面：当前页切片里的前后单（行序 = 筛选+排序后的列表序）+ 页边界
-  const nav = detailNav(items, detailId, { page: query.page, pageSize: query.pageSize, total });
-
-  /** 换单路径：筛选串随车带走；replace 让 Back 回到进入详情前那一步。 */
-  function switchTo(ticketId: string) {
-    navigate(`/tickets/${ticketId}${location.search}`, { replace: true });
-  }
-
-  const crossPage = useCrossPageNav({
-    items,
-    page: query.page,
-    isPlaceholderData: listQuery.isPlaceholderData,
-    select: switchTo,
-    setPage: (page) => setParam("page", String(page), { resetPage: false }),
-  });
-
-  const columnCount = BASE_COLUMN_COUNT + (canBatchAssign ? 1 : 0) + (canRowActions ? 1 : 0);
-
-  type ListItem = (typeof items)[number];
-
-  function toTarget(ticket: ListItem): AssignTarget {
-    return {
-      id: ticket.id,
-      workOrderNumber: ticket.workOrderNumber,
-      assigneeId: ticket.assigneeId,
-      assigneeName: ticket.assigneeName,
-      dueAt: ticket.dueAt,
-    };
-  }
-
-  function toggleSelected(ticket: ListItem) {
-    setSelected((prev) => {
-      const next = new Map(prev);
-      if (next.has(ticket.id)) {
-        next.delete(ticket.id);
-      } else {
-        next.set(ticket.id, toTarget(ticket));
-      }
-      return next;
-    });
-  }
-
-  // completed is terminal — never selectable for assignment
-  const selectableItems = items.filter((ticket) => ticket.status !== "completed");
-  const allPageSelected =
-    selectableItems.length > 0 && selectableItems.every((ticket) => selected.has(ticket.id));
-  const selectedHasAssigned = [...selected.values()].some((target) => target.assigneeId !== null);
-
-  function togglePageSelection() {
-    setSelected((prev) => {
-      const next = new Map(prev);
-      for (const ticket of selectableItems) {
-        if (allPageSelected) {
-          next.delete(ticket.id);
-        } else {
-          next.set(ticket.id, toTarget(ticket));
-        }
-      }
-      return next;
-    });
-  }
+  const columns: ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>> = [
+    {
+      key: "workOrderNumber",
+      header: "工单号",
+      render: (ticket, ctx) => (
+        <Link
+          to={ctx.ticketPath(ticket.id)}
+          className="font-medium hover:underline"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {ticket.workOrderNumber}
+        </Link>
+      ),
+    },
+    {
+      key: "status",
+      header: "状态",
+      render: (ticket) => <StatusBadge status={ticket.displayStatus} />,
+    },
+    {
+      key: "customerName",
+      header: TICKET_FIELDS.customerName.label,
+      render: (ticket) => ticket.customerName ?? <Unknown />,
+    },
+    {
+      key: "policyNumbers",
+      header: TICKET_FIELDS.policyNumbers.label,
+      render: (ticket) => <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />,
+    },
+    {
+      key: "channel",
+      header: TICKET_FIELDS.channelId.overrides.listLabel,
+      render: (ticket) => ticket.channel ?? <Unknown />,
+    },
+    {
+      key: "complaintLevel",
+      header: TICKET_FIELDS.complaintLevel.label,
+      render: (ticket) => ticket.complaintLevel ?? <Unknown />,
+    },
+    {
+      key: "source",
+      header: "来源",
+      render: (ticket) => TICKET_SOURCE_LABELS[ticket.source],
+    },
+    {
+      key: "assignee",
+      header: "责任人",
+      render: (ticket) =>
+        ticket.assigneeName ?? <span className="text-muted-foreground">未分配</span>,
+    },
+    {
+      key: "createdAt",
+      header: "创建时间",
+      sort: { field: "createdAt", initialOrder: "desc" },
+      render: (ticket) => formatDateTime(ticket.createdAt),
+    },
+    {
+      key: "dueAt",
+      header: "处理时限",
+      // 处理时限 defaults to soonest-first — that's the queue-working order
+      sort: { field: "dueAt", initialOrder: "asc" },
+      render: (ticket) =>
+        // dueAt null = 特急不设时限 when a level exists, 未定级 otherwise
+        ticket.dueAt ? (
+          formatDateTime(ticket.dueAt)
+        ) : ticket.complaintLevel ? (
+          <span className="text-muted-foreground">不设时限</span>
+        ) : (
+          <Unknown />
+        ),
+    },
+    ...(canRowActions
+      ? [
+          {
+            key: "actions",
+            header: "操作",
+            headClassName: "w-40",
+            render: (ticket: ListItem) => (
+              /* stopPropagation everywhere: a quick action must
+                 never double as the row's open-detail click */
+              <div className="flex items-center whitespace-nowrap opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                {canAssign && ticket.status !== "completed" && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSingleTarget(toTarget(ticket));
+                      }}
+                    >
+                      {ticket.assigneeId ? "改派" : "分配"}
+                    </Button>
+                    {ticket.assigneeId === null && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setAutoTargets([toTarget(ticket)]);
+                        }}
+                      >
+                        自动分配
+                      </Button>
+                    )}
+                  </>
+                )}
+                {canProcess && isTicketInFlight(ticket.status) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setResolveTarget({
+                        id: ticket.id,
+                        workOrderNumber: ticket.workOrderNumber,
+                      });
+                    }}
+                  >
+                    完结
+                  </Button>
+                )}
+              </div>
+            ),
+          } satisfies SurfaceColumn<ListItem, TicketListQuery>,
+        ]
+      : []),
+  ];
 
   return (
-    <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", detailOpen ? "gap-3" : "gap-6")}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">工单管理</h1>
-          {/* 处理态把这行纵向预算让给详情 */}
-          {!detailOpen && (
-            <p className="text-sm text-muted-foreground">客诉工单的创建、分配与跟进。</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
+    <TicketSurface
+      basePath="/tickets"
+      parseQuery={parseListQuery}
+      useList={useTicketList}
+      title="工单管理"
+      subtitle="客诉工单的创建、分配与跟进。"
+      headerActions={({ query }) => (
+        <>
           {canExport && (
             <TicketExportButton onExport={(format) => downloadTicketExport(query, format)} />
           )}
@@ -324,30 +300,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
               </Link>
             </Button>
           )}
-        </div>
-      </div>
-
-      {/* 处理态默认收起筛选器：URL 里的筛选值不变，只是不占屏 */}
-      {detailOpen && !filtersOpen && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span>
-            共 {total} 条
-            {activeFilterCount > 0 ? ` · ${activeFilterCount} 个筛选条件` : " · 未筛选"}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => setFiltersOpen(true)}>
-            <SlidersHorizontal data-icon="inline-start" />
-            展开筛选
-          </Button>
-        </div>
+        </>
       )}
-
-      {(!detailOpen || filtersOpen) && (
-        <TicketListFilterBar>
-          {detailOpen && (
-            <Button variant="ghost" size="sm" onClick={() => setFiltersOpen(false)}>
-              收起筛选
-            </Button>
-          )}
+      filters={({ query, searchDraft, setSearchDraft, submitSearch, setParam, setParams }) => (
+        <>
           <MultiSelectFilter
             label="状态"
             values={query.status ?? []}
@@ -417,309 +373,138 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             onSubmit={submitSearch}
             placeholder="工单号 / 客户姓名 / 保单号 / 电话"
           />
-        </TicketListFilterBar>
+        </>
       )}
-
-      {!detailOpen && canBatchAssign && selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/50 px-3 py-2 text-sm">
-          <span>已选 {selected.size} 个工单</span>
-          <Button
-            size="sm"
-            disabled={selected.size > BATCH_ASSIGN_LIMIT}
-            onClick={() => setBatchOpen(true)}
-          >
-            <UserPlus data-icon="inline-start" />
-            批量分配
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={selectedHasAssigned || selected.size > BATCH_ASSIGN_LIMIT}
-            onClick={() => setAutoTargets([...selected.values()])}
-          >
-            <Zap data-icon="inline-start" />
-            按排班自动分配
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Map())}>
-            清除选择
-          </Button>
-          {selected.size > BATCH_ASSIGN_LIMIT && (
-            <span className="text-destructive">
-              一次最多分配 {BATCH_ASSIGN_LIMIT} 个，请减少选择
-            </span>
-          )}
-          {selectedHasAssigned && (
-            <span className="text-muted-foreground">自动分配仅适用于未分配工单</span>
-          )}
-        </div>
-      )}
-
-      {listQuery.error ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>工单列表加载失败</AlertTitle>
-          <AlertDescription>{listQuery.error.message}</AlertDescription>
-        </Alert>
-      ) : detailOpen ? (
-        // 处理态：窄列 + 详情。窄屏 (<1024px) 无 lg → 详情占满，窄列让位
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]">
-          <div className="hidden min-h-0 rounded-md border lg:flex lg:flex-col">
-            <TicketNarrowList
-              items={items.map((ticket) => ({
-                id: ticket.id,
-                customerName: ticket.customerName,
-                status: ticket.displayStatus,
-                time: ticket.dueAt,
-                overdue: ticket.displayStatus === "overdue",
-              }))}
-              selectedId={detailId ?? ""}
-              onSelect={switchTo}
-            />
-          </div>
-          <div className="flex min-h-0 flex-col rounded-md border">
-            <TicketDetailPane
-              ticketId={detailId ?? ""}
-              nav={nav}
-              onSwitch={switchTo}
-              onCrossPage={crossPage}
-              onClose={() => navigate(`/tickets${location.search}`)}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto rounded-md border">
-          <Table>
-            {/* 表头随行滚动会丢失列语义，钉在滚动容器顶部 */}
-            <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
-              <TableRow>
-                {canBatchAssign && (
-                  <TableHead className="w-10">
-                    <Checkbox
-                      aria-label="选择本页全部工单"
-                      checked={allPageSelected}
-                      disabled={selectableItems.length === 0}
-                      onCheckedChange={togglePageSelection}
-                    />
-                  </TableHead>
-                )}
-                <TableHead>工单号</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>{TICKET_FIELDS.customerName.label}</TableHead>
-                <TableHead>{TICKET_FIELDS.policyNumbers.label}</TableHead>
-                <TableHead>{TICKET_FIELDS.channelId.overrides.listLabel}</TableHead>
-                <TableHead>{TICKET_FIELDS.complaintLevel.label}</TableHead>
-                <TableHead>来源</TableHead>
-                <TableHead>责任人</TableHead>
-                <TableHead>
-                  <SortHead
-                    field="createdAt"
-                    label="创建时间"
-                    query={query}
-                    onToggle={toggleSort}
-                  />
-                </TableHead>
-                <TableHead>
-                  <SortHead field="dueAt" label="处理时限" query={query} onToggle={toggleSort} />
-                </TableHead>
-                {canRowActions && <TableHead className="w-40">操作</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {listQuery.isLoading ? (
-                <ListSkeletonRows columnCount={columnCount} />
-              ) : items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={columnCount} className="p-0">
-                    <Empty className="border-0">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <Ticket />
-                        </EmptyMedia>
-                        <EmptyTitle>暂无匹配的工单</EmptyTitle>
-                        <EmptyDescription>调整筛选条件，或新建一条工单。</EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((ticket) => (
-                  <TableRow
-                    key={ticket.id}
-                    data-highlighted={ticket.id === highlightId || undefined}
-                    className="group cursor-pointer data-[highlighted]:bg-primary/10 data-[highlighted]:hover:bg-primary/15"
-                    // The filter query string rides to the detail and back
-                    onClick={() => navigate(`/tickets/${ticket.id}${location.search}`)}
-                  >
-                    {canBatchAssign && (
-                      // onClick swallows the row's navigation click; the checkbox inside is keyboard-operable
-                      <TableCell onClick={(event) => event.stopPropagation()}>
-                        <Checkbox
-                          aria-label={`选择工单 ${ticket.workOrderNumber}`}
-                          checked={selected.has(ticket.id)}
-                          disabled={ticket.status === "completed"}
-                          onCheckedChange={() => toggleSelected(ticket)}
-                        />
-                      </TableCell>
+      activeFilterCount={(query) =>
+        [
+          query.status?.length,
+          query.channelId?.length,
+          query.categoryId?.length,
+          query.completionStatusId?.length,
+          query.complaintLevel?.length,
+          query.search ? 1 : 0,
+          query.createdFrom || query.createdTo ? 1 : 0,
+        ].filter((count) => (count ?? 0) > 0).length
+      }
+      columns={columns}
+      emptyState={{
+        icon: <Ticket />,
+        title: "暂无匹配的工单",
+        description: () => "调整筛选条件，或新建一条工单。",
+      }}
+      narrowItem={(ticket) => ({
+        id: ticket.id,
+        customerName: ticket.customerName,
+        status: ticket.displayStatus,
+        time: ticket.dueAt,
+        overdue: ticket.displayStatus === "overdue",
+      })}
+      renderDetail={(props) => <TicketDetailPane {...props} />}
+      selection={
+        canBatchAssign
+          ? {
+              // completed is terminal — never selectable for assignment
+              selectable: (ticket) => ticket.status !== "completed",
+              rowLabel: (ticket) => `选择工单 ${ticket.workOrderNumber}`,
+              pageLabel: "选择本页全部工单",
+              bar: (selected, { clearSelection }) => {
+                const targets = [...selected.values()];
+                const selectedHasAssigned = targets.some((ticket) => ticket.assigneeId !== null);
+                return (
+                  <>
+                    <span>已选 {selected.size} 个工单</span>
+                    <Button
+                      size="sm"
+                      disabled={selected.size > BATCH_ASSIGN_LIMIT}
+                      onClick={() => setBatchOpen(true)}
+                    >
+                      <UserPlus data-icon="inline-start" />
+                      批量分配
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={selectedHasAssigned || selected.size > BATCH_ASSIGN_LIMIT}
+                      onClick={() => setAutoTargets(targets.map(toTarget))}
+                    >
+                      <Zap data-icon="inline-start" />
+                      按排班自动分配
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={clearSelection}>
+                      清除选择
+                    </Button>
+                    {selected.size > BATCH_ASSIGN_LIMIT && (
+                      <span className="text-destructive">
+                        一次最多分配 {BATCH_ASSIGN_LIMIT} 个，请减少选择
+                      </span>
                     )}
-                    <TableCell>
-                      <Link
-                        to={`/tickets/${ticket.id}${location.search}`}
-                        className="font-medium hover:underline"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {ticket.workOrderNumber}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={ticket.displayStatus} />
-                    </TableCell>
-                    <TableCell>{ticket.customerName ?? <Unknown />}</TableCell>
-                    <TableCell>
-                      <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />
-                    </TableCell>
-                    <TableCell>{ticket.channel ?? <Unknown />}</TableCell>
-                    <TableCell>{ticket.complaintLevel ?? <Unknown />}</TableCell>
-                    <TableCell>{TICKET_SOURCE_LABELS[ticket.source]}</TableCell>
-                    <TableCell>
-                      {ticket.assigneeName ?? <span className="text-muted-foreground">未分配</span>}
-                    </TableCell>
-                    <TableCell>{formatDateTime(ticket.createdAt)}</TableCell>
-                    <TableCell>
-                      {/* dueAt null = 特急不设时限 when a level exists, 未定级 otherwise */}
-                      {ticket.dueAt ? (
-                        formatDateTime(ticket.dueAt)
-                      ) : ticket.complaintLevel ? (
-                        <span className="text-muted-foreground">不设时限</span>
-                      ) : (
-                        <Unknown />
-                      )}
-                    </TableCell>
-                    {canRowActions && (
-                      <TableCell>
-                        {/* stopPropagation everywhere: a quick action must
-                            never double as the row's open-detail click */}
-                        <div className="flex items-center whitespace-nowrap opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                          {canAssign && ticket.status !== "completed" && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setSingleTarget(toTarget(ticket));
-                                }}
-                              >
-                                {ticket.assigneeId ? "改派" : "分配"}
-                              </Button>
-                              {ticket.assigneeId === null && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setAutoTargets([toTarget(ticket)]);
-                                  }}
-                                >
-                                  自动分配
-                                </Button>
-                              )}
-                            </>
-                          )}
-                          {canProcess && isTicketInFlight(ticket.status) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setResolveTarget({
-                                  id: ticket.id,
-                                  workOrderNumber: ticket.workOrderNumber,
-                                });
-                              }}
-                            >
-                              完结
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
+                    {selectedHasAssigned && (
+                      <span className="text-muted-foreground">自动分配仅适用于未分配工单</span>
                     )}
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+                  </>
+                );
+              },
+            }
+          : undefined
+      }
+      isRowHighlighted={(ticket) => ticket.id === highlightId}
+      dialogs={({ selected, clearSelection, removeSelected }) => (
+        <>
+          {canCreate && (
+            <TicketCreateDialog
+              open={createOpen}
+              onOpenChange={(open) => {
+                if (!open) navigate("/tickets");
+              }}
+              onCreated={(ticket) => setHighlightId(ticket.id)}
+            />
+          )}
 
-      {!listQuery.error && !detailOpen && (
-        <TicketListPagination
-          total={total}
-          page={query.page}
-          pageSize={query.pageSize}
-          isLoading={listQuery.isLoading}
-          onPageChange={(page) => setParam("page", String(page), { resetPage: false })}
-        />
-      )}
+          {canImport && <TicketImportDialog open={importOpen} onOpenChange={setImportOpen} />}
 
-      {canCreate && (
-        <TicketCreateDialog
-          open={createOpen}
-          onOpenChange={(open) => {
-            if (!open) navigate("/tickets");
-          }}
-          onCreated={(ticket) => setHighlightId(ticket.id)}
-        />
-      )}
+          {canAssign && singleTarget && (
+            <AssignTicketDialog
+              mode="single"
+              open
+              onOpenChange={(open) => {
+                if (!open) setSingleTarget(null);
+              }}
+              targets={[singleTarget]}
+            />
+          )}
 
-      {canImport && <TicketImportDialog open={importOpen} onOpenChange={setImportOpen} />}
+          {canProcess && resolveTarget && (
+            <ResolveTicketDialog
+              open
+              onOpenChange={(open) => {
+                if (!open) setResolveTarget(null);
+              }}
+              ticket={resolveTarget}
+            />
+          )}
 
-      {canAssign && singleTarget && (
-        <AssignTicketDialog
-          mode="single"
-          open
-          onOpenChange={(open) => {
-            if (!open) setSingleTarget(null);
-          }}
-          targets={[singleTarget]}
-        />
-      )}
+          {canBatchAssign && (
+            <AssignTicketDialog
+              mode="batch"
+              open={batchOpen}
+              onOpenChange={setBatchOpen}
+              targets={[...selected.values()].map(toTarget)}
+              onAssigned={clearSelection}
+            />
+          )}
 
-      {canProcess && resolveTarget && (
-        <ResolveTicketDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setResolveTarget(null);
-          }}
-          ticket={resolveTarget}
-        />
+          {(canAssign || canBatchAssign) && autoTargets && (
+            <AutoAssignDialog
+              open
+              onOpenChange={(open) => {
+                if (!open) setAutoTargets(null);
+              }}
+              targets={autoTargets}
+              onAssigned={removeSelected}
+            />
+          )}
+        </>
       )}
-
-      {canBatchAssign && (
-        <AssignTicketDialog
-          mode="batch"
-          open={batchOpen}
-          onOpenChange={setBatchOpen}
-          targets={[...selected.values()]}
-          onAssigned={() => setSelected(new Map())}
-        />
-      )}
-
-      {(canAssign || canBatchAssign) && autoTargets && (
-        <AutoAssignDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setAutoTargets(null);
-          }}
-          targets={autoTargets}
-          onAssigned={(assignedIds) =>
-            setSelected((previous) => {
-              const next = new Map(previous);
-              for (const id of assignedIds) next.delete(id);
-              return next;
-            })
-          }
-        />
-      )}
-    </div>
+    />
   );
 }
