@@ -6,10 +6,10 @@ import {
   ticketImportFieldNote,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
-import type { PrismaClient } from "../generated/prisma/client";
-import { channelCatalog } from "./channel.service";
-import { completionStatusCatalog } from "./completion-status.service";
-import { ticketCategoryCatalog } from "./ticket-category.service";
+import type { PrismaClient } from "../generated/prisma/client.ts";
+import { channelCatalog } from "./channel.service.ts";
+import { completionStatusCatalog } from "./completion-status.service.ts";
+import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 
 /**
  * 批量导入 template: a dynamically generated workbook, never a static asset —

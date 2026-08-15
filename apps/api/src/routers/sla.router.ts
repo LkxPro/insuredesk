@@ -1,8 +1,8 @@
 import { slaPolicyUpdateInputSchema } from "@insuredesk/shared";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
-import { listSlaPolicies, updateSlaPolicy } from "../services/sla.service";
-import { requirePermission, router } from "../trpc";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
+import { listSlaPolicies, updateSlaPolicy } from "../services/sla.service.ts";
+import { requirePermission, router } from "../trpc.ts";
 
 /**
  * SLA 策略配置 routes: thin wrappers — the shared Zod schema is the whole

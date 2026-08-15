@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAssignedNotification } from "../src/services/notification.service";
+import { buildAssignedNotification } from "../src/services/notification.service.ts";
 
 /**
  * Pure message builder behind the 轨 1 assigned notification: first

@@ -5,10 +5,10 @@ import type {
   UserUpdateData,
 } from "@insuredesk/shared";
 import { EXTERNAL_ROLE_PERMISSIONS, isExternalRole } from "@insuredesk/shared";
-import { Prisma } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import { hashPassword } from "./auth.service";
-import type { TicketServiceDeps } from "./ticket.service";
+import { Prisma } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { hashPassword } from "./auth.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
  * 用户管理 domain logic. Pure service layer — the router maps the domain

@@ -1,12 +1,12 @@
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../prisma/seed-data";
-import { parseEnv } from "../src/env";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-import { buildServer } from "../src/server";
-import { hashPassword } from "../src/services/auth.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { DEMO_PASSWORD } from "../prisma/seed-data.ts";
+import { parseEnv } from "../src/env.ts";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import { buildServer } from "../src/server.ts";
+import { hashPassword } from "../src/services/auth.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * Acceptance tests for 外部导出工单, driven over the real HTTP surface

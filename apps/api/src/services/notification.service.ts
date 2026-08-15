@@ -1,6 +1,6 @@
-import type { Prisma } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import type { TicketServiceDeps } from "./ticket.service";
+import type { Prisma } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
  * 轨 1 收件箱: user-action-triggered TRUE

@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { ticketStatusSchema } from "./enums";
-import { ticketExportFormatSchema } from "./ticket";
-import { createdRangeFields } from "./time-range";
+import { ticketStatusSchema } from "./enums.ts";
+import { ticketExportFormatSchema } from "./ticket.ts";
+import { createdRangeFields } from "./time-range.ts";
 
 /**
  * 外部工单提交输入：外部用户提交工单原文的唯一必填字段。

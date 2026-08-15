@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { TICKET_FIELDS } from "./ticket-fields";
+import { TICKET_FIELDS } from "./ticket-fields.ts";
 import {
   displayNameSchema,
   optionalEmailSchema,
   optionalPasswordResetSchema,
   passwordSchema,
   usernameSchema,
-} from "./user";
+} from "./user.ts";
 
 /**
  * 外部账号 contracts — 「外部账号管理」页与 API 共用一份 schema，全部由

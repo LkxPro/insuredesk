@@ -1,12 +1,12 @@
 import { type TicketAddCommentData, TicketStatus, ticketStatusSchema } from "@insuredesk/shared";
-import type { AuthenticatedUser } from "./auth.service";
-import { applyTicketDataScope } from "./data-scope.service";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { applyTicketDataScope } from "./data-scope.service.ts";
 import {
   buildExternalReplyNotification,
   writeExternalCreatorNotification,
-} from "./notification.service";
-import type { TicketServiceDeps } from "./ticket.service";
-import { TicketNotFoundError } from "./ticket-assign.service";
+} from "./notification.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
+import { TicketNotFoundError } from "./ticket-assign.service.ts";
 
 /**
  * Follow-up domain logic: 添加跟进备注 = one actual customer contact. Pure

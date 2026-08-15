@@ -1,13 +1,13 @@
 import { changeOwnPasswordInputSchema } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { prisma } from "../db";
+import { prisma } from "../db.ts";
 import {
   changeOwnPassword,
   IncorrectOldPasswordError,
   NoPasswordAccountError,
-} from "../services/auth.service";
-import { protectedProcedure, requireNotForbidden, router } from "../trpc";
+} from "../services/auth.service.ts";
+import { protectedProcedure, requireNotForbidden, router } from "../trpc.ts";
 
 /**
  * Authentication router - handles identity queries and self-service

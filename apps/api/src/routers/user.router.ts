@@ -5,8 +5,8 @@ import {
   userUpdateInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
 import {
   assignUserRole,
   createUser,
@@ -22,8 +22,8 @@ import {
   setUserActive,
   UserNotFoundError,
   updateUser,
-} from "../services/user.service";
-import { requireAnyPermission, requirePermission, router } from "../trpc";
+} from "../services/user.service.ts";
+import { requireAnyPermission, requirePermission, router } from "../trpc.ts";
 
 /**
  * 用户管理 routes: thin wrappers — validation via the shared Zod schemas,

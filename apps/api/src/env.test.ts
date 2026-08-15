@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseEnv } from "./env";
+import { parseEnv } from "./env.ts";
 
 const minimal = {
   DATABASE_URL: "postgresql://user:pass@localhost:5432/db?schema=public",

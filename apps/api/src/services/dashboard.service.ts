@@ -6,11 +6,11 @@ import {
   DEFAULT_TICKET_SOURCE_FILTER,
   TicketStatus,
 } from "@insuredesk/shared";
-import type { Prisma } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import { applyDashboardDataScope } from "./data-scope.service";
-import type { TicketServiceDeps } from "./ticket.service";
-import { displayStatusTicketWhere } from "./ticket-display-status";
+import type { Prisma } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { applyDashboardDataScope } from "./data-scope.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
+import { displayStatusTicketWhere } from "./ticket-display-status.ts";
 
 /**
  * 数据看板 aggregation: the 8 metric cards, the channel distribution, and

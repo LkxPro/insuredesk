@@ -4,7 +4,7 @@ import {
   type ScheduleListInput,
   shiftTypeSegmentsSchema,
 } from "@insuredesk/shared";
-import { Prisma, type PrismaClient, type Schedule } from "../generated/prisma/client";
+import { Prisma, type PrismaClient, type Schedule } from "../generated/prisma/client.ts";
 
 /**
  * Schedule CRUD and the shared on-duty predicate used by automatic

@@ -1,10 +1,10 @@
 import { type Permission, USER_PERMISSIONS } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { seedExternalUserRole } from "../prisma/seed-data";
-import type { PrismaClient, Role } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import { PasswordAuthProvider, SessionService } from "../src/services/auth.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { seedExternalUserRole } from "../prisma/seed-data.ts";
+import type { PrismaClient, Role } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import { PasswordAuthProvider, SessionService } from "../src/services/auth.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * 外部账号管理 against a real Postgres: every operation answers to the single

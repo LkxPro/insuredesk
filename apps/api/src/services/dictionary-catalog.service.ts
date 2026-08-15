@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "../generated/prisma/client";
+import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 
 /**
  * 字典目录 domain logic, shared by the 渠道/类别/完结状态 catalogs. Tickets

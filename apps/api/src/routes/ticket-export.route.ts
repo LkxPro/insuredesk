@@ -1,8 +1,8 @@
 import { ticketExportInputSchema } from "@insuredesk/shared";
 import type { FastifyInstance } from "fastify";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
-import { exportTickets } from "../services/ticket-export.service";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
+import { exportTickets } from "../services/ticket-export.service.ts";
 
 /**
  * 导出工单 download endpoint. REST rather than tRPC because the response is

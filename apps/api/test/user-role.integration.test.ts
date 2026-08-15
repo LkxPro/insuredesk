@@ -1,13 +1,13 @@
 import { ALL_PERMISSIONS, type Permission, POSITIVE_PERMISSIONS } from "@insuredesk/shared";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../prisma/seed-data";
-import { parseEnv } from "../src/env";
-import type { PrismaClient, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import { buildServer } from "../src/server";
-import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { DEMO_PASSWORD } from "../prisma/seed-data.ts";
+import { parseEnv } from "../src/env.ts";
+import type { PrismaClient, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import { buildServer } from "../src/server.ts";
+import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * 用户与角色管理 acceptance tests against a real Postgres: 用户管理 (create /

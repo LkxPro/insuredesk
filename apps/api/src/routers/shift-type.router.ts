@@ -4,7 +4,7 @@ import {
   shiftTypeUpdateInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
-import { prisma } from "../db";
+import { prisma } from "../db.ts";
 import {
   createShiftType,
   deleteShiftType,
@@ -13,8 +13,8 @@ import {
   ShiftTypeNameConflictError,
   ShiftTypeNotFoundError,
   updateShiftType,
-} from "../services/shift-type.service";
-import { requirePermission, router } from "../trpc";
+} from "../services/shift-type.service.ts";
+import { requirePermission, router } from "../trpc.ts";
 
 function translateError(error: unknown): never {
   if (error instanceof ShiftTypeNameConflictError || error instanceof ShiftTypeInUseError) {

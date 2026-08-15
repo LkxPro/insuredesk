@@ -7,14 +7,14 @@ import {
   type TicketEditData,
   ticketProcessLogLabel,
 } from "@insuredesk/shared";
-import type { Prisma } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import { channelCatalog } from "./channel.service";
-import { applyTicketDataScope } from "./data-scope.service";
-import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service";
-import { TicketNotFoundError } from "./ticket-assign.service";
-import { ticketCategoryCatalog } from "./ticket-category.service";
-import { assertNoDuplicateTickets } from "./ticket-duplicate.service";
+import type { Prisma } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { channelCatalog } from "./channel.service.ts";
+import { applyTicketDataScope } from "./data-scope.service.ts";
+import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service.ts";
+import { TicketNotFoundError } from "./ticket-assign.service.ts";
+import { ticketCategoryCatalog } from "./ticket-category.service.ts";
+import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结

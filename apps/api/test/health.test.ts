@@ -1,6 +1,6 @@
 import { healthStatusSchema } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
-import { appRouter } from "../src/routers";
+import { appRouter } from "../src/routers/index.ts";
 
 describe("health procedure", () => {
   it("returns an ok status conforming to the shared contract", async () => {

@@ -6,9 +6,9 @@ import type {
   RoleUpdateRequiredFieldsData,
 } from "@insuredesk/shared";
 import { EXTERNAL_ROLE_PERMISSIONS, isExternalRole } from "@insuredesk/shared";
-import { Prisma } from "../generated/prisma/client";
-import { effectivePermissions } from "./auth.service";
-import type { TicketServiceDeps } from "./ticket.service";
+import { Prisma } from "../generated/prisma/client.ts";
+import { effectivePermissions } from "./auth.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
  * 角色管理 domain logic. Pure service layer — the router maps the domain

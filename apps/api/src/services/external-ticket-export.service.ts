@@ -3,11 +3,11 @@ import {
   joinPolicyNumbers,
   ticketExportHeader,
 } from "@insuredesk/shared";
-import { Prisma, type Ticket } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import { type ExportColumn, type ExportFile, renderExportFile } from "./export-file";
-import { buildExternalTicketConditions } from "./external-ticket-query";
-import type { TicketServiceDeps } from "./ticket.service";
+import { Prisma, type Ticket } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { type ExportColumn, type ExportFile, renderExportFile } from "./export-file.ts";
+import { buildExternalTicketConditions } from "./external-ticket-query.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
  * 外部导出工单: the external viewer's *filtered list*, as a file. 与列表吃

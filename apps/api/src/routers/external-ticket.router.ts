@@ -8,16 +8,16 @@ import {
   ticketStatusSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
-import { Prisma } from "../generated/prisma/client";
-import { buildExternalTicketConditions } from "../services/external-ticket-query";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
+import { Prisma } from "../generated/prisma/client.ts";
+import { buildExternalTicketConditions } from "../services/external-ticket-query.ts";
 import {
   buildExternalNoteNotification,
   buildExternalSubmittedNotification,
   writeBulkNotifications,
-} from "../services/notification.service";
-import { requirePermission, router } from "../trpc";
+} from "../services/notification.service.ts";
+import { requirePermission, router } from "../trpc.ts";
 
 const deps = { prisma, clock: systemClock };
 

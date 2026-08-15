@@ -4,7 +4,7 @@ import {
   scheduleListInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
-import { prisma } from "../db";
+import { prisma } from "../db.ts";
 import {
   createSchedule,
   DutyUserNotSchedulableError,
@@ -12,8 +12,8 @@ import {
   listSchedules,
   ScheduleNotFoundError,
   ScheduleShiftNotFoundError,
-} from "../services/schedule.service";
-import { requirePermission, router } from "../trpc";
+} from "../services/schedule.service.ts";
+import { requirePermission, router } from "../trpc.ts";
 
 function mapWriteError(error: unknown): never {
   if (error instanceof DutyUserNotSchedulableError || error instanceof ScheduleShiftNotFoundError) {

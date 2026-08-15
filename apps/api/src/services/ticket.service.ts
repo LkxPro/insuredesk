@@ -20,14 +20,14 @@ import {
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
-import type { Clock } from "../clock";
-import type { Prisma, PrismaClient } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import { channelCatalog } from "./channel.service";
-import { applyTicketDataScope } from "./data-scope.service";
-import { ticketCategoryCatalog } from "./ticket-category.service";
-import { displayStatusTicketWhere } from "./ticket-display-status";
-import { assertNoDuplicateTickets } from "./ticket-duplicate.service";
+import type { Clock } from "../clock.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { channelCatalog } from "./channel.service.ts";
+import { applyTicketDataScope } from "./data-scope.service.ts";
+import { ticketCategoryCatalog } from "./ticket-category.service.ts";
+import { displayStatusTicketWhere } from "./ticket-display-status.ts";
+import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
 
 /**
  * Ticket domain logic: manual creation and detail reads. Pure service

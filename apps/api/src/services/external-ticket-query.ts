@@ -3,7 +3,7 @@ import {
   type TicketListFilterParams,
   ticketListFilterConditions,
 } from "@insuredesk/shared";
-import { Prisma } from "../generated/prisma/client";
+import { Prisma } from "../generated/prisma/client.ts";
 
 /**
  * 外部工单列表/导出共用的 WHERE 条件（raw SQL 片段）。两个口子吃同一份构造器，

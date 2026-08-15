@@ -1,6 +1,6 @@
-import "./load-env";
-import { type Env, parseEnv } from "./env";
-import { buildServer } from "./server";
+import "./load-env.ts";
+import { type Env, parseEnv } from "./env.ts";
+import { buildServer } from "./server.ts";
 
 async function main() {
   let env: Env;

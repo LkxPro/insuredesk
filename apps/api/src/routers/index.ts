@@ -1,20 +1,20 @@
 import { healthStatusSchema } from "@insuredesk/shared";
-import { publicProcedure, router } from "../trpc";
-import { authRouter } from "./auth.router";
-import { channelRouter } from "./channel.router";
-import { completionStatusRouter } from "./completion-status.router";
-import { dashboardRouter } from "./dashboard.router";
-import { demoRouter } from "./demo.router";
-import { externalAccountRouter } from "./external-account.router";
-import { externalTicketRouter } from "./external-ticket.router";
-import { notificationRouter } from "./notification.router";
-import { roleRouter } from "./role.router";
-import { scheduleRouter } from "./schedule.router";
-import { shiftTypeRouter } from "./shift-type.router";
-import { slaRouter } from "./sla.router";
-import { ticketRouter } from "./ticket.router";
-import { ticketCategoryRouter } from "./ticket-category.router";
-import { userRouter } from "./user.router";
+import { publicProcedure, router } from "../trpc.ts";
+import { authRouter } from "./auth.router.ts";
+import { channelRouter } from "./channel.router.ts";
+import { completionStatusRouter } from "./completion-status.router.ts";
+import { dashboardRouter } from "./dashboard.router.ts";
+import { demoRouter } from "./demo.router.ts";
+import { externalAccountRouter } from "./external-account.router.ts";
+import { externalTicketRouter } from "./external-ticket.router.ts";
+import { notificationRouter } from "./notification.router.ts";
+import { roleRouter } from "./role.router.ts";
+import { scheduleRouter } from "./schedule.router.ts";
+import { shiftTypeRouter } from "./shift-type.router.ts";
+import { slaRouter } from "./sla.router.ts";
+import { ticketRouter } from "./ticket.router.ts";
+import { ticketCategoryRouter } from "./ticket-category.router.ts";
+import { userRouter } from "./user.router.ts";
 
 export const appRouter = router({
   /**

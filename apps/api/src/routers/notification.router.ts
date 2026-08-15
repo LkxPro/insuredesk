@@ -1,13 +1,13 @@
 import { notificationListInputSchema, notificationMarkReadInputSchema } from "@insuredesk/shared";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
 import {
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
-} from "../services/notification.service";
-import { listMyTodos } from "../services/todo.service";
-import { protectedProcedure, router } from "../trpc";
+} from "../services/notification.service.ts";
+import { listMyTodos } from "../services/todo.service.ts";
+import { protectedProcedure, router } from "../trpc.ts";
 
 /**
  * The 30s poll payload + 轨 1 read-state mutations. One request merges both

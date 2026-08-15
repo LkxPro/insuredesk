@@ -5,5 +5,5 @@
 # direct child so SIGTERM from `docker stop` reaches it.
 set -e
 pnpm exec prisma migrate deploy
-pnpm exec tsx prisma/bootstrap.ts
+pnpm exec node prisma/bootstrap.ts
 exec pnpm start

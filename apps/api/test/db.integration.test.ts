@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * Acceptance tests for the integration harness itself, in real-migrations

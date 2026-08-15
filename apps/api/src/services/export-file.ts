@@ -1,6 +1,6 @@
 import type { TicketExportFormat } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
-import { resolveTimeZone } from "./time-zone";
+import { resolveTimeZone } from "./time-zone.ts";
 
 /**
  * 导出生成单源：Excel/CSV 序列化、日期格式化、文件名规则都收在这里。

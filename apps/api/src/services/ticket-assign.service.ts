@@ -6,12 +6,12 @@ import {
   TicketStatus,
   ticketStatusSchema,
 } from "@insuredesk/shared";
-import type { Prisma } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import { applyTicketDataScope } from "./data-scope.service";
-import { writeAssignedNotification } from "./notification.service";
-import { findOnDutyUserIds, localDateTimeParts } from "./schedule.service";
-import type { TicketServiceDeps } from "./ticket.service";
+import type { Prisma } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { applyTicketDataScope } from "./data-scope.service.ts";
+import { writeAssignedNotification } from "./notification.service.ts";
+import { findOnDutyUserIds, localDateTimeParts } from "./schedule.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
  * Assignment domain logic: first assignment, 改派, and 批量分配. Pure service

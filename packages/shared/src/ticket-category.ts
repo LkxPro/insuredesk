@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { createCatalogSchemas } from "./dictionary-catalog";
+import { createCatalogSchemas } from "./dictionary-catalog.ts";
 
 /** 客诉类别目录 contracts；共同形状与措辞见 dictionary-catalog. */
 export const ticketCategoryCatalogSchemas = createCatalogSchemas("类别");

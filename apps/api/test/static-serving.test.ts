@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseEnv } from "../src/env";
-import { buildServer } from "../src/server";
+import { parseEnv } from "../src/env.ts";
+import { buildServer } from "../src/server.ts";
 
 /**
  * The API doubles as the production web server: in production it serves the

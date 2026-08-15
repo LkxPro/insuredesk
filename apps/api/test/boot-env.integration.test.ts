@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../prisma/seed-data";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { DEMO_PASSWORD } from "../prisma/seed-data.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -56,7 +56,7 @@ describe("entrypoint boot with .env-only configuration", () => {
 
     const env = { ...process.env };
     delete env.DATABASE_URL;
-    child = spawn(join(apiDir, "node_modules", ".bin", "tsx"), [join(apiDir, "src", "index.ts")], {
+    child = spawn(process.execPath, [join(apiDir, "src", "index.ts")], {
       cwd: workDir,
       env,
       stdio: ["ignore", "ignore", "pipe"],

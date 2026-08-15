@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { TICKET_STATUS_LABELS } from "./ticket-status";
-import { createdRangeFields } from "./time-range";
+import { TICKET_STATUS_LABELS } from "./ticket-status.ts";
+import { createdRangeFields } from "./time-range.ts";
 
 /**
  * 数据看板 contract: the 8 metric-card keys and their display labels,

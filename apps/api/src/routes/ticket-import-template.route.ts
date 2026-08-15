@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { prisma } from "../db";
-import { buildTicketImportTemplate } from "../services/ticket-import-template.service";
+import { prisma } from "../db.ts";
+import { buildTicketImportTemplate } from "../services/ticket-import-template.service.ts";
 
 /**
  * 批量导入 template download. REST rather than tRPC because the response is a

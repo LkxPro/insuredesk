@@ -9,13 +9,13 @@ import { describe, expect, it } from "vitest";
 describe("lazy Prisma client initialization", () => {
   it("imports fine without DATABASE_URL but fails loudly on first use", async () => {
     delete process.env.DATABASE_URL;
-    const { prisma } = await import("../src/db");
+    const { prisma } = await import("../src/db.ts");
     expect(() => prisma.user).toThrowError(/DATABASE_URL/);
   });
 
   it("initializes on first use once DATABASE_URL is present", async () => {
     process.env.DATABASE_URL = "postgresql://user:pass@localhost:5432/db?schema=public";
-    const { prisma } = await import("../src/db");
+    const { prisma } = await import("../src/db.ts");
     expect(prisma.user).toBeDefined();
     expect(typeof prisma.$disconnect).toBe("function");
   });

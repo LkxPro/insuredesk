@@ -2,7 +2,7 @@ import { PERMISSION_LABELS, type Permission } from "@insuredesk/shared";
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
 import { ZodError } from "zod";
-import type { AuthenticatedUser, SessionToken } from "./services/auth.service";
+import type { AuthenticatedUser, SessionToken } from "./services/auth.service.ts";
 
 // Request decorations set by the session-extraction hook in server.ts when the
 // session cookie is valid. Declared here, next to createContext (their

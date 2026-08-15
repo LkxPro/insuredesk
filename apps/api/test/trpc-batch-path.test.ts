@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseEnv } from "../src/env";
-import { buildServer } from "../src/server";
+import { parseEnv } from "../src/env.ts";
+import { buildServer } from "../src/server.ts";
 
 /**
  * httpBatchLink puts every procedure name of a batch into ONE path segment, so

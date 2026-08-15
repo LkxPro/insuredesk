@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ComplaintLevel, complaintLevelSchema, reminderRuleTypeSchema } from "./enums";
+import { type ComplaintLevel, complaintLevelSchema, reminderRuleTypeSchema } from "./enums.ts";
 
 /**
  * SLAPolicy contracts: one policy row per complaint level, holding the

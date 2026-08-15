@@ -6,7 +6,7 @@ import {
   type TicketFieldKey,
 } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
-import { TICKET_IMPORT_TEMPLATE_COLUMNS } from "../src/services/ticket-import-template.service";
+import { TICKET_IMPORT_TEMPLATE_COLUMNS } from "../src/services/ticket-import-template.service.ts";
 
 /**
  * 模板列的派生行为：表头/填写说明/下拉全部由描述表生成。字段材料

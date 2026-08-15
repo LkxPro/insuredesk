@@ -6,15 +6,15 @@ import fastifyStatic from "@fastify/static";
 import { loginBodySchema } from "@insuredesk/shared";
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance } from "fastify";
-import { prisma } from "./db";
-import type { Env } from "./env";
-import { type AppRouter, appRouter } from "./routers";
-import { registerExternalTicketExportRoute } from "./routes/external-ticket-export.route";
-import { registerTicketExportRoute } from "./routes/ticket-export.route";
-import { registerTicketImportRoute } from "./routes/ticket-import.route";
-import { registerTicketImportTemplateRoute } from "./routes/ticket-import-template.route";
-import { PasswordAuthProvider, SessionService, toSessionToken } from "./services/auth.service";
-import { createContext } from "./trpc";
+import { prisma } from "./db.ts";
+import type { Env } from "./env.ts";
+import { type AppRouter, appRouter } from "./routers/index.ts";
+import { registerExternalTicketExportRoute } from "./routes/external-ticket-export.route.ts";
+import { registerTicketExportRoute } from "./routes/ticket-export.route.ts";
+import { registerTicketImportRoute } from "./routes/ticket-import.route.ts";
+import { registerTicketImportTemplateRoute } from "./routes/ticket-import-template.route.ts";
+import { PasswordAuthProvider, SessionService, toSessionToken } from "./services/auth.service.ts";
+import { createContext } from "./trpc.ts";
 
 /**
  * Build the Fastify app with tRPC mounted at /trpc. Logging is structured pino
