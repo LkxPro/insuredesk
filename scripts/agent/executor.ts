@@ -23,6 +23,7 @@ interface StreamEvent {
   session_id?: string;
   is_error?: boolean;
   num_turns?: number;
+  stop_reason?: string;
   message?: { content?: Array<{ type: string; name?: string; text?: string }> };
   [key: string]: unknown;
 }
@@ -95,6 +96,7 @@ export function openAgentSession(options: SessionOptions): AgentSession {
   let lastKind = "";
   let buffer = "";
   let sessionId: string | null = null;
+  let pauses = 0;
   let chain: Promise<void> = Promise.resolve();
   let pending: { resolve: (r: ExecutorResult) => void; outputFile: string } | null = null;
   let closedResolve!: () => void;
@@ -148,6 +150,22 @@ export function openAgentSession(options: SessionOptions): AgentSession {
       }).catch(() => {});
     }
     if (event.type !== "result") return;
+    // pause_turn 是后端轮边界而非任务完成:自动续一句,保住 run() 的 resolve 契约
+    // (resolve = 模型真正做完)。超限按行为类失败处理,防死循环。
+    if (event.stop_reason === "pause_turn" && pending) {
+      pauses += 1;
+      if (pauses <= 10 && alive) {
+        await appendEvent(options.worktrees, options.issue, {
+          type: "agent",
+          subtype: "pause-continue",
+          count: pauses,
+        }).catch(() => {});
+        try {
+          stdin.write(userMessage("Continue."));
+        } catch {}
+        return;
+      }
+    }
     const { message: _message, ...result } = event;
     // 无 pending 的 result 是 nudge 等孤儿轮的产物:落盘但不归因。
     if (!pending) return;
@@ -155,6 +173,10 @@ export function openAgentSession(options: SessionOptions): AgentSession {
     pending = null;
     await writeFile(p.outputFile, `${JSON.stringify(result)}\n`);
     await patchStatus(options.worktrees, options.issue, { turns }).catch(() => {});
+    if (result.stop_reason === "pause_turn") {
+      p.resolve({ ok: false, subtype: "error_pause_loop", isError: true });
+      return;
+    }
     p.resolve({
       ok: result.is_error !== true,
       subtype: result.subtype ?? "",
@@ -173,8 +195,9 @@ export function openAgentSession(options: SessionOptions): AgentSession {
     else if (event.type === "assistant") turns += 1;
     if (event.type === "system" && event.subtype === "init" && typeof event.session_id === "string")
       sessionId = event.session_id;
-    // flight 同步复位,close 竞态窗口内 watchdog 不会把 nudge 错注进下一轮。
-    if (event.type === "result") flight = false;
+    // flight 同步复位,close 竞态窗口内 watchdog 不会把 nudge 错注进下一轮;
+    // pause_turn 不算轮结束(会自动续跑)。
+    if (event.type === "result" && event.stop_reason !== "pause_turn") flight = false;
     chain = chain.then(() => handleEvent(event));
   };
 
@@ -214,6 +237,7 @@ export function openAgentSession(options: SessionOptions): AgentSession {
           const text = await readFile(promptFile, "utf8");
           pending = { resolve, outputFile };
           flight = true;
+          pauses = 0;
           try {
             stdin.write(userMessage(text));
           } catch {

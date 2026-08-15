@@ -193,6 +193,31 @@ test("check 永久失败打满 fix 轮次 → exhausted→blocked", async () => 
   assert.ok(calls.includes("--add-label agent:blocked"));
 });
 
+test("pause_turn 自动续跑:executor 注 Continue.,run 等真完成", async () => {
+  // 任务轮先回 pause_turn(空 result),executor 必须续跑而不是把空 diff 交给后面。
+  const claude = `while IFS= read -r line; do
+  printf '%s\\n' "$line" >>"$AGENT_TEST_CLAUDE_STDIN"
+  case $line in
+    *'final comment sweep'*)
+      printf '%s\\n' '${RESULT_EVENT}' ;;
+    *Continue.*)
+      printf 'implemented\\n' >"$PWD/allowed.txt"
+      printf '%s\\n' '${RESULT_EVENT}' ;;
+    *)
+      printf '%s\\n' '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"stop_reason":"pause_turn","result":""}' ;;
+  esac
+done`;
+  const sandbox = await makeSandbox(claude, MAKE_OK);
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const captured = await readFile(join(sandbox.dir, "claude-stdin"), "utf8");
+  assert.ok(captured.includes("Continue."));
+  const events = await readFile(join(sandbox.worktrees, "issue-7.events.jsonl"), "utf8");
+  assert.ok(events.includes('"subtype":"pause-continue"'));
+});
+
 test("fix 轮复用 implementation 会话(warm 短 prompt)", async () => {
   // make 第一次失败、第二次成功,逼出恰好一轮 fix。
   const make = `if [ -f "$AGENT_TEST_CAPTURE.make-failed" ]; then exit 0
