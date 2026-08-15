@@ -6,7 +6,7 @@ if (existsSync(".env")) {
 }
 
 /**
- * Runs before `tsx watch` on every `pnpm dev`: applies committed migrations
+ * Runs before `node --watch` on every `pnpm dev`: applies committed migrations
  * and regenerates the Prisma client. Required system catalogs are seeded on
  * every start; destructive demo fixtures still run only into an empty
  * database so a developer's in-progress tickets are never replaced.
@@ -52,7 +52,7 @@ const userCount = await prisma.user.count();
 await prisma.$disconnect();
 
 if (userCount === 0) {
-  execFileSync("pnpm", ["exec", "tsx", "prisma/seed.ts"], { stdio: "inherit" });
+  execFileSync("pnpm", ["exec", "node", "prisma/seed.ts"], { stdio: "inherit" });
 } else {
   console.log(`✓ ${userCount} users present — skipping seed`);
 }

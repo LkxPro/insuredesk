@@ -56,7 +56,7 @@ describe("entrypoint boot with .env-only configuration", () => {
 
     const env = { ...process.env };
     delete env.DATABASE_URL;
-    child = spawn(join(apiDir, "node_modules", ".bin", "tsx"), [join(apiDir, "src", "index.ts")], {
+    child = spawn(process.execPath, [join(apiDir, "src", "index.ts")], {
       cwd: workDir,
       env,
       stdio: ["ignore", "ignore", "pipe"],
