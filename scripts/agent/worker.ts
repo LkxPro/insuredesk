@@ -206,7 +206,7 @@ async function runPipeline(
     outputName: string,
     keepAlive: boolean,
   ): Promise<void> => {
-    const max = num("AGENT_EXECUTOR_ATTEMPTS", 2);
+    const max = num("AGENT_EXECUTOR_ATTEMPTS", 4);
     for (let attempt = 1; ; attempt += 1) {
       let promptFile = files.warm;
       if (!holder.session?.isAlive()) {
@@ -249,9 +249,9 @@ async function runPipeline(
         );
       }
       process.stderr.write(`executor attempt ${attempt} failed (transient); retrying\n`);
-      await new Promise((resolve) =>
-        setTimeout(resolve, num("AGENT_EXECUTOR_RETRY_DELAY", 30) * 1000),
-      );
+      // 指数退避对抗分钟级网络风暴;resume 让重试只重跑尾巴,不贵。
+      const delay = num("AGENT_EXECUTOR_RETRY_DELAY", 30) * 2 ** (attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, delay * 1000));
     }
   };
 
