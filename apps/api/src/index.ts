@@ -15,8 +15,19 @@ async function main() {
   const app = buildServer(env);
 
   try {
-    await app.listen({ host: env.HOST, port: env.PORT });
-    app.log.info({ version: env.APP_VERSION }, "Server started");
+    // 绑 0.0.0.0 时 fastify 按网卡逐条打 listen 日志；只在 listen 期间静音，
+    // 成功后自己打一条汇总。监听行为不变。
+    app.log.level = "warn";
+    let address: string;
+    try {
+      address = await app.listen({ host: env.HOST, port: env.PORT });
+    } finally {
+      app.log.level = env.LOG_LEVEL;
+    }
+    // version 只在 prod 的 JSON 日志里是单行；dev 的 pino-pretty 会把额外字段
+    // 折成第二行，喧宾夺主。
+    const fields = env.NODE_ENV === "production" ? { version: env.APP_VERSION } : {};
+    app.log.info(fields, `Server listening at ${address}`);
   } catch (error) {
     app.log.error(error, "Failed to start server");
     process.exit(1);

@@ -100,7 +100,7 @@ key2=$(basename "$(git -C "$tmp/nested/wt" rev-parse --git-dir)")
 [ "$key2" != "wt" ] || fail "git 未对同 basename worktree 去重"
 p1=$(sed -n 's/^POSTGRES_PORT=//p' "$tmp/wt/.env" | tr -d '"')
 p2=$(sed -n 's/^POSTGRES_PORT=//p' "$tmp/nested/wt/.env" | tr -d '"')
-[ "$p1" != "$p2" ] || fail "同 basename 两 worktree 端口撞车（$p1）"
+[ "$p1" != "$p2" ] || fail "同 basename 两 worktree 端口撞车（${p1}）"
 ok "同 basename worktree 经 git 内部名去重（wt vs ${key2}，${p1} vs ${p2}）"
 
 git -C "$tmp/main" worktree add -q "$tmp/Weird.Name" -b wt3 2>/dev/null
@@ -111,5 +111,57 @@ case "$pname" in
   *[!a-z0-9_-]*|"") fail "project 名未消毒：$pname" ;;
 esac
 ok "project 名消毒（${pname}）"
+
+# 此时 $tmp/wt 粘性 offset=68：web base=15241，api base=13068。
+out=$(cd "$tmp/wt" && OCCUPIED_PORTS="15241" sh "$script" 2>/dev/null)
+echo "$out" | grep -q "VITE_PORT=15242" || fail "web 端口被占时未 +1 探测"
+grep -q 'PORT="13068"' "$tmp/wt/apps/api/.env" || fail "web 避让不应影响 api 端口"
+grep -q 'POSTGRES_PORT="15500"' "$tmp/wt/.env" || fail "web 避让不应影响 db 端口"
+grep -q 'WEB_PORT="15242"' "$tmp/wt/.env" || fail "web 避让结果未落盘"
+ok "web 端口被占 +1 探测并落盘（15241 → 15242）"
+
+out=$(cd "$tmp/wt" && sh "$script" --bump 2>/dev/null)
+grep -q 'POSTGRES_PORT="15501"' "$tmp/wt/.env" || fail "--bump 未递增 db 端口（68→69）"
+echo "$out" | grep -q "VITE_PORT=15242" || fail "--bump 后 web 口未与新 offset 一致"
+out=$(cd "$tmp/wt" && sh "$script" 2>/dev/null)
+echo "$out" | grep -q "VITE_PORT=15242" || fail "bump 后 web 口未粘住"
+ok "--bump 后 web 口与新 offset 一致并粘住（15242, offset=69）"
+
+out=$(cd "$tmp/wt" && OCCUPIED_PORTS="15243" sh "$script" --bump 2>/dev/null)
+grep -q 'POSTGRES_PORT="15502"' "$tmp/wt/.env" || fail "--bump 未递增 db 端口（69→70）"
+echo "$out" | grep -q "VITE_PORT=15244" || fail "--bump 后 web 避让未叠加在新 offset 上"
+ok "--bump 后 web 避让叠加在新 offset 上（15243 被占 → 15244）"
+
+cp "$tmp/wt/.env" "$tmp/wt/.env.before"
+cp "$tmp/wt/apps/api/.env" "$tmp/wt/api.env.before"
+out=$(cd "$tmp/wt" && sh "$script" --web-port 2>/dev/null)
+[ "$out" = "15244" ] || fail "--web-port 应输出落盘的 web 口 15244，得到：$out"
+cmp -s "$tmp/wt/.env" "$tmp/wt/.env.before" || fail "--web-port 改写了 compose .env"
+cmp -s "$tmp/wt/apps/api/.env" "$tmp/wt/api.env.before" || fail "--web-port 改写了 api .env"
+# dev 跑着时口被自己占着，--web-port 不得避让跳过真实口。
+out=$(cd "$tmp/wt" && OCCUPIED_PORTS="15244" sh "$script" --web-port 2>/dev/null)
+[ "$out" = "15244" ] || fail "--web-port 不应避让（口是自己占的），得到：$out"
+cmp -s "$tmp/wt/.env" "$tmp/wt/.env.before" || fail "--web-port（口被占）改写了 compose .env"
+ok "--web-port 只读输出落盘端口，口被占也不避让、不落盘"
+
+sed '/^WEB_PORT=/d' "$tmp/wt/.env" > "$tmp/wt/.env.tmp" && mv "$tmp/wt/.env.tmp" "$tmp/wt/.env"
+out=$(cd "$tmp/wt" && sh "$script" --web-port 2>/dev/null)
+[ "$out" = "15243" ] || fail "无 WEB_PORT 的老 .env 应由 offset 推导 15243，得到：$out"
+ok "--web-port 兼容无 WEB_PORT 的老 .env（按 offset 推导）"
+
+out=$(cd "$tmp/main" && sh "$script" --web-port 2>/dev/null)
+[ "$out" = "5173" ] || fail "主检出 --web-port 应输出 5173，得到：$out"
+[ ! -f "$tmp/main/.env" ] || fail "主检出 --web-port 不应生成 compose .env"
+[ ! -f "$tmp/main/apps/api/.env" ] || fail "主检出 --web-port 不应生成 api .env"
+ok "主检出 --web-port 输出默认口且不落盘"
+
+git -C "$tmp/main" worktree add -q "$tmp/fresh" -b wt4
+out=$(cd "$tmp/fresh" && sh "$script" --web-port 2>/dev/null)
+key4=$(basename "$(git -C "$tmp/fresh" rev-parse --git-dir)")
+h4=$(( $(h_of "$key4") % 200 ))
+[ "$out" = "$((15173 + h4))" ] || fail "新 worktree --web-port 应为 hash 口，得到：$out"
+[ ! -f "$tmp/fresh/.env" ] || fail "--web-port 不应生成 compose .env"
+[ ! -f "$tmp/fresh/apps/api/.env" ] || fail "--web-port 不应生成 api .env"
+ok "--web-port 在零配置 worktree 上只读推导（${out}）"
 
 echo "全部通过"
