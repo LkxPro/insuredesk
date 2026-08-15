@@ -6,9 +6,9 @@ import {
   type TicketEditInput,
 } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -136,7 +136,7 @@ describe("optional business fields (Testcontainers)", () => {
         data: { createdAt: new Date(Date.now() - 100 * HOUR_MS) },
       });
 
-      const { listMyTodos } = await import("../src/services/todo.service");
+      const { listMyTodos } = await import("../src/services/todo.service.ts");
       const todos = await listMyTodos(
         { prisma, clock: { now: () => new Date() } },
         {
@@ -257,7 +257,7 @@ describe("optional business fields (Testcontainers)", () => {
 
       // The export is an HTTP route; exercise its service with the same
       // viewer identity the route would resolve.
-      const { exportTickets } = await import("../src/services/ticket-export.service");
+      const { exportTickets } = await import("../src/services/ticket-export.service.ts");
       const file = await exportTickets(
         { prisma, clock: { now: () => new Date() } },
         {

@@ -5,7 +5,7 @@ import {
   readTicketImportSheet,
   TicketImportValidationError,
   validateTicketImportRows,
-} from "../src/services/ticket-import.service";
+} from "../src/services/ticket-import.service.ts";
 
 /**
  * DB-free tests for the 批量导入 parsing/validation seam: workbook → raw rows
@@ -74,7 +74,7 @@ async function expectFileError(body: Buffer, messagePart: string) {
 describe("readTicketImportSheet", () => {
   it("导入列头与模板生成列头是同一契约", async () => {
     const { TICKET_IMPORT_TEMPLATE_COLUMNS } = await import(
-      "../src/services/ticket-import-template.service"
+      "../src/services/ticket-import-template.service.ts"
     );
     expect(TICKET_IMPORT_TEMPLATE_COLUMNS.map((column) => column.header)).toEqual(HEADERS);
   });

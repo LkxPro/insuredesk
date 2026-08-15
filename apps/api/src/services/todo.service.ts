@@ -7,8 +7,8 @@ import {
   type TodoSeverity,
   ticketStatusSchema,
 } from "@insuredesk/shared";
-import type { AuthenticatedUser } from "./auth.service";
-import type { TicketServiceDeps } from "./ticket.service";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
  * 轨 2 我的待办: the viewer's

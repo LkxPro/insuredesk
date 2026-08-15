@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { bootstrapSystemData } from "../prisma/seed-data";
-import type { PrismaClient } from "../src/generated/prisma/client";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { bootstrapSystemData } from "../prisma/seed-data.ts";
+import type { PrismaClient } from "../src/generated/prisma/client.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * Production bootstrap (runs on every container start) against a real

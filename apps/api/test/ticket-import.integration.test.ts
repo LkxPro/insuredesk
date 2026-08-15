@@ -2,13 +2,13 @@ import { TICKET_IMPORT_HEADERS as HEADERS, type Permission } from "@insuredesk/s
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../prisma/seed-data";
-import { parseEnv } from "../src/env";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import { buildServer } from "../src/server";
-import { hashPassword } from "../src/services/auth.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { DEMO_PASSWORD } from "../prisma/seed-data.ts";
+import { parseEnv } from "../src/env.ts";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import { buildServer } from "../src/server.ts";
+import { hashPassword } from "../src/services/auth.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 

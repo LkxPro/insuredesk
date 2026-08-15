@@ -11,14 +11,14 @@ import {
   TicketStatus,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
-import type { AuthenticatedUser } from "./auth.service";
+import type { AuthenticatedUser } from "./auth.service.ts";
 import {
   buildCatalogNameIndex,
   type CatalogNameIndex,
   resolveCatalogNameRef,
-} from "./dictionary-catalog.service";
-import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service";
-import { resolveTimeZone } from "./time-zone";
+} from "./dictionary-catalog.service.ts";
+import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service.ts";
+import { resolveTimeZone } from "./time-zone.ts";
 
 /**
  * 批量导入 upload: workbook → per-row 手工建单 payloads → one all-or-nothing
@@ -29,9 +29,12 @@ import { resolveTimeZone } from "./time-zone";
 
 /** Carrier for the 行号/列名/原因 list; the route serializes it as the 400 body. */
 export class TicketImportValidationError extends Error {
-  constructor(readonly rowErrors: TicketImportRowError[]) {
+  readonly rowErrors: TicketImportRowError[];
+
+  constructor(rowErrors: TicketImportRowError[]) {
     super(`导入校验未通过，共 ${rowErrors.length} 个错误`);
     this.name = "TicketImportValidationError";
+    this.rowErrors = rowErrors;
   }
 }
 

@@ -1,9 +1,9 @@
 import type { Permission } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import type { AuthenticatedUser } from "../src/services/auth.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import type { PrismaClient, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import type { AuthenticatedUser } from "../src/services/auth.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * ShiftType management acceptance tests at the public tRPC seam. These use a

@@ -4,7 +4,7 @@ import {
   externalAccountUpdateInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
-import { prisma } from "../db";
+import { prisma } from "../db.ts";
 import {
   createExternalAccount,
   ExternalAccountOnlyError,
@@ -14,14 +14,14 @@ import {
   PrefillChannelNotFoundError,
   setExternalAccountActive,
   updateExternalAccount,
-} from "../services/external-account.service";
+} from "../services/external-account.service.ts";
 import {
   DuplicateEmailError,
   DuplicateUsernameError,
   SelfDisableError,
   UserNotFoundError,
-} from "../services/user.service";
-import { requirePermission, router } from "../trpc";
+} from "../services/user.service.ts";
+import { requirePermission, router } from "../trpc.ts";
 
 /**
  * 外部账号管理, all behind the single external_account.manage point — holding

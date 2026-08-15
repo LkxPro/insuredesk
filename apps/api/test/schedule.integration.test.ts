@@ -1,12 +1,12 @@
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { fixedClock } from "../src/clock";
-import type { PrismaClient, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import type { AuthenticatedUser } from "../src/services/auth.service";
-import { findOnDutyUserIds } from "../src/services/schedule.service";
-import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { fixedClock } from "../src/clock.ts";
+import type { PrismaClient, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import type { AuthenticatedUser } from "../src/services/auth.service.ts";
+import { findOnDutyUserIds } from "../src/services/schedule.service.ts";
+import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * Real Postgres exercises user/day uniqueness, shift JSON, RBAC, assignment

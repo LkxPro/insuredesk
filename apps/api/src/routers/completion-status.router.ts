@@ -1,6 +1,6 @@
 import { completionStatusCatalogSchemas } from "@insuredesk/shared";
-import { completionStatusCatalog } from "../services/completion-status.service";
-import { createCatalogRouter } from "./dictionary-catalog.router";
+import { completionStatusCatalog } from "../services/completion-status.service.ts";
+import { createCatalogRouter } from "./dictionary-catalog.router.ts";
 
 export const completionStatusRouter = createCatalogRouter(
   completionStatusCatalog,

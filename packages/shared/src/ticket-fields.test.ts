@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { joinPolicyNumbers, splitPolicyNumbers } from "./ticket-fields";
+import { joinPolicyNumbers, splitPolicyNumbers } from "./ticket-fields.ts";
 
 describe("splitPolicyNumbers", () => {
   it("空白分隔：空格/换行/制表符", () => {

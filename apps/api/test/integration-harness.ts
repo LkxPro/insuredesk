@@ -7,16 +7,16 @@ import {
   seedShiftTypes,
   seedSlaPolicies,
   seedTicketCategories,
-} from "../prisma/seed-data";
-import { type Clock, fixedClock, systemClock } from "../src/clock";
+} from "../prisma/seed-data.ts";
+import { type Clock, fixedClock, systemClock } from "../src/clock.ts";
 // 静态 import 应用模块之所以安全：src/db 的客户端在首次属性访问才读
 // DATABASE_URL（lazy Proxy），而 start 在任何查询与播种之前已把它指向容器。
 // 若 db 客户端失去惰性，这里必须退回「先设 env、再动态 import」的时序。
-import { prisma } from "../src/db";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service";
-import { migrateDeploy, runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres";
+import { prisma } from "../src/db.ts";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service.ts";
+import { migrateDeploy, runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres.ts";
 
 /**
  * real-migrations：保证每次真跑 `prisma migrate deploy`（在共享容器的全新

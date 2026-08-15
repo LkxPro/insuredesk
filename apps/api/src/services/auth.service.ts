@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { isExternalRole, type Permission, POSITIVE_PERMISSIONS } from "@insuredesk/shared";
 import * as bcrypt from "bcryptjs";
-import type { PrismaClient } from "../generated/prisma/client";
+import type { PrismaClient } from "../generated/prisma/client.ts";
 
 /**
  * bcrypt cost factor for all password hashing (seeding and future user
@@ -99,7 +99,11 @@ export interface AuthProvider {
  * Verifies username + password against the User table.
  */
 export class PasswordAuthProvider implements AuthProvider {
-  constructor(private readonly prisma: PrismaClient) {}
+  private readonly prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this.prisma = prisma;
+  }
 
   async authenticate(credentials: unknown): Promise<string | null> {
     if (!isPasswordCredentials(credentials)) {
@@ -162,10 +166,13 @@ export function toSessionToken(raw: string): SessionToken {
  * Sessions are stored in Postgres (not Redis) this phase.
  */
 export class SessionService {
-  constructor(
-    private readonly prisma: PrismaClient,
-    private readonly sessionMaxAgeSeconds: number,
-  ) {}
+  private readonly prisma: PrismaClient;
+  private readonly sessionMaxAgeSeconds: number;
+
+  constructor(prisma: PrismaClient, sessionMaxAgeSeconds: number) {
+    this.prisma = prisma;
+    this.sessionMaxAgeSeconds = sessionMaxAgeSeconds;
+  }
 
   /**
    * Create a new session for the given userId.

@@ -5,8 +5,8 @@ import {
   type TicketFindDuplicatesQuery,
   ticketStatusSchema,
 } from "@insuredesk/shared";
-import type { Clock } from "../clock";
-import type { Prisma, PrismaClient } from "../generated/prisma/client";
+import type { Clock } from "../clock.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 /**
  * 建单/编辑查重：对全部未软删工单做保单号 + 手机号精确匹配。
@@ -23,9 +23,12 @@ export interface TicketDuplicateDeps {
 
 /** 提交兜底查重命中；路由映射 409，重复列表由前端经 findDuplicates 重取。 */
 export class DuplicateTicketsFoundError extends Error {
-  constructor(public readonly count: number) {
+  readonly count: number;
+
+  constructor(count: number) {
     super(`发现 ${count} 个可能重复的工单`);
     this.name = "DuplicateTicketsFoundError";
+    this.count = count;
   }
 }
 

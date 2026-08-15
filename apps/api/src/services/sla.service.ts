@@ -4,8 +4,8 @@ import {
   reminderRulesSchema,
   type SlaPolicyUpdateInput,
 } from "@insuredesk/shared";
-import type { SlaPolicy } from "../generated/prisma/client";
-import type { TicketServiceDeps } from "./ticket.service";
+import type { SlaPolicy } from "../generated/prisma/client.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
  * SLA 策略配置 domain logic. Pure service layer — the router wraps these

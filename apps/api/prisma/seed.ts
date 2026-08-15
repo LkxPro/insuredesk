@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaClient } from "../src/generated/prisma/client.ts";
 import {
   DEMO_PASSWORD,
   seedChannels,
@@ -10,7 +10,7 @@ import {
   seedShiftTypes,
   seedSlaPolicies,
   seedTicketCategories,
-} from "./seed-data";
+} from "./seed-data.ts";
 
 if (existsSync(".env")) {
   process.loadEnvFile(".env");

@@ -1,14 +1,14 @@
 import type { CatalogSchemas } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
-import { prisma } from "../db";
+import { prisma } from "../db.ts";
 import {
   CatalogInUseError,
   CatalogNameConflictError,
   CatalogNotFoundError,
   CatalogPinnedError,
   type CatalogService,
-} from "../services/dictionary-catalog.service";
-import { protectedProcedure, requirePermission, router } from "../trpc";
+} from "../services/dictionary-catalog.service.ts";
+import { protectedProcedure, requirePermission, router } from "../trpc.ts";
 
 /** 目录 domain errors → transport codes; anything else rethrows as-is. */
 function translateError(error: unknown): never {

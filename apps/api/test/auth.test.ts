@@ -1,15 +1,18 @@
 import { POSITIVE_PERMISSIONS, RESTRICTIVE_PERMISSIONS } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "../src/generated/prisma/client";
+import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import {
   effectivePermissions,
   hashPassword,
   hasPermission,
   PasswordAuthProvider,
   SessionService,
-} from "../src/services/auth.service";
-import { applyDashboardDataScope, applyTicketDataScope } from "../src/services/data-scope.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+} from "../src/services/auth.service.ts";
+import {
+  applyDashboardDataScope,
+  applyTicketDataScope,
+} from "../src/services/data-scope.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * Integration tests for authentication and RBAC using Testcontainers.

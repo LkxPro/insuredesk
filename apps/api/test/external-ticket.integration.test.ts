@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * External ticket API integration tests: submit with prefill stamping,

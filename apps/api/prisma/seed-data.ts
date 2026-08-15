@@ -5,7 +5,7 @@ import {
   isExternalRole,
   TicketStatus,
 } from "@insuredesk/shared";
-import type { Clock } from "../src/clock";
+import type { Clock } from "../src/clock.ts";
 import type {
   Channel,
   PrismaClient,
@@ -15,10 +15,10 @@ import type {
   Ticket,
   TicketCategory,
   User,
-} from "../src/generated/prisma/client";
-import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service";
-import { computeSlaStamp, createTicket } from "../src/services/ticket.service";
-import { assignTicket } from "../src/services/ticket-assign.service";
+} from "../src/generated/prisma/client.ts";
+import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service.ts";
+import { computeSlaStamp, createTicket } from "../src/services/ticket.service.ts";
+import { assignTicket } from "../src/services/ticket-assign.service.ts";
 
 /**
  * Single source of truth for the factory roles and demo users. Consumed by

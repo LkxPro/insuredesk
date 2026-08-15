@@ -1,4 +1,4 @@
-import { createCatalogService } from "./dictionary-catalog.service";
+import { createCatalogService } from "./dictionary-catalog.service.ts";
 
 /** 完结状态目录：lifecycle semantics in dictionary-catalog.service. */
 export const completionStatusCatalog = createCatalogService({

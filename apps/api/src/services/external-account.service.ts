@@ -5,15 +5,15 @@ import type {
   ExternalAccountUpdateData,
 } from "@insuredesk/shared";
 import { EXTERNAL_ROLE_PERMISSIONS, isExternalRole } from "@insuredesk/shared";
-import { Prisma, type PrismaClient } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import { hashPassword } from "./auth.service";
+import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { hashPassword } from "./auth.service.ts";
 import {
   DuplicateEmailError,
   DuplicateUsernameError,
   SelfDisableError,
   UserNotFoundError,
-} from "./user.service";
+} from "./user.service.ts";
 
 /**
  * 外部账号管理 domain logic (external_account.manage 单点执法)。外部账号 =

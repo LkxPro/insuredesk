@@ -5,10 +5,10 @@ import {
   type TicketCreateInput,
 } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import type { AuthenticatedUser } from "../src/services/auth.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import type { PrismaClient, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import type { AuthenticatedUser } from "../src/services/auth.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * 字典目录 parameterized acceptance tests (issue #93). One canonical suite
@@ -321,7 +321,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           const detail = await manager().ticket.detail({ id: ticketId });
           expect(detail.completionStatus).toBe("完结用（新名）");
 
-          const { exportTickets } = await import("../src/services/ticket-export.service");
+          const { exportTickets } = await import("../src/services/ticket-export.service.ts");
           const file = await exportTickets(
             { prisma, clock: { now: () => new Date() } },
             {
@@ -394,7 +394,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           const listedField = listed.items[0] as unknown as Record<string, string | null>;
           expect(listedField[cfg.ticketFieldDisplay]).toBe("创建用（新名）");
 
-          const { exportTickets } = await import("../src/services/ticket-export.service");
+          const { exportTickets } = await import("../src/services/ticket-export.service.ts");
           const file = await exportTickets(
             { prisma, clock: { now: () => new Date() } },
             {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCatalogNameIndex,
   resolveCatalogNameRef,
-} from "../src/services/dictionary-catalog.service";
+} from "../src/services/dictionary-catalog.service.ts";
 
 /**
  * 目录按 NAME 的判定（导入的名字解析走这里）：ok / missing / disabled 三分支，

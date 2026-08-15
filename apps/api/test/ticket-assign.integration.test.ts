@@ -1,11 +1,11 @@
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { seedExternalUserRole } from "../prisma/seed-data";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import { localDateTimeParts } from "../src/services/schedule.service";
-import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { seedExternalUserRole } from "../prisma/seed-data.ts";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import { localDateTimeParts } from "../src/services/schedule.service.ts";
+import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * Acceptance tests against a real Postgres: first assignment vs reassignment

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { seedExternalUserRole } from "../prisma/seed-data";
-import type { PrismaClient, Role } from "../src/generated/prisma/client";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { seedExternalUserRole } from "../prisma/seed-data.ts";
+import type { PrismaClient, Role } from "../src/generated/prisma/client.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * 用户管理 × 外部账号 against a real Postgres: 用户管理 is an 内部账号-only surface.

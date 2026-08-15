@@ -1,4 +1,4 @@
-import { createCatalogService } from "./dictionary-catalog.service";
+import { createCatalogService } from "./dictionary-catalog.service.ts";
 
 /** 客诉类别目录：lifecycle semantics in dictionary-catalog.service. */
 export const ticketCategoryCatalog = createCatalogService({

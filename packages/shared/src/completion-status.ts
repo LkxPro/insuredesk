@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { createCatalogSchemas } from "./dictionary-catalog";
+import { createCatalogSchemas } from "./dictionary-catalog.ts";
 
 /** 完结状态目录 contracts；共同形状与措辞见 dictionary-catalog. */
 export const completionStatusCatalogSchemas = createCatalogSchemas("状态");

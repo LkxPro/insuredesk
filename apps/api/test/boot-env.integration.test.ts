@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../prisma/seed-data";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { DEMO_PASSWORD } from "../prisma/seed-data.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 const apiDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

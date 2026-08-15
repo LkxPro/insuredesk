@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
-    "rootDir": "."
+    "rootDir": ".",
+    "erasableSyntaxOnly": true
   },
   "include": ["src", "test", "prisma", "vitest.config.ts"]
 }

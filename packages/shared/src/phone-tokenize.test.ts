@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tokenizePhone } from "./phone-tokenize";
+import { tokenizePhone } from "./phone-tokenize.ts";
 
 describe("tokenizePhone", () => {
   describe("单号带分隔符", () => {

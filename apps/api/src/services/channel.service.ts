@@ -1,4 +1,4 @@
-import { CatalogPinnedError, createCatalogService } from "./dictionary-catalog.service";
+import { CatalogPinnedError, createCatalogService } from "./dictionary-catalog.service.ts";
 
 /** 反馈渠道目录：lifecycle semantics in dictionary-catalog.service. */
 export const channelCatalog = createCatalogService({

@@ -1,9 +1,9 @@
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import { listMyTodos } from "../src/services/todo.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import { listMyTodos } from "../src/services/todo.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

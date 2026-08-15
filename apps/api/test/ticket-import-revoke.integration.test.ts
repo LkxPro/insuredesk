@@ -5,11 +5,11 @@ import {
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { PrismaClient, User } from "../src/generated/prisma/client";
-import { appRouter } from "../src/routers/index";
-import { exportTickets } from "../src/services/ticket-export.service";
-import { importTickets } from "../src/services/ticket-import.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import type { PrismaClient, User } from "../src/generated/prisma/client.ts";
+import { appRouter } from "../src/routers/index.ts";
+import { exportTickets } from "../src/services/ticket-export.service.ts";
+import { importTickets } from "../src/services/ticket-import.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * Acceptance tests for 导入历史 + 整批撤销 against a real Postgres, through

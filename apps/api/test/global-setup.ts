@@ -1,6 +1,6 @@
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import type { TestProject } from "vitest/node";
-import { migrateDeploy, runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres";
+import { migrateDeploy, runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres.ts";
 
 const POSTGRES_IMAGE = "postgres:17-alpine";
 

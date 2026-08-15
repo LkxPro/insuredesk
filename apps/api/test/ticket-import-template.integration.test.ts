@@ -5,12 +5,12 @@ import {
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../prisma/seed-data";
-import { parseEnv } from "../src/env";
-import type { PrismaClient } from "../src/generated/prisma/client";
-import { buildServer } from "../src/server";
-import { hashPassword } from "../src/services/auth.service";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import { DEMO_PASSWORD } from "../prisma/seed-data.ts";
+import { parseEnv } from "../src/env.ts";
+import type { PrismaClient } from "../src/generated/prisma/client.ts";
+import { buildServer } from "../src/server.ts";
+import { hashPassword } from "../src/services/auth.service.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * Acceptance tests for the 批量导入 template download, over the real HTTP

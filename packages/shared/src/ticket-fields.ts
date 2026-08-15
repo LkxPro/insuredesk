@@ -1,4 +1,4 @@
-import { COMPLAINT_LEVELS, NUCLEAR_BODY_STATUSES, PRIORITIES, PRIORITY_LABELS } from "./enums";
+import { COMPLAINT_LEVELS, NUCLEAR_BODY_STATUSES, PRIORITIES, PRIORITY_LABELS } from "./enums.ts";
 
 /**
  * 工单字段描述表：20 个建单字段 + 2 个导入专属列的唯一声明处。每行声明

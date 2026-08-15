@@ -5,16 +5,16 @@ import {
   nuclearBodyStatusSchema,
   prioritySchema,
   ticketSourceSchema,
-} from "./enums";
+} from "./enums.ts";
 import {
   normalizePolicyNumbers,
   policyNumbersError,
   TICKET_COMPLETION_REMARK_LIMIT,
   TICKET_FIELDS,
   TICKET_TEXT_LIMITS,
-} from "./ticket-fields";
-import { ticketDisplayStatusSchema } from "./ticket-status";
-import { createdRangeFields } from "./time-range";
+} from "./ticket-fields.ts";
+import { ticketDisplayStatusSchema } from "./ticket-status.ts";
+import { createdRangeFields } from "./time-range.ts";
 
 /**
  * Manual ticket-creation contract, shared by the web form (react-hook-form

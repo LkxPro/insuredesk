@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { PrismaClient } from "../src/generated/prisma/client";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness";
+import type { PrismaClient } from "../src/generated/prisma/client.ts";
+import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
  * 建单/编辑查重的验收测试：保单号/手机号精确匹配语义、2×2 交叉、软删与自身

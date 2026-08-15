@@ -1,8 +1,8 @@
 import { dashboardStatsInputSchema } from "@insuredesk/shared";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
-import { getDashboardStats } from "../services/dashboard.service";
-import { requirePermission, router } from "../trpc";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
+import { getDashboardStats } from "../services/dashboard.service.ts";
+import { requirePermission, router } from "../trpc.ts";
 
 /**
  * 数据看板 routes. Thin wrapper: the page permission gates entry; the data

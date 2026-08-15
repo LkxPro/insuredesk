@@ -14,16 +14,16 @@ import {
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
-import { CatalogUnavailableError } from "../services/dictionary-catalog.service";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
+import { CatalogUnavailableError } from "../services/dictionary-catalog.service.ts";
 import {
   createTicket,
   getTicketDetail,
   listTickets,
   RequiredFieldsMissingError,
   SlaPolicyNotConfiguredError,
-} from "../services/ticket.service";
+} from "../services/ticket.service.ts";
 import {
   AssigneeNotAssignableError,
   AssigneeNotProcessableError,
@@ -33,23 +33,23 @@ import {
   listAssigneeOptions,
   TicketNotAssignableError,
   TicketNotFoundError,
-} from "../services/ticket-assign.service";
-import { addTicketComment, TicketNotProcessableError } from "../services/ticket-comment.service";
-import { deleteTicket } from "../services/ticket-delete.service";
+} from "../services/ticket-assign.service.ts";
+import { addTicketComment, TicketNotProcessableError } from "../services/ticket-comment.service.ts";
+import { deleteTicket } from "../services/ticket-delete.service.ts";
 import {
   DuplicateTicketsFoundError,
   findDuplicateTickets,
-} from "../services/ticket-duplicate.service";
-import { editTicket } from "../services/ticket-edit.service";
+} from "../services/ticket-duplicate.service.ts";
+import { editTicket } from "../services/ticket-edit.service.ts";
 import {
   ImportBatchAlreadyRevokedError,
   ImportBatchLockedError,
   ImportBatchNotFoundError,
   listImportBatches,
   revokeImportBatch,
-} from "../services/ticket-import-batch.service";
-import { resolveTicket, TicketNotResolvableError } from "../services/ticket-resolve.service";
-import { requireAnyPermission, requirePermission, router } from "../trpc";
+} from "../services/ticket-import-batch.service.ts";
+import { resolveTicket, TicketNotResolvableError } from "../services/ticket-resolve.service.ts";
+import { requireAnyPermission, requirePermission, router } from "../trpc.ts";
 
 /**
  * Ticket routes: manual creation, the detail page read, the filterable list,

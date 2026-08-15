@@ -3,7 +3,7 @@ import {
   type ShiftTypeUpdateInput,
   shiftTypeSegmentsSchema,
 } from "@insuredesk/shared";
-import { Prisma, type PrismaClient, type ShiftType } from "../generated/prisma/client";
+import { Prisma, type PrismaClient, type ShiftType } from "../generated/prisma/client.ts";
 
 export class ShiftTypeNameConflictError extends Error {
   constructor() {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TICKET_STATUSES, type TicketStatus } from "./enums";
+import { TICKET_STATUSES, type TicketStatus } from "./enums.ts";
 
 /**
  * Read-time ticket display status. Lives apart from enums.ts on purpose:

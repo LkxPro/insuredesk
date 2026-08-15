@@ -1,6 +1,6 @@
 import type { Permission } from "@insuredesk/shared";
 import { z } from "zod";
-import { protectedProcedure, requirePermission, router } from "../trpc";
+import { protectedProcedure, requirePermission, router } from "../trpc.ts";
 
 /**
  * Demo router for testing RBAC guards.

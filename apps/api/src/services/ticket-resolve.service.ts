@@ -1,13 +1,13 @@
 import { type TicketResolveInput, TicketStatus } from "@insuredesk/shared";
-import type { AuthenticatedUser } from "./auth.service";
-import { completionStatusCatalog } from "./completion-status.service";
-import { applyTicketDataScope } from "./data-scope.service";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { completionStatusCatalog } from "./completion-status.service.ts";
+import { applyTicketDataScope } from "./data-scope.service.ts";
 import {
   buildExternalResolvedNotification,
   writeExternalCreatorNotification,
-} from "./notification.service";
-import type { TicketServiceDeps } from "./ticket.service";
-import { TicketNotFoundError } from "./ticket-assign.service";
+} from "./notification.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
+import { TicketNotFoundError } from "./ticket-assign.service.ts";
 
 /**
  * Resolve domain logic: 完结工单 with a mandatory 完结状态目录 reference

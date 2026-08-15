@@ -1,5 +1,5 @@
 import type { Permission } from "@insuredesk/shared";
-import type { AuthenticatedUser } from "./auth.service";
+import type { AuthenticatedUser } from "./auth.service.ts";
 
 /**
  * Query-layer data-scope helpers for enforcing RBAC data permissions — the

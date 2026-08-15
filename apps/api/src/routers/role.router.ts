@@ -6,8 +6,8 @@ import {
   roleUpdateRequiredFieldsInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
 import {
   createRole,
   DuplicateRoleNameError,
@@ -21,8 +21,8 @@ import {
   SystemRoleProtectedError,
   updateRolePermissions,
   updateRoleRequiredFields,
-} from "../services/role.service";
-import { requirePermission, router } from "../trpc";
+} from "../services/role.service.ts";
+import { requirePermission, router } from "../trpc.ts";
 
 /**
  * 角色管理 routes: thin wrappers — validation via the shared Zod schemas,

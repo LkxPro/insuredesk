@@ -5,9 +5,9 @@ import {
   type TicketImportSuccess,
 } from "@insuredesk/shared";
 import type { FastifyInstance } from "fastify";
-import { systemClock } from "../clock";
-import { prisma } from "../db";
-import { importTickets, TicketImportValidationError } from "../services/ticket-import.service";
+import { systemClock } from "../clock.ts";
+import { prisma } from "../db.ts";
+import { importTickets, TicketImportValidationError } from "../services/ticket-import.service.ts";
 
 /**
  * 批量导入 upload endpoint. REST multipart (a file is the payload, not JSON);

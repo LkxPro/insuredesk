@@ -35,6 +35,9 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
+      "correctness": {
+        "useImportExtensions": "error"
+      },
       "style": {
         "noNonNullAssertion": "warn"
       }
@@ -48,6 +51,16 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["apps/web/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useImportExtensions": "off"
+          }
+        }
+      }
+    },
     {
       "includes": ["apps/web/src/components/ui/**"],
       "linter": {

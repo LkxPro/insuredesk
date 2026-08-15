@@ -3,9 +3,9 @@ import type {
   TicketImportBatchStatus,
   TicketImportRevokeInput,
 } from "@insuredesk/shared";
-import type { Prisma } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import type { TicketServiceDeps } from "./ticket.service";
+import type { Prisma } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
  * 导入历史 + 整批撤销 domain logic. A batch is the undo unit: revocation is
@@ -33,9 +33,12 @@ export class ImportBatchAlreadyRevokedError extends Error {
 
 /** Batch has processed tickets; carries the count the UI reports. */
 export class ImportBatchLockedError extends Error {
-  constructor(readonly processedCount: number) {
+  readonly processedCount: number;
+
+  constructor(processedCount: number) {
     super(`批内 ${processedCount} 单已有处理，整批撤销已拒绝`);
     this.name = "ImportBatchLockedError";
+    this.processedCount = processedCount;
   }
 }
 

@@ -1,8 +1,8 @@
 import type { TicketDeleteInput } from "@insuredesk/shared";
-import type { AuthenticatedUser } from "./auth.service";
-import { applyTicketDataScope } from "./data-scope.service";
-import type { TicketServiceDeps } from "./ticket.service";
-import { TicketNotFoundError } from "./ticket-assign.service";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { applyTicketDataScope } from "./data-scope.service.ts";
+import type { TicketServiceDeps } from "./ticket.service.ts";
+import { TicketNotFoundError } from "./ticket-assign.service.ts";
 
 /**
  * Soft-delete domain logic: the dangerous ticket.delete

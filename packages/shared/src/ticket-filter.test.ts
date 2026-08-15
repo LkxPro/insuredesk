@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { substringSearchPattern, ticketListFilterConditions } from "./ticket-filter";
+import { substringSearchPattern, ticketListFilterConditions } from "./ticket-filter.ts";
 
 describe("substringSearchPattern", () => {
   it("子串匹配:%直接拼接%", () => {

@@ -10,14 +10,14 @@ import {
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
-import type { Prisma } from "../generated/prisma/client";
-import type { AuthenticatedUser } from "./auth.service";
-import { type ExportColumn, type ExportFile, renderExportFile } from "./export-file";
+import type { Prisma } from "../generated/prisma/client.ts";
+import type { AuthenticatedUser } from "./auth.service.ts";
+import { type ExportColumn, type ExportFile, renderExportFile } from "./export-file.ts";
 import {
   buildTicketListOrderBy,
   buildTicketListWhere,
   type TicketServiceDeps,
-} from "./ticket.service";
+} from "./ticket.service.ts";
 
 /**
  * 导出工单: the viewer's *filtered list*, as a file. Reuses the list's
