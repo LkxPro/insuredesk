@@ -8,6 +8,7 @@ import {
   prioritySchema,
   processLogActionSchema,
   reminderRulesSchema,
+  substringSearchPattern,
   TICKET_CREATE_FIELD_KEYS,
   TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
@@ -15,6 +16,7 @@ import {
   type TicketCreateFieldKey,
   type TicketListQuery,
   TicketStatus,
+  ticketListFilterConditions,
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
@@ -231,10 +233,8 @@ async function searchPolicyNumbersTicketIds(
   prisma: PrismaClient,
   search: string,
 ): Promise<string[]> {
-  // 直接 %拼接%、不转义 LIKE 元字符——Prisma `contains` 就是这么做的，工单号/
-  // 客户姓名两支同款；这支若单独转义，三支的搜索语义会分叉。
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM tickets WHERE array_to_string("policyNumbers", ' ') ILIKE ${`%${search}%`}
+    SELECT id FROM tickets WHERE array_to_string("policyNumbers", ' ') ILIKE ${substringSearchPattern(search)}
   `;
   return rows.map((row) => row.id);
 }
@@ -259,10 +259,6 @@ export async function buildTicketListWhere(
   // Each filter is its own AND element so their inner ORs (base-status
   // predicate, search) can never collide.
   const filters: Prisma.TicketWhereInput[] = [];
-  if (query.status && query.status.length > 0) {
-    // 多选状态取并集：单状态谓词恰好互斥划分全量工单，OR 后不重不漏
-    filters.push({ OR: query.status.map((status) => displayStatusTicketWhere(status, now)) });
-  }
   if (query.channelId && query.channelId.length > 0) {
     filters.push({ channelId: { in: query.channelId } });
   }
@@ -278,25 +274,34 @@ export async function buildTicketListWhere(
   if (query.source && query.source.length > 0) {
     filters.push({ source: { in: query.source } });
   }
-  // 创建时间区间左闭右闭；边界已是绝对时刻，日界口径由调用方（前端）算定
-  if (query.createdFrom !== undefined || query.createdTo !== undefined) {
-    filters.push({
-      createdAt: {
-        ...(query.createdFrom !== undefined && { gte: new Date(query.createdFrom) }),
-        ...(query.createdTo !== undefined && { lte: new Date(query.createdTo) }),
-      },
-    });
-  }
-  if (query.search) {
-    filters.push({
-      OR: [
-        { workOrderNumber: { contains: query.search, mode: "insensitive" } },
-        { customerName: { contains: query.search, mode: "insensitive" } },
-        { id: { in: await searchPolicyNumbersTicketIds(prisma, query.search) } },
-        { phone: { contains: query.search, mode: "insensitive" } },
-        { contactPhone: { contains: query.search, mode: "insensitive" } },
-      ],
-    });
+  for (const condition of ticketListFilterConditions(query)) {
+    switch (condition.kind) {
+      case "statusIn":
+        // 多选状态取并集：单状态谓词恰好互斥划分全量工单，OR 后不重不漏
+        filters.push({
+          OR: condition.statuses.map((status) => displayStatusTicketWhere(status, now)),
+        });
+        break;
+      case "search":
+        filters.push({
+          OR: [
+            { workOrderNumber: { contains: condition.term, mode: "insensitive" } },
+            { customerName: { contains: condition.term, mode: "insensitive" } },
+            { id: { in: await searchPolicyNumbersTicketIds(prisma, condition.term) } },
+            { phone: { contains: condition.term, mode: "insensitive" } },
+            { contactPhone: { contains: condition.term, mode: "insensitive" } },
+          ],
+        });
+        break;
+      case "createdAtRange":
+        filters.push({
+          createdAt: {
+            ...(condition.gte !== undefined && { gte: condition.gte }),
+            ...(condition.lte !== undefined && { lte: condition.lte }),
+          },
+        });
+        break;
+    }
   }
 
   return {
