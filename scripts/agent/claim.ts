@@ -269,3 +269,40 @@ export async function claimOwned(worktree: string, claimFile: string): Promise<b
     await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
   }
 }
+
+// 本地 claim 文件残留但远端 ref 已无主(释放竞态/崩溃窗口留下的分裂态):
+// 远端活着就轮到 stale 流程,不动;远端没了,本地文件只是死掉的残留,摘掉。
+// 返回 true = 摘了文件,可以重领。
+export async function dropLocalClaimIfRemoteGone(
+  root: string,
+  worktrees: string,
+  issue: number,
+): Promise<boolean> {
+  const claimFile = claimFileOf(worktrees, issue);
+  if ((await readClaimFile(claimFile)) === null) return false;
+  if (await lsRemoteSha(root, claimRefOf(issue), true)) return false;
+  await rm(claimFile, { force: true });
+  return true;
+}
+
+// pid 已死且 issue 非 running 时的兜底清理。常规 CAS 失败说明本地 sha 已过期
+// (崩溃发生在心跳 push 与文件落盘之间);远端无主则摘本地文件,远端 stale
+// 则强释放远端后摘文件。心跳死透是前置条件,远端推进只可能来自他人新 claim,
+// 此时 stale 判定不过,什么都不动。返回 true = 本地文件已清,可重领/回队。
+export async function forceReleaseDeadLocalClaim(
+  root: string,
+  worktrees: string,
+  issue: number,
+): Promise<boolean> {
+  const claimFile = claimFileOf(worktrees, issue);
+  if ((await readClaimFile(claimFile)) === null) return true;
+  await releaseClaim(root, worktrees, issue).catch(() => {});
+  if ((await readClaimFile(claimFile)) === null) return true;
+  if (await dropLocalClaimIfRemoteGone(root, worktrees, issue)) return true;
+  const staleSha = await remoteClaimStaleSha(root, issue);
+  if (staleSha && (await releaseRemoteClaim(root, issue, staleSha))) {
+    await rm(claimFile, { force: true });
+    return true;
+  }
+  return false;
+}

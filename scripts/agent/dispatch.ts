@@ -4,8 +4,11 @@ import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  claimFileOf,
   claimIssue,
   claimRefOf,
+  dropLocalClaimIfRemoteGone,
+  forceReleaseDeadLocalClaim,
   releaseClaim,
   releaseRemoteClaim,
   remoteClaimStaleSha,
@@ -189,7 +192,7 @@ export async function dispatchTick(root: string): Promise<void> {
       if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) continue;
       const json = await issueView(issue);
       if (!hasLabel(json, "agent:running"))
-        await releaseClaim(root, worktrees, issue).catch(() => {});
+        await forceReleaseDeadLocalClaim(root, worktrees, issue).catch(() => {});
     }
 
     // 已关单 issue 的 worktree 清理。
@@ -225,7 +228,11 @@ export async function dispatchTick(root: string): Promise<void> {
         `issue-${issue}.claim`,
       );
       if (hasLocalClaim) {
-        await releaseClaim(root, worktrees, issue);
+        // 清理不彻底就保持 running 等下轮(stale 窗口未到的情形会自然收敛)。
+        if (!(await forceReleaseDeadLocalClaim(root, worktrees, issue))) {
+          process.stderr.write(`defer #${issue}: local claim not releasable yet\n`);
+          continue;
+        }
         await rm(join(worktrees, `issue-${issue}.publishing`), { force: true });
         await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
         await commentIssue(
@@ -292,17 +299,21 @@ export async function dispatchTick(root: string): Promise<void> {
       process.stderr.write(`skip #${skipped.number}: ${skipped.reason}\n`);
     for (const issue of frontier.selected) {
       if (!(await claimIssue(root, worktrees, issue, maxParallel))) {
-        const staleSha = await remoteClaimStaleSha(root, issue);
-        if (
-          staleSha &&
-          (await releaseRemoteClaim(root, issue, staleSha)) &&
-          (await claimIssue(root, worktrees, issue, maxParallel))
-        ) {
-          process.stderr.write(`recovered expired claim for #${issue}\n`);
-        } else {
+        // 分裂态恢复:本地文件残留但远端已无主,直接摘文件重领;
+        // 远端 stale 则强释放远端——之后本地文件同属死掉的旧代,一并摘掉。
+        if (!(await dropLocalClaimIfRemoteGone(root, worktrees, issue))) {
+          const staleSha = await remoteClaimStaleSha(root, issue);
+          if (!(staleSha && (await releaseRemoteClaim(root, issue, staleSha)))) {
+            process.stderr.write(`skip #${issue}: already claimed\n`);
+            continue;
+          }
+          await rm(claimFileOf(worktrees, issue), { force: true });
+        }
+        if (!(await claimIssue(root, worktrees, issue, maxParallel))) {
           process.stderr.write(`skip #${issue}: already claimed\n`);
           continue;
         }
+        process.stderr.write(`recovered expired claim for #${issue}\n`);
       }
       // claim 后资格复核:frontier 可能已变(如人工加 serial-only)。
       const recheck = await queue(maxParallel);

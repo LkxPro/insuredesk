@@ -10,7 +10,9 @@ import {
   claimIssue,
   claimOwned,
   claimRefOf,
+  dropLocalClaimIfRemoteGone,
   fenceClaim,
+  forceReleaseDeadLocalClaim,
   heartbeatClaim,
   releaseClaim,
   releaseRemoteClaim,
@@ -164,4 +166,67 @@ test("releaseClaim 本地 sha 已过期且无人刷新时,重试耗尽也不删�
   assert.equal(await remoteSha(claimRefOf(issue)), foreign);
   assert.equal(await remoteSha("refs/heads/agent-slots/1"), foreign);
   await rm(claimFileOf(worktrees, issue), { force: true });
+  // 共享 origin:占用的 slot 要还,否则后续测试领不到槽。
+  await git(root, [
+    "push",
+    "-q",
+    "--delete",
+    "origin",
+    claimRefOf(issue),
+    "refs/heads/agent-slots/1",
+  ]);
+});
+
+test("forceReleaseDeadLocalClaim: 崩溃窗口分裂态(远端推进/文件未更新)收敛清理", async () => {
+  const issue = 107;
+  await claimIssue(root, worktrees, issue, 1);
+  // 远端被推进成旧时间戳提交(等同 stale),本地文件保持原 sha——崩溃窗口的定格。
+  const current = await remoteSha(claimRefOf(issue));
+  const moved = await git(
+    root,
+    [
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit-tree",
+      `${current}^{tree}`,
+      "-p",
+      current,
+      "-m",
+      `claim issue ${issue} slot 1 by crashed`,
+    ],
+    { GIT_COMMITTER_DATE: "@0 +0000" },
+  );
+  await git(root, [
+    "push",
+    "-q",
+    "--force",
+    "origin",
+    `${moved}:${claimRefOf(issue)}`,
+    `${moved}:refs/heads/agent-slots/1`,
+  ]);
+  assert.equal(await forceReleaseDeadLocalClaim(root, worktrees, issue), true);
+  assert.equal(await remoteSha(claimRefOf(issue)), "");
+  assert.equal(await remoteSha("refs/heads/agent-slots/1"), "");
+  assert.equal(await claimIssue(root, worktrees, issue, 1), true);
+  await releaseClaim(root, worktrees, issue);
+});
+
+test("dropLocalClaimIfRemoteGone: 远端活着不动,远端没了摘本地文件", async () => {
+  const issue = 108;
+  await claimIssue(root, worktrees, issue, 1);
+  assert.equal(await dropLocalClaimIfRemoteGone(root, worktrees, issue), false);
+  await git(root, [
+    "push",
+    "-q",
+    "--delete",
+    "origin",
+    claimRefOf(issue),
+    "refs/heads/agent-slots/1",
+  ]);
+  assert.equal(await dropLocalClaimIfRemoteGone(root, worktrees, issue), true);
+  // 文件已摘,可立即重领。
+  assert.equal(await claimIssue(root, worktrees, issue, 1), true);
+  await releaseClaim(root, worktrees, issue);
 });
