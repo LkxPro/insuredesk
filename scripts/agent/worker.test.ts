@@ -327,6 +327,31 @@ done`;
   assert.ok(calls.includes("disallowed.txt"));
 });
 
+test("success+is_error 矛盾结果按 transient 同会话重试,不消耗重排队", async () => {
+  // 第一轮回报 success 但 is_error=true(transport 层失败);重试轮正常。
+  const claude = `count=0
+while IFS= read -r line; do
+  count=$((count+1))
+  if [ $count -eq 1 ]; then
+    printf '%s\\n' '{"type":"result","subtype":"success","is_error":true,"num_turns":1}'
+    continue
+  fi
+  case $line in
+    *'final comment sweep'*) : ;;
+    *) printf 'implemented\\n' >"$PWD/allowed.txt" ;;
+  esac
+  printf '%s\\n' '${RESULT_EVENT}'
+done`;
+  const sandbox = await makeSandbox(claude, MAKE_OK);
+  await withEnv({ ...sandboxEnv(sandbox), AGENT_EXECUTOR_RETRY_DELAY: "1" }, async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls.includes("pr create"));
+  assert.ok(!calls.includes("agent-requeue"));
+});
+
 test("发布前 claim 丢失 → process 失败,自动重排队一次", async () => {
   // heartbeat 间隔拉到 1 小时,模拟不到;直接让 fence 前的 claimOwned 失败:
   // claim 之后立刻由"另一克隆"把远端 refs 删掉。

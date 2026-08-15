@@ -26,8 +26,11 @@ const num = (key: string, fallback: number) => {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 };
 
+// subtype=success + is_error 是 transport/API 层失败的矛盾组合,按 transient 重试。
 const transient = (result: ExecutorResult) =>
-  result.subtype === "" || result.subtype === "error_during_execution";
+  result.subtype === "" ||
+  result.subtype === "error_during_execution" ||
+  result.subtype === "success";
 
 export async function runWorker(root: string, worktree: string, issue: number): Promise<number> {
   const worktrees = dirname(worktree);
