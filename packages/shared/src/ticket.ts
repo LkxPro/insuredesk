@@ -253,9 +253,9 @@ export type TicketAutoAssignInput = z.infer<typeof ticketAutoAssignInputSchema>;
 
 /**
  * 添加跟进 contract: one remark per actual customer contact, with an optional
- * next-contact plan. contactCount / processingResult / nextContactTime and
- * the assigned → processing transition are all derived server-side from this
- * single action.
+ * next-contact plan. contactCount / nextContactTime and the assigned →
+ * processing transition are all derived server-side from this single action;
+ * the remark itself lands solely as a comment ProcessLog.
  */
 export const ticketAddCommentInputSchema = z.object({
   ticketId: z.string().min(1),

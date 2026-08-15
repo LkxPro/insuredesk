@@ -416,6 +416,75 @@ describe("ticket export (Testcontainers)", () => {
     });
   });
 
+  describe("跟进记录列 (读时拼接全量 comment)", () => {
+    it("列头为跟进记录, 位于首响要求之后、完结时间之前; 无跟进的工单为空单元格", async () => {
+      await makeTicket({ customerName: "无跟进客户" });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv" });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      const header = rows[0] ?? [];
+      expect(header).not.toContain("处理结果");
+      const followUpColumn = header.indexOf("跟进记录");
+      expect(followUpColumn).toBeGreaterThan(-1);
+      expect(followUpColumn).toBe(header.indexOf("首响要求") + 1);
+      expect(header.indexOf("完结时间")).toBe(followUpColumn + 1);
+
+      expect(rows[1]?.[followUpColumn]).toBe("");
+    });
+
+    it("拼接全部 comment 跟进: 按 at 升序、每行 [yyyy-MM-dd HH:mm] 姓名：内容, 含 internalOnly, 不含完结备注", async () => {
+      const ticket = await makeTicket({ customerName: "多跟进客户" });
+      await prisma.processLog.createMany({
+        data: [
+          {
+            ticketId: ticket.id,
+            action: "comment",
+            remark: "第二次联系，客户接受方案",
+            operatorId: seeded.users.manager.id,
+            operatorName: seeded.users.manager.name,
+            internalOnly: true,
+            at: new Date("2026-07-10T02:00:00.000Z"),
+          },
+          {
+            ticketId: ticket.id,
+            action: "comment",
+            remark: "首次联系，核对扣费明细",
+            operatorId: seeded.users.cs1.id,
+            operatorName: seeded.users.cs1.name,
+            at: new Date("2026-07-09T06:00:00.000Z"),
+          },
+          {
+            ticketId: ticket.id,
+            action: "resolve",
+            remark: "完结备注不属于跟进记录",
+            operatorId: seeded.users.manager.id,
+            operatorName: seeded.users.manager.name,
+            at: new Date("2026-07-11T02:00:00.000Z"),
+          },
+        ],
+      });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, {
+        format: "csv",
+        timeZone: "Asia/Shanghai",
+      });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      const followUpColumn = (rows[0] ?? []).indexOf("跟进记录");
+      expect(followUpColumn).toBeGreaterThan(-1);
+      // UTC+8：06:00Z → 14:00, 次日 02:00Z → 10:00；升序后首次联系在前
+      expect(rows[1]?.[followUpColumn]).toBe(
+        `[2026-07-09 14:00] ${seeded.users.cs1.name}：首次联系，核对扣费明细\n` +
+          `[2026-07-10 10:00] ${seeded.users.manager.name}：第二次联系，客户接受方案`,
+      );
+    });
+  });
+
   describe("数据范围", () => {
     it("个人档只能导出本人名下 — no ticket.view_all pins the export to own tickets", async () => {
       await makeTicket({ customerName: "无人认领" }); // unassigned pool
@@ -509,6 +578,8 @@ describe("ticket export (Testcontainers)", () => {
       expect(sheet?.getRow(3).getCell(1).value).toBe(urgent.workOrderNumber);
 
       const headerCells = (sheet?.getRow(1).values as Array<string | undefined>) ?? [];
+      expect(headerCells).toContain("跟进记录");
+      expect(headerCells).not.toContain("处理结果");
       const levelColumn = headerCells.indexOf("投诉等级");
       expect(sheet?.getRow(3).getCell(levelColumn).value).toBe("特急投诉");
       const dueColumn = headerCells.indexOf("处理时限");

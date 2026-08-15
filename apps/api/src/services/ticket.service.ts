@@ -479,7 +479,6 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     dueAt: ticket.dueAt?.toISOString() ?? null,
     nextContactTime: ticket.nextContactTime?.toISOString() ?? null,
     contactCount: ticket.contactCount,
-    processingResult: ticket.processingResult,
     completionTime: ticket.completionTime?.toISOString() ?? null,
     completionStatus: ticket.completionStatus?.name ?? null,
     processLogs: ticket.processLogs.map((log) => ({

@@ -32,7 +32,7 @@ describe("external ticket API (Testcontainers)", () => {
       },
     });
 
-    // 账号1: 6 预填全配（白名单配置不再生效，保留只为确认兼容性）
+    // 账号1: 6 预填全配
     externalUser1 = await prisma.user.create({
       data: {
         username: "external1",
@@ -226,7 +226,6 @@ describe("external ticket API (Testcontainers)", () => {
           internalOrderNumber: "ORD123456",
           policyNumbers: ["POL001", "POL002"],
           contactId: "CONTACT789",
-          processingResult: "处理结果",
         },
       });
 
@@ -237,7 +236,7 @@ describe("external ticket API (Testcontainers)", () => {
       if (!ticket) throw new Error("ticket not found");
 
       expect(ticket.workOrderNumber).toBe(result.workOrderNumber);
-      expect(ticket.processingResult).toBe("处理结果");
+      expect(ticket).not.toHaveProperty("processingResult");
       expect(ticket.customerName).toBe("张三");
       expect(ticket.phone).toBe("13800138000");
       expect(ticket.contactPhone).toBe("13900139000");
@@ -257,7 +256,6 @@ describe("external ticket API (Testcontainers)", () => {
         data: {
           customerName: "李四",
           phone: "13700137000",
-          processingResult: "已处理",
         },
       });
 
@@ -269,7 +267,6 @@ describe("external ticket API (Testcontainers)", () => {
 
       expect(ticket.customerName).toBe("李四");
       expect(ticket.phone).toBe("13700137000");
-      expect(ticket.processingResult).toBe("已处理");
 
       const detail = await caller.externalTicket.detail({ ticketId: result.id });
       expect(detail.ticket.customerName).toBe("李四");
@@ -550,6 +547,37 @@ describe("external ticket API (Testcontainers)", () => {
       expect(remarks).not.toContain("内部跟进");
     });
 
+    it("内部员工加的 internalOnly 跟进不出现在外部任何响应中", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "内部跟进可见性",
+      });
+
+      const manager = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
+      await manager.ticket.assign({ ticketId: ticket.id, assigneeId: seeded.users.cs1.id });
+      const frontline = harness.callerFor(seeded.users.cs1, seeded.roles.frontline);
+      await frontline.ticket.addComment({
+        ticketId: ticket.id,
+        remark: "对外可见的跟进",
+      });
+      await frontline.ticket.addComment({
+        ticketId: ticket.id,
+        remark: "内部口径，勿外传",
+        internalOnly: true,
+      });
+
+      const detail = await caller.externalTicket.detail({ ticketId: ticket.id });
+      expect(detail.ticket).not.toHaveProperty("processingResult");
+      expect(JSON.stringify(detail)).not.toContain("内部口径，勿外传");
+      expect(detail.processLogs.map((log) => log.remark)).toContain("对外可见的跟进");
+
+      // 列表每单附最新一条可见跟进：最新跟进是 internalOnly 时也要回退到可见的那条
+      const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
+      const item = list.items.find((t) => t.id === ticket.id);
+      expect(item?.latestLog?.remark).toBe("对外可见的跟进");
+      expect(JSON.stringify(item)).not.toContain("内部口径，勿外传");
+    });
+
     it("detail exposes all fields including sensitive ones", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
@@ -565,7 +593,6 @@ describe("external ticket API (Testcontainers)", () => {
           internalOrderNumber: "ORD999",
           policyNumbers: ["POL100", "POL200", "POL300"],
           contactId: "CONTACT456",
-          processingResult: "完结",
         },
       });
 
@@ -578,7 +605,7 @@ describe("external ticket API (Testcontainers)", () => {
       expect(detail.ticket.internalOrderNumber).toBe("ORD999");
       expect(detail.ticket.policyNumbers).toEqual(["POL100", "POL200", "POL300"]);
       expect(detail.ticket.contactId).toBe("CONTACT456");
-      expect(detail.ticket.processingResult).toBe("完结");
+      expect(detail.ticket).not.toHaveProperty("processingResult");
       expect(detail).not.toHaveProperty("visibleFields");
     });
 
@@ -608,7 +635,7 @@ describe("external ticket API (Testcontainers)", () => {
 
       const beforeTicket = await prisma.ticket.findUnique({
         where: { id: ticket.id },
-        select: { contactCount: true, processingResult: true, nextContactTime: true },
+        select: { contactCount: true, nextContactTime: true },
       });
 
       const result = await caller.externalTicket.addNote({
@@ -630,11 +657,10 @@ describe("external ticket API (Testcontainers)", () => {
 
       const afterTicket = await prisma.ticket.findUnique({
         where: { id: ticket.id },
-        select: { contactCount: true, processingResult: true, nextContactTime: true },
+        select: { contactCount: true, nextContactTime: true },
       });
 
       expect(afterTicket?.contactCount).toBe(beforeTicket?.contactCount);
-      expect(afterTicket?.processingResult).toBe(beforeTicket?.processingResult);
       expect(afterTicket?.nextContactTime).toEqual(beforeTicket?.nextContactTime);
     });
 

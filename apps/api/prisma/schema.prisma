@@ -64,7 +64,7 @@ model User {
   importBatches   TicketImportBatch[] @relation("TicketImportBatchImporter")
   /// Import batches this user revoked (ticket_import_batches.revokedById)
   revokedImportBatches TicketImportBatch[] @relation("TicketImportBatchRevoker")
-  /// 轨 1 inbox notifications addressed to this user (issue #25)
+  /// 轨 1 inbox notifications addressed to this user
   notifications   AppNotification[]
   schedules       Schedule[]
 
@@ -92,7 +92,7 @@ model Role {
 }
 
 // ============================================================================
-// Ticket domain (Issue #22)
+// Ticket domain
 // ============================================================================
 //
 // Enum-like columns (source, channel, category, complaintLevel, status, …) are
@@ -116,7 +116,7 @@ model Ticket {
 
   createdAt    DateTime  @default(now()) @db.Timestamptz
   updatedAt    DateTime  @updatedAt @db.Timestamptz
-  /// 客户实际反馈时间; null = 未填写 (issue #43)
+  /// 客户实际反馈时间; null = 未填写
   feedbackTime DateTime? @db.Timestamptz
 
   /// Entry method + "who created it" discriminator:
@@ -126,7 +126,7 @@ model Ticket {
   /// deleted — Restrict is the DB backstop behind the service's refusal.
   channelId String?
 
-  // 业务信息 — all nullable: unfilled means unknown (issue #43)
+  // 业务信息 — all nullable: unfilled means unknown
   project              String?
   brokerageEntity      String?
   paymentChannel       String?
@@ -137,14 +137,14 @@ model Ticket {
   /// 投诉信息接收渠道（我方收到投诉的途径，区别于客户发起侧的用户投诉渠道）; null = 未填写
   complaintReceiveChannel String?
 
-  // 客户信息 — all nullable: unfilled means unknown (issue #43)
+  // 客户信息 — all nullable: unfilled means unknown
   customerName      String?
   phone             String?
   contactPhone      String?
   customerRequest   String?
   /// 保司侧是否核身：是/否/待核实
   nuclearBodyStatus String?
-  /// Tri-state: null = 未知, deliberately not false (issue #43)
+  /// Tri-state: null = 未知, deliberately not false
   hasContacted      Boolean?
   /// 客户那次进线发生的时间; null = 未填写
   contactTime       DateTime? @db.Timestamptz
@@ -176,8 +176,6 @@ model Ticket {
   nextContactTime  DateTime? @db.Timestamptz
   /// Maintained solely by addComment (+1 per follow-up)
   contactCount     Int       @default(0)
-  /// Latest follow-up remark, maintained solely by addComment
-  processingResult String    @default("")
 
   // 完结信息
   completionTime   DateTime? @db.Timestamptz
@@ -295,7 +293,7 @@ model SlaPolicy {
 }
 
 // ============================================================================
-// Ticket category catalog (Issue #68)
+// Ticket category catalog
 // ============================================================================
 
 /// 管理员（dictionary.manage）维护的客诉类别目录。停用项退出新建/编辑下拉但
@@ -314,7 +312,7 @@ model TicketCategory {
 }
 
 // ============================================================================
-// Feedback channel catalog (Issue #69)
+// Feedback channel catalog
 // ============================================================================
 
 /// 管理员（dictionary.manage）维护的反馈渠道目录，生命周期语义与
@@ -334,7 +332,7 @@ model Channel {
 }
 
 // ============================================================================
-// Completion status catalog (Issue #86)
+// Completion status catalog
 // ============================================================================
 
 /// 管理员（dictionary.manage）维护的完结状态目录，生命周期语义与
@@ -354,7 +352,7 @@ model CompletionStatus {
 }
 
 // ============================================================================
-// Shift definitions + schedule foundation (Issue #65)
+// Shift definitions + schedule foundation
 // ============================================================================
 
 /// 管理员配置的班次定义。segments 保存零个或多个墙钟时段；空数组表示休息日。
@@ -391,7 +389,7 @@ model Schedule {
 }
 
 // ============================================================================
-// Notifications (Issue #25)
+// Notifications
 // ============================================================================
 
 /// 轨 1 收件箱: user-action-triggered TRUE events only —

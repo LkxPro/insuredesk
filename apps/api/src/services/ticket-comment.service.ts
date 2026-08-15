@@ -13,10 +13,12 @@ import { TicketNotFoundError } from "./ticket-assign.service";
  * service layer — the router maps the domain errors to transport codes.
  *
  * Invariants enforced here:
- * - contactCount / processingResult / nextContactTime change ONLY through this
- *   action (单点维护): count +1, result = the latest remark, and
- *   nextContactTime is rewritten wholesale — an omitted value clears the
- *   previous follow-up's plan rather than leaving a stale past time behind
+ * - contactCount / nextContactTime change ONLY through this action (单点维护):
+ *   count +1, and nextContactTime is rewritten wholesale — an omitted value
+ *   clears the previous follow-up's plan rather than leaving a stale past time
+ *   behind
+ * - the follow-up itself lands solely as a comment ProcessLog; the timeline is
+ *   its only surface, no snapshot column on the ticket
  * - the FIRST follow-up moves assigned → processing, with the mandatory
  *   separate status_change log entry; because that transition fires
  *   on every comment while still assigned, a 改派 before any follow-up changes
@@ -92,7 +94,6 @@ export async function addTicketComment(
       where: { id: ticket.id },
       data: {
         contactCount: { increment: 1 },
-        processingResult: input.remark,
         nextContactTime: input.nextContactTime ? new Date(input.nextContactTime) : null,
       },
       select: { contactCount: true },

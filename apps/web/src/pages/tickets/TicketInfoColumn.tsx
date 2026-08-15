@@ -106,9 +106,6 @@ export function TicketInfoColumn({
         </Item>
         <Item label="下次联系时间">{formatDateTime(ticket.nextContactTime)}</Item>
         <Item label="联系次数">{ticket.contactCount}</Item>
-        <div className="sm:col-span-2 xl:col-span-3">
-          <Item label="处理结果">{ticket.processingResult || null}</Item>
-        </div>
       </Section>
 
       {(ticket.completionTime || ticket.completionStatus) && (
