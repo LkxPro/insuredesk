@@ -17,6 +17,7 @@ export * from "./sla";
 export * from "./ticket";
 export * from "./ticket-category";
 export * from "./ticket-fields";
+export * from "./ticket-filter";
 export * from "./ticket-status";
 export * from "./time-range";
 export * from "./todo";

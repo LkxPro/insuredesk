@@ -5,15 +5,9 @@ import {
 } from "@insuredesk/shared";
 import { Prisma, type Ticket } from "../generated/prisma/client";
 import type { AuthenticatedUser } from "./auth.service";
+import { type ExportColumn, type ExportFile, renderExportFile } from "./export-file";
 import { buildExternalTicketConditions } from "./external-ticket-query";
 import type { TicketServiceDeps } from "./ticket.service";
-import {
-  filenameStamp,
-  makeDateFormatter,
-  type TicketExportFile,
-  toCsv,
-  toXlsx,
-} from "./ticket-export.service";
 
 /**
  * 外部导出工单: the external viewer's *filtered list*, as a file. 与列表吃
@@ -23,13 +17,8 @@ import {
  * 层的兜底，进 Excel 会污染筛选）。只读：导出不写 ProcessLog。
  */
 
-type ExternalExportRow = Ticket;
-
 /** 列序与详情信息栏同向：身份（保单号/客户/电话）在前，长文本原文收尾。 */
-const EXPORT_COLUMNS: ReadonlyArray<{
-  header: string;
-  value: (ticket: ExternalExportRow) => string;
-}> = [
+const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<Ticket>> = [
   { header: ticketExportHeader("policyNumbers"), value: (t) => joinPolicyNumbers(t.policyNumbers) },
   { header: ticketExportHeader("customerName"), value: (t) => t.customerName ?? "" },
   { header: ticketExportHeader("phone"), value: (t) => t.phone ?? "" },
@@ -46,7 +35,7 @@ export async function exportExternalTickets(
   { prisma, clock }: TicketServiceDeps,
   viewer: AuthenticatedUser,
   query: ExternalTicketExportQuery,
-): Promise<TicketExportFile> {
+): Promise<ExportFile> {
   const whereSql = Prisma.join(buildExternalTicketConditions(viewer.id, query), " AND ");
   const idRows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT t.id FROM tickets t
@@ -59,24 +48,14 @@ export async function exportExternalTickets(
   const rowById = new Map(rows.map((row) => [row.id, row]));
   const ordered = idRows
     .map((row) => rowById.get(row.id))
-    .filter((row): row is ExternalExportRow => row !== undefined);
+    .filter((row): row is Ticket => row !== undefined);
 
-  const cells: string[][] = [
-    EXPORT_COLUMNS.map((column) => column.header),
-    ...ordered.map((ticket) => EXPORT_COLUMNS.map((column) => column.value(ticket))),
-  ];
-
-  const stamp = filenameStamp(makeDateFormatter(query.timeZone), clock.now());
-  if (query.format === "csv") {
-    return {
-      filename: `external-tickets-${stamp}.csv`,
-      contentType: "text/csv; charset=utf-8",
-      body: toCsv(cells),
-    };
-  }
-  return {
-    filename: `external-tickets-${stamp}.xlsx`,
-    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    body: await toXlsx(cells),
-  };
+  return renderExportFile({
+    baseName: "external-tickets",
+    format: query.format,
+    timeZone: query.timeZone,
+    now: clock.now(),
+    columns: EXPORT_COLUMNS,
+    rows: ordered,
+  });
 }
