@@ -17,9 +17,9 @@ if (existsSync(".env")) {
 const MIGRATE_ATTEMPTS = 15;
 for (let attempt = 1; ; attempt++) {
   try {
-    process.stdout.write(
-      execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], { stdio: "pipe" }),
-    );
+    // prisma 的进度输出（Datasource、migrations found 等）是噪音；失败时才
+    // 把 stderr 完整放出。
+    execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], { stdio: "pipe" });
     break;
   } catch (error) {
     if (attempt === MIGRATE_ATTEMPTS) {
@@ -34,7 +34,14 @@ for (let attempt = 1; ; attempt++) {
 
 // `migrate deploy` (unlike `migrate dev`) never generates the client, so a
 // fresh clone would otherwise start with the ungenerated stub.
-execFileSync("pnpm", ["exec", "prisma", "generate"], { stdio: "inherit" });
+try {
+  execFileSync("pnpm", ["exec", "prisma", "generate"], { stdio: "pipe" });
+} catch (error) {
+  const failed = error as { stdout?: Buffer; stderr?: Buffer };
+  if (failed.stdout) process.stderr.write(failed.stdout);
+  if (failed.stderr) process.stderr.write(failed.stderr);
+  process.exit(1);
+}
 
 // Imported only after `prisma generate` — a static top-level import would
 // load the stub that throws on instantiation.

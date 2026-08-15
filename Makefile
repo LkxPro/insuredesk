@@ -1,8 +1,9 @@
-.PHONY: help dev down db-reset test typecheck lint check upgrade agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-status
+.PHONY: help dev open down db-reset test typecheck lint check upgrade agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-status
 
 help:
 	@echo "InsureDesk development commands:"
 	@echo "  make dev       - Start development environment (idempotent one-command)"
+	@echo "  make open      - Open the running dev site in the browser"
 	@echo "  make down      - Stop database container"
 	@echo "  make db-reset  - Reset database (drop volume and recreate)"
 	@echo "  make test      - Run tests on host"
@@ -17,6 +18,9 @@ help:
 
 dev:
 	@./scripts/dev-up.sh
+
+open:
+	@./scripts/dev-open.sh
 
 down:
 	@docker compose down --remove-orphans

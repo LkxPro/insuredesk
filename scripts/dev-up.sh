@@ -58,5 +58,77 @@ done
 
 # --- 服务 -------------------------------------------------------------------
 # 迁移 + seed 由 api 侧的 dev-init 负责，不在本脚本里。
+api_url="${VITE_API_URL:-http://localhost:3000}"
+api_port="${api_url##*:}"
+web_port="${VITE_PORT:-5173}"
+
+listening() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+
+# 已退出未 wait 的 pnpm 是僵尸，kill -0 依然成功，必须靠 stat 甄别。
+dev_alive() {
+  kill -0 "$dev_pid" 2>/dev/null || return 1
+  ! ps -o stat= -p "$dev_pid" 2>/dev/null | grep -q Z
+}
+
+stop_family() {
+  kill "$dev_pid" 2>/dev/null || true
+  wait "$dev_pid" 2>/dev/null || true
+  # 兜底：pnpm 没把信号传下去时，按口清残留。
+  for p in "$web_port" "$api_port"; do
+    if listening "$p"; then
+      lsof -tiTCP:"$p" -sTCP:LISTEN | xargs kill 2>/dev/null || true
+    fi
+  done
+}
+
+interrupted() {
+  rc=$1
+  trap - INT TERM
+  stop_family
+  exit "$rc"
+}
+
 echo "→ pnpm dev（Ctrl-C 停止；db 容器保持运行，make down 停它）"
-exec pnpm dev
+pnpm dev &
+dev_pid=$!
+trap 'interrupted 130' INT
+trap 'interrupted 143' TERM
+
+deadline=$((SECONDS + 60))
+while :; do
+  if ! dev_alive; then
+    rc=0
+    wait "$dev_pid" || rc=$?
+    echo "✗ pnpm dev 未就绪即退出（码 ${rc}），日志见上" >&2
+    exit "$rc"
+  fi
+  if listening "$web_port" && listening "$api_port"; then
+    break
+  fi
+  if [ "$SECONDS" -ge "$deadline" ]; then
+    echo "✗ 60s 内 web($web_port)/api($api_port) 未就绪，日志见上" >&2
+    trap - INT TERM
+    stop_family
+    exit 1
+  fi
+  sleep 1
+done
+
+git_dir="$(git rev-parse --git-dir)"
+if [ "$git_dir" = "$(git rev-parse --git-common-dir)" ]; then
+  where="主检出"
+else
+  where="worktree '${git_dir##*/}'"
+fi
+branch="$(git branch --show-current)"
+[ -n "$branch" ] || branch="$(git rev-parse --short HEAD)"
+
+printf '──────────────────────────────────────────\n'
+printf '✓ %s · %s\n' "$where" "$branch"
+printf '  http://127.0.0.1:%s/\n' "$web_port"
+printf '  再开：make open\n'
+printf '──────────────────────────────────────────\n'
+
+rc=0
+wait "$dev_pid" || rc=$?
+exit "$rc"
