@@ -10,6 +10,8 @@
     "includes": [
       "**",
       "!**/node_modules",
+      "!.worktrees",
+      "!.claude/worktrees",
       "!**/dist",
       "!**/build",
       "!**/coverage",

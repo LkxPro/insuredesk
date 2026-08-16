@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { openSync } from "node:fs";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { closeSync, openSync } from "node:fs";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -27,7 +27,11 @@ import {
 } from "./gh.ts";
 import { DirLock, pidFileAlive } from "./lock.ts";
 import { netCall, netCallFast } from "./net.ts";
+import { scrubSessionEnv } from "./session-env.ts";
 import { daemonShouldKill, evaluateHealth, readStatus } from "./status.ts";
+
+const log = (msg: string) => process.stderr.write(`${new Date().toISOString()} ${msg}\n`);
+const out = (msg: string) => process.stdout.write(`${new Date().toISOString()} ${msg}\n`);
 
 const num = (key: string, fallback: number) => {
   const value = Number.parseInt(process.env[key] ?? "", 10);
@@ -113,7 +117,7 @@ export async function transition(issue: number): Promise<void> {
         remove: ["needs-triage", "needs-info"],
       });
     } else {
-      process.stderr.write(`#${issue} body invalid: ${error}\n`);
+      log(`#${issue} body invalid: ${error}`);
       await editIssue(issue, {
         add: ["needs-info"],
         remove: ["ready-for-agent", "agent:queued", "agent:task"],
@@ -150,7 +154,7 @@ async function issueWorktrees(worktrees: string): Promise<WorktreeEntry[]> {
 async function artifactCleanup(worktrees: string, issue: number): Promise<void> {
   const names = (await readdir(worktrees).catch(() => [] as string[])).filter((name) =>
     new RegExp(
-      `^issue-${issue}\\.(claim|pid|log|publishing|status\\.json|events\\.jsonl|implementation\\.json|review\\.json|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
+      `^issue-${issue}\\.(claim|pid|log|publishing|status\\.json|events\\.jsonl|implementation\\.json|review\\.json|commit-message\\.json|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
     ).test(name),
   );
   for (const name of names) await rm(join(worktrees, name), { force: true });
@@ -160,30 +164,56 @@ async function git(root: string, args: string[]): Promise<string> {
   return netCall("git", ["-C", root, ...args]);
 }
 
+async function ghIssueClosed(issue: number): Promise<boolean> {
+  const state = await ghCall(["issue", "view", String(issue), "--json", "state", "--jq", ".state"]);
+  return state.trim() === "CLOSED";
+}
+
+// 认领者死于发布窗口时远端 claim/slot 槽位永不释放;释放活 claim 是安全的——
+// 远端残 worker 下次心跳失败会自行中止。
+export async function releaseClosedRemoteClaims(
+  root: string,
+  isClosed: (issue: number) => Promise<boolean>,
+): Promise<number[]> {
+  const out = await git(root, ["ls-remote", "origin", "agent-claims/issue-*"]).catch(() => "");
+  const released: number[] = [];
+  for (const line of out.split("\n")) {
+    const match = line.trim().match(/agent-claims\/issue-([0-9]+)$/);
+    if (!match) continue;
+    const issue = Number.parseInt(match[1] ?? "", 10);
+    if (!Number.isInteger(issue)) continue;
+    if (!(await isClosed(issue).catch(() => false))) continue;
+    if (await releaseRemoteClaim(root, issue).catch(() => false)) released.push(issue);
+  }
+  return released;
+}
+
 function spawnWorker(root: string, worktrees: string, issue: number, worktree: string): number {
   const mainTs = fileURLToPath(new URL("./main.ts", import.meta.url));
   const logFd = openSync(join(worktrees, `issue-${issue}.log`), "a");
   const child = spawn(process.execPath, [mainTs, "worker", String(issue), worktree], {
     cwd: root,
     detached: true,
-    env: process.env,
+    env: scrubSessionEnv(process.env),
     stdio: ["ignore", logFd, logFd],
   });
   child.unref();
+  closeSync(logFd);
   if (child.pid === undefined) throw new Error(`failed to spawn worker for #${issue}`);
   return child.pid;
 }
 
 export async function dispatchTick(root: string): Promise<void> {
   const worktrees = process.env.AGENT_LOOP_WORKTREES ?? join(root, ".worktrees");
+  // DirLock.mkdir 非递归:.worktrees 不存在则锁永远拿不到。
+  await mkdir(worktrees, { recursive: true });
   const maxParallel = num("AGENT_LOOP_MAX_PARALLEL", 4);
   const lock = new DirLock(join(worktrees, ".dispatch.lock"));
   if (!(await lock.acquire())) {
-    process.stderr.write("another dispatcher owns the dispatch lock\n");
+    log("another dispatcher owns the dispatch lock");
     return;
   }
   try {
-    // 孤儿 claim 文件：pid 已死且 issue 不在 running,直接还槽。
     for (const entry of await readdir(worktrees).catch(() => [] as string[])) {
       const match = entry.match(/^issue-([0-9]+)\.claim$/);
       if (!match) continue;
@@ -208,7 +238,7 @@ export async function dispatchTick(root: string): Promise<void> {
       ]);
       if (state.trim() !== "CLOSED") continue;
       if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) {
-        process.stderr.write(`defer cleanup #${issue}: worker is still active\n`);
+        log(`defer cleanup #${issue}: worker is still active`);
         continue;
       }
       await releaseClaim(root, worktrees, issue).catch(() => {});
@@ -219,7 +249,9 @@ export async function dispatchTick(root: string): Promise<void> {
       await artifactCleanup(worktrees, issue);
     }
 
-    // agent:running 但无活 pid 的恢复：本地 claim 直接还；远端 claim 看 stale。
+    for (const issue of await releaseClosedRemoteClaims(root, ghIssueClosed))
+      log(`released lingering remote claim of closed #${issue}`);
+
     for (const ref of await queueIssues()) {
       if (!hasLabel(ref, "agent:running")) continue;
       const issue = ref.number;
@@ -228,9 +260,8 @@ export async function dispatchTick(root: string): Promise<void> {
         `issue-${issue}.claim`,
       );
       if (hasLocalClaim) {
-        // 清理不彻底就保持 running 等下轮(stale 窗口未到的情形会自然收敛)。
         if (!(await forceReleaseDeadLocalClaim(root, worktrees, issue))) {
-          process.stderr.write(`defer #${issue}: local claim not releasable yet\n`);
+          log(`defer #${issue}: local claim not releasable yet`);
           continue;
         }
         await rm(join(worktrees, `issue-${issue}.publishing`), { force: true });
@@ -249,7 +280,6 @@ export async function dispatchTick(root: string): Promise<void> {
         claimRefOf(issue),
       ]).then((out) => out.split(/\s+/)[0] ?? "");
       if (!remoteSha) {
-        // 孤儿 running:本地 pid/claim 与远端 claim 都不存在,无人会来释放。
         await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
         await commentIssue(
           issue,
@@ -265,12 +295,11 @@ export async function dispatchTick(root: string): Promise<void> {
           "Recovered an expired remote agent claim; requeued for dispatch.",
         );
       } else {
-        process.stderr.write(`leave #${issue} running: another clone has a live lease\n`);
+        log(`leave #${issue} running: another clone has a live lease`);
       }
     }
 
-    // 卡死 worker 收割:claude 相让出软干预窗口(见 daemonShouldKill),窗口耗尽才 kill,
-    // kill 后交给孤儿 running 恢复在下一 tick 重排队。
+    // 收割让出软干预窗口给 worker 内 watchdog;窗口耗尽才杀(daemonShouldKill)。
     for (const ref of await queueIssues()) {
       if (!hasLabel(ref, "agent:running")) continue;
       const status = await readStatus(worktrees, ref.number);
@@ -281,9 +310,7 @@ export async function dispatchTick(root: string): Promise<void> {
       );
       const pid = Number.parseInt(pidText.trim(), 10);
       if (!Number.isInteger(pid)) continue;
-      process.stderr.write(
-        `killing stuck worker #${ref.number} (pid ${pid}): ${evaluateHealth(status).reason}\n`,
-      );
+      log(`killing stuck worker #${ref.number} (pid ${pid}): ${evaluateHealth(status).reason}`);
       try {
         process.kill(-pid, "SIGTERM");
       } catch {
@@ -295,37 +322,35 @@ export async function dispatchTick(root: string): Promise<void> {
 
     await git(root, ["fetch", "origin", "main"]);
     const frontier = await queue(maxParallel);
-    for (const skipped of frontier.skipped)
-      process.stderr.write(`skip #${skipped.number}: ${skipped.reason}\n`);
+    for (const skipped of frontier.skipped) log(`skip #${skipped.number}: ${skipped.reason}`);
     for (const issue of frontier.selected) {
       if (!(await claimIssue(root, worktrees, issue, maxParallel))) {
         // 本地 pid 活着 = 本 clone 有活 worker 在跑;远端租约老化只说明网络风暴
         // 堵了心跳推送,等网络自愈,绝不能"回收"活 claim 造成双重领取。
         if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) {
-          process.stderr.write(`skip #${issue}: local worker alive, claim recovery deferred\n`);
+          log(`skip #${issue}: local worker alive, claim recovery deferred`);
           continue;
         }
-        // 分裂态恢复:本地文件残留但远端已无主,直接摘文件重领;
         // 远端 stale 则强释放远端——之后本地文件同属死掉的旧代,一并摘掉。
         if (!(await dropLocalClaimIfRemoteGone(root, worktrees, issue))) {
           const staleSha = await remoteClaimStaleSha(root, issue);
           if (!(staleSha && (await releaseRemoteClaim(root, issue, staleSha)))) {
-            process.stderr.write(`skip #${issue}: already claimed\n`);
+            log(`skip #${issue}: already claimed`);
             continue;
           }
           await rm(claimFileOf(worktrees, issue), { force: true });
         }
         if (!(await claimIssue(root, worktrees, issue, maxParallel))) {
-          process.stderr.write(`skip #${issue}: already claimed\n`);
+          log(`skip #${issue}: already claimed`);
           continue;
         }
-        process.stderr.write(`recovered expired claim for #${issue}\n`);
+        log(`recovered expired claim for #${issue}`);
       }
       // claim 后资格复核:frontier 可能已变(如人工加 serial-only)。
       const recheck = await queue(maxParallel);
       if (!recheck.selected.includes(issue)) {
         await releaseClaim(root, worktrees, issue).catch(() => {});
-        process.stderr.write(`skip #${issue}: eligibility changed before claim\n`);
+        log(`skip #${issue}: eligibility changed before claim`);
         continue;
       }
       const worktree = join(worktrees, `issue-${issue}`);
@@ -359,31 +384,54 @@ export async function dispatchTick(root: string): Promise<void> {
       // 上一轮残留产物会冒充本轮状态。
       for (const name of (await readdir(worktrees).catch(() => [] as string[])).filter((n) =>
         new RegExp(
-          `^issue-${issue}\\.(publishing|implementation\\.json|review\\.json|status\\.json|events\\.jsonl|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
+          `^issue-${issue}\\.(publishing|implementation\\.json|review\\.json|commit-message\\.json|status\\.json|events\\.jsonl|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
         ).test(n),
       ))
         await rm(join(worktrees, name), { force: true });
       const pid = spawnWorker(root, worktrees, issue, worktree);
       await writeFile(join(worktrees, `issue-${issue}.pid`), `${pid}\n`);
-      process.stdout.write(`started #${issue} in ${worktree}\n`);
+      out(`started #${issue} in ${worktree}`);
     }
   } finally {
     await lock.release();
   }
 }
 
+// Claude/终端会话退出会回收其子进程树:detached + env 净化是对该契约的硬性要求。
+export async function startDaemon(root: string): Promise<number | null> {
+  const worktrees = process.env.AGENT_LOOP_WORKTREES ?? join(root, ".worktrees");
+  await mkdir(worktrees, { recursive: true });
+  if (await pidFileAlive(join(worktrees, ".daemon.lock", "pid"))) return null;
+  const mainTs = fileURLToPath(new URL("./main.ts", import.meta.url));
+  const logFd = openSync(join(worktrees, "daemon.log"), "a");
+  const [bin, args] =
+    process.platform === "darwin"
+      ? ["caffeinate", ["-dims", process.execPath, mainTs, "daemon"]]
+      : [process.execPath, [mainTs, "daemon"]];
+  const child = spawn(bin, args, {
+    cwd: root,
+    detached: true,
+    env: scrubSessionEnv(process.env),
+    stdio: ["ignore", logFd, logFd],
+  });
+  child.unref();
+  closeSync(logFd);
+  if (child.pid === undefined) throw new Error("failed to spawn daemon");
+  return child.pid;
+}
+
 export async function daemon(root: string): Promise<never> {
   const interval = num("AGENT_LOOP_INTERVAL", 30);
   const worktrees = process.env.AGENT_LOOP_WORKTREES ?? join(root, ".worktrees");
+  await mkdir(worktrees, { recursive: true });
   const lock = new DirLock(join(worktrees, ".daemon.lock"));
   if (!(await lock.acquire())) {
-    process.stderr.write("another daemon owns the daemon lock\n");
+    log("another daemon owns the daemon lock");
     process.exit(75);
   }
   for (;;) {
-    // 网络抖动集中在 tick 里回吐;一个失败的 tick 不该杀死常驻 daemon。
     await dispatchTick(root).catch((error) => {
-      process.stderr.write(`dispatch tick failed: ${error}; retrying after ${interval}s\n`);
+      log(`dispatch tick failed: ${error}; retrying after ${interval}s`);
     });
     await new Promise((resolve) => setTimeout(resolve, interval * 1000));
   }

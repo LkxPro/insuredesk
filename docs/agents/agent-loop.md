@@ -11,7 +11,7 @@
 - [ ] 本机 `claude` 可正常交互使用（订阅登录或 settings.json provider）
 - [ ] GitHub 开启 auto-merge；`main` 要求 `lint-and-test`、`docker-build`
 - [ ] 运行一次 `node scripts/agent/main.ts bootstrap`
-- [ ] 启动 `make agent-loop-daemon`
+- [ ] 启动 `make agent-loop-daemon`（前台终端）或 `make agent-loop-daemon-start`（detached；日志 `.worktrees/daemon.log`，启动会话退出不影响 daemon）
 - [ ] 本地运行 Grill Me；明确确认设计
 - [ ] 调用 `too-spec`，取得父 Issue 号（小任务可跳过）
 - [ ] 调用 `too-tickets`；child 自动建票、连依赖、入队

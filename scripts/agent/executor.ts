@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
+import { scrubSessionEnv } from "./session-env.ts";
 import { appendEvent, patchStatus } from "./status.ts";
 
 export interface SessionOptions {
@@ -82,7 +83,7 @@ export function openAgentSession(options: SessionOptions): AgentSession {
   const child = spawn(claudeBin, args, {
     cwd: options.worktree,
     detached: true,
-    env: { ...process.env, ...options.env, AGENT_WORKTREE: options.worktree },
+    env: { ...scrubSessionEnv(process.env), ...options.env, AGENT_WORKTREE: options.worktree },
     stdio: ["pipe", "pipe", "inherit"],
   });
   if (!child.stdin || !child.stdout) throw new Error("child stdio not piped");
