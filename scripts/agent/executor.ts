@@ -274,6 +274,12 @@ export function openAgentSession(options: SessionOptions): AgentSession {
           pending = { resolve, outputFile };
           flight = true;
           pauses = 0;
+          // 读 prompt 期间子进程可能已死:close 处理器跑在 pending 赋值前,
+          // failPending 空转后这里再也等不到 result,必须补一次合成失败。
+          if (exited) {
+            await failPending();
+            return;
+          }
           try {
             stdin.write(userMessage(text));
           } catch {
