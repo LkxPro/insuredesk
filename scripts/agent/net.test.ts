@@ -12,6 +12,7 @@ let flaky: string;
 let permanent: string;
 let notFound: string;
 let sslFlaky: string;
+let eofFlaky: string;
 let slow: string;
 
 before(async () => {
@@ -48,6 +49,14 @@ exit 1`,
 fi
 printf 'eventual-ok\\n'`,
     ),
+    make(
+      "eof-flaky",
+      `if [ "$n" -lt 3 ]; then
+  echo 'Post "https://api.github.com/graphql": EOF' >&2
+  exit 1
+fi
+printf 'eventual-ok\\n'`,
+    ),
     make("slow", "sleep 30"),
   ];
   for (const { path, body } of scripts) {
@@ -62,8 +71,8 @@ ${body}
     );
     await chmod(path, 0o755);
   }
-  const paths = scripts.map((s) => s.path) as [string, string, string, string, string];
-  [flaky, permanent, notFound, sslFlaky, slow] = paths;
+  const paths = scripts.map((s) => s.path) as [string, string, string, string, string, string];
+  [flaky, permanent, notFound, sslFlaky, eofFlaky, slow] = paths;
   await writeFile(callsFile, "");
 });
 
@@ -113,6 +122,13 @@ test("transient 打满 attempts 后放弃", async () => {
 test("LibreSSL 抖动特征是传输层错误，必须重试", async () => {
   await resetCalls();
   const out = await netCall(sslFlaky, [], { baseDelaySeconds: 0, env: env() });
+  assert.equal(out, "eventual-ok\n");
+  assert.equal(await calls(), 3);
+});
+
+test("gh graphql EOF(带尾部换行)按传输层错误重试", async () => {
+  await resetCalls();
+  const out = await netCall(eofFlaky, [], { baseDelaySeconds: 0, env: env() });
   assert.equal(out, "eventual-ok\n");
   assert.equal(await calls(), 3);
 });
