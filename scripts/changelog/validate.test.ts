@@ -70,7 +70,7 @@ test("CLI：非法 fixture 退出码非 0 且输出含字段名", () => {
   }
 });
 
-test("CLI：无参数时校验仓库 changelog/ 顶层文件（暂无真实版本，通过）", () => {
+test("CLI：无参数时校验仓库 changelog/ 顶层文件，全部通过", () => {
   const result = runCli([]);
   assert.equal(result.status, 0, result.stderr);
 });

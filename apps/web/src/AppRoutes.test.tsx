@@ -265,6 +265,13 @@ describe("更新日志", () => {
     renderAt("/dashboard");
     expect(screen.queryByRole("link", { name: /有未读更新/ })).toBeNull();
   });
+
+  it("marks the version link unread when a bundled version was never seen", () => {
+    expect(latestChangelogVersion).not.toBeNull();
+    auth.user = userWith(TEST_ROLES.ADMIN);
+    renderAt("/dashboard");
+    expect(screen.getByRole("link", { name: /有未读更新/ })).toHaveAttribute("href", "/changelog");
+  });
 });
 
 describe("shell chrome", () => {
@@ -286,7 +293,6 @@ describe("shell chrome", () => {
     fireEvent.click(trigger);
     fireEvent.click(await screen.findByRole("menuitem", { name: "退出登录" }));
     await waitFor(() => expect(auth.logout).toHaveBeenCalledOnce());
-    // After the session is gone we land back on the login form.
     await waitFor(() => expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument());
   });
 });

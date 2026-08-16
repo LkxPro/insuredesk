@@ -273,14 +273,22 @@ function runScreenshotter(yamlPath: string): number {
 }
 
 function publish(repoRoot: string, version: string): number {
+  const paths = [`changelog/${version}.yaml`];
+  if (existsSync(join(repoRoot, "changelog", version))) paths.push(`changelog/${version}`);
+  // main 上的干净工作区才意味着 changelog 已合入主干；changelog 分支上干净
+  // 也可能是上次推送/开 PR 失败后的重跑，必须继续走下面的开 PR 流程。
+  const onMain = git(repoRoot, ["branch", "--show-current"]).trim() === "main";
+  if (onMain && !git(repoRoot, ["status", "--porcelain", "--", ...paths]).trim()) {
+    console.log(`${paths.join("、")} 相对 HEAD 无改动（changelog 应已随主干合入），无需开 PR`);
+    console.log("下一步：在 main 上跑 make release 触发发布");
+    return 0;
+  }
   const branch = `changelog/${version}`;
   try {
     git(repoRoot, ["checkout", "-b", branch]);
   } catch {
     git(repoRoot, ["checkout", branch]);
   }
-  const paths = [`changelog/${version}.yaml`];
-  if (existsSync(join(repoRoot, "changelog", version))) paths.push(`changelog/${version}`);
   git(repoRoot, ["add", ...paths]);
   if (git(repoRoot, ["diff", "--cached", "--name-only"]).trim()) {
     git(repoRoot, ["commit", "-m", `docs(changelog): ${version} 更新日志`]);

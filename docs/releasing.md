@@ -14,7 +14,7 @@ CalVer:`v<年>.<月>.<序号>`,如 `v2026.07.0`;同月第二次发布为
 ### 1. 起草并合并 changelog PR
 
 ```bash
-make release-prepare   # 在 main 上跑;DRY_RUN=1 干跑(不开 PR)
+make release-prepare   # 在干净的 main 工作区跑;DRY_RUN=1 干跑(不开 PR)
 ```
 
 - 首次跑:按 Release workflow 同款规则(Asia/Shanghai 月序)算出下一版本号,
@@ -23,8 +23,14 @@ make release-prepare   # 在 main 上跑;DRY_RUN=1 干跑(不开 PR)
 - 起交互 agent 按 `.claude/skills/release-prepare/SKILL.md` 起草 entries
   (分类词汇、user/full 双级文案、截图与 setup 钩子),也可人工起草。
 - 起草后重跑 `make release-prepare`:校验 yaml → 调截图器(需本地 dev 栈)
-  → 以 PR 形式提交 `changelog/v<版本>.yaml` + PNG。
+  → 以 PR 形式提交 `changelog/v<版本>.yaml` + PNG。提交 PR 的分支从当前
+  HEAD 拉出,故必须在干净的 main 工作区跑,否则 changelog 分支会带入无关提交。
 - 人工过目 PR,merge。yaml 字段与分类词汇见 `changelog/README.md`。
+- 若 yaml 已随其他 PR 合入主干(工作区无未提交改动),重跑
+  `make release-prepare` 不会开空 PR,直接提示跑 `make release`。
+- 起草后若跨月才触发发布:workflow 算出的版本号进入新月,旧月份 yaml 不被
+  认领,校验门 fail。把 yaml 文件名与 `version` 字段改成新月版本号、重开
+  changelog PR 即可。
 
 ### 2. 触发发布
 
