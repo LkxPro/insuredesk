@@ -64,7 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await utils.auth.me.reset();
   }, [utils]);
 
-  // 不做 memo 的话，AuthProvider 任何一次 render 都会以新 value 带着全树 consumer 重渲染。
   const value: AuthContextValue = useMemo(
     () => ({
       user,

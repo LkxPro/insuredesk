@@ -172,7 +172,6 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   const total = list.total;
 
   /** 换单路径：筛选串随车带走；处理态内 replace 让 Back 回到进入详情前那一步。 */
-  // select/ticketPath 的引用稳定是下方 SurfaceRow memo 生效的前提。
   const select = useCallback(
     (ticketId: string) => {
       navigate(`${basePath}/${ticketId}${location.search}`, { replace: detailOpen });

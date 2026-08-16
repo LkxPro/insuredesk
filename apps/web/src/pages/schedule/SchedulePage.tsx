@@ -221,7 +221,6 @@ export function SchedulePage() {
     },
   });
 
-  // Per-cell date-fns calls are the render hot path (users × dates).
   const dates = useMemo(
     () =>
       eachDayOfInterval({ start: range.start, end: range.end }).map((date) => ({

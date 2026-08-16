@@ -15,8 +15,6 @@ import { Login } from "@/pages/Login";
  * visibility, so the two can never disagree.
  */
 
-// Pages load on demand: eager imports would fold every page into the initial
-// chunk and its module evaluation alone exceeds 50ms on first paint.
 const DashboardPage = lazy(() =>
   import("@/pages/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })),
 );
@@ -62,7 +60,6 @@ function PageFallback() {
   );
 }
 
-/** Suspense sits inside the layout+guard so a loading chunk never unmounts the shell. */
 function suspense(el: ReactElement) {
   return <Suspense fallback={<PageFallback />}>{el}</Suspense>;
 }

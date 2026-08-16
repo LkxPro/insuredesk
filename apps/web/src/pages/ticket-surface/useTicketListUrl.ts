@@ -16,7 +16,6 @@ export function useTicketListUrl<TQuery extends { search?: string }>(
   const [searchDraft, setSearchDraft] = useState(query.search ?? "");
 
   /** Set/clear one URL param; filter changes restart from page 1. */
-  // 引用稳定是 TicketSurface ctx memo 化的前提。
   const setParam = useCallback(
     (key: string, value: string | null, { resetPage = true } = {}) => {
       setSearchParams((prev) => {

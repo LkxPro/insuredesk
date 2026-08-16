@@ -184,8 +184,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
     [completionStatusOptions],
   );
 
-  // deps 只列权限位：render 闭包捕获的全是稳定 setState；引入任何不稳定
-  // 引用都会击穿 TicketSurface 的行 memo。
   const columns: ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>> = useMemo(
     () => [
       {
