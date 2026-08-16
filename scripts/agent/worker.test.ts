@@ -236,6 +236,33 @@ done`;
   assert.ok(!calls.includes("--add-label agent:queued"));
 });
 
+test("人工关单后失败静默死亡:不重排队、不贴标签、不评论", async () => {
+  const sandbox = await makeSandbox(CLAUDE_HAPPY, "exit 1");
+  await writeShim(
+    sandbox.bin,
+    "gh",
+    `capture="$AGENT_TEST_CAPTURE"
+printf '%s\\n' "$*" >>"$capture"
+case "$*" in
+  'issue view 7 --json number,title,body,comments,labels')
+    cat <<'JSON'
+{"number":7,"title":"Test task","body":${JSON.stringify(ISSUE_BODY)},"comments":[],"labels":[{"name":"agent:task"}]}
+JSON
+    ;;
+  'issue view 7 --json state --jq .state') printf 'CLOSED\\n' ;;
+  'issue view 7 --json comments --jq .comments') printf '[]\\n' ;;
+esac
+exit 0`,
+  );
+  await withEnv({ ...sandboxEnv(sandbox), AGENT_FIX_MAX_ROUNDS: "1" }, async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 1);
+  });
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(!calls.includes("issue comment"));
+  assert.ok(!calls.includes("--add-label"));
+});
+
 test("check 永久失败打满 fix 轮次 → exhausted→blocked", async () => {
   const sandbox = await makeSandbox(CLAUDE_HAPPY, "exit 1");
   await withEnv({ ...sandboxEnv(sandbox), AGENT_FIX_MAX_ROUNDS: "1" }, async () => {
