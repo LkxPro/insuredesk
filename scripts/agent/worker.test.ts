@@ -491,6 +491,28 @@ done`;
   assert.ok(!calls.includes("agent-requeue"));
 });
 
+test("sweep 每轮都改动也不死循环:达到上限在 check 绿态收束发布", async () => {
+  // sweep 轮每轮都删一点"注释"(改动 fingerprint),不收敛。
+  const claude = `while IFS= read -r line; do
+  printf '%s\\n' "$line" >>"$AGENT_TEST_CLAUDE_STDIN"
+  case $line in
+    *'final comment sweep'*) printf 'sweep\\n' >>"$PWD/allowed.txt" ;;
+    *'commit message'*) printf '%b\\n' 'feat: 实现工单\\n\\nRefs #7' >"$PWD/.agent-commit-message" ;;
+    *) printf 'implemented\\n' >"$PWD/allowed.txt" ;;
+  esac
+  printf '%s\\n' '${RESULT_EVENT}'
+done`;
+  const sandbox = await makeSandbox(claude, MAKE_OK);
+  await withEnv({ ...sandboxEnv(sandbox), AGENT_SWEEP_MAX_ROUNDS: "2" }, async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const captured = await readFile(join(sandbox.dir, "claude-stdin"), "utf8");
+  assert.equal(captured.split("\n").filter((l) => l.includes("final comment sweep")).length, 2);
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls.includes("pr create"));
+});
+
 test("发布前 claim 丢失 → process 失败,自动重排队一次", async () => {
   // heartbeat 间隔拉到 1 小时,模拟不到;直接让 fence 前的 claimOwned 失败:
   // claim 之后立刻由"另一克隆"把远端 refs 删掉。

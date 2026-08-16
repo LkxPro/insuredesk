@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { daemonShouldKill, type WorkerStatus } from "./status.ts";
+import { daemonShouldKill, renderStatusRow, type WorkerStatus } from "./status.ts";
 
 const base = (over: Partial<WorkerStatus>): WorkerStatus => ({
   issue: 7,
@@ -37,4 +37,18 @@ test("daemonShouldKill: 无 stall 或已终态不杀", () => {
     false,
   );
   assert.equal(daemonShouldKill(base({ phase: "done", phaseSince: now - 9_000_000 }), now), false);
+});
+
+test("renderStatusRow: 有 summary 时显示工具操作对象,没有回退 kind", () => {
+  const now = 100_000_000;
+  const withSummary = renderStatusRow(
+    base({ lastEvent: { ts: now - 5_000, kind: "Bash", summary: "Bash(pnpm test)" } }),
+    now,
+  );
+  assert.ok(withSummary.includes("Bash(pnpm test)"));
+  const withoutSummary = renderStatusRow(
+    base({ lastEvent: { ts: now - 5_000, kind: "thinking", summary: "" } }),
+    now,
+  );
+  assert.ok(withoutSummary.includes("thinking"));
 });

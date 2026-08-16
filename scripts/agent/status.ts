@@ -154,7 +154,7 @@ function age(now: number, ts: number): string {
 export function renderStatusRow(status: WorkerStatus, now = Date.now()): string {
   const health = evaluateHealth(status, now);
   const last = status.lastEvent
-    ? `${status.lastEvent.kind} ${age(now, status.lastEvent.ts)} ago`
+    ? `${status.lastEvent.summary || status.lastEvent.kind} ${age(now, status.lastEvent.ts)} ago`
     : "-";
   const flag = health.stuck ? `STUCK(${health.reason})` : "ok";
   const nudged = status.nudgedAt !== undefined ? "+nudged" : "";

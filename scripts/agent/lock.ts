@@ -63,6 +63,18 @@ export class DirLock {
     }
   }
 
+  // .worktrees 可能被整目录删除重建:锁文件消失或易主时,内存里的持有状态不算数。
+  async verify(): Promise<boolean> {
+    if (!this.held) return false;
+    let owner = Number.NaN;
+    try {
+      owner = Number.parseInt(await readFile(join(this.path, "pid"), "utf8"), 10);
+    } catch {
+      return false;
+    }
+    return owner === process.pid;
+  }
+
   async release(): Promise<void> {
     if (!this.held) return;
     this.held = false;

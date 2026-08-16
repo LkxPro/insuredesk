@@ -93,6 +93,24 @@ test("死持有人的锁被清尸体重置", async () => {
   }
 });
 
+test("锁目录被删或易主后 verify 失败(daemon 据此自杀)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "lock-test-"));
+  try {
+    const path = join(dir, ".lock");
+    const lock = new DirLock(path);
+    assert.equal(await lock.acquire(), true);
+    assert.equal(await lock.verify(), true);
+    await rm(path, { recursive: true, force: true });
+    assert.equal(await lock.verify(), false);
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(path);
+    await writeFile(join(path, "pid"), "999999999\n");
+    assert.equal(await lock.verify(), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("releaseClosedRemoteClaims 释放关单远端 claim,未关单保留", async () => {
   const origin = await mkdtemp(join(tmpdir(), "claim-origin-"));
   const root = await mkdtemp(join(tmpdir(), "claim-clone-"));

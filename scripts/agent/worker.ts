@@ -184,6 +184,10 @@ async function runPipeline(
       .catch(() => undefined);
     if (failedRun) {
       repairLog = await ghCall(["run", "view", String(failedRun), "--log-failed"]).catch(() => "");
+      // CI 日志可达 MB 级,可操作报错在尾部;无上限会撑爆 prompt。
+      const cap = num("AGENT_REPAIR_LOG_MAX_CHARS", 100_000);
+      if (repairLog.length > cap)
+        repairLog = `...(earlier log truncated)\n${repairLog.slice(-cap)}`;
     }
   }
 
@@ -482,6 +486,7 @@ async function runPipeline(
   }
 
   const maxFixRounds = num("AGENT_FIX_MAX_ROUNDS", 3);
+  const maxSweepRounds = num("AGENT_SWEEP_MAX_ROUNDS", 3);
   let fixRound = 0;
   let sweepRound = 0;
   for (;;) {
@@ -489,6 +494,7 @@ async function runPipeline(
     prechecked = null;
     if (ok) {
       if (process.env.AGENT_COMMENT_SWEEP_ENABLED === "0") break;
+      if (sweepRound >= maxSweepRounds) break;
       sweepRound += 1;
       await ctx.timer.transition(worktrees, issue, "sweep");
       const sweepFile = join(runDir, "sweep.md");

@@ -89,7 +89,9 @@ export AGENT_MAX_TURNS=80                  # 默认不传，不限轮次;设了�
 export AGENT_REVIEW_ENABLED=1
 export AGENT_COMMENT_SWEEP_ENABLED=1        # make check 通过后跑注释清扫，删违规注释后有改动会重跑 check
 export AGENT_FIX_MAX_ROUNDS=3              # make check 失败后 worker 内部修复轮次
+export AGENT_SWEEP_MAX_ROUNDS=3            # 注释清扫轮次上限,到顶在 check 绿态收束
 export AGENT_REPAIR_MAX_ATTEMPTS=3         # PR CI 失败后回队修复上限
+export AGENT_REPAIR_LOG_MAX_CHARS=100000   # 注入 repair prompt 的失败 CI 日志尾部上限
 export AGENT_CLAUDE_PERMISSION_MODE=bypassPermissions
 export AGENT_EXECUTOR_ATTEMPTS=4             # executor transient（provider/流断）同 run 内重试上限
 export AGENT_EXECUTOR_RETRY_DELAY=30         # executor 重试退避基数（指数翻倍,对抗分钟级网络风暴）
@@ -314,7 +316,7 @@ Worker 顺序：
 2. 独立 review agent 检查并可修正 diff；注释规范（AGENTS.md）是必须项，diff 新增与触碰文件内的违规存量注释都删。
 3. controller 收集超出 touch-set 的文件清单，发布时列入 Issue 评论供审计（touch-set 只是并行调度的冲突参考，越界不判失败）。
 4. 强制运行 `make check`（多 worker 间本地互斥串行）；失败把日志喂回**同一 implementation 会话**修复（fix 轮复用会话上下文，只注入失败日志与约束提醒；会话死亡优先 `--resume` 续跑保留 transcript，未 init 即死才退化为完整 prompt 冷启动），同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
-5. `make check` 通过后跑注释清扫（`comment-sweep.md`，只准删注释、存疑保留）；review 与 sweep 都用独立会话，保持新鲜眼睛；有删除就重跑 `make check`，挂则回 fix 轮，直到单次清扫零改动。`AGENT_COMMENT_SWEEP_ENABLED=0` 可关。
+5. `make check` 通过后跑注释清扫（`comment-sweep.md`，只准删注释、存疑保留）；review 与 sweep 都用独立会话，保持新鲜眼睛；有删除就重跑 `make check`，挂则回 fix 轮，直到单次清扫零改动（最多 `AGENT_SWEEP_MAX_ROUNDS` 轮，到顶在 check 绿态收束）。`AGENT_COMMENT_SWEEP_ENABLED=0` 可关。
 6. check 全过后实现会话先跑收尾 message 轮：按 conventional 格式（`<type>: <摘要>`，type ∈ feat/fix/refactor/chore/docs/test/perf，无 scope；2–3 行 body；`Refs #<issue>`；跟随 issue 语言）把 commit message 写进 `.agent-commit-message`（经 git exclude 对所有 git 检测隐身）；格式说明只出现在这个一次性 warm prompt 里，不占实现阶段注意力。
 7. 再验证 claim 并 fence 发布。
 claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`）时 worker 先经 stdin 注入 `stuck-nudge.md` 软干预；宽限 `AGENT_NUDGE_GRACE_SECONDS` 内未恢复才按 process 级失败杀掉重排队。单 run 最多 nudge `AGENT_NUDGE_MAX_PER_RUN` 次。daemon 硬杀阈值相应推后到两者之和，作为 worker watchdog 失效的兜底；check/publish 相不让窗、卡即杀。nudge 只在 CLI 下一 tool round 生效：救得了慢/绕圈型 stall，救不了进程楔死。
