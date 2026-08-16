@@ -21,6 +21,9 @@ coverage/
 # 截图器端到端测试生成的 PNG（fixture 产出，不提交）
 changelog/fixtures/screenshot/**/*.png
 
+# release-prepare 素材包（本地临时产物，不提交）
+.release-prepare/
+
 # Logs
 *.log
 

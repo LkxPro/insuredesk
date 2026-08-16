@@ -1,4 +1,4 @@
-.PHONY: help dev open down db-reset test typecheck lint check upgrade agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-daemon-start agent-loop-status
+.PHONY: help dev open down db-reset test typecheck lint check upgrade release-prepare release agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-daemon-start agent-loop-status
 
 help:
 	@echo "InsureDesk development commands:"
@@ -10,6 +10,8 @@ help:
 	@echo "  make typecheck - Run type checking on host"
 	@echo "  make lint      - Run linters on host"
 	@echo "  make check     - Run full CI check suite (pre-push validation)"
+	@echo "  make release-prepare - Draft changelog PR (materials + screenshots; DRY_RUN=1 to skip PR)"
+	@echo "  make release   - Trigger the Release workflow on main"
 	@echo "  make agent-loop-queue    - Preview dependency-free agent tickets"
 	@echo "  make agent-loop-dispatch - Start workers for dependency-free tickets"
 	@echo "  make agent-loop-daemon   - Continuously dispatch dependency-free tickets"
@@ -61,7 +63,17 @@ agent-loop-daemon:
 agent-loop-daemon-start:
 	@node scripts/agent/main.ts daemon --detach
 
-# 一条命令升级生产到最新发版：解析最新 CalVer、迁前备份、钉版本、
-# 拉起。跑在宿主机（需 git + docker + 服务器 .env），故不经容器。
+# 截图阶段需本地 dev 栈在跑（先 make dev）。
+release-prepare:
+	@node scripts/release/prepare.ts $(if $(DRY_RUN),--dry-run)
+
+# 前置：changelog PR 已合并。
+release:
+	@gh workflow run release.yml --ref main
+	@echo "已触发 Release workflow。跟进："
+	@echo "  gh run list --workflow release.yml --limit 1"
+	@echo "  gh run watch \$$(gh run list --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+
+# 跑在宿主机（需 git + docker + 服务器 .env），故不经容器。
 upgrade:
 	./scripts/upgrade.sh
