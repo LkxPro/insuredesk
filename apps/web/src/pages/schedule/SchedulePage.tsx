@@ -11,7 +11,7 @@ import {
 } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { AlertCircle, CalendarDays, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -95,7 +95,9 @@ function ShiftVisual({ entry }: { entry: ScheduleEntry | undefined }) {
   );
 }
 
-function ScheduleCell({
+const NO_SHIFTS: ShiftOption[] = [];
+
+const ScheduleCell = memo(function ScheduleCell({
   date,
   user,
   entry,
@@ -111,8 +113,8 @@ function ScheduleCell({
   shifts: ShiftOption[];
   editable: boolean;
   pending: boolean;
-  onSet: (shiftId: string) => void;
-  onClear: () => void;
+  onSet: (userId: string, date: string, shiftId: string) => void;
+  onClear: (entry: ScheduleEntry) => void;
 }) {
   const tooltip = entry
     ? `${entry.shiftName} · ${segmentsLabel({ segments: entry.shiftSegments })}`
@@ -151,7 +153,10 @@ function ScheduleCell({
               {user.active && (
                 <DropdownMenuGroup>
                   {shifts.map((shift) => (
-                    <DropdownMenuItem key={shift.id} onSelect={() => onSet(shift.id)}>
+                    <DropdownMenuItem
+                      key={shift.id}
+                      onSelect={() => onSet(user.id, date, shift.id)}
+                    >
                       <span
                         className="size-3 rounded-sm"
                         style={{ backgroundColor: shift.color }}
@@ -166,7 +171,7 @@ function ScheduleCell({
                 <>
                   {user.active && <DropdownMenuSeparator />}
                   <DropdownMenuGroup>
-                    <DropdownMenuItem variant="destructive" onSelect={onClear}>
+                    <DropdownMenuItem variant="destructive" onSelect={() => onClear(entry)}>
                       <Trash2 />
                       清除排班
                     </DropdownMenuItem>
@@ -180,7 +185,7 @@ function ScheduleCell({
       <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   );
-}
+});
 
 export function SchedulePage() {
   const { hasPermission } = useAuth();
@@ -193,7 +198,7 @@ export function SchedulePage() {
 
   const queryInput = { startDate: dateString(range.start), endDate: dateString(range.end) };
   const grid = trpc.schedule.list.useQuery(queryInput);
-  const create = trpc.schedule.create.useMutation({
+  const { mutate: createSchedule } = trpc.schedule.create.useMutation({
     onSuccess: () => {
       toast.success("排班已更新");
       utils.schedule.list.invalidate();
@@ -204,7 +209,7 @@ export function SchedulePage() {
       setPendingCell(null);
     },
   });
-  const remove = trpc.schedule.delete.useMutation({
+  const { mutate: removeSchedule } = trpc.schedule.delete.useMutation({
     onSuccess: () => {
       toast.success("排班已清除");
       utils.schedule.list.invalidate();
@@ -216,7 +221,16 @@ export function SchedulePage() {
     },
   });
 
-  const dates = useMemo(() => eachDayOfInterval({ start: range.start, end: range.end }), [range]);
+  // Per-cell date-fns calls are the render hot path (users × dates).
+  const dates = useMemo(
+    () =>
+      eachDayOfInterval({ start: range.start, end: range.end }).map((date) => ({
+        day: format(date, "yyyy-MM-dd"),
+        dayOfMonth: format(date, "dd"),
+        weekday: format(date, "EEE", { locale: zhCN }),
+      })),
+    [range],
+  );
   const entries = grid.data?.entries ?? [];
   const entryByCell = useMemo(
     () => new Map(entries.map((entry) => [`${entry.userId}:${entry.date}`, entry])),
@@ -237,16 +251,21 @@ export function SchedulePage() {
     setCalendarOpen(false);
   }
 
-  function setShift(userId: string, date: string, shiftId: string) {
-    const cell = `${userId}:${date}`;
-    setPendingCell(cell);
-    create.mutate({ date, userId, shiftId, remark: null });
-  }
+  const setShift = useCallback(
+    (userId: string, date: string, shiftId: string) => {
+      setPendingCell(`${userId}:${date}`);
+      createSchedule({ date, userId, shiftId, remark: null });
+    },
+    [createSchedule],
+  );
 
-  function clearShift(entry: ScheduleEntry) {
-    setPendingCell(`${entry.userId}:${entry.date}`);
-    remove.mutate({ id: entry.id });
-  }
+  const clearShift = useCallback(
+    (entry: ScheduleEntry) => {
+      setPendingCell(`${entry.userId}:${entry.date}`);
+      removeSchedule({ id: entry.id });
+    },
+    [removeSchedule],
+  );
 
   return (
     <div className="flex w-full max-w-full min-w-0 flex-1 flex-col gap-6">
@@ -320,13 +339,11 @@ export function SchedulePage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="sticky left-0 min-w-36 bg-background">客服人员</TableHead>
-                {dates.map((date) => (
-                  <TableHead key={dateString(date)} className="min-w-20 text-center">
+                {dates.map(({ day, dayOfMonth, weekday }) => (
+                  <TableHead key={day} className="min-w-20 text-center">
                     <span className="flex flex-col gap-0.5">
-                      <span>{format(date, "dd")}</span>
-                      <span className="text-xs font-normal text-muted-foreground">
-                        {format(date, "EEE", { locale: zhCN })}
-                      </span>
+                      <span>{dayOfMonth}</span>
+                      <span className="text-xs font-normal text-muted-foreground">{weekday}</span>
                     </span>
                   </TableHead>
                 ))}
@@ -343,8 +360,7 @@ export function SchedulePage() {
                       </span>
                     </span>
                   </TableCell>
-                  {dates.map((date) => {
-                    const day = dateString(date);
+                  {dates.map(({ day }) => {
                     const cell = `${user.id}:${day}`;
                     const entry = entryByCell.get(cell);
                     return (
@@ -353,11 +369,11 @@ export function SchedulePage() {
                           date={day}
                           user={user}
                           entry={entry}
-                          shifts={grid.data?.shifts ?? []}
+                          shifts={grid.data?.shifts ?? NO_SHIFTS}
                           editable={canEdit}
                           pending={pendingCell === cell}
-                          onSet={(shiftId) => setShift(user.id, day, shiftId)}
-                          onClear={() => entry && clearShift(entry)}
+                          onSet={setShift}
+                          onClear={clearShift}
                         />
                       </TableCell>
                     );

@@ -1,7 +1,7 @@
 import type { AppRouter } from "@insuredesk/api";
 import type { Permission } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 
 /**
@@ -37,37 +37,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const user = me.data ?? null;
 
-  const login = async (username: string, password: string): Promise<LoginResult> => {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
+  const login = useCallback(
+    async (username: string, password: string): Promise<LoginResult> => {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
 
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      return { ok: false, error: body?.error ?? `登录失败（${res.status}）` };
-    }
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        return { ok: false, error: body?.error ?? `登录失败（${res.status}）` };
+      }
 
-    // Cookie is set — refetch identity so every consumer sees the new user.
-    await utils.auth.me.invalidate();
-    return { ok: true };
-  };
+      // Cookie is set — refetch identity so every consumer sees the new user.
+      await utils.auth.me.invalidate();
+      return { ok: true };
+    },
+    [utils],
+  );
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     // reset (not invalidate): a failing refetch keeps stale data around,
     // reset drops the cached identity immediately.
     await utils.auth.me.reset();
-  };
+  }, [utils]);
 
-  const value: AuthContextValue = {
-    user,
-    isLoading: me.isLoading,
-    hasPermission: (permission) => user?.permissions.includes(permission) ?? false,
-    login,
-    logout,
-  };
+  // 不做 memo 的话，AuthProvider 任何一次 render 都会以新 value 带着全树 consumer 重渲染。
+  const value: AuthContextValue = useMemo(
+    () => ({
+      user,
+      isLoading: me.isLoading,
+      hasPermission: (permission) => user?.permissions.includes(permission) ?? false,
+      login,
+      logout,
+    }),
+    [user, me.isLoading, login, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

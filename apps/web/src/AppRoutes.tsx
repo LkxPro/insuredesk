@@ -1,22 +1,12 @@
-import type { ReactElement } from "react";
+import { lazy, type ReactElement, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
-import { DashboardPage } from "@/pages/dashboard/DashboardPage";
-import { DictionaryPage } from "@/pages/dictionary/DictionaryPage";
-import { ExternalAccountManagePage } from "@/pages/external-accounts/ExternalAccountManagePage";
-import { ExternalTicketsPage } from "@/pages/external-tickets/ExternalTicketsPage";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
-import { ProfilePage } from "@/pages/profile/ProfilePage";
-import { RolesPage } from "@/pages/roles/RolesPage";
-import { SchedulePage } from "@/pages/schedule/SchedulePage";
-import { ShiftTypesPage } from "@/pages/shift-types/ShiftTypesPage";
-import { SlaPage } from "@/pages/sla/SlaPage";
-import { TicketsPage } from "@/pages/tickets/TicketsPage";
-import { UsersPage } from "@/pages/users/UsersPage";
 
 /**
  * Route tree, kept separate from <App> so tests can mount it in a
@@ -25,18 +15,70 @@ import { UsersPage } from "@/pages/users/UsersPage";
  * visibility, so the two can never disagree.
  */
 
+// Pages load on demand: eager imports would fold every page into the initial
+// chunk and its module evaluation alone exceeds 50ms on first paint.
+const DashboardPage = lazy(() =>
+  import("@/pages/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })),
+);
+const DictionaryPage = lazy(() =>
+  import("@/pages/dictionary/DictionaryPage").then((m) => ({ default: m.DictionaryPage })),
+);
+const ExternalAccountManagePage = lazy(() =>
+  import("@/pages/external-accounts/ExternalAccountManagePage").then((m) => ({
+    default: m.ExternalAccountManagePage,
+  })),
+);
+const ExternalTicketsPage = lazy(() =>
+  import("@/pages/external-tickets/ExternalTicketsPage").then((m) => ({
+    default: m.ExternalTicketsPage,
+  })),
+);
+const ProfilePage = lazy(() =>
+  import("@/pages/profile/ProfilePage").then((m) => ({ default: m.ProfilePage })),
+);
+const RolesPage = lazy(() =>
+  import("@/pages/roles/RolesPage").then((m) => ({ default: m.RolesPage })),
+);
+const SchedulePage = lazy(() =>
+  import("@/pages/schedule/SchedulePage").then((m) => ({ default: m.SchedulePage })),
+);
+const ShiftTypesPage = lazy(() =>
+  import("@/pages/shift-types/ShiftTypesPage").then((m) => ({ default: m.ShiftTypesPage })),
+);
+const SlaPage = lazy(() => import("@/pages/sla/SlaPage").then((m) => ({ default: m.SlaPage })));
+const TicketsPage = lazy(() =>
+  import("@/pages/tickets/TicketsPage").then((m) => ({ default: m.TicketsPage })),
+);
+const UsersPage = lazy(() =>
+  import("@/pages/users/UsersPage").then((m) => ({ default: m.UsersPage })),
+);
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-40 items-center justify-center gap-2 text-muted-foreground">
+      <Spinner />
+      <span className="text-sm">加载中…</span>
+    </div>
+  );
+}
+
+/** Suspense sits inside the layout+guard so a loading chunk never unmounts the shell. */
+function suspense(el: ReactElement) {
+  return <Suspense fallback={<PageFallback />}>{el}</Suspense>;
+}
+
 // Record<NavPath, …> makes "menu entry without a page" a compile error.
 const PAGES: Record<NavPath, ReactElement> = {
-  "/dashboard": <DashboardPage />,
-  "/external-tickets": <ExternalTicketsPage />,
-  "/tickets": <TicketsPage />,
-  "/users": <UsersPage />,
-  "/external-accounts": <ExternalAccountManagePage />,
-  "/roles": <RolesPage />,
-  "/schedule": <SchedulePage />,
-  "/shift-types": <ShiftTypesPage />,
-  "/sla": <SlaPage />,
-  "/dictionary": <DictionaryPage />,
+  "/dashboard": suspense(<DashboardPage />),
+  "/external-tickets": suspense(<ExternalTicketsPage />),
+  "/tickets": suspense(<TicketsPage />),
+  "/users": suspense(<UsersPage />),
+  "/external-accounts": suspense(<ExternalAccountManagePage />),
+  "/roles": suspense(<RolesPage />),
+  "/schedule": suspense(<SchedulePage />),
+  "/shift-types": suspense(<ShiftTypesPage />),
+  "/sla": suspense(<SlaPage />),
+  "/dictionary": suspense(<DictionaryPage />),
 };
 
 /** `/` lands on the first menu page the user may see; no page permissions → 403. */
@@ -62,7 +104,7 @@ export function AppRoutes() {
         <Route index element={<IndexRedirect />} />
         {/* 个人资料: entered from the header user menu, not the sidebar —
             login is the only guard, so it takes no permission point. */}
-        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/profile" element={suspense(<ProfilePage />)} />
         {NAV_ITEMS.map((item) => (
           <Route
             key={item.path}
@@ -82,7 +124,7 @@ export function AppRoutes() {
           path="/tickets/new"
           element={
             <ProtectedRoute requiredPermission="ticket.create">
-              <TicketsPage createOpen />
+              {suspense(<TicketsPage createOpen />)}
             </ProtectedRoute>
           }
         />
@@ -90,7 +132,7 @@ export function AppRoutes() {
           path="/tickets/:id"
           element={
             <ProtectedRoute requiredPermission="ticket.view">
-              <TicketsPage />
+              {suspense(<TicketsPage />)}
             </ProtectedRoute>
           }
         />
@@ -100,7 +142,7 @@ export function AppRoutes() {
           path="/external-tickets/:id"
           element={
             <ProtectedRoute requiredPermission="ticket.create_external">
-              <ExternalTicketsPage />
+              {suspense(<ExternalTicketsPage />)}
             </ProtectedRoute>
           }
         />

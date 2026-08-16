@@ -15,7 +15,7 @@ import {
 import { keepPreviousData } from "@tanstack/react-query";
 import type { inferRouterOutputs } from "@trpc/server";
 import { Plus, Ticket, Upload, UserPlus, Zap } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -27,7 +27,11 @@ import { PolicyNumbersCell } from "@/pages/ticket-surface/PolicyNumbersCell";
 import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
 import { TicketExportButton } from "@/pages/ticket-surface/TicketExportButton";
 import { TicketListSearch } from "@/pages/ticket-surface/TicketListSearch";
-import { type SurfaceColumn, TicketSurface } from "@/pages/ticket-surface/TicketSurface";
+import {
+  type SurfaceColumn,
+  type SurfaceSelection,
+  TicketSurface,
+} from "@/pages/ticket-surface/TicketSurface";
 import { downloadTicketExport } from "@/pages/ticket-surface/ticket-export";
 import { Unknown } from "@/pages/ticket-surface/Unknown";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
@@ -121,6 +125,16 @@ function toTarget(ticket: ListItem): AssignTarget {
   };
 }
 
+const STATUS_FILTER_OPTIONS = TICKET_DISPLAY_STATUSES.map((status) => ({
+  value: status,
+  label: TICKET_STATUS_LABELS[status],
+}));
+const LEVEL_FILTER_OPTIONS = COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }));
+const SOURCE_FILTER_OPTIONS = TICKET_SOURCES.map((source) => ({
+  value: source,
+  label: TICKET_SOURCE_LABELS[source],
+}));
+
 export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
@@ -145,134 +159,219 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const categoryOptions = trpc.ticketCategory.filterOptions.useQuery().data ?? [];
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
 
-  const columns: ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>> = [
-    {
-      key: "workOrderNumber",
-      header: "工单号",
-      render: (ticket, ctx) => (
-        <Link
-          to={ctx.ticketPath(ticket.id)}
-          className="font-medium hover:underline"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {ticket.workOrderNumber}
-        </Link>
-      ),
-    },
-    {
-      key: "status",
-      header: "状态",
-      render: (ticket) => <StatusBadge status={ticket.displayStatus} />,
-    },
-    {
-      key: "customerName",
-      header: TICKET_FIELDS.customerName.label,
-      render: (ticket) => ticket.customerName ?? <Unknown />,
-    },
-    {
-      key: "policyNumbers",
-      header: TICKET_FIELDS.policyNumbers.label,
-      render: (ticket) => <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />,
-    },
-    {
-      key: "channel",
-      header: TICKET_FIELDS.channelId.overrides.listLabel,
-      render: (ticket) => ticket.channel ?? <Unknown />,
-    },
-    {
-      key: "complaintLevel",
-      header: TICKET_FIELDS.complaintLevel.label,
-      render: (ticket) => ticket.complaintLevel ?? <Unknown />,
-    },
-    {
-      key: "source",
-      header: "来源",
-      render: (ticket) => TICKET_SOURCE_LABELS[ticket.source],
-    },
-    {
-      key: "assignee",
-      header: "责任人",
-      render: (ticket) =>
-        ticket.assigneeName ?? <span className="text-muted-foreground">未分配</span>,
-    },
-    {
-      key: "createdAt",
-      header: "创建时间",
-      sort: { field: "createdAt", initialOrder: "desc" },
-      render: (ticket) => formatDateTime(ticket.createdAt),
-    },
-    {
-      key: "dueAt",
-      header: "处理时限",
-      // 处理时限 defaults to soonest-first — that's the queue-working order
-      sort: { field: "dueAt", initialOrder: "asc" },
-      render: (ticket) =>
-        // dueAt null = 特急不设时限 when a level exists, 未定级 otherwise
-        ticket.dueAt ? (
-          formatDateTime(ticket.dueAt)
-        ) : ticket.complaintLevel ? (
-          <span className="text-muted-foreground">不设时限</span>
-        ) : (
-          <Unknown />
+  const channels = useMemo(
+    () =>
+      channelOptions.map((channel) => ({
+        value: channel.id,
+        label: channel.active ? channel.name : `${channel.name}（已停用）`,
+      })),
+    [channelOptions],
+  );
+  const categories = useMemo(
+    () =>
+      categoryOptions.map((category) => ({
+        value: category.id,
+        label: category.active ? category.name : `${category.name}（已停用）`,
+      })),
+    [categoryOptions],
+  );
+  const completionStatuses = useMemo(
+    () =>
+      completionStatusOptions.map((status) => ({
+        value: status.id,
+        label: status.active ? status.name : `${status.name}（已停用）`,
+      })),
+    [completionStatusOptions],
+  );
+
+  // deps 只列权限位：render 闭包捕获的全是稳定 setState；引入任何不稳定
+  // 引用都会击穿 TicketSurface 的行 memo。
+  const columns: ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>> = useMemo(
+    () => [
+      {
+        key: "workOrderNumber",
+        header: "工单号",
+        render: (ticket, ctx) => (
+          <Link
+            to={ctx.ticketPath(ticket.id)}
+            className="font-medium hover:underline"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {ticket.workOrderNumber}
+          </Link>
         ),
-    },
-    ...(canRowActions
-      ? [
-          {
-            key: "actions",
-            header: "操作",
-            headClassName: "w-40",
-            render: (ticket: ListItem) => (
-              /* stopPropagation everywhere: a quick action must
+      },
+      {
+        key: "status",
+        header: "状态",
+        render: (ticket) => <StatusBadge status={ticket.displayStatus} />,
+      },
+      {
+        key: "customerName",
+        header: TICKET_FIELDS.customerName.label,
+        render: (ticket) => ticket.customerName ?? <Unknown />,
+      },
+      {
+        key: "policyNumbers",
+        header: TICKET_FIELDS.policyNumbers.label,
+        render: (ticket) => <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />,
+      },
+      {
+        key: "channel",
+        header: TICKET_FIELDS.channelId.overrides.listLabel,
+        render: (ticket) => ticket.channel ?? <Unknown />,
+      },
+      {
+        key: "complaintLevel",
+        header: TICKET_FIELDS.complaintLevel.label,
+        render: (ticket) => ticket.complaintLevel ?? <Unknown />,
+      },
+      {
+        key: "source",
+        header: "来源",
+        render: (ticket) => TICKET_SOURCE_LABELS[ticket.source],
+      },
+      {
+        key: "assignee",
+        header: "责任人",
+        render: (ticket) =>
+          ticket.assigneeName ?? <span className="text-muted-foreground">未分配</span>,
+      },
+      {
+        key: "createdAt",
+        header: "创建时间",
+        sort: { field: "createdAt", initialOrder: "desc" },
+        render: (ticket) => formatDateTime(ticket.createdAt),
+      },
+      {
+        key: "dueAt",
+        header: "处理时限",
+        // 处理时限 defaults to soonest-first — that's the queue-working order
+        sort: { field: "dueAt", initialOrder: "asc" },
+        render: (ticket) =>
+          // dueAt null = 特急不设时限 when a level exists, 未定级 otherwise
+          ticket.dueAt ? (
+            formatDateTime(ticket.dueAt)
+          ) : ticket.complaintLevel ? (
+            <span className="text-muted-foreground">不设时限</span>
+          ) : (
+            <Unknown />
+          ),
+      },
+      ...(canRowActions
+        ? [
+            {
+              key: "actions",
+              header: "操作",
+              headClassName: "w-40",
+              render: (ticket: ListItem) => (
+                /* stopPropagation everywhere: a quick action must
                  never double as the row's open-detail click */
-              <div className="flex items-center whitespace-nowrap opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                {canAssign && ticket.status !== "completed" && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setSingleTarget(toTarget(ticket));
-                      }}
-                    >
-                      {ticket.assigneeId ? "改派" : "分配"}
-                    </Button>
-                    {ticket.assigneeId === null && (
+                <div className="flex items-center whitespace-nowrap opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                  {canAssign && ticket.status !== "completed" && (
+                    <>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={(event) => {
                           event.stopPropagation();
-                          setAutoTargets([toTarget(ticket)]);
+                          setSingleTarget(toTarget(ticket));
                         }}
                       >
-                        自动分配
+                        {ticket.assigneeId ? "改派" : "分配"}
                       </Button>
-                    )}
-                  </>
-                )}
-                {canProcess && isTicketInFlight(ticket.status) && (
+                      {ticket.assigneeId === null && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setAutoTargets([toTarget(ticket)]);
+                          }}
+                        >
+                          自动分配
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {canProcess && isTicketInFlight(ticket.status) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setResolveTarget({
+                          id: ticket.id,
+                          workOrderNumber: ticket.workOrderNumber,
+                        });
+                      }}
+                    >
+                      完结
+                    </Button>
+                  )}
+                </div>
+              ),
+            } satisfies SurfaceColumn<ListItem, TicketListQuery>,
+          ]
+        : []),
+    ],
+    [canAssign, canProcess, canRowActions],
+  );
+
+  const isRowHighlighted = useCallback(
+    (ticket: ListItem) => ticket.id === highlightId,
+    [highlightId],
+  );
+
+  const selection: SurfaceSelection<ListItem, TicketListQuery> | undefined = useMemo(
+    () =>
+      canBatchAssign
+        ? {
+            // completed is terminal — never selectable for assignment
+            selectable: (ticket) => ticket.status !== "completed",
+            rowLabel: (ticket) => `选择工单 ${ticket.workOrderNumber}`,
+            pageLabel: "选择本页全部工单",
+            bar: (selected, { clearSelection }) => {
+              const targets = [...selected.values()];
+              const selectedHasAssigned = targets.some((ticket) => ticket.assigneeId !== null);
+              return (
+                <>
+                  <span>已选 {selected.size} 个工单</span>
                   <Button
-                    variant="ghost"
                     size="sm"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setResolveTarget({
-                        id: ticket.id,
-                        workOrderNumber: ticket.workOrderNumber,
-                      });
-                    }}
+                    disabled={selected.size > BATCH_ASSIGN_LIMIT}
+                    onClick={() => setBatchOpen(true)}
                   >
-                    完结
+                    <UserPlus data-icon="inline-start" />
+                    批量分配
                   </Button>
-                )}
-              </div>
-            ),
-          } satisfies SurfaceColumn<ListItem, TicketListQuery>,
-        ]
-      : []),
-  ];
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={selectedHasAssigned || selected.size > BATCH_ASSIGN_LIMIT}
+                    onClick={() => setAutoTargets(targets.map(toTarget))}
+                  >
+                    <Zap data-icon="inline-start" />
+                    按排班自动分配
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={clearSelection}>
+                    清除选择
+                  </Button>
+                  {selected.size > BATCH_ASSIGN_LIMIT && (
+                    <span className="text-destructive">
+                      一次最多分配 {BATCH_ASSIGN_LIMIT} 个，请减少选择
+                    </span>
+                  )}
+                  {selectedHasAssigned && (
+                    <span className="text-muted-foreground">自动分配仅适用于未分配工单</span>
+                  )}
+                </>
+              );
+            },
+          }
+        : undefined,
+    [canBatchAssign],
+  );
 
   return (
     <TicketSurface
@@ -307,53 +406,38 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           <MultiSelectFilter
             label="状态"
             values={query.status ?? []}
-            options={TICKET_DISPLAY_STATUSES.map((status) => ({
-              value: status,
-              label: TICKET_STATUS_LABELS[status],
-            }))}
+            options={STATUS_FILTER_OPTIONS}
             onChange={(values) => setParam("status", serializeSelection(values, []))}
           />
           <MultiSelectFilter
             label={TICKET_FIELDS.channelId.overrides.listLabel}
             values={query.channelId ?? []}
-            options={channelOptions.map((channel) => ({
-              value: channel.id,
-              label: channel.active ? channel.name : `${channel.name}（已停用）`,
-            }))}
+            options={channels}
             onChange={(values) => setParam("channel", serializeSelection(values, []))}
           />
           <MultiSelectFilter
             label={TICKET_FIELDS.categoryId.overrides.listLabel}
             values={query.categoryId ?? []}
-            options={categoryOptions.map((category) => ({
-              value: category.id,
-              label: category.active ? category.name : `${category.name}（已停用）`,
-            }))}
+            options={categories}
             onChange={(values) => setParam("category", serializeSelection(values, []))}
           />
           <MultiSelectFilter
             label={TICKET_FIELDS.completionStatusId.label}
             values={query.completionStatusId ?? []}
-            options={completionStatusOptions.map((status) => ({
-              value: status.id,
-              label: status.active ? status.name : `${status.name}（已停用）`,
-            }))}
+            options={completionStatuses}
             onChange={(values) => setParam("completionStatus", serializeSelection(values, []))}
           />
           <MultiSelectFilter
             label={TICKET_FIELDS.complaintLevel.label}
             values={query.complaintLevel ?? []}
-            options={COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }))}
+            options={LEVEL_FILTER_OPTIONS}
             onChange={(values) => setParam("level", serializeSelection(values, []))}
           />
           {/* 来源有缺省（排除归档单）：全选四个来源 ≠ 缺省，仍写入 URL */}
           <MultiSelectFilter
             label="来源"
             values={query.source}
-            options={TICKET_SOURCES.map((source) => ({
-              value: source,
-              label: TICKET_SOURCE_LABELS[source],
-            }))}
+            options={SOURCE_FILTER_OPTIONS}
             onChange={(values) =>
               setParam("source", serializeSelection(values, DEFAULT_TICKET_SOURCE_FILTER))
             }
@@ -400,54 +484,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         overdue: ticket.displayStatus === "overdue",
       })}
       renderDetail={(props) => <TicketDetailPane {...props} />}
-      selection={
-        canBatchAssign
-          ? {
-              // completed is terminal — never selectable for assignment
-              selectable: (ticket) => ticket.status !== "completed",
-              rowLabel: (ticket) => `选择工单 ${ticket.workOrderNumber}`,
-              pageLabel: "选择本页全部工单",
-              bar: (selected, { clearSelection }) => {
-                const targets = [...selected.values()];
-                const selectedHasAssigned = targets.some((ticket) => ticket.assigneeId !== null);
-                return (
-                  <>
-                    <span>已选 {selected.size} 个工单</span>
-                    <Button
-                      size="sm"
-                      disabled={selected.size > BATCH_ASSIGN_LIMIT}
-                      onClick={() => setBatchOpen(true)}
-                    >
-                      <UserPlus data-icon="inline-start" />
-                      批量分配
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={selectedHasAssigned || selected.size > BATCH_ASSIGN_LIMIT}
-                      onClick={() => setAutoTargets(targets.map(toTarget))}
-                    >
-                      <Zap data-icon="inline-start" />
-                      按排班自动分配
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={clearSelection}>
-                      清除选择
-                    </Button>
-                    {selected.size > BATCH_ASSIGN_LIMIT && (
-                      <span className="text-destructive">
-                        一次最多分配 {BATCH_ASSIGN_LIMIT} 个，请减少选择
-                      </span>
-                    )}
-                    {selectedHasAssigned && (
-                      <span className="text-muted-foreground">自动分配仅适用于未分配工单</span>
-                    )}
-                  </>
-                );
-              },
-            }
-          : undefined
-      }
-      isRowHighlighted={(ticket) => ticket.id === highlightId}
+      selection={selection}
+      isRowHighlighted={isRowHighlighted}
       dialogs={({ selected, clearSelection, removeSelected }) => (
         <>
           {canCreate && (
