@@ -11,8 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 显式超时是自愈前提:挂死(如 Docker Hub 限流拉镜像)会变 failure 触发
+  # agent-pr-health 回队修复;不设超时则默认 6 小时,自动合并干等。
   lint-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -34,6 +37,7 @@ jobs:
   # surfacing at release time.
   docker-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 

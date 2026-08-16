@@ -118,6 +118,9 @@ export function openAgentSession(options: SessionOptions): AgentSession {
   });
   if (!child.stdin || !child.stdout) throw new Error("child stdio not piped");
   const stdin = child.stdin;
+  // 子进程先于写入死亡时管道写触发异步 EPIPE;挂监听防 unhandled 崩溃,
+  // 失败合成统一走 close → failPending → error_during_execution。
+  stdin.on("error", () => {});
 
   let alive = !options.signal?.aborted;
   let exited = false;
@@ -271,6 +274,12 @@ export function openAgentSession(options: SessionOptions): AgentSession {
           pending = { resolve, outputFile };
           flight = true;
           pauses = 0;
+          // 读 prompt 期间子进程可能已死:close 处理器跑在 pending 赋值前,
+          // failPending 空转后这里再也等不到 result,必须补一次合成失败。
+          if (exited) {
+            await failPending();
+            return;
+          }
           try {
             stdin.write(userMessage(text));
           } catch {
