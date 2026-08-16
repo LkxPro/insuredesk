@@ -40,7 +40,9 @@ description: 起草本版本 changelog 条目并完成发版准备（素材 → 
 
 1. 自验：`node scripts/changelog/validate.ts changelog/v<版本>.yaml`
 2. 确认本地 dev 栈在跑（`make dev`），然后重跑 `make release-prepare`：
-   校验 → 调截图器产出 PNG → 以 PR 形式提交 yaml + PNG
+   校验 → 调截图器产出 PNG → 以 PR 形式提交 yaml + PNG。
+   注意：vite 的 eager glob 不热更 `changelog/` 下新增文件——dev 栈若起在
+   yaml 创建之前，页面拿不到新版本（截图会截出旧状态甚至空态），先重启 dev 栈再截。
 3. 报告 PR 链接，提醒：人工过目 merge 后，在 main 上 `make release` 触发发布
 
 ## 边界

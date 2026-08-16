@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type ChangelogEntry, type ChangelogFile, changelogFileSchema } from "@insuredesk/shared";
-import { type BrowserContext, chromium } from "playwright";
+import { type BrowserContext, chromium, type Page } from "playwright";
 import { parse } from "yaml";
 import {
   assertDevStackRunning,
@@ -81,6 +81,15 @@ function runSetup(script: string, env: NodeJS.ProcessEnv): void {
   }
 }
 
+// 页面可能内嵌正在重截的这张图（更新日志页展示自身截图）：不隐藏则每次重跑
+// 都把上一版嵌进新图，产出永不收敛。
+async function hideSelfScreenshot(page: Page, screenshot: string): Promise<void> {
+  const name = screenshot.replace(/["\\]/g, "\\$&");
+  await page.addStyleTag({
+    content: `img[src$="/${name}"], img[src*="/${name}?"] { display: none !important; }`,
+  });
+}
+
 export async function main(argv: string[]): Promise<number> {
   const [yamlArg] = argv;
   if (!yamlArg) {
@@ -139,6 +148,7 @@ export async function main(argv: string[]): Promise<number> {
       const page = await context.newPage();
       try {
         await page.goto(target.page, { waitUntil: "networkidle" });
+        await hideSelfScreenshot(page, target.screenshot);
         await page.screenshot({ path: target.outputPath });
       } finally {
         await page.close();
