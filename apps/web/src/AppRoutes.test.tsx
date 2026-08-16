@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUser } from "@/contexts/AuthContext";
+import { latestChangelogVersion, markChangelogSeen } from "@/lib/changelog";
 import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "./AppRoutes";
 import { ThemeProvider } from "./components/ThemeProvider";
@@ -110,6 +111,7 @@ beforeEach(() => {
   auth.user = null;
   auth.isLoading = false;
   auth.logout.mockReset();
+  window.localStorage.clear();
 });
 
 describe("menu visibility per role persona", () => {
@@ -235,6 +237,33 @@ describe("个人资料", () => {
     auth.user = userWith({ name: "空角色", permissions: [] });
     renderAt("/profile");
     expect(screen.getByRole("heading", { name: "个人资料" })).toBeInTheDocument();
+  });
+});
+
+describe("更新日志", () => {
+  it("/changelog is open to a role with no page permissions", async () => {
+    auth.user = userWith({ name: "空角色", permissions: [] });
+    renderAt("/changelog");
+    expect(await screen.findByRole("heading", { name: "更新日志" })).toBeInTheDocument();
+  });
+
+  it("does not appear in the sidebar menu", () => {
+    auth.user = userWith(TEST_ROLES.ADMIN);
+    renderAt("/dashboard");
+    expect(menuLabels()).not.toContain("更新日志");
+  });
+
+  it("sidebar footer version links to /changelog", () => {
+    auth.user = userWith(TEST_ROLES.ADMIN);
+    renderAt("/dashboard");
+    expect(screen.getByRole("link", { name: /^版本 / })).toHaveAttribute("href", "/changelog");
+  });
+
+  it("shows no unread marker once the latest bundled version was seen", () => {
+    if (latestChangelogVersion !== null) markChangelogSeen(latestChangelogVersion);
+    auth.user = userWith(TEST_ROLES.ADMIN);
+    renderAt("/dashboard");
+    expect(screen.queryByRole("link", { name: /有未读更新/ })).toBeNull();
   });
 });
 

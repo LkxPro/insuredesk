@@ -1,5 +1,6 @@
 import { LifeBuoy } from "lucide-react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { NavUser } from "@/components/NavUser";
 import { NotificationBell } from "@/components/NotificationBell";
 import { TodoBell } from "@/components/TodoBell";
@@ -21,14 +22,13 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
+import {
+  isChangelogUnread,
+  lastSeenChangelogVersion,
+  latestChangelogVersion,
+  onChangelogSeen,
+} from "@/lib/changelog";
 import { visibleNavItems } from "@/lib/navigation";
-
-/**
- * Authenticated app shell on the official shadcn Sidebar: collapsible to an
- * icon rail on desktop (Cmd/Ctrl+B or the rail edge), an offcanvas sheet on
- * mobile. Menu entries are filtered by the current user's page permissions;
- * feature pages render into the SidebarInset outlet.
- */
 
 // Baked into the bundle at build time (Docker build-arg → Vite env); "dev"
 // marks an un-injected build.
@@ -40,6 +40,17 @@ function AppSidebar() {
   const { setOpenMobile } = useSidebar();
 
   const items = visibleNavItems(user?.permissions ?? [], user?.isExternal ?? false);
+
+  const [changelogUnread, setChangelogUnread] = useState(() =>
+    isChangelogUnread(latestChangelogVersion, lastSeenChangelogVersion()),
+  );
+  useEffect(
+    () =>
+      onChangelogSeen(() =>
+        setChangelogUnread(isChangelogUnread(latestChangelogVersion, lastSeenChangelogVersion())),
+      ),
+    [],
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -90,9 +101,19 @@ function AppSidebar() {
 
       <SidebarFooter>
         <NavUser />
-        <span className="px-2 text-xs text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden">
+        <Link
+          to="/changelog"
+          aria-label={changelogUnread ? `版本 ${appVersion}（有未读更新）` : `版本 ${appVersion}`}
+          className="relative w-fit px-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground group-data-[collapsible=icon]:hidden"
+        >
           {appVersion}
-        </span>
+          {changelogUnread && (
+            <span
+              aria-hidden="true"
+              className="absolute top-0 -right-1.5 size-1.5 rounded-full bg-destructive"
+            />
+          )}
+        </Link>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
