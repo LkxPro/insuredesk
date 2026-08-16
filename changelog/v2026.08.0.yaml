@@ -1,0 +1,32 @@
+version: v2026.08.0
+date: 2026-08-13
+entries:
+  - category: 新增
+    user: 外部工单列表支持日期筛选、保单号搜索与导出
+    full: 外部账号的工单列表与内部对齐：可按反馈日期筛选、按保单号搜索，并可导出工单；导出改由权限位控制，原「允许外部账号导出工单」开关移除。
+    screenshot: external-list.png
+  - category: 新增
+    user: 工单详情与快速查看支持键盘跨页导航
+    full: 在工单详情与快速查看中可用键盘在相邻工单间切换，到列表边界自动衔接翻页，内部与外部工单页一致。
+  - category: 改进
+    user: 外部工单页改版为全宽表格与整页详情
+    full: 外部工单列表改为全宽表格一级列表，详情独立整页、左窄列右详情与内部对齐；列表默认包含已完结工单；新建工单时自动填写反馈时间。
+    screenshot: external-detail.png
+  - category: 改进
+    user: 外部工单默认展示全部字段
+    full: 拆除「可见字段白名单」过滤器与对应配置项，外部工单默认展示全部字段，敏感字段仍按规则裁剪不出线。
+  - category: 修复
+    user: 列表筛选项整行可点击
+    full: 工单筛选项的整行都是点击热区，不再仅限于勾选框本身。
+  - category: 修复
+    user: 外部工单详情空字段显示修正
+    full: 外部工单详情页对空值（undefined）的判定做了兼容，空字段不再显示异常。
+  - category: 内部
+    user: 开发环境去容器化、make dev 零介入
+    full: api/web 开发进程改跑宿主机（仅 Postgres 留容器）；make dev 自动切换/安装 Node、自动拉起容器运行时；修复 vite 在 macOS 只绑 IPv6 导致 IPv4 访问不通、dev-up 版本闸门报错自崩等问题。
+  - category: 内部
+    user: 共享工单列表框架抽取
+    full: 内外工单列表抽取共享框架、页面迁为薄壳，无行为变化；同步清理遗留导出与未用引用。
+  - category: 内部
+    user: 开发文档与 agent 插件配置更新
+    full: README/AGENTS/CLAUDE 补充开发环境说明与注释规范，引入 mattpocock-skills 插件配置。
