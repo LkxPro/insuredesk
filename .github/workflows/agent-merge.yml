@@ -31,13 +31,15 @@ jobs:
         run: |
           set -e
           # 本 job 自身就是 PR 上的一个 check,等全部 checks 等于等自己,必须排除。
+          # synchronize 瞬间 CI 的 check-run 可能还没注册:空列表不是"全过",必须继续等。
           while :; do
             runs=$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs" \
               --jq '[.check_runs[] | select(.name != "merge-and-close")]')
+            total=$(printf '%s' "$runs" | jq 'length')
             pending=$(printf '%s' "$runs" | jq '[.[] | select(.status != "completed")] | length')
             failed=$(printf '%s' "$runs" | jq '[.[] | select(.status == "completed" and (.conclusion | IN("success","skipped","neutral") | not))] | length')
             [ "$failed" -eq 0 ] || { echo "checks failed"; exit 1; }
-            [ "$pending" -eq 0 ] && break
+            [ "$pending" -eq 0 ] && [ "$total" -gt 0 ] && break
             sleep 15
           done
           gh pr merge "$PR" --repo "$REPO" --squash --delete-branch
