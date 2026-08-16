@@ -38,6 +38,9 @@ const num = (key: string, fallback: number) => {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 };
 
+// 常驻下同一组 skip 每 tick 重打会淹没真异常。
+let lastSkipSignature = "";
+
 const LABELS: Array<[name: string, description: string, color: string]> = [
   ["needs-info", "Waiting for information needed to proceed", "d876e3"],
   ["ready-for-human", "Requires human implementation", "fbca04"],
@@ -220,7 +223,9 @@ export async function dispatchTick(root: string): Promise<void> {
       const issue = Number.parseInt(match[1] ?? "", 10);
       if (!Number.isInteger(issue)) continue;
       if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) continue;
-      const json = await issueView(issue);
+      // issue 可能已被手工删除。
+      const json = await issueView(issue).catch(() => null);
+      if (json === null) continue;
       if (!hasLabel(json, "agent:running"))
         await forceReleaseDeadLocalClaim(root, worktrees, issue).catch(() => {});
     }
@@ -235,7 +240,7 @@ export async function dispatchTick(root: string): Promise<void> {
         "state",
         "--jq",
         ".state",
-      ]);
+      ]).catch(() => "");
       if (state.trim() !== "CLOSED") continue;
       if (await pidFileAlive(join(worktrees, `issue-${issue}.pid`))) {
         log(`defer cleanup #${issue}: worker is still active`);
@@ -322,7 +327,11 @@ export async function dispatchTick(root: string): Promise<void> {
 
     await git(root, ["fetch", "origin", "main"]);
     const frontier = await queue(maxParallel);
-    for (const skipped of frontier.skipped) log(`skip #${skipped.number}: ${skipped.reason}`);
+    const skipSignature = frontier.skipped.map((s) => `${s.number}:${s.reason}`).join(" ");
+    if (skipSignature !== lastSkipSignature) {
+      lastSkipSignature = skipSignature;
+      for (const skipped of frontier.skipped) log(`skip #${skipped.number}: ${skipped.reason}`);
+    }
     for (const issue of frontier.selected) {
       if (!(await claimIssue(root, worktrees, issue, maxParallel))) {
         // 本地 pid 活着 = 本 clone 有活 worker 在跑;远端租约老化只说明网络风暴
@@ -430,6 +439,10 @@ export async function daemon(root: string): Promise<never> {
     process.exit(75);
   }
   for (;;) {
+    if (!(await lock.verify())) {
+      log("daemon lock lost; exiting");
+      process.exit(75);
+    }
     await dispatchTick(root).catch((error) => {
       log(`dispatch tick failed: ${error}; retrying after ${interval}s`);
     });

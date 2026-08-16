@@ -25,15 +25,45 @@ interface StreamEvent {
   is_error?: boolean;
   num_turns?: number;
   stop_reason?: string;
-  message?: { content?: Array<{ type: string; name?: string; text?: string }> };
+  message?: {
+    content?: Array<{
+      type: string;
+      name?: string;
+      text?: string;
+      input?: Record<string, unknown>;
+    }>;
+  };
   [key: string]: unknown;
+}
+
+// 状态行给人看的操作对象:Bash 取首行命令,文件类取路径,搜索类取 pattern。
+function toolTarget(name: string, input: Record<string, unknown> | undefined): string {
+  const pick = (key: string) => {
+    const value = input?.[key];
+    return typeof value === "string" ? value : "";
+  };
+  const raw =
+    name === "Bash"
+      ? pick("command")
+      : pick("file_path") || pick("path") || pick("pattern") || pick("command");
+  return (raw.split("\n")[0] ?? "").slice(0, 80);
 }
 
 function summarize(event: StreamEvent): { kind: string; summary: string } | null {
   if (event.type === "assistant") {
     const content = event.message?.content ?? [];
-    const tools = content.filter((c) => c.type === "tool_use").map((c) => c.name ?? "tool");
-    if (tools.length) return { kind: tools.join(","), summary: "" };
+    const tools = content.filter((c) => c.type === "tool_use");
+    if (tools.length) {
+      return {
+        kind: tools.map((c) => c.name ?? "tool").join(","),
+        summary: tools
+          .map((c) => {
+            const target = toolTarget(c.name ?? "", c.input);
+            return target ? `${c.name ?? "tool"}(${target})` : (c.name ?? "tool");
+          })
+          .join(","),
+      };
+    }
     if (content.some((c) => c.type === "text")) return { kind: "text", summary: "" };
     return null;
   }
@@ -95,6 +125,7 @@ export function openAgentSession(options: SessionOptions): AgentSession {
   let turns = 0;
   let lastPatch = 0;
   let lastKind = "";
+  let lastSummary = "";
   let buffer = "";
   let sessionId: string | null = null;
   let pauses = 0;
@@ -136,17 +167,18 @@ export function openAgentSession(options: SessionOptions): AgentSession {
   const handleEvent = async (event: StreamEvent) => {
     await appendEvent(options.worktrees, options.issue, event as Record<string, unknown>);
     const summary = summarize(event);
-    if (summary) lastKind = summary.kind;
+    if (summary) {
+      lastKind = summary.kind;
+      lastSummary = summary.summary;
+    }
     // api_retry 等无摘要事件也刷新 lastEvent.ts,否则 provider 抖动期会被误判 stall。
     const now = Date.now();
     if (now - lastPatch >= 1000) {
       lastPatch = now;
       await patchStatus(options.worktrees, options.issue, {
-        lastEvent: {
-          ts: now,
-          kind: summary?.kind ?? (lastKind || event.type || "event"),
-          summary: summary?.summary ?? "",
-        },
+        lastEvent: summary
+          ? { ts: now, kind: summary.kind, summary: summary.summary }
+          : { ts: now, kind: lastKind || event.type || "event", summary: lastSummary },
         turns,
       }).catch(() => {});
     }
