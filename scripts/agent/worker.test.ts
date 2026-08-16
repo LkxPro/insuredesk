@@ -491,6 +491,22 @@ done`;
   assert.ok(!calls.includes("agent-requeue"));
 });
 
+test("claude 启动即死:stdin EPIPE 不崩溃,transient 打满后按进程级失败重排队", async () => {
+  // 进程不写任何事件直接退出;写入死管道触发异步 EPIPE(Linux CI 实测崩溃过)。
+  const claude = "exit 1";
+  const sandbox = await makeSandbox(claude, MAKE_OK);
+  await withEnv(
+    { ...sandboxEnv(sandbox), AGENT_EXECUTOR_ATTEMPTS: "2", AGENT_EXECUTOR_RETRY_DELAY: "1" },
+    async () => {
+      assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+      assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 1);
+    },
+  );
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls.includes("agent-requeue:1"));
+  assert.ok(calls.includes("--add-label agent:queued"));
+});
+
 test("sweep 每轮都改动也不死循环:达到上限在 check 绿态收束发布", async () => {
   // sweep 轮每轮都删一点"注释"(改动 fingerprint),不收敛。
   const claude = `while IFS= read -r line; do

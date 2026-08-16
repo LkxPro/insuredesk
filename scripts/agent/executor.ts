@@ -118,6 +118,9 @@ export function openAgentSession(options: SessionOptions): AgentSession {
   });
   if (!child.stdin || !child.stdout) throw new Error("child stdio not piped");
   const stdin = child.stdin;
+  // 子进程先于写入死亡时管道写触发异步 EPIPE;挂监听防 unhandled 崩溃,
+  // 失败合成统一走 close → failPending → error_during_execution。
+  stdin.on("error", () => {});
 
   let alive = !options.signal?.aborted;
   let exited = false;
