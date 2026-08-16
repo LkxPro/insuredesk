@@ -686,6 +686,18 @@ async function handleFailure(
     await git(worktree, ["clean", "-fd"]).catch(() => {});
   }
 
+  // 人工关单 = 撤回授权:静默死亡,重排队/blocked 的标签与评论只写给 open 单。
+  const issueState = await ghCall([
+    "issue",
+    "view",
+    String(issue),
+    "--json",
+    "state",
+    "--jq",
+    ".state",
+  ]).catch(() => "");
+  if (issueState.trim() === "CLOSED") return;
+
   if (error.failureClass === "process") {
     const comments = await ghJson<Array<{ body: string }>>([
       "issue",
