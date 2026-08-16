@@ -167,16 +167,16 @@ describe("route guards", () => {
     expect(screen.getByText("你没有访问该页面的权限")).toBeInTheDocument();
   });
 
-  it("管理员 can open shift management", () => {
+  it("管理员 can open shift management", async () => {
     auth.user = userWith(TEST_ROLES.ADMIN);
     renderAt("/shift-types");
-    expect(screen.getByRole("heading", { name: "班次管理" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "班次管理" })).toBeInTheDocument();
   });
 
-  it("renders the page when the permission is held", () => {
+  it("renders the page when the permission is held", async () => {
     auth.user = userWith(TEST_ROLES.ADMIN);
     renderAt("/users");
-    expect(screen.getByRole("heading", { name: "用户管理" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "用户管理" })).toBeInTheDocument();
   });
 
   it("redirects unauthenticated visitors to the login page", () => {

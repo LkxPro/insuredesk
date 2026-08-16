@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useSearchParams } from "react-router";
 
 /**
@@ -16,40 +16,46 @@ export function useTicketListUrl<TQuery extends { search?: string }>(
   const [searchDraft, setSearchDraft] = useState(query.search ?? "");
 
   /** Set/clear one URL param; filter changes restart from page 1. */
-  function setParam(key: string, value: string | null, { resetPage = true } = {}) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (value === null) {
-        next.delete(key);
-      } else {
-        next.set(key, value);
-      }
-      if (resetPage) {
-        next.delete("page");
-      }
-      return next;
-    });
-  }
-
-  /** 成对/成组参数同进同出（如创建时间区间起止），避免半生效的中间态。 */
-  function setParams(updates: Readonly<Record<string, string | null>>) {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      for (const [key, value] of Object.entries(updates)) {
+  const setParam = useCallback(
+    (key: string, value: string | null, { resetPage = true } = {}) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
         if (value === null) {
           next.delete(key);
         } else {
           next.set(key, value);
         }
-      }
-      next.delete("page");
-      return next;
-    });
-  }
+        if (resetPage) {
+          next.delete("page");
+        }
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
 
-  function submitSearch() {
+  /** 成对/成组参数同进同出（如创建时间区间起止），避免半生效的中间态。 */
+  const setParams = useCallback(
+    (updates: Readonly<Record<string, string | null>>) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [key, value] of Object.entries(updates)) {
+          if (value === null) {
+            next.delete(key);
+          } else {
+            next.set(key, value);
+          }
+        }
+        next.delete("page");
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
+
+  const submitSearch = useCallback(() => {
     setParam("q", searchDraft.trim() || null);
-  }
+  }, [setParam, searchDraft]);
 
   return { query, searchDraft, setSearchDraft, submitSearch, setParam, setParams };
 }

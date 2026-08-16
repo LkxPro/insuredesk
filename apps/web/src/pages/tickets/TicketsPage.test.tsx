@@ -74,29 +74,29 @@ beforeEach(() => {
 });
 
 describe("新建工单 entry on /tickets", () => {
-  it("客服主管 (holds ticket.create) sees the button, linked to /tickets/new", () => {
+  it("客服主管 (holds ticket.create) sees the button, linked to /tickets/new", async () => {
     auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt("/tickets");
-    const link = screen.getByRole("link", { name: /新建工单/ });
+    const link = await screen.findByRole("link", { name: /新建工单/ });
     expect(link).toHaveAttribute("href", "/tickets/new");
   });
 
   it.each([
     ["一线客服", TEST_ROLES.FRONTLINE_CS],
     ["只读观察", TEST_ROLES.READ_ONLY],
-  ])("%s (no ticket.create) has no entry at all", (_name, role) => {
+  ])("%s (no ticket.create) has no entry at all", async (_name, role) => {
     auth.user = userWith(role);
     renderAt("/tickets");
-    expect(screen.getByRole("heading", { name: "工单管理" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "工单管理" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /新建工单/ })).not.toBeInTheDocument();
   });
 });
 
 describe("/tickets/new route guard", () => {
-  it("renders the creation form for 客服主管", () => {
+  it("renders the creation form for 客服主管", async () => {
     auth.user = userWith(TEST_ROLES.CS_MANAGER);
     renderAt("/tickets/new");
-    expect(screen.getByRole("heading", { name: "新建工单" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "新建工单" })).toBeInTheDocument();
   });
 
   it("bounces 一线客服 to /403", () => {

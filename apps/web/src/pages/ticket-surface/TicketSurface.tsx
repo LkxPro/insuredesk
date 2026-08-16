@@ -1,5 +1,5 @@
 import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, SlidersHorizontal } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { memo, type ReactElement, type ReactNode, useCallback, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -172,33 +172,47 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   const total = list.total;
 
   /** 换单路径：筛选串随车带走；处理态内 replace 让 Back 回到进入详情前那一步。 */
-  function select(ticketId: string) {
-    navigate(`${basePath}/${ticketId}${location.search}`, { replace: detailOpen });
-  }
+  const select = useCallback(
+    (ticketId: string) => {
+      navigate(`${basePath}/${ticketId}${location.search}`, { replace: detailOpen });
+    },
+    [navigate, basePath, location.search, detailOpen],
+  );
 
-  function ticketPath(ticketId: string) {
-    return `${basePath}/${ticketId}${location.search}`;
-  }
+  const ticketPath = useCallback(
+    (ticketId: string) => `${basePath}/${ticketId}${location.search}`,
+    [basePath, location.search],
+  );
 
   // 详情的翻单面：当前页切片里的前后单（行序 = adapter 列表序）+ 页边界
-  const nav = detailNav(items, detailId, { page: query.page, pageSize: query.pageSize, total });
+  const nav = useMemo(
+    () => detailNav(items, detailId, { page: query.page, pageSize: query.pageSize, total }),
+    [items, detailId, query.page, query.pageSize, total],
+  );
+  const setPage = useCallback(
+    (page: number) => setParam("page", String(page), { resetPage: false }),
+    [setParam],
+  );
   const crossPage = useCrossPageNav({
     items,
     page: query.page,
     isPlaceholderData: list.isPlaceholderData,
     select,
-    setPage: (page) => setParam("page", String(page), { resetPage: false }),
+    setPage,
   });
 
-  function toggleSort(field: string, initialOrder: "asc" | "desc") {
-    setParams({
-      sortBy: field,
-      sortOrder:
-        query.sortBy === field ? (query.sortOrder === "desc" ? "asc" : "desc") : initialOrder,
-    });
-  }
+  const toggleSort = useCallback(
+    (field: string, initialOrder: "asc" | "desc") => {
+      setParams({
+        sortBy: field,
+        sortOrder:
+          query.sortBy === field ? (query.sortOrder === "desc" ? "asc" : "desc") : initialOrder,
+      });
+    },
+    [setParams, query.sortBy, query.sortOrder],
+  );
 
-  function toggleSelected(item: TItem) {
+  const toggleSelected = useCallback((item: TItem) => {
     setSelected((prev) => {
       const next = new Map(prev);
       if (next.has(item.id)) {
@@ -208,25 +222,28 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
       }
       return next;
     });
-  }
+  }, []);
 
-  function clearSelection() {
+  const clearSelection = useCallback(() => {
     setSelected(new Map());
-  }
+  }, []);
 
-  function removeSelected(ids: readonly string[]) {
+  const removeSelected = useCallback((ids: readonly string[]) => {
     setSelected((prev) => {
       const next = new Map(prev);
       for (const id of ids) next.delete(id);
       return next;
     });
-  }
+  }, []);
 
-  const selectableItems = selection ? items.filter(selection.selectable) : [];
+  const selectableItems = useMemo(
+    () => (selection ? items.filter(selection.selectable) : []),
+    [items, selection],
+  );
   const allPageSelected =
     selectableItems.length > 0 && selectableItems.every((item) => selected.has(item.id));
 
-  function togglePageSelection() {
+  const togglePageSelection = useCallback(() => {
     if (!selection) return;
     setSelected((prev) => {
       const next = new Map(prev);
@@ -239,22 +256,38 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
       }
       return next;
     });
-  }
+  }, [selection, selectableItems, allPageSelected]);
 
-  const ctx: SurfaceCtx<TItem, TQuery> = {
-    query,
-    searchDraft,
-    setSearchDraft,
-    submitSearch,
-    setParam,
-    setParams,
-    detailOpen,
-    select,
-    ticketPath,
-    selected,
-    clearSelection,
-    removeSelected,
-  };
+  const ctx: SurfaceCtx<TItem, TQuery> = useMemo(
+    () => ({
+      query,
+      searchDraft,
+      setSearchDraft,
+      submitSearch,
+      setParam,
+      setParams,
+      detailOpen,
+      select,
+      ticketPath,
+      selected,
+      clearSelection,
+      removeSelected,
+    }),
+    [
+      query,
+      searchDraft,
+      setSearchDraft,
+      submitSearch,
+      setParam,
+      setParams,
+      detailOpen,
+      select,
+      ticketPath,
+      selected,
+      clearSelection,
+      removeSelected,
+    ],
+  );
 
   const columnCount = columns.length + (selection ? 1 : 0);
   const filterCount = activeFilterCount(query);
@@ -381,28 +414,18 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
                 </TableRow>
               ) : (
                 items.map((item) => (
-                  <TableRow
+                  <SurfaceRow
                     key={item.id}
-                    data-highlighted={isRowHighlighted?.(item) || undefined}
-                    className="group cursor-pointer data-[highlighted]:bg-primary/10 data-[highlighted]:hover:bg-primary/15"
-                    // 筛选串随车带走，返回列表时上下文不丢
-                    onClick={() => navigate(ticketPath(item.id))}
-                  >
-                    {selection && (
-                      // onClick swallows the row's navigation click; the checkbox inside is keyboard-operable
-                      <TableCell onClick={(event) => event.stopPropagation()}>
-                        <Checkbox
-                          aria-label={selection.rowLabel(item)}
-                          checked={selected.has(item.id)}
-                          disabled={!selection.selectable(item)}
-                          onCheckedChange={() => toggleSelected(item)}
-                        />
-                      </TableCell>
-                    )}
-                    {columns.map((column) => (
-                      <TableCell key={column.key}>{column.render(item, ctx)}</TableCell>
-                    ))}
-                  </TableRow>
+                    item={item}
+                    columns={columns}
+                    ctx={ctx}
+                    selection={selection}
+                    isSelected={selected.has(item.id)}
+                    selectable={selection ? selection.selectable(item) : false}
+                    highlighted={isRowHighlighted?.(item) ?? false}
+                    path={ticketPath(item.id)}
+                    onToggleSelected={toggleSelected}
+                  />
                 ))
               )}
             </TableBody>
@@ -424,6 +447,61 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
     </div>
   );
 }
+
+type SurfaceRowProps<TItem, TQuery extends SurfaceQuery> = {
+  item: TItem;
+  columns: ReadonlyArray<SurfaceColumn<TItem, TQuery>>;
+  ctx: SurfaceCtx<TItem, TQuery>;
+  selection?: SurfaceSelection<TItem, TQuery> | undefined;
+  isSelected: boolean;
+  selectable: boolean;
+  highlighted: boolean;
+  path: string;
+  onToggleSelected: (item: TItem) => void;
+};
+
+// 泛型经下方断言保住——memo() 本身推不出泛型调用签名。
+const SurfaceRow = memo(function SurfaceRow<
+  TItem extends { id: string },
+  TQuery extends SurfaceQuery,
+>({
+  item,
+  columns,
+  ctx,
+  selection,
+  isSelected,
+  selectable,
+  highlighted,
+  path,
+  onToggleSelected,
+}: SurfaceRowProps<TItem, TQuery>) {
+  const navigate = useNavigate();
+  return (
+    <TableRow
+      data-highlighted={highlighted || undefined}
+      className="group cursor-pointer data-[highlighted]:bg-primary/10 data-[highlighted]:hover:bg-primary/15"
+      // 筛选串随车带走，返回列表时上下文不丢
+      onClick={() => navigate(path)}
+    >
+      {selection && (
+        // onClick swallows the row's navigation click; the checkbox inside is keyboard-operable
+        <TableCell onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            aria-label={selection.rowLabel(item)}
+            checked={isSelected}
+            disabled={!selectable}
+            onCheckedChange={() => onToggleSelected(item)}
+          />
+        </TableCell>
+      )}
+      {columns.map((column) => (
+        <TableCell key={column.key}>{column.render(item, ctx)}</TableCell>
+      ))}
+    </TableRow>
+  );
+}) as <TItem extends { id: string }, TQuery extends SurfaceQuery>(
+  props: SurfaceRowProps<TItem, TQuery>,
+) => ReactElement;
 
 function SortHead({
   label,
