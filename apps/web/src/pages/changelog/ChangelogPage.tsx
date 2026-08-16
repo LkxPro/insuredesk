@@ -59,10 +59,7 @@ export function ChangelogPage({ releases = changelogReleases }: { releases?: Cha
                       </Link>
                     )}
                   </div>
-                  <details className="text-sm text-muted-foreground">
-                    <summary className="w-fit cursor-pointer text-xs">详情</summary>
-                    <p className="mt-1">{entry.full}</p>
-                  </details>
+                  <p className="text-sm text-muted-foreground">{entry.full}</p>
                   {entry.screenshot && release.screenshots[entry.screenshot] && (
                     <img
                       src={release.screenshots[entry.screenshot]}
