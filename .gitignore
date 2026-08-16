@@ -18,6 +18,9 @@ apps/api/src/generated/
 # Test / coverage
 coverage/
 
+# 截图器端到端测试生成的 PNG（fixture 产出，不提交）
+changelog/fixtures/screenshot/**/*.png
+
 # Logs
 *.log
 

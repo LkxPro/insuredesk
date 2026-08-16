@@ -25,6 +25,7 @@ pnpm --filter @insuredesk/api run db:generate
 
 node --test scripts/changelog/*.test.ts
 node scripts/changelog/validate.ts
+node --test scripts/release/*.test.ts
 
 pnpm lint
 pnpm typecheck

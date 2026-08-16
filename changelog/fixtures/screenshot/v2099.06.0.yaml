@@ -1,0 +1,16 @@
+version: v2099.06.0
+date: 2099-01-20
+entries:
+  - category: 新增
+    user: 工单列表演示截图
+    full: 带 setup 钩子的截图条目，用于截图器端到端测试。
+    page: /tickets
+    screenshot: tickets-list.png
+  - category: 改进
+    user: 排班页演示截图
+    full: 无 setup 钩子、直接截 seed 状态的截图条目。
+    page: /schedule
+    screenshot: schedule.png
+  - category: 修复
+    user: 无页面条目
+    full: 不带 page 的条目不应产生截图。
