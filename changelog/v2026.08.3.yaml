@@ -1,0 +1,32 @@
+version: v2026.08.3
+date: 2026-08-17
+entries:
+  - category: 新增
+    user: 应用内更新日志与版本号入口
+    full: 侧边栏底部新增版本号入口，点击进入更新日志页，可查看各版本的新增、改进与修复内容及界面截图；有新版本发布时版本号旁出现红点提醒，查看后自动消除。
+    page: /changelog
+    screenshot: changelog-page.png
+  - category: 改进
+    user: 页面打开与列表操作更流畅
+    full: 各页面改为按需加载，首次打开更快；排班表与工单列表的渲染路径做了记忆化优化，筛选、翻页等操作更流畅。
+  - category: 修复
+    user: 疑似重复工单列表的时间显示更准确
+    full: 查重列表的时间改用工单最新处理时间，列表排序与显示同源，避免同一工单显示的时间与排序位置对不上。
+  - category: 内部
+    user: 发布流程改为两段式
+    full: 发版改为「先起草并合并 changelog，再触发发布」的两段式流程：changelog 以结构化 yaml 随版本提交、发布 CI 强制校验，GitHub Release notes 由 yaml 渲染生成。
+  - category: 内部
+    user: 自动化代理稳定性修复
+    full: agent-loop 自动化代理多项韧性修复：常驻会话、网络异常重试、僵尸锁清理、worker 失败上报不再静默。
+  - category: 内部
+    user: 运行时升级 Node 24 LTS
+    full: API 运行时升级到 Node 24 LTS，改用 Node 原生 TypeScript 支持，去掉 tsx 依赖。
+  - category: 内部
+    user: 本地开发环境启动体验改进
+    full: make dev 增加就绪横幅与可预测端口分配，新增 make open 一键打开开发站点。
+  - category: 内部
+    user: agent 技能与工作规范调整
+    full: 内部技能统一改名 too-spec/too-tickets 并恢复发布前确认门；仓库注释规范更新。
+  - category: 内部
+    user: CI 依赖例行升级
+    full: GitHub Actions 依赖按组例行升级。

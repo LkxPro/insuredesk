@@ -57,8 +57,10 @@ RUN retry pnpm install --frozen-lockfile
 COPY apps/api ./apps/api
 COPY apps/web ./apps/web
 COPY packages/shared ./packages/shared
+# The web build inlines changelog yaml + screenshots via import.meta.glob;
+# a missing dir makes the glob silently empty, so this COPY is load-bearing.
+COPY changelog ./changelog
 
-# Generate the Prisma client (validates the schema early) and build the SPA.
 RUN retry pnpm --filter @insuredesk/api run db:generate
 
 # Release tag baked into both surfaces (web bundle + api env). Declared this

@@ -118,12 +118,12 @@ const STUB_ISSUES = JSON.stringify([
 
 function setupFixture(): Fixture {
   const root = mkdtempSync(join(tmpdir(), "release-prepare-"));
-  // origin 与 work 互不通传输（沙箱禁 push）：origin 只提供 ls-remote 的 tag 名录，
-  // work 自带同名本地 tag 支撑路由 diff。
+  // origin 是本地产物:发布测试真的 push(本地路径传输);agent 沙箱会给 origin
+  // 追加 disabled:// pushurl 拦发布,置空 GIT_CONFIG_COUNT 还原成干净 CI 环境。
   const origin = join(root, "origin");
   const work = join(root, "work");
   for (const dir of [origin, work]) {
-    git(root, ["init", "-q", dir]);
+    git(root, ["init", "-q", "-b", "main", dir]);
     git(dir, ["config", "user.email", "test@example.com"]);
     git(dir, ["config", "user.name", "test"]);
   }
@@ -153,6 +153,8 @@ echo "$*" >> "${ghLog}"
 case "$1 $2" in
   "release view") echo "2026-07-30T10:00:00Z" ;;
   "pr list") cat "${join(root, "prs.json")}" ;;
+  "pr create") echo "https://github.com/example/pull/1" ;;
+  "pr view") echo "https://github.com/example/pull/1" ;;
   "issue list") cat "${join(root, "issues.json")}" ;;
   *) echo "unexpected gh call: $*" >&2; exit 1 ;;
 esac
@@ -165,7 +167,7 @@ esac
   return {
     work,
     ghLog,
-    env: { PATH: `${ghDir}:${process.env.PATH}` },
+    env: { PATH: `${ghDir}:${process.env.PATH}`, GIT_CONFIG_COUNT: "0" },
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -269,5 +271,74 @@ test("非 git 仓库目录运行报错退出 1", () => {
     assert.ok(result.stderr.length > 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("发布：合规草稿建 changelog 分支、提交 yaml、推送并开 PR", () => {
+  const fixture = setupFixture();
+  try {
+    const { version, yamlPath } = collectDraft(fixture);
+    writeFileSync(
+      yamlPath,
+      `version: ${version}\ndate: 2026-08-16\nentries:\n  - category: 内部\n    user: 升级依赖\n    full: 升级内部依赖版本，无用户可见变化。\n`,
+    );
+
+    const result = runPrepare(fixture, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes("已开 PR"), result.stdout);
+
+    const branch = git(fixture.work, ["branch", "--show-current"]).trim();
+    assert.equal(branch, `changelog/${version}`);
+    const committed = git(fixture.work, ["show", "--name-only", "--format=", "HEAD"]);
+    assert.ok(committed.includes(`changelog/${version}.yaml`), committed);
+
+    const ghLog = ghLogOf(fixture);
+    assert.ok(ghLog.includes(`pr create --base main --head changelog/${version}`), ghLog);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("发布：changelog 已随主干合入（无未提交改动）时不开空 PR，提示直接 make release", () => {
+  const fixture = setupFixture();
+  try {
+    const { version, yamlPath } = collectDraft(fixture);
+    writeFileSync(
+      yamlPath,
+      `version: ${version}\ndate: 2026-08-16\nentries:\n  - category: 内部\n    user: 升级依赖\n    full: 升级内部依赖版本，无用户可见变化。\n`,
+    );
+    git(fixture.work, ["add", `changelog/${version}.yaml`]);
+    git(fixture.work, ["commit", "-qm", `docs(changelog): ${version}`]);
+
+    const result = runPrepare(fixture, []);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes("无需开 PR"), result.stdout);
+    assert.ok(result.stdout.includes("make release"), result.stdout);
+    assert.equal(git(fixture.work, ["branch", "--show-current"]).trim(), "main");
+    assert.ok(!ghLogOf(fixture).includes("pr create"), "无改动不得开 PR");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("发布：在 changelog 分支上重跑（如上次推送失败）不得跳过开 PR", () => {
+  const fixture = setupFixture();
+  try {
+    const { version, yamlPath } = collectDraft(fixture);
+    writeFileSync(
+      yamlPath,
+      `version: ${version}\ndate: 2026-08-16\nentries:\n  - category: 内部\n    user: 升级依赖\n    full: 升级内部依赖版本，无用户可见变化。\n`,
+    );
+    const first = runPrepare(fixture, []);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(git(fixture.work, ["branch", "--show-current"]).trim(), `changelog/${version}`);
+
+    const second = runPrepare(fixture, []);
+    assert.equal(second.status, 0, second.stderr);
+    assert.ok(!second.stdout.includes("无需开 PR"), second.stdout);
+    const creates = ghLogOf(fixture).match(/pr create/g) ?? [];
+    assert.equal(creates.length, 2, ghLogOf(fixture));
+  } finally {
+    fixture.cleanup();
   }
 });
