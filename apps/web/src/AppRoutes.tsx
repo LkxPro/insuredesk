@@ -8,13 +8,9 @@ import { NAV_ITEMS, type NavPath, visibleNavItems } from "@/lib/navigation";
 import { Forbidden } from "@/pages/Forbidden";
 import { Login } from "@/pages/Login";
 
-/**
- * Route tree, kept separate from <App> so tests can mount it in a
- * MemoryRouter. Shell pages are generated from NAV_ITEMS: every menu entry
- * gets a route guarded by the same permission point that controls its menu
- * visibility, so the two can never disagree.
- */
-
+const ChangelogPage = lazy(() =>
+  import("@/pages/changelog/ChangelogPage").then((m) => ({ default: m.ChangelogPage })),
+);
 const DashboardPage = lazy(() =>
   import("@/pages/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })),
 );
@@ -64,7 +60,6 @@ function suspense(el: ReactElement) {
   return <Suspense fallback={<PageFallback />}>{el}</Suspense>;
 }
 
-// Record<NavPath, …> makes "menu entry without a page" a compile error.
 const PAGES: Record<NavPath, ReactElement> = {
   "/dashboard": suspense(<DashboardPage />),
   "/external-tickets": suspense(<ExternalTicketsPage />),
@@ -78,7 +73,6 @@ const PAGES: Record<NavPath, ReactElement> = {
   "/dictionary": suspense(<DictionaryPage />),
 };
 
-/** `/` lands on the first menu page the user may see; no page permissions → 403. */
 function IndexRedirect() {
   const { user } = useAuth();
   const first = visibleNavItems(user?.permissions ?? [], user?.isExternal ?? false)[0];
@@ -102,6 +96,9 @@ export function AppRoutes() {
         {/* 个人资料: entered from the header user menu, not the sidebar —
             login is the only guard, so it takes no permission point. */}
         <Route path="/profile" element={suspense(<ProfilePage />)} />
+        {/* 更新日志: entered from the footer version link, not the menu —
+            login is the only guard, same as /profile. */}
+        <Route path="/changelog" element={suspense(<ChangelogPage />)} />
         {NAV_ITEMS.map((item) => (
           <Route
             key={item.path}

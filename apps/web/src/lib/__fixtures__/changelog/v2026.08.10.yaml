@@ -1,0 +1,11 @@
+version: v2026.08.10
+date: 2026-08-16
+entries:
+  - category: 新增
+    user: 工单列表支持按渠道筛选
+    full: 工单列表页新增渠道筛选器，支持多选与清空。
+    page: /tickets
+    screenshot: shot.png
+  - category: 改进
+    user: 排班页加载更快
+    full: 排班页改为按周懒加载，首屏只渲染当周数据。
