@@ -1,25 +1,49 @@
 # 发版
 
-本文是发版与升级的操作手册:发版流水线(Release workflow + 钉版本 compose)
-已实施,生产更新按本文执行;末尾待实施清单的剩余项为治理增强,不阻塞发版。
+本文是发版与升级的操作手册:两段式发版(`make release-prepare` 起草
+changelog PR → 人工过目 merge → `make release` 触发 CI)与升级流水线已实施,
+生产更新按本文执行;末尾待实施清单的剩余项为治理增强,不阻塞发版。
 
 ## 版本号
 
 CalVer:`v<年>.<月>.<序号>`,如 `v2026.07.0`;同月第二次发布为
 `v2026.07.1`。git tag 是唯一版本事实,`package.json` 保持 `0.0.0`。
 
-## 发一个版本
+## 发一个版本(两段式)
 
-1. 确认 main 上要发布的内容已全部合入且 CI 绿。
-2. GitHub → Actions → Release workflow → Run workflow(在 main 上)。workflow
-   自动:
-   - 算出下一个 CalVer 号;
-   - 构建 api 生产镜像推送 `ghcr.io/lkxpro/insuredesk-api:<tag>`(先推镜像
-     后打 tag,构建失败不会留下无镜像的版本号,修复后重跑即可);
-   - 打 tag 并创建 GitHub Release,notes 按 PR 自动生成
-     (`.github/release.yml` 按 label 分组)。
-3. 若本次升级需要新环境变量或含数据迁移,在 Release notes 顶部手动补一段
-   部署注意事项。
+### 1. 起草并合并 changelog PR
+
+```bash
+make release-prepare   # 在 main 上跑;DRY_RUN=1 干跑(不开 PR)
+```
+
+- 首次跑:按 Release workflow 同款规则(Asia/Shanghai 月序)算出下一版本号,
+  收集上一 tag 以来已合并 PR / 关闭 issue / apps/web 路由 diff,落素材包
+  `.release-prepare/v<版本>/materials.md` 与草稿 `changelog/v<版本>.yaml`。
+- 起交互 agent 按 `.claude/skills/release-prepare/SKILL.md` 起草 entries
+  (分类词汇、user/full 双级文案、截图与 setup 钩子),也可人工起草。
+- 起草后重跑 `make release-prepare`:校验 yaml → 调截图器(需本地 dev 栈)
+  → 以 PR 形式提交 `changelog/v<版本>.yaml` + PNG。
+- 人工过目 PR,merge。yaml 字段与分类词汇见 `changelog/README.md`。
+
+### 2. 触发发布
+
+```bash
+make release
+```
+
+即 `gh workflow run release.yml --ref main`,命令会提示 watch 方式。workflow
+自动:
+
+- 算出下一个 CalVer 号(与 release-prepare 同口径,即刚合并的 changelog 版本);
+- 校验 `changelog/v<新版本>.yaml`:缺失或校验器不通过则 fail-fast,不构建镜像;
+- 构建 api 生产镜像推送 `ghcr.io/lkxpro/insuredesk-api:<tag>`(先推镜像
+  后打 tag,构建失败不会留下无镜像的版本号,修复后重跑即可);
+- 打 tag 并创建 GitHub Release,notes 由 `scripts/release/render-notes.ts`
+  从 yaml 渲染(full 字段按分类分组,含内部变更),不再用 `--generate-notes`。
+
+若本次升级需要新环境变量或含数据迁移,发布后在 Release notes 顶部手动补一段
+部署注意事项。
 
 ## 升级服务器
 
@@ -61,6 +85,10 @@ backup sidecar 每日在容器内 `pg_dump` 到宿主机备份目录,保留 14 �
 
 - [x] Release workflow(`workflow_dispatch`:算号、打 tag、建 Release、
       构建推送镜像)+ `.github/release.yml` notes 分组
+- [x] 两段式发版:`make release-prepare` 起草 changelog PR(yaml + 截图)→
+      人工 merge → `make release` 触发 CI;release.yml 增加 changelog 校验门,
+      Release notes 从 yaml 渲染,弃用 `--generate-notes`(`.github/release.yml`
+      随之删除)
 - [x] `docker-compose.prod.yml` 改造:`image: …:${IMAGE_TAG}` + `build:`
       退路;`.env.example` 增补 `IMAGE_TAG`;同步更新 `docs/deployment.md`
       的更新/回滚章节与 GHCR 登录说明
