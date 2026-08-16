@@ -5,6 +5,7 @@ import {
   dispatchTick,
   queue,
   reconcileCi,
+  startDaemon,
   transition,
   validateBody,
 } from "./dispatch.ts";
@@ -51,9 +52,17 @@ switch (command) {
   case "dispatch":
     await dispatchTick(await repoRoot());
     break;
-  case "daemon":
-    await daemon(await repoRoot());
+  case "daemon": {
+    const root = await repoRoot();
+    if (arg === "--detach") {
+      const pid = await startDaemon(root);
+      if (pid === null) process.stdout.write("daemon already running\n");
+      else process.stdout.write(`daemon started (pid ${pid}); log: .worktrees/daemon.log\n`);
+      break;
+    }
+    await daemon(root);
     break;
+  }
   case "status": {
     const root = await repoRoot();
     const worktrees = process.env.AGENT_LOOP_WORKTREES ?? join(root, ".worktrees");

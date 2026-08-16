@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { claimFileOf, claimOwned, fenceClaim, heartbeatClaim, releaseClaim } from "./claim.ts";
@@ -10,6 +10,39 @@ import { netCall } from "./net.ts";
 import { appendEvent, patchStatus, readStatus } from "./status.ts";
 
 type FailureClass = "process" | "fatal" | "exhausted";
+
+class PhaseTimer {
+  private current = "implementation";
+  private since = Date.now();
+  private readonly durations: Array<{ phase: string; seconds: number }> = [];
+
+  async transition(
+    worktrees: string,
+    issue: number,
+    phase: "implementation" | "review" | "check" | "fix" | "sweep" | "message" | "publish",
+  ): Promise<void> {
+    const now = Date.now();
+    this.durations.push({ phase: this.current, seconds: Math.floor((now - this.since) / 1000) });
+    this.current = phase;
+    this.since = now;
+    await patchStatus(worktrees, issue, { phase }).catch(() => {});
+  }
+
+  async finish(worktrees: string, issue: number, phase: "done" | "failed"): Promise<void> {
+    const now = Date.now();
+    this.durations.push({ phase: this.current, seconds: Math.floor((now - this.since) / 1000) });
+    await patchStatus(worktrees, issue, { phase }).catch(() => {});
+  }
+
+  report(): string {
+    const fmt = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m${s % 60}s` : `${s}s`);
+    const total = this.durations.reduce((sum, d) => sum + d.seconds, 0);
+    const parts = this.durations
+      .filter((d) => d.seconds > 0)
+      .map((d) => `${d.phase} ${fmt(d.seconds)}`);
+    return `⏱ ${parts.join(" → ")} (total ${fmt(total)})`;
+  }
+}
 
 class WorkerFailure extends Error {
   readonly failureClass: FailureClass;
@@ -67,6 +100,7 @@ export async function runWorker(root: string, worktree: string, issue: number): 
     artifact,
     sessions: [],
     activeSession: { current: null },
+    timer: new PhaseTimer(),
   };
   let startHead = "";
   try {
@@ -74,7 +108,7 @@ export async function runWorker(root: string, worktree: string, issue: number): 
     return 0;
   } catch (error) {
     if (error instanceof WorkerFailure) {
-      await handleFailure(issue, worktrees, worktree, startHead, error);
+      await handleFailure(issue, worktrees, worktree, startHead, error, ctx.timer);
       return 1;
     }
     throw error;
@@ -83,6 +117,8 @@ export async function runWorker(root: string, worktree: string, issue: number): 
     abort.abort();
     if (ctx.watchdog) clearInterval(ctx.watchdog);
     for (const session of ctx.sessions) await session.close().catch(() => {});
+    if (ctx.snapshotDir)
+      await git(worktree, ["worktree", "remove", "--force", ctx.snapshotDir]).catch(() => {});
     await releaseClaim(root, worktrees, issue).catch(() => {});
     await rm(join(worktrees, `issue-${issue}.pid`), { force: true });
     await rm(publishMarker, { force: true });
@@ -96,6 +132,8 @@ interface PipelineContext {
   artifact: (name: string) => string;
   sessions: AgentSession[];
   activeSession: { current: AgentSession | null };
+  timer: PhaseTimer;
+  snapshotDir?: string | null;
   watchdog?: NodeJS.Timeout;
 }
 
@@ -103,7 +141,6 @@ async function git(worktree: string, args: string[]): Promise<string> {
   return netCall("git", ["-C", worktree, ...args]);
 }
 
-// 返回起跑头,供失败路径复位。
 async function runPipeline(
   root: string,
   worktree: string,
@@ -209,7 +246,6 @@ async function runPipeline(
 
   // error_during_execution 等 provider/网络 transient 同 run 内退避重试;
   // error_max_turns 等行为类失败重试无益。
-  // 会话活着用 warm 短 prompt(上下文还在);死了重开并用 cold 完整 prompt 冷启动。
   const runPhase = async (
     holder: SessionHolder,
     files: { warm: string; cold: string; resume?: string },
@@ -231,8 +267,6 @@ async function runPipeline(
           resumeSessionId: resumeId ?? undefined,
         });
         ctx.sessions.push(holder.session);
-        // 有 session_id 优先 --resume 续跑(transcript 保留,长票不必从零再烧);
-        // 未 init 即死没得续,退完整 prompt 冷启动。
         promptFile = resumeId ? (files.resume ?? files.warm) : files.cold;
       }
       ctx.activeSession.current = holder.session;
@@ -259,13 +293,11 @@ async function runPipeline(
         );
       }
       process.stderr.write(`executor attempt ${attempt} failed (transient); retrying\n`);
-      // 指数退避对抗分钟级网络风暴;resume 让重试只重跑尾巴,不贵。
       const delay = num("AGENT_EXECUTOR_RETRY_DELAY", 30) * 2 ** (attempt - 1);
       await new Promise((resolve) => setTimeout(resolve, delay * 1000));
     }
   };
 
-  // stall 软干预:claude 相无事件超阈值就往在途轮注 nudge;宽限内未恢复才杀。
   // nudge 只在 CLI 下一 tool round 生效,救得了慢/绕圈,救不了进程楔死。
   const nudgeAfter = num("AGENT_NUDGE_AFTER_SECONDS", 600);
   const nudgeGrace = num("AGENT_NUDGE_GRACE_SECONDS", 600);
@@ -335,30 +367,12 @@ async function runPipeline(
       "fatal",
     );
 
-  if (process.env.AGENT_REVIEW_ENABLED !== "0") {
-    await patchStatus(worktrees, issue, { phase: "review" });
-    const reviewFile = join(runDir, "review.md");
-    await writeFile(
-      reviewFile,
-      `${await readFile(join(root, ".github", "agent-prompts", "review.md"), "utf8")}${issueBlock}`,
-    );
-    // review 必须独立于 implementation 会话,保持新鲜眼睛。
-    await runPhase({ session: null }, { warm: reviewFile, cold: reviewFile }, "review.json", false);
-    if (!(await historyUnchanged()))
-      throw new WorkerFailure(
-        "Review agent changed git history instead of leaving a controller-owned diff.",
-        "fatal",
-      );
-  }
-
   const changedFiles = (
     await git(worktree, ["ls-files", "--modified", "--others", "--exclude-standard"])
   )
     .split("\n")
     .filter(Boolean);
   if (changedFiles.length === 0) {
-    // 模型按规矩 exit 并解释的 blocker 写在 implementation result 里;
-    // 不进评论的话人只能翻日志,blocked 就失去信息量。
     const explained = await readFile(ctx.artifact("implementation.json"), "utf8")
       .then((text) => {
         const result = (JSON.parse(text) as { result?: unknown }).result;
@@ -369,15 +383,28 @@ async function runPipeline(
     throw new WorkerFailure(`Agent produced no repository change.${detail}`, "fatal");
   }
 
+  const fingerprint = async (): Promise<string> => {
+    const diff = await git(worktree, ["diff", "--binary"]);
+    const others = (await git(worktree, ["ls-files", "--others", "--exclude-standard"]))
+      .split("\n")
+      .filter(Boolean);
+    const hashes: string[] = [];
+    for (const file of others) {
+      hashes.push(`${file} ${await git(worktree, ["hash-object", "--", file]).catch(() => "")}`);
+    }
+    const { createHash } = await import("node:crypto");
+    return createHash("sha1").update(diff).update(hashes.join("\n")).digest("hex");
+  };
+
   const checkLock = new DirLock(join(worktrees, ".check.lock"));
   const checkLog = join(runDir, "check.log");
-  const runCheck = async (): Promise<boolean> => {
-    await patchStatus(worktrees, issue, { phase: "check" });
+  const runCheck = async (dir: string, setPhase = true): Promise<boolean> => {
+    if (setPhase) await ctx.timer.transition(worktrees, issue, "check");
     await checkLock.acquireBlocking();
     try {
       const { spawn } = await import("node:child_process");
       const output = await new Promise<string>((resolve) => {
-        const child = spawn("make", ["-C", worktree, "check"], {
+        const child = spawn("make", ["-C", dir, "check"], {
           detached: true,
           env: process.env,
         });
@@ -402,27 +429,68 @@ async function runPipeline(
     }
   };
 
-  const fingerprint = async (): Promise<string> => {
-    const diff = await git(worktree, ["diff", "--binary"]);
-    const others = (await git(worktree, ["ls-files", "--others", "--exclude-standard"]))
-      .split("\n")
-      .filter(Boolean);
-    const hashes: string[] = [];
-    for (const file of others) {
-      hashes.push(`${file} ${await git(worktree, ["hash-object", "--", file]).catch(() => "")}`);
+  // review.md 授权复审改码:check 必须与 review 隔离文件系统,故跑在快照里。
+  const createCheckSnapshot = async (): Promise<string | null> => {
+    const snap = join(runDir, "check-snapshot");
+    try {
+      await git(worktree, ["worktree", "add", "--detach", snap, startHead]);
+      const diff = await git(worktree, ["diff", "--binary"]);
+      if (diff.trim()) {
+        const diffFile = join(runDir, "check-snapshot.diff");
+        await writeFile(diffFile, diff);
+        await git(snap, ["apply", "--whitespace=nowarn", diffFile]);
+      }
+      const others = (await git(worktree, ["ls-files", "--others", "--exclude-standard"]))
+        .split("\n")
+        .filter(Boolean);
+      for (const file of others) {
+        await mkdir(join(snap, dirname(file)), { recursive: true });
+        await copyFile(join(worktree, file), join(snap, file));
+      }
+      ctx.snapshotDir = snap;
+      return snap;
+    } catch {
+      await git(worktree, ["worktree", "remove", "--force", snap]).catch(() => {});
+      return null;
     }
-    const { createHash } = await import("node:crypto");
-    return createHash("sha1").update(diff).update(hashes.join("\n")).digest("hex");
   };
+
+  let prechecked: boolean | null = null;
+  if (process.env.AGENT_REVIEW_ENABLED !== "0") {
+    await ctx.timer.transition(worktrees, issue, "review");
+    const fp0 = await fingerprint();
+    const snap = await createCheckSnapshot();
+    const snapshotCheck = snap ? runCheck(snap, false) : null;
+    const reviewFile = join(runDir, "review.md");
+    await writeFile(
+      reviewFile,
+      `${await readFile(join(root, ".github", "agent-prompts", "review.md"), "utf8")}${issueBlock}`,
+    );
+    // review 必须独立于 implementation 会话,保持新鲜眼睛。
+    await runPhase({ session: null }, { warm: reviewFile, cold: reviewFile }, "review.json", false);
+    if (!(await historyUnchanged()))
+      throw new WorkerFailure(
+        "Review agent changed git history instead of leaving a controller-owned diff.",
+        "fatal",
+      );
+    const reviewChanged = (await fingerprint()) !== fp0;
+    if (snapshotCheck) {
+      if (!reviewChanged) await ctx.timer.transition(worktrees, issue, "check");
+      const result = await snapshotCheck.catch(() => null);
+      if (!reviewChanged) prechecked = result;
+    }
+  }
 
   const maxFixRounds = num("AGENT_FIX_MAX_ROUNDS", 3);
   let fixRound = 0;
   let sweepRound = 0;
   for (;;) {
-    if (await runCheck()) {
+    const ok = prechecked ?? (await runCheck(worktree));
+    prechecked = null;
+    if (ok) {
       if (process.env.AGENT_COMMENT_SWEEP_ENABLED === "0") break;
       sweepRound += 1;
-      await patchStatus(worktrees, issue, { phase: "sweep" });
+      await ctx.timer.transition(worktrees, issue, "sweep");
       const sweepFile = join(runDir, "sweep.md");
       await writeFile(
         sweepFile,
@@ -450,7 +518,7 @@ async function runPipeline(
           `Deterministic make check failed after ${maxFixRounds} fix rounds.`,
           "exhausted",
         );
-      await patchStatus(worktrees, issue, { phase: "fix" });
+      await ctx.timer.transition(worktrees, issue, "fix");
       const checkTail = (await readFile(checkLog, "utf8").catch(() => ""))
         .split("\n")
         .slice(-200)
@@ -460,7 +528,6 @@ async function runPipeline(
         fixColdFile,
         `${await readFile(promptFile, "utf8")}${issueBlock}\n<failed_check_log>\n${checkTail}\n</failed_check_log>\nFull log: ${checkLog}\n`,
       );
-      // warm 路径会话里已有 task/issue 上下文,只带日志与约束提醒。
       const fixWarmFile = join(runDir, "fix-warm.md");
       await writeFile(
         fixWarmFile,
@@ -486,7 +553,7 @@ async function runPipeline(
   }
 
   // message 格式说明只进这个收尾轮,不进 task.md:实现阶段的注意力是稀缺资源。
-  await patchStatus(worktrees, issue, { phase: "message" });
+  await ctx.timer.transition(worktrees, issue, "message");
   const messageColdFile = join(runDir, "commit-message.md");
   await writeFile(
     messageColdFile,
@@ -517,7 +584,7 @@ async function runPipeline(
   if (!(await claimOwned(worktree, ctx.claimFile)))
     throw new WorkerFailure("Agent lost its distributed claim before publication.", "process");
 
-  await patchStatus(worktrees, issue, { phase: "publish" });
+  await ctx.timer.transition(worktrees, issue, "publish");
   // fence 与 heartbeat 并发:lease 被拒或传输抖动都按可重试处理。
   const fenceMax = num("AGENT_FENCE_ATTEMPTS", 3);
   for (let attempt = 1; ; attempt += 1) {
@@ -535,7 +602,6 @@ async function runPipeline(
   }
 
   const outside = await collectOutsideTouchSet();
-  // 缺 message 不阻断发布,兜底降级。
   const authored = await readFile(join(worktree, messageFile), "utf8")
     .then((text) => text.trim())
     .catch(() => "");
@@ -598,11 +664,11 @@ async function runPipeline(
   const messageNote = authored
     ? ""
     : "\n\nWorker did not produce a commit message; used the fallback `chore: <issue title>`.";
+  await ctx.timer.finish(worktrees, issue, "done");
   await commentIssue(
     issue,
-    `Agent PR #${pr} published after review and full CI-equivalent checks.${outsideNote}${messageNote}`,
+    `Agent PR #${pr} published after review and full CI-equivalent checks.${outsideNote}${messageNote}\n\n${ctx.timer.report()}`,
   );
-  await patchStatus(worktrees, issue, { phase: "done" });
   return startHead;
 }
 
@@ -612,14 +678,14 @@ async function handleFailure(
   worktree: string,
   startHead: string,
   error: WorkerFailure,
+  timer: PhaseTimer,
 ): Promise<void> {
-  await patchStatus(worktrees, issue, { phase: "failed" }).catch(() => {});
+  await timer.finish(worktrees, issue, "failed");
   if (startHead) {
     await git(worktree, ["reset", "--hard", startHead]).catch(() => {});
     await git(worktree, ["clean", "-fd"]).catch(() => {});
   }
 
-  // 进程级失败多为 transient,自动重排队(默认 ≤2 次);再失败或行为类失败转 blocked。
   if (error.failureClass === "process") {
     const comments = await ghJson<Array<{ body: string }>>([
       "issue",
@@ -635,7 +701,7 @@ async function handleFailure(
     if (requeues < requeueMax) {
       await commentIssue(
         issue,
-        `<!-- agent-requeue:${requeues + 1} --> ${error.message} Requeued automatically (${requeues + 1}/${requeueMax}); a further process-level failure will block.`,
+        `<!-- agent-requeue:${requeues + 1} --> ${error.message} Requeued automatically (${requeues + 1}/${requeueMax}); a further process-level failure will block. ${timer.report()}`,
       );
       await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
       return;
@@ -644,7 +710,7 @@ async function handleFailure(
   await editIssue(issue, { add: ["agent:blocked"], remove: ["agent:running", "agent:queued"] });
   await commentIssue(
     issue,
-    `${error.message} See .worktrees/issue-${issue}.log for executor output.`,
+    `${error.message} See .worktrees/issue-${issue}.log for executor output. ${timer.report()}`,
   );
   // 桌面通知只在真实跑单时有意义;测试用 AGENT_BLOCK_NOTIFY=0 关掉。
   if (process.env.AGENT_BLOCK_NOTIFY === "0") return;

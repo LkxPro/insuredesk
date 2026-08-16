@@ -143,32 +143,80 @@ test("worker 全管线：impl→check→sweep→publish→摘标签→claim 释�
     assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
     assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
   });
-  // 发布后分支已推、claim refs 已释放。
   const branches = await git(sandbox.origin, ["branch", "--list"]);
   assert.ok(branches.includes("codex/issue-7"));
   assert.equal(
     await git(sandbox.origin, ["rev-parse", "--verify", claimRefOf(7)]).catch(() => "gone"),
     "gone",
   );
-  // 发布分支恰好一个 commit,message 是 worker 自写的 conventional 格式(squash 后直接成为 main 记录)。
+  // squash 合并时该 message 直接成为 main 历史。
   assert.equal(await git(sandbox.origin, ["rev-list", "--count", "main..codex/issue-7"]), "1");
   assert.equal(
     await git(sandbox.origin, ["log", "-1", "--format=%s", "codex/issue-7"]),
     "feat: 实现工单",
   );
-  // 摘标签与关单评论发生过。
   const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
   assert.ok(
     calls.includes("issue edit 7 --remove-label agent:running,agent:repair,ready-for-agent"),
   );
   assert.ok(calls.includes("pr create"));
   assert.ok(calls.includes("agent:automerge"));
-  // 状态机走到 done,事件流有 result。
   const status = await readStatus(sandbox.worktrees, 7);
   assert.equal(status?.phase, "done");
   assert.equal(status?.turns, 3);
   const events = await readFile(join(sandbox.worktrees, "issue-7.events.jsonl"), "utf8");
   assert.ok(events.includes('"type":"result"'));
+});
+
+test("review 未改码:快照 check 被采信,主 worktree 不重跑", async () => {
+  const claude = `while IFS= read -r line; do
+  case $line in
+    *'Review the current worktree diff'*) : ;;
+    *'final comment sweep'*) : ;;
+    *'commit message'*) printf '%b\\n' 'feat: 实现工单\\n\\nRefs #7' >"$PWD/.agent-commit-message" ;;
+    *) printf 'implemented\\n' >"$PWD/allowed.txt" ;;
+  esac
+  printf '%s\\n' '${RESULT_EVENT}'
+done`;
+  const make = `dir="$PWD"
+while [ $# -gt 0 ]; do [ "$1" = "-C" ] && { dir="$2"; break; }; shift; done
+printf '%s\\n' "$dir" >>"$AGENT_TEST_CAPTURE.make-cwds"
+exit 0`;
+  const sandbox = await makeSandbox(claude, make);
+  await withEnv({ ...sandboxEnv(sandbox), AGENT_REVIEW_ENABLED: "1" }, async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const cwds = (await readFile(`${sandbox.dir}/gh-calls.make-cwds`, "utf8")).trim().split("\n");
+  assert.equal(cwds.length, 1);
+  assert.ok(cwds[0]?.includes("check-snapshot"));
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls.includes("pr create"));
+});
+
+test("review 改码:快照 check 作废,主 worktree 重跑", async () => {
+  const claude = `while IFS= read -r line; do
+  case $line in
+    *'Review the current worktree diff'*) printf 'review-fix\\n' >>"$PWD/allowed.txt" ;;
+    *'final comment sweep'*) : ;;
+    *'commit message'*) printf '%b\\n' 'feat: 实现工单\\n\\nRefs #7' >"$PWD/.agent-commit-message" ;;
+    *) printf 'implemented\\n' >"$PWD/allowed.txt" ;;
+  esac
+  printf '%s\\n' '${RESULT_EVENT}'
+done`;
+  const make = `dir="$PWD"
+while [ $# -gt 0 ]; do [ "$1" = "-C" ] && { dir="$2"; break; }; shift; done
+printf '%s\\n' "$dir" >>"$AGENT_TEST_CAPTURE.make-cwds"
+exit 0`;
+  const sandbox = await makeSandbox(claude, make);
+  await withEnv({ ...sandboxEnv(sandbox), AGENT_REVIEW_ENABLED: "1" }, async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const cwds = (await readFile(`${sandbox.dir}/gh-calls.make-cwds`, "utf8")).trim().split("\n");
+  assert.equal(cwds.length, 2);
+  assert.ok(cwds[0]?.includes("check-snapshot"));
+  assert.equal(cwds[1], sandbox.repo);
 });
 
 test("worker 拒绝模型提交的 git 历史改动(fatal→blocked)", async () => {
@@ -185,7 +233,6 @@ done`;
   });
   const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
   assert.ok(calls.includes("--add-label agent:blocked"));
-  // fatal 不重排队。
   assert.ok(!calls.includes("--add-label agent:queued"));
 });
 
