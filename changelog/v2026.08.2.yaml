@@ -1,0 +1,12 @@
+version: v2026.08.2
+date: 2026-08-15
+entries:
+  - category: 修复
+    user: 占位保单号不再误报疑似重复
+    full: 创建/编辑工单查重时，「无」等非纯字母数字的占位保单号不参与匹配，多张占位单不再互相误报重复。
+  - category: 内部
+    user: agent loop 重写为 TypeScript
+    full: agent loop 由 shell 重写为 TypeScript（stream-json 可见性、分相判死）；agent-merge 等检查时排除自身，等检查通过与 merge 关单同一任务内完成；README 补 agent-loop-status 用法。
+  - category: 内部
+    user: 生产升级中断恢复修复
+    full: 修复升级脚本在 github.com 不可达时卡死在解析最新 tag 的问题，新增 LATEST_TAG 环境变量覆盖，github 不可达但镜像可达时仍可升级。
