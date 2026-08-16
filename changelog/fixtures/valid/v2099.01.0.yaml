@@ -1,0 +1,17 @@
+version: v2099.01.0
+date: 2099-01-15
+entries:
+  - category: 新增
+    user: 工单列表支持按渠道筛选
+    full: 工单列表页新增渠道筛选器，支持多选与清空，筛选条件随导出生效。
+    page: /tickets
+    screenshot: tickets-filter.png
+  - category: 改进
+    user: 排班页加载更快
+    full: 排班页改为按周懒加载，首屏只渲染当周数据。
+  - category: 修复
+    user: 导出列错位
+    full: 修复批量导出在含多值字段时列错位的问题。
+  - category: 内部
+    user: 升级依赖
+    full: 升级内部依赖版本，无用户可见变化。

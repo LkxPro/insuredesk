@@ -1,0 +1,8 @@
+version: v2099.04.0
+date: 2099-04-10
+entries:
+  - category: 新增
+    user: 新看板
+    full: 新增数据看板页面。
+    page: /dashboard
+    screenshot: nope.png
