@@ -73,18 +73,24 @@ export async function runWorker(root: string, worktree: string, issue: number): 
 
   const abort = new AbortController();
   let misses = 0;
-  // claim 心跳：连续失败才认定丢失，单次网络抖动不杀健康 worker。
+  // claim 心跳：证实的丢租约（远端 sha 对不上）才计 miss，连续发生才杀 worker；
+  // 传输层故障（抛错）证明不了租约状态——网络风暴不该杀掉健康 worker，
+  // 发布窗口另有 fence CAS 兜底，不会双重发布。
   const heartbeat = setInterval(async () => {
     try {
       await readFile(publishMarker, "utf8");
       return;
     } catch {}
+    let alive = false;
     try {
-      if (await heartbeatClaim(root, worktrees, issue)) {
-        misses = 0;
-        return;
-      }
-    } catch {}
+      alive = await heartbeatClaim(root, worktrees, issue);
+    } catch {
+      return;
+    }
+    if (alive) {
+      misses = 0;
+      return;
+    }
     misses += 1;
     if (misses >= num("AGENT_CLAIM_HEARTBEAT_MAX_MISSES", 3)) {
       clearInterval(heartbeat);

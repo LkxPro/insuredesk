@@ -256,16 +256,22 @@ export async function fenceClaim(
 
 // worker 侧发布前校验：claim 文件还在且远端 sha 与本地一致。
 // 两次 ls-remote 之间 heartbeat 可能推进 sha 造成假丢失，退避复查再定性。
+// 传输层故障证明不了丢租约（此时真丢了也会被 fence CAS 拦住），同样退避复查；
+// 不走 fast 路径：发布窗口要的是扛住分钟级网络风暴，不是省几秒。
 export async function claimOwned(worktree: string, claimFile: string): Promise<boolean> {
   const claim = await readClaimFile(claimFile);
   if (claim === null) return false;
   const max = Number.parseInt(process.env.AGENT_CLAIM_VERIFY_ATTEMPTS ?? "3", 10) || 3;
   const delaySeconds = Number.parseInt(process.env.AGENT_CLAIM_VERIFY_DELAY ?? "2", 10) || 2;
   for (let attempt = 1; ; attempt += 1) {
-    const [current, slotCurrent] = await Promise.all([
-      lsRemoteSha(worktree, claim.claimRef, true),
-      lsRemoteSha(worktree, claim.slotRef, true),
-    ]);
+    let current = "";
+    let slotCurrent = "";
+    try {
+      [current, slotCurrent] = await Promise.all([
+        lsRemoteSha(worktree, claim.claimRef),
+        lsRemoteSha(worktree, claim.slotRef),
+      ]);
+    } catch {}
     if (claim.sha && current === claim.sha && slotCurrent === claim.sha) return true;
     if (attempt >= max) return false;
     await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));

@@ -172,6 +172,35 @@ async function ghIssueClosed(issue: number): Promise<boolean> {
   return state.trim() === "CLOSED";
 }
 
+// daemon 恢复路径与 worker 进程级失败共用同一个 agent-requeue 预算:
+// 不计数的恢复会让坏票在崩溃循环里无限复活,永远到不了 agent:blocked。
+export async function requeueWithBudget(issue: number, reason: string): Promise<void> {
+  const comments = await ghJson<Array<{ body: string }>>([
+    "issue",
+    "view",
+    String(issue),
+    "--json",
+    "comments",
+    "--jq",
+    ".comments",
+  ]).catch(() => []);
+  const used = comments.filter((c) => c.body.includes("<!-- agent-requeue:")).length;
+  const max = num("AGENT_REQUEUE_MAX", 2);
+  if (used >= max) {
+    await editIssue(issue, { add: ["agent:blocked"], remove: ["agent:running", "agent:queued"] });
+    await commentIssue(
+      issue,
+      `${reason} Requeue budget (${max}) exhausted; needs human attention.`,
+    );
+    return;
+  }
+  await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
+  await commentIssue(
+    issue,
+    `<!-- agent-requeue:${used + 1} --> ${reason} Requeued automatically (${used + 1}/${max}).`,
+  );
+}
+
 // 认领者死于发布窗口时远端 claim/slot 槽位永不释放;释放活 claim 是安全的——
 // 远端残 worker 下次心跳失败会自行中止。
 export async function releaseClosedRemoteClaims(
@@ -270,11 +299,7 @@ export async function dispatchTick(root: string): Promise<void> {
           continue;
         }
         await rm(join(worktrees, `issue-${issue}.publishing`), { force: true });
-        await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
-        await commentIssue(
-          issue,
-          "Recovered a stale local agent:running claim; requeued for dispatch.",
-        );
+        await requeueWithBudget(issue, "Recovered a stale local agent:running claim.");
         continue;
       }
       const remoteSha = await netCallFast("git", [
@@ -285,8 +310,7 @@ export async function dispatchTick(root: string): Promise<void> {
         claimRefOf(issue),
       ]).then((out) => out.split(/\s+/)[0] ?? "");
       if (!remoteSha) {
-        await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
-        await commentIssue(
+        await requeueWithBudget(
           issue,
           "Recovered an orphaned agent:running label; no live claim exists locally or remotely.",
         );
@@ -294,11 +318,7 @@ export async function dispatchTick(root: string): Promise<void> {
       }
       const staleSha = await remoteClaimStaleSha(root, issue);
       if (staleSha && (await releaseRemoteClaim(root, issue, staleSha))) {
-        await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
-        await commentIssue(
-          issue,
-          "Recovered an expired remote agent claim; requeued for dispatch.",
-        );
+        await requeueWithBudget(issue, "Recovered an expired remote agent claim.");
       } else {
         log(`leave #${issue} running: another clone has a live lease`);
       }

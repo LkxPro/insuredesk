@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { releaseClosedRemoteClaims, validateBody } from "./dispatch.ts";
+import { releaseClosedRemoteClaims, requeueWithBudget, validateBody } from "./dispatch.ts";
 import { DirLock } from "./lock.ts";
 
 const execFileP = promisify(execFile);
@@ -155,4 +155,66 @@ test("releaseClosedRemoteClaims 释放关单远端 claim,未关单保留", async
     await rm(origin, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });
   }
+});
+
+async function withGhShim(
+  commentsJson: string,
+  fn: (capture: () => Promise<string>) => Promise<void>,
+): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), "requeue-test-"));
+  const captureFile = join(dir, "gh-calls");
+  const gh = join(dir, "gh");
+  await writeFile(
+    gh,
+    `#!/bin/sh
+printf '%s\\n' "$*" >>"$CAPTURE"
+case "$*" in
+  'issue view 7 --json comments --jq .comments') printf '%s\\n' "$COMMENTS" ;;
+esac
+exit 0
+`,
+  );
+  await chmod(gh, 0o755);
+  const saved = {
+    gh: process.env.AGENT_LOOP_GH,
+    cap: process.env.CAPTURE,
+    c: process.env.COMMENTS,
+  };
+  process.env.AGENT_LOOP_GH = gh;
+  process.env.CAPTURE = captureFile;
+  process.env.COMMENTS = commentsJson;
+  try {
+    await fn(() => readFile(captureFile, "utf8"));
+  } finally {
+    if (saved.gh === undefined) delete process.env.AGENT_LOOP_GH;
+    else process.env.AGENT_LOOP_GH = saved.gh;
+    if (saved.cap === undefined) delete process.env.CAPTURE;
+    else process.env.CAPTURE = saved.cap;
+    if (saved.c === undefined) delete process.env.COMMENTS;
+    else process.env.COMMENTS = saved.c;
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("daemon 恢复重排队计入 agent-requeue 预算", async () => {
+  await withGhShim("[]", async (capture) => {
+    await requeueWithBudget(7, "Recovered an orphaned agent:running label.");
+    const calls = await capture();
+    assert.ok(calls.includes("issue edit 7 --add-label agent:queued --remove-label agent:running"));
+    assert.ok(calls.includes("agent-requeue:1"));
+  });
+});
+
+test("恢复预算耗尽 → agent:blocked,不再复活", async () => {
+  const existing = JSON.stringify([
+    { body: "<!-- agent-requeue:1 --> ..." },
+    { body: "<!-- agent-requeue:2 --> ..." },
+  ]);
+  await withGhShim(existing, async (capture) => {
+    await requeueWithBudget(7, "Recovered an orphaned agent:running label.");
+    const calls = await capture();
+    assert.ok(calls.includes("--add-label agent:blocked"));
+    assert.ok(calls.includes("Requeue budget (2) exhausted"));
+    assert.ok(!calls.includes("--add-label agent:queued"));
+  });
 });
