@@ -123,7 +123,8 @@ export async function netCall(
       last.status === 143 ||
       // 子进程 stderr 带尾部换行,eof$ 这类尾锚必须先 trim。
       TRANSIENT.test(last.stderr.trimEnd());
-    if (!retriable) break;    process.stderr.write(
+    if (!retriable) break;
+    process.stderr.write(
       `net-call: attempt ${attempt} failed (transient); retrying in ${delay}s\n`,
     );
     await sleep(delay);
