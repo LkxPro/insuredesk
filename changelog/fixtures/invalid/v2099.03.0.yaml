@@ -1,0 +1,6 @@
+version: v2099.03.1
+date: 2099-03-10
+entries:
+  - category: 修复
+    user: 修复登录
+    full: 修复登录态过期后跳转错误的问题。

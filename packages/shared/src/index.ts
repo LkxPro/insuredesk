@@ -1,4 +1,5 @@
 export * from "./auth.ts";
+export * from "./changelog.ts";
 export * from "./channel.ts";
 export * from "./completion-status.ts";
 export * from "./dashboard.ts";

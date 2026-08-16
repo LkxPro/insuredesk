@@ -11,7 +11,7 @@
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
-    "typecheck": "pnpm -r run typecheck && tsc -p scripts/agent",
+    "typecheck": "pnpm -r run typecheck && tsc -p scripts/agent && tsc -p scripts/changelog",
     "lint": "sh -c 'if [ -f .git ]; then exec biome check --vcs-enabled=false .; else exec biome check .; fi'",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
@@ -19,7 +19,10 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4",
+    "@insuredesk/shared": "workspace:*",
     "@types/node": "^24.13.3",
-    "typescript": "^7.0.2"
+    "playwright": "^1.62.1",
+    "typescript": "^7.0.2",
+    "yaml": "^2.9.0"
   }
 }
