@@ -85,6 +85,28 @@ async function pushAtomic(
   }
 }
 
+// 同 tick 顺序领取时跳过已被占的槽,避免对每个已占槽打一发必然被拒的 push;
+// ls-remote 失败时退化为空集,push 拒绝仍是最终裁判。
+async function occupiedSlots(root: string): Promise<Set<number>> {
+  try {
+    const out = await netCallFast("git", [
+      "-C",
+      root,
+      "ls-remote",
+      "origin",
+      "refs/heads/agent-slots/*",
+    ]);
+    const taken = new Set<number>();
+    for (const line of out.split("\n")) {
+      const match = line.match(/refs\/heads\/agent-slots\/(\d+)$/);
+      if (match) taken.add(Number.parseInt(match[1], 10));
+    }
+    return taken;
+  } catch {
+    return new Set();
+  }
+}
+
 function validateClaimFile(issue: number, claim: ClaimFile): number {
   if (claim.claimRef !== claimRefOf(issue))
     throw new Error(`refusing unexpected claim ref: ${claim.claimRef}`);
@@ -104,7 +126,9 @@ export async function claimIssue(
   const claimFile = claimFileOf(worktrees, issue);
   if ((await readClaimFile(claimFile)) !== null) return false;
   const claimSha = (await git(root, ["rev-parse", "origin/main"])).trim();
+  const taken = await occupiedSlots(root);
   for (let slot = 1; slot <= maxParallel; slot += 1) {
+    if (taken.has(slot)) continue;
     const commit = await claimCommit(
       root,
       claimSha,
