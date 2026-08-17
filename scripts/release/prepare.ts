@@ -60,7 +60,7 @@ export function computeNextVersion(tags: string[], now: Date): string {
   return `${prefix}${max + 1}`;
 }
 
-// CalVer 序号段不补零，须按数值段比较（v2026.08.10 > v2026.08.9）。
+// CalVer 序号段不补零（v2026.08.10 > v2026.08.9）
 export function latestVersionTag(tags: string[]): string | null {
   let best: string | null = null;
   for (const tag of tags) {
@@ -142,8 +142,18 @@ function git(repoRoot: string, args: string[]): string {
   return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" });
 }
 
+// GitHub GraphQL 网关偶发 5xx/EOF，隔几秒重试通常即恢复
+const GH_TRANSIENT = /HTTP 5\d\d|\bEOF\b|timed out|connection reset/i;
+
 function gh(repoRoot: string, args: string[]): string {
-  return execFileSync("gh", args, { cwd: repoRoot, encoding: "utf8" });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return execFileSync("gh", args, { cwd: repoRoot, encoding: "utf8" });
+    } catch (err) {
+      if (attempt >= 4 || !GH_TRANSIENT.test((err as Error).message)) throw err;
+      execFileSync("sleep", [String(2 ** (attempt - 1))]);
+    }
+  }
 }
 
 function remoteTags(repoRoot: string): string[] {
@@ -275,8 +285,6 @@ function runScreenshotter(yamlPath: string): number {
 function publish(repoRoot: string, version: string): number {
   const paths = [`changelog/${version}.yaml`];
   if (existsSync(join(repoRoot, "changelog", version))) paths.push(`changelog/${version}`);
-  // main 上的干净工作区才意味着 changelog 已合入主干；changelog 分支上干净
-  // 也可能是上次推送/开 PR 失败后的重跑，必须继续走下面的开 PR 流程。
   const onMain = git(repoRoot, ["branch", "--show-current"]).trim() === "main";
   if (onMain && !git(repoRoot, ["status", "--porcelain", "--", ...paths]).trim()) {
     console.log(`${paths.join("、")} 相对 HEAD 无改动（changelog 应已随主干合入），无需开 PR`);
@@ -313,9 +321,15 @@ function publish(repoRoot: string, version: string): number {
       body,
     ]).trim();
     console.log(`✓ 已开 PR：${url}`);
-  } catch {
-    const url = gh(repoRoot, ["pr", "view", branch, "--json", "url", "--jq", ".url"]).trim();
-    console.log(`✓ PR 已存在，已推送更新：${url}`);
+  } catch (createErr) {
+    try {
+      const url = gh(repoRoot, ["pr", "view", branch, "--json", "url", "--jq", ".url"]).trim();
+      console.log(`✓ PR 已存在，已推送更新：${url}`);
+    } catch {
+      throw new Error(
+        `开 PR 失败且未查到既有 PR（分支 ${branch} 已推送，重跑可续）：${(createErr as Error).message}`,
+      );
+    }
   }
   console.log("人工过目 merge 后，在 main 上跑 make release 触发发布");
   return 0;
