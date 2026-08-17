@@ -5,8 +5,18 @@ import { Unknown } from "./Unknown";
 /**
  * 保单号列：首个保单号 + 多于一个时的 +N 徽标，点徽标弹出全部保单号。徽标只显
  * 示"还有几个"，列宽由首值决定、不被整串撑爆。空数组沿用 Unknown 未填写样式。
+ * noPolicyNumber 可选：外部工单面的查询不带这个字段。
  */
-export function PolicyNumbersCell({ policyNumbers }: { policyNumbers: readonly string[] }) {
+export function PolicyNumbersCell({
+  policyNumbers,
+  noPolicyNumber,
+}: {
+  policyNumbers: readonly string[];
+  noPolicyNumber?: boolean;
+}) {
+  if (noPolicyNumber) {
+    return <span className="text-muted-foreground">无</span>;
+  }
   if (policyNumbers.length === 0) {
     return <Unknown />;
   }

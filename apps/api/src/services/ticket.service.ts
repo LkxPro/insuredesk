@@ -1,4 +1,5 @@
 import {
+  applyNoPolicyNumber,
   complaintLevelSchema,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
@@ -111,6 +112,10 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
     if (!TICKET_CREATE_FIELD_KEYS.includes(field as TicketCreateFieldKey)) {
       continue;
     }
+    // 「无保单号」是明确表态，不算未填写
+    if (field === "policyNumbers" && input.noPolicyNumber) {
+      continue;
+    }
     const value = input[field as TicketCreateFieldKey];
     if (value === null || value === undefined || (Array.isArray(value) && value.length === 0)) {
       missingLabels.push(TICKET_FIELDS[field as TicketCreateFieldKey].label);
@@ -141,16 +146,17 @@ export async function createTicket(
   input: TicketCreateData,
   options?: { allowDuplicate?: boolean },
 ) {
+  const data = applyNoPolicyNumber(input);
   const role = await prisma.role.findUnique({
     where: { id: creator.roleId },
     select: { requiredTicketFields: true },
   });
   if (role) {
-    validateRequiredFields(input, role.requiredTicketFields);
+    validateRequiredFields(data, role.requiredTicketFields);
   }
 
   const now = clock.now();
-  const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, now);
+  const slaStamp = await computeSlaStamp(prisma, data.complaintLevel, now);
 
   return prisma.$transaction(async (tx) => {
     // 提交兜底查重：与插入同事务，命中即整体回滚；批量导入不经此路，天然豁免
@@ -158,21 +164,21 @@ export async function createTicket(
       await assertNoDuplicateTickets(
         { prisma: tx, clock },
         {
-          policyNumbers: input.policyNumbers,
-          phone: input.phone,
-          contactPhone: input.contactPhone,
+          policyNumbers: data.policyNumbers,
+          phone: data.phone,
+          contactPhone: data.contactPhone,
         },
       );
     }
     // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
-    await ticketCategoryCatalog.resolveNewRef(tx, input.categoryId);
-    await channelCatalog.resolveNewRef(tx, input.channelId);
+    await ticketCategoryCatalog.resolveNewRef(tx, data.categoryId);
+    await channelCatalog.resolveNewRef(tx, data.channelId);
 
     const ticket = await tx.ticket.create({
       data: {
-        ...input,
-        feedbackTime: toDateOrNull(input.feedbackTime),
-        contactTime: toDateOrNull(input.contactTime),
+        ...data,
+        feedbackTime: toDateOrNull(data.feedbackTime),
+        contactTime: toDateOrNull(data.contactTime),
         createdAt: now,
         source: "manual",
         creatorId: creator.id,
@@ -216,6 +222,7 @@ type TicketListFilters = Pick<
   | "categoryId"
   | "completionStatusId"
   | "complaintLevel"
+  | "policyNumberState"
   | "source"
   | "search"
   | "createdFrom"
@@ -270,6 +277,9 @@ export async function buildTicketListWhere(
   }
   if (query.complaintLevel && query.complaintLevel.length > 0) {
     filters.push({ complaintLevel: { in: query.complaintLevel } });
+  }
+  if (query.policyNumberState?.includes("none")) {
+    filters.push({ noPolicyNumber: true });
   }
   if (query.source && query.source.length > 0) {
     filters.push({ source: { in: query.source } });
@@ -381,6 +391,7 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
     complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     customerName: ticket.customerName,
     policyNumbers: ticket.policyNumbers,
+    noPolicyNumber: ticket.noPolicyNumber,
     status,
     displayStatus: deriveDisplayStatus(status, ticket.dueAt, now),
     assigneeId: ticket.assigneeId,
@@ -454,6 +465,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     paymentChannel: ticket.paymentChannel,
     internalOrderNumber: ticket.internalOrderNumber,
     policyNumbers: ticket.policyNumbers,
+    noPolicyNumber: ticket.noPolicyNumber,
     userComplaintChannel: ticket.userComplaintChannel,
     complaintReceiveChannel: ticket.complaintReceiveChannel,
     customerName: ticket.customerName,

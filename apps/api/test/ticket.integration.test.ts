@@ -223,6 +223,24 @@ describe("ticket creation + detail (Testcontainers)", () => {
     });
   });
 
+  describe("noPolicyNumber 无保单号表态", () => {
+    it("勾选「无」持久化 flag + 空数组；与值同传时 flag 优先，数组清空", async () => {
+      const created = await manager().ticket.create({ ...baseInput, noPolicyNumber: true });
+
+      const detail = await manager().ticket.detail({ id: created.id });
+      expect(detail.noPolicyNumber).toBe(true);
+      expect(detail.policyNumbers).toEqual([]);
+
+      const listed = await manager().ticket.list({ search: created.workOrderNumber });
+      expect(listed.items[0]?.noPolicyNumber).toBe(true);
+    });
+
+    it("未勾选持久化 false（缺省）", async () => {
+      const created = await manager().ticket.create(baseInput);
+      expect((await manager().ticket.detail({ id: created.id })).noPolicyNumber).toBe(false);
+    });
+  });
+
   describe("dueAt per complaint level", () => {
     it("加急投诉 → createdAt + 72h", async () => {
       const created = await manager().ticket.create({ ...baseInput, complaintLevel: "加急投诉" });

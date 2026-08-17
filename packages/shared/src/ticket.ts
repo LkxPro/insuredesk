@@ -71,6 +71,11 @@ export const ticketCreateInputSchema = z.object({
   paymentChannel: optionalText(TICKET_TEXT_LIMITS.paymentChannel),
   internalOrderNumber: optionalText(TICKET_TEXT_LIMITS.internalOrderNumber),
   policyNumbers: optionalPolicyNumbers,
+  /** true = 明确没有保单号（区别于未填写的 []）; true 时 policyNumbers 必为 [], 由 service 层强制不变量。 */
+  noPolicyNumber: z
+    .boolean()
+    .nullish()
+    .transform((value) => value ?? false),
   userComplaintChannel: optionalText(TICKET_TEXT_LIMITS.userComplaintChannel),
   /** 我方收到投诉信息的途径（如监管转办、邮箱接收），区别于客户发起侧的用户投诉渠道。 */
   complaintReceiveChannel: optionalText(TICKET_TEXT_LIMITS.complaintReceiveChannel),
@@ -298,6 +303,11 @@ export const TICKET_SORT_FIELDS = ["createdAt", "dueAt"] as const;
 export const ticketSortFieldSchema = z.enum(TICKET_SORT_FIELDS);
 export type TicketSortField = (typeof TICKET_SORT_FIELDS)[number];
 
+/** 保单号状态筛选取值；none = 无保单号（区别于未填写）。 */
+export const POLICY_NUMBER_STATE_FILTERS = ["none"] as const;
+export const policyNumberStateFilterSchema = z.enum(POLICY_NUMBER_STATE_FILTERS);
+export type PolicyNumberStateFilter = (typeof POLICY_NUMBER_STATE_FILTERS)[number];
+
 /**
  * Ticket-list query contract, shared by the list page's filter state and the
  * API input — one schema, both ends. All filters are multi-select: 空数组 =
@@ -319,6 +329,7 @@ export const ticketListInputSchema = z.object({
   /** 完结状态目录引用筛选；停用状态也可选，仍能查到其存量工单。 */
   completionStatusId: multiFilter(z.string().min(1)).optional(),
   complaintLevel: multiFilter(complaintLevelSchema).optional(),
+  policyNumberState: multiFilter(policyNumberStateFilterSchema).optional(),
   /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */
   source: multiFilter(ticketSourceSchema).default([...DEFAULT_TICKET_SOURCE_FILTER]),
   /** 工单号 / 客户姓名 / 保单号；空白输入等同未搜索。 */

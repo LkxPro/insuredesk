@@ -4,6 +4,8 @@ import {
   COMPLAINT_LEVELS,
   DEFAULT_TICKET_SOURCE_FILTER,
   isTicketInFlight,
+  POLICY_NUMBER_STATE_FILTERS,
+  type PolicyNumberStateFilter,
   TICKET_DISPLAY_STATUSES,
   TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
@@ -71,6 +73,7 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
     categoryId: multi("category"),
     completionStatusId: multi("completionStatus"),
     complaintLevel: multi("level"),
+    policyNumberState: multi("policyNumber"),
     source: multi("source"),
     search: params.get("q") ?? undefined,
     createdFrom: params.get("createdFrom") ?? undefined,
@@ -130,6 +133,13 @@ const STATUS_FILTER_OPTIONS = TICKET_DISPLAY_STATUSES.map((status) => ({
   label: TICKET_STATUS_LABELS[status],
 }));
 const LEVEL_FILTER_OPTIONS = COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }));
+const POLICY_NUMBER_STATE_LABELS: Record<PolicyNumberStateFilter, string> = {
+  none: "无保单号",
+};
+const POLICY_NUMBER_STATE_OPTIONS = POLICY_NUMBER_STATE_FILTERS.map((state) => ({
+  value: state,
+  label: POLICY_NUMBER_STATE_LABELS[state],
+}));
 const SOURCE_FILTER_OPTIONS = TICKET_SOURCES.map((source) => ({
   value: source,
   label: TICKET_SOURCE_LABELS[source],
@@ -212,7 +222,12 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       {
         key: "policyNumbers",
         header: TICKET_FIELDS.policyNumbers.label,
-        render: (ticket) => <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />,
+        render: (ticket) => (
+          <PolicyNumbersCell
+            policyNumbers={ticket.policyNumbers}
+            noPolicyNumber={ticket.noPolicyNumber}
+          />
+        ),
       },
       {
         key: "channel",
@@ -431,6 +446,12 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             options={LEVEL_FILTER_OPTIONS}
             onChange={(values) => setParam("level", serializeSelection(values, []))}
           />
+          <MultiSelectFilter
+            label={TICKET_FIELDS.policyNumbers.label}
+            values={query.policyNumberState ?? []}
+            options={POLICY_NUMBER_STATE_OPTIONS}
+            onChange={(values) => setParam("policyNumber", serializeSelection(values, []))}
+          />
           {/* 来源有缺省（排除归档单）：全选四个来源 ≠ 缺省，仍写入 URL */}
           <MultiSelectFilter
             label="来源"
@@ -464,6 +485,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           query.categoryId?.length,
           query.completionStatusId?.length,
           query.complaintLevel?.length,
+          query.policyNumberState?.length,
           query.search ? 1 : 0,
           query.createdFrom || query.createdTo ? 1 : 0,
         ].filter((count) => (count ?? 0) > 0).length

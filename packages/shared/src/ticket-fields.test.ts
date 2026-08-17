@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { joinPolicyNumbers, splitPolicyNumbers } from "./ticket-fields.ts";
+import { applyNoPolicyNumber, joinPolicyNumbers, splitPolicyNumbers } from "./ticket-fields.ts";
+
+describe("applyNoPolicyNumber", () => {
+  it("flag=true ⇒ 数组清空（与值同传时 flag 优先）", () => {
+    expect(applyNoPolicyNumber({ noPolicyNumber: true, policyNumbers: ["P1", "P2"] })).toEqual({
+      noPolicyNumber: true,
+      policyNumbers: [],
+    });
+  });
+
+  it("flag=false ⇒ 原样保留", () => {
+    expect(applyNoPolicyNumber({ noPolicyNumber: false, policyNumbers: ["P1"] })).toEqual({
+      noPolicyNumber: false,
+      policyNumbers: ["P1"],
+    });
+  });
+});
 
 describe("splitPolicyNumbers", () => {
   it("空白分隔：空格/换行/制表符", () => {

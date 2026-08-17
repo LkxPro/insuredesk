@@ -61,7 +61,10 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: ticketExportHeader("customerName"), value: (t) => t.customerName ?? "" },
   { header: ticketExportHeader("phone"), value: (t) => t.phone ?? "" },
   { header: ticketExportHeader("contactPhone"), value: (t) => t.contactPhone ?? "" },
-  { header: ticketExportHeader("policyNumbers"), value: (t) => joinPolicyNumbers(t.policyNumbers) },
+  {
+    header: ticketExportHeader("policyNumbers"),
+    value: (t) => (t.noPolicyNumber ? "无" : joinPolicyNumbers(t.policyNumbers)),
+  },
   { header: ticketExportHeader("channelId"), value: (t) => t.channel?.name ?? "" },
   { header: ticketExportHeader("complaintLevel"), value: (t) => t.complaintLevel ?? "" },
   { header: ticketExportHeader("categoryId"), value: (t) => t.category?.name ?? "" },

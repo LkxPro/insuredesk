@@ -345,6 +345,21 @@ describe("ticket export (Testcontainers)", () => {
       expect(cellByNumber.get(blank.workOrderNumber)).toBe("");
     });
 
+    it("「无保单号」工单导出 无，与未填写的空单元格区分", async () => {
+      const none = await makeTicket({ policyNumbers: [], noPolicyNumber: true });
+      const blank = await makeTicket({ policyNumbers: [] });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv" });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      const policyIndex = rows[0]?.indexOf("保单号") ?? -1;
+      const cellByNumber = new Map(rows.slice(1).map((cells) => [cells[0], cells[policyIndex]]));
+      expect(cellByNumber.get(none.workOrderNumber)).toBe("无");
+      expect(cellByNumber.get(blank.workOrderNumber)).toBe("");
+    });
+
     it("escapes fields containing commas and quotes per RFC 4180", async () => {
       await makeTicket({ customerRequest: '要求"全额退保", 并书面道歉' });
 

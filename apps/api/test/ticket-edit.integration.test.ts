@@ -257,6 +257,71 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     });
   });
 
+  describe("无保单号表态", () => {
+    it("已填 → 无：数组清空、flag 置位，留痕 保单号: P…→无", async () => {
+      const ticketId = await createTicket();
+
+      const result = await manager().ticket.edit(
+        editInput(ticketId, { policyNumbers: [], noPolicyNumber: true }),
+      );
+      expect(result.changedFields).toEqual(["policyNumbers"]);
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.noPolicyNumber).toBe(true);
+      expect(detail.policyNumbers).toEqual([]);
+      expect(detail.processLogs.at(-1)?.remark).toBe("保单号: P2026071000829→无");
+    });
+
+    it("留空 → 无：数组两侧都是 [] 仍留痕 （空）→无", async () => {
+      const ticketId = await createTicket({ policyNumbers: [] });
+
+      const result = await manager().ticket.edit(
+        editInput(ticketId, { policyNumbers: [], noPolicyNumber: true }),
+      );
+      expect(result.changedFields).toEqual(["policyNumbers"]);
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.noPolicyNumber).toBe(true);
+      expect(detail.processLogs.at(-1)?.remark).toBe("保单号: （空）→无");
+    });
+
+    it("无 → 留空：取消勾选，留痕 无→（空）", async () => {
+      const ticketId = await createTicket({ policyNumbers: [], noPolicyNumber: true });
+
+      const result = await manager().ticket.edit(
+        editInput(ticketId, { policyNumbers: [], noPolicyNumber: false }),
+      );
+      expect(result.changedFields).toEqual(["policyNumbers"]);
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.noPolicyNumber).toBe(false);
+      expect(detail.processLogs.at(-1)?.remark).toBe("保单号: 无→（空）");
+    });
+
+    it("无 → 已填：取消勾选并填值，留痕 无→P…", async () => {
+      const ticketId = await createTicket({ policyNumbers: [], noPolicyNumber: true });
+
+      await manager().ticket.edit(
+        editInput(ticketId, { policyNumbers: ["P-9"], noPolicyNumber: false }),
+      );
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.noPolicyNumber).toBe(false);
+      expect(detail.policyNumbers).toEqual(["P-9"]);
+      expect(detail.processLogs.at(-1)?.remark).toBe("保单号: 无→P-9");
+    });
+
+    it("同传 noPolicyNumber=true 与值时 flag 优先，数组清空", async () => {
+      const ticketId = await createTicket();
+
+      await manager().ticket.edit(editInput(ticketId, { noPolicyNumber: true }));
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.noPolicyNumber).toBe(true);
+      expect(detail.policyNumbers).toEqual([]);
+    });
+  });
+
   describe("改 complaintLevel = 改 SLA（重算 dueAt、切换要求）", () => {
     it("特急→一般 on a 70h-old ticket: dueAt = createdAt + 48h, immediately overdue", async () => {
       const ticketId = await createTicket({ complaintLevel: "特急投诉" });

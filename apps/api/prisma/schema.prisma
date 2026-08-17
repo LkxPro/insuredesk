@@ -134,6 +134,8 @@ model Ticket {
   internalOrderNumber  String?
   /// 多值保单号；[] = 未填写（数组字段无 null 态）
   policyNumbers        String[] @default([])
+  /// true = 明确没有保单号（区别于未填写的 []）; true 时 policyNumbers 必为 []
+  noPolicyNumber       Boolean @default(false)
   userComplaintChannel String?
   /// 投诉信息接收渠道（我方收到投诉的途径，区别于客户发起侧的用户投诉渠道）; null = 未填写
   complaintReceiveChannel String?

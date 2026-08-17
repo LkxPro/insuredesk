@@ -444,6 +444,7 @@ export function validateTicketImportRows(
       keyof TicketImportRowData,
       TicketImportRowData[keyof TicketImportRowData]
     >;
+    ticket.noPolicyNumber = false;
     for (const [index, column] of IMPORT_COLUMNS.entries()) {
       const outcome = column.parse(row.cells[index] ?? "", ctx);
       if ("fail" in outcome) {

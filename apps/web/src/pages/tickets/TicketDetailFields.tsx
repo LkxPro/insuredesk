@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import {
   type CurrentCatalogOption,
   HAS_CONTACTED_OPTIONS,
+  PolicyNumbersControl,
   type TicketFormValues,
   UNSET,
   withCurrentOption,
@@ -54,6 +55,7 @@ export interface EditableTicket {
   paymentChannel: string | null;
   internalOrderNumber: string | null;
   policyNumbers: string[];
+  noPolicyNumber: boolean;
   userComplaintChannel: string | null;
   complaintReceiveChannel: string | null;
   customerName: string | null;
@@ -85,6 +87,7 @@ export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
     paymentChannel: ticket?.paymentChannel ?? "",
     internalOrderNumber: ticket?.internalOrderNumber ?? "",
     policyNumbers: joinPolicyNumbers(ticket?.policyNumbers ?? []),
+    noPolicyNumber: ticket?.noPolicyNumber ?? false,
     userComplaintChannel: ticket?.userComplaintChannel ?? "",
     complaintReceiveChannel: ticket?.complaintReceiveChannel ?? "",
     customerName: ticket?.customerName ?? "",
@@ -123,6 +126,9 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
     case "customerRequest":
       return <span className="whitespace-pre-wrap">{ticket.customerRequest}</span>;
     case "policyNumbers":
+      if (ticket.noPolicyNumber) {
+        return <span className="text-muted-foreground">无</span>;
+      }
       // [] = 未填写，交给调用方的 "—" 兜底
       return ticket.policyNumbers.length > 0 ? joinPolicyNumbers(ticket.policyNumbers) : null;
     case "nuclearBodyStatus":
@@ -324,6 +330,8 @@ function EditControl({
       );
     case "customerRequest":
       return <Textarea id={name} rows={4} aria-invalid={invalid} {...register(name)} />;
+    case "policyNumbers":
+      return <PolicyNumbersControl form={form} invalid={invalid} />;
     case "phone":
     case "contactPhone":
       return <Input id={name} type="tel" aria-invalid={invalid} {...register(name)} />;

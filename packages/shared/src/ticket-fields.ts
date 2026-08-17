@@ -290,6 +290,12 @@ export function joinPolicyNumbers(values: readonly string[]): string {
   return values.join(" ");
 }
 
+export function applyNoPolicyNumber<T extends { noPolicyNumber: boolean; policyNumbers: string[] }>(
+  data: T,
+): T {
+  return data.noPolicyNumber ? { ...data, policyNumbers: [] } : data;
+}
+
 /**
  * 清洗后的保单号数组违反上限时的拒绝原因；null = 合法。表单、API 契约与
  * 导入逐行校验共用同一份文案。
