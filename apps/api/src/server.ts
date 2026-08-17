@@ -5,7 +5,7 @@ import fastifyCookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
 import { loginBodySchema } from "@insuredesk/shared";
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, LogController } from "fastify";
 import { prisma } from "./db.ts";
 import type { Env } from "./env.ts";
 import { type AppRouter, appRouter } from "./routers/index.ts";
@@ -16,11 +16,6 @@ import { registerTicketImportTemplateRoute } from "./routes/ticket-import-templa
 import { PasswordAuthProvider, SessionService, toSessionToken } from "./services/auth.service.ts";
 import { createContext } from "./trpc.ts";
 
-/**
- * Build the Fastify app with tRPC mounted at /trpc. Logging is structured pino
- * (Fastify-native) with a per-request `traceId`; pretty-printed only in dev.
- * Extracted from the entrypoint so tests can build the app without listening.
- */
 export function buildServer(env: Env) {
   const app = Fastify({
     // httpBatchLink packs every procedure name of a batch into ONE path
@@ -29,6 +24,7 @@ export function buildServer(env: Env) {
     // response from server" instead of anything actionable. 工单管理 alone
     // batches 5 procedures / 111 chars.
     routerOptions: { maxParamLength: 5000 },
+    logController: new LogController({ disableRequestLogging: env.NODE_ENV === "development" }),
     logger: {
       level: env.LOG_LEVEL,
       ...(env.NODE_ENV === "development"
@@ -40,16 +36,25 @@ export function buildServer(env: Env) {
           }
         : {}),
     },
-    // A unique id per request; reused as the traceId on the request logger.
     genReqId: () => randomUUID(),
     requestIdHeader: "x-request-id",
   });
 
-  // Surface the per-request id as `traceId` on every request-scoped log line.
   app.addHook("onRequest", (req, _reply, done) => {
     req.log = req.log.child({ traceId: req.id });
     done();
   });
+
+  if (env.NODE_ENV === "development") {
+    app.addHook("onRequest", (req, _reply, done) => {
+      req.log.debug({ req }, "incoming request");
+      done();
+    });
+    app.addHook("onResponse", (req, reply, done) => {
+      req.log.debug({ res: reply, responseTime: reply.elapsedTime }, "request completed");
+      done();
+    });
+  }
 
   app.register(fastifyCookie, {
     secret: env.SESSION_SECRET,
@@ -59,7 +64,6 @@ export function buildServer(env: Env) {
   const sessionService = new SessionService(prisma, env.SESSION_MAX_AGE_SECONDS);
   const authProvider = new PasswordAuthProvider(prisma);
 
-  // Session extraction middleware: read session cookie and populate request context
   app.addHook("onRequest", async (req, reply) => {
     const rawCookie = req.cookies.session;
     if (!rawCookie) {
@@ -68,7 +72,6 @@ export function buildServer(env: Env) {
     const sessionToken = toSessionToken(rawCookie);
     const user = await sessionService.validateSession(sessionToken);
     if (user) {
-      // Store user on the request for the tRPC context (see createContext)
       req.authenticatedUser = user;
       req.sessionToken = sessionToken;
     } else {
@@ -76,7 +79,6 @@ export function buildServer(env: Env) {
     }
   });
 
-  // REST endpoint for login (easier cookie handling than tRPC)
   app.post("/api/auth/login", async (req, reply) => {
     const parsed = loginBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -120,8 +122,6 @@ export function buildServer(env: Env) {
   });
 
   app.post("/api/auth/logout", async (req, reply) => {
-    // Only set by the session hook when the cookie held a *valid* session;
-    // deleting a stale token is a no-op anyway.
     if (req.sessionToken) {
       await sessionService.deleteSession(req.sessionToken);
     }
@@ -129,8 +129,6 @@ export function buildServer(env: Env) {
     return { success: true };
   });
 
-  // File downloads/uploads for 导出工单 / 导入模板 / 批量导入 — REST like the
-  // auth endpoints.
   registerTicketExportRoute(app);
   registerExternalTicketExportRoute(app);
   registerTicketImportTemplateRoute(app);
@@ -146,13 +144,17 @@ export function buildServer(env: Env) {
       router: appRouter,
       createContext,
       onError({ path, error, ctx }) {
-        // ctx.traceId ties the failure line back to the request's log stream.
-        app.log.error({ path, traceId: ctx?.traceId, err: error.message }, "tRPC request failed");
+        const level =
+          error.code === "UNAUTHORIZED"
+            ? "debug"
+            : error.code === "INTERNAL_SERVER_ERROR"
+              ? "error"
+              : "warn";
+        app.log[level]({ path, traceId: ctx?.traceId, err: error.message }, "tRPC request failed");
       },
     } satisfies FastifyTRPCPluginOptions<AppRouter>["trpcOptions"],
   });
 
-  // Plain HTTP liveness endpoint for infra/load-balancer probes.
   app.get("/healthz", () => ({ status: "ok" }));
 
   // In production the API also serves the built SPA: a single
@@ -165,11 +167,6 @@ export function buildServer(env: Env) {
   return app;
 }
 
-/**
- * Resolve the built web assets directory. Prefer the explicit WEB_DIST_PATH
- * (set in the container / prod env); otherwise fall back to the monorepo
- * layout relative to this source file (apps/api/src → apps/web/dist).
- */
 function resolveWebDistPath(env: Env): string {
   if (env.WEB_DIST_PATH) {
     return resolve(env.WEB_DIST_PATH);
@@ -178,20 +175,12 @@ function resolveWebDistPath(env: Env): string {
   return resolve(here, "..", "..", "web", "dist");
 }
 
-/**
- * Serve apps/web/dist and fall back to index.html for client-side routes.
- *
- * `wildcard: false` makes @fastify/static register a route per real file
- * instead of a catch-all `/*`, so it never shadows `/trpc/*` or `/healthz`.
- * Anything left unmatched (a deep SPA link like /tickets/123) reaches the
- * notFound handler, which returns the SPA shell — but only for GET navigations
- * that aren't API calls, so unknown `/trpc` paths still get tRPC's JSON 404.
- */
 function registerStaticFrontend(app: FastifyInstance, env: Env) {
   const root = resolveWebDistPath(env);
 
   app.register(fastifyStatic, {
     root,
+    // @fastify/static 按真实文件逐个注册路由而非 catch-all，不会遮蔽 /trpc/* 与 /healthz。
     wildcard: false,
     index: ["index.html"],
   });
