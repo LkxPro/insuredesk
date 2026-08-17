@@ -18,6 +18,7 @@ let permanent: string;
 let notFound: string;
 let sslFlaky: string;
 let eofFlaky: string;
+let truncatedJsonFlaky: string;
 let slow: string;
 let ghCat: string;
 let ghInputCat: string;
@@ -64,6 +65,14 @@ printf 'eventual-ok\\n'`,
 fi
 printf 'eventual-ok\\n'`,
     ),
+    make(
+      "truncated-json-flaky",
+      `if [ "$n" -lt 3 ]; then
+  echo 'unexpected end of JSON input' >&2
+  exit 1
+fi
+printf 'eventual-ok\\n'`,
+    ),
     make("slow", "sleep 30"),
     make("gh-cat", "cat"),
     make(
@@ -94,8 +103,10 @@ ${body}
     string,
     string,
     string,
+    string,
   ];
-  [flaky, permanent, notFound, sslFlaky, eofFlaky, slow, ghCat, ghInputCat] = paths;
+  [flaky, permanent, notFound, sslFlaky, eofFlaky, truncatedJsonFlaky, slow, ghCat, ghInputCat] =
+    paths;
   await writeFile(callsFile, "");
   process.env.CALLS = callsFile;
 });
@@ -148,6 +159,13 @@ test("LibreSSL 抖动特征是传输层错误，必须重试", async () => {
 test("gh graphql EOF(带尾部换行)按传输层错误重试", async () => {
   await resetCalls();
   const out = await run(eofFlaky, [], { baseDelaySeconds: 0 });
+  assert.equal(out, "eventual-ok\n");
+  assert.equal(await calls(), 3);
+});
+
+test("gh 半截响应体(unexpected end of JSON input)按传输层错误重试", async () => {
+  await resetCalls();
+  const out = await run(truncatedJsonFlaky, [], { baseDelaySeconds: 0 });
   assert.equal(out, "eventual-ok\n");
   assert.equal(await calls(), 3);
 });
