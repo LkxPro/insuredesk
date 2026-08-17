@@ -89,17 +89,15 @@ async function pushAtomic(
 // ls-remote 失败时退化为空集,push 拒绝仍是最终裁判。
 async function occupiedSlots(root: string): Promise<Set<number>> {
   try {
-    const out = await netCallFast("git", [
-      "-C",
+    const out = await callGit(
       root,
-      "ls-remote",
-      "origin",
-      "refs/heads/agent-slots/*",
-    ]);
+      ["ls-remote", "origin", "refs/heads/agent-slots/*"],
+      FAST_PROBE,
+    );
     const taken = new Set<number>();
     for (const line of out.split("\n")) {
       const match = line.match(/refs\/heads\/agent-slots\/(\d+)$/);
-      if (match) taken.add(Number.parseInt(match[1], 10));
+      if (match?.[1]) taken.add(Number.parseInt(match[1], 10));
     }
     return taken;
   } catch {
