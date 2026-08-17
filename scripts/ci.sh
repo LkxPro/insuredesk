@@ -21,7 +21,6 @@ node --test scripts/agent/*.test.ts
 node --test scripts/agent/*.test.mjs
 
 pnpm install --frozen-lockfile
-pnpm --filter @insuredesk/api run db:generate
 
 node --test scripts/changelog/*.test.ts
 node scripts/changelog/validate.ts

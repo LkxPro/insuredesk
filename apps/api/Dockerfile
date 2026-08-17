@@ -50,6 +50,10 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
+# install 的 postinstall 要跑 prisma generate，schema 必须提前在场；
+# 生成物落在 src/generated，.dockerignore 把它挡在构建上下文外，只能在镜像内生成。
+COPY apps/api/prisma/schema.prisma ./apps/api/prisma/schema.prisma
+COPY apps/api/prisma.config.ts ./apps/api/
 
 RUN retry pnpm install --frozen-lockfile
 
@@ -60,8 +64,6 @@ COPY packages/shared ./packages/shared
 # The web build inlines changelog yaml + screenshots via import.meta.glob;
 # a missing dir makes the glob silently empty, so this COPY is load-bearing.
 COPY changelog ./changelog
-
-RUN retry pnpm --filter @insuredesk/api run db:generate
 
 # Release tag baked into both surfaces (web bundle + api env). Declared this
 # late so a tag change only re-runs the build/tail layers, never the installs.
@@ -79,20 +81,19 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
+# 同 build 阶段：postinstall 的 prisma generate 需要 schema 提前在场。
+COPY apps/api/prisma/schema.prisma ./apps/api/prisma/schema.prisma
+COPY apps/api/prisma.config.ts ./apps/api/
 RUN retry pnpm install --prod --frozen-lockfile --filter "@insuredesk/api..."
 
-# API + shared source, and the Prisma schema (for migrations).
+# API + shared source, and the Prisma migrations.
 COPY apps/api/src ./apps/api/src
 COPY apps/api/prisma ./apps/api/prisma
 COPY apps/api/tsconfig.json apps/api/prisma.config.ts apps/api/docker-entrypoint.sh ./apps/api/
 COPY packages/shared/src ./packages/shared/src
 COPY packages/shared/tsconfig.json ./packages/shared/
 
-# The Prisma client generates into the source tree (schema.prisma output =
-# src/generated/prisma), which .dockerignore keeps out of the build context — so
-# the COPY above can't carry it in and it must be generated here. Then bring in
-# the prebuilt SPA.
-RUN retry pnpm --filter @insuredesk/api run db:generate
+# The prebuilt SPA.
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 
 # Server config. HOST 0.0.0.0 so it's reachable inside the container network;
