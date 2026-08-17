@@ -326,7 +326,7 @@ claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`）时 worker 先经 
 
 CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued` + `ready-for-agent`（frontier 要求后两者），并在 Issue 评论计 `agent-attempts` marker；超过 `AGENT_REPAIR_MAX_ATTEMPTS`（默认 3）次转 `agent:blocked` 叫人。Repair worker尝试下载最近 failed Actions log，复用同一 worktree/branch/PR 修复；下载失败时用本地复现和现有 Issue 内容继续。
 
-Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队（评论 `agent-requeue` marker 计数，上限 `AGENT_REQUEUE_MAX`，默认 2），超上限或行为类失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。daemon 的 running 恢复（stale/孤儿/过期 claim 回收重排队）共用同一 `agent-requeue` 预算，耗尽同样转 blocked，坏票不会无限复活。claim 心跳只在证实丢租约（远端 sha 失配）时计 miss，传输层故障不计——网络风暴不会杀掉健康 worker，发布窗口由 fence CAS 兜底防双重发布。
+Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队（评论 `agent-requeue` marker 计数，上限 `AGENT_REQUEUE_MAX`，默认 2），超上限或行为类失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。非 publish 相的失败把工作树 reset 回 startHead 并清残留；publish 相 commit 落地后的进程级失败（push/PR 创建故障）保留该 commit 与 `.agent-commit-message`，并落 `issue-<n>.publish-pending` 标记（内容为 commit sha）——重排队再领取时 worker 核对标记 sha 与 HEAD 一致、分支领先 origin/main 且无 open PR，即跳过 implementation/review/check/sweep 与 add/commit，直接从 fence→push→PR 续跑（不重复 commit，message 复用 `.agent-commit-message`，缺失仍用兜底）；标记缺失、不符或已有 open PR 则忽略标记全量重跑。daemon 的 running 恢复（stale/孤儿/过期 claim 回收重排队）共用同一 `agent-requeue` 预算，耗尽同样转 blocked，坏票不会无限复活。claim 心跳只在证实丢租约（远端 sha 失配）时计 miss，传输层故障不计——网络风暴不会杀掉健康 worker，发布窗口由 fence CAS 兜底防双重发布。
 
 进程级失败判定前有两层就地吸收：executor 的 `error_during_execution`/CLI 崩溃按 `AGENT_EXECUTOR_ATTEMPTS` 在同 run 内退避重试；所有 gh/git 网络调用经 `scripts/agent/net.ts` 统一入口，传输层错误（connection reset、TLS、5xx 等）按 `AGENT_NET_CALL_*` 超时重试，确定性错误（lease 拒绝、4xx）立即回吐。daemon 单个 dispatch tick 失败不退出，下个 interval 继续。
 
@@ -387,7 +387,7 @@ gh issue view <n> --comments
 gh run list --branch codex/issue-<n>
 ```
 
-失败执行会恢复到保存的起点，并删除该次创建的普通/ignored 残留。进程级失败自动重排队一次；模型行为类失败与修复预算耗尽转 `agent:blocked`；CI 失败自动 repair，超预算同样转 blocked。
+非 publish 相的失败执行会恢复到保存的起点，并删除该次创建的普通/ignored 残留；publish 相（commit 已落地）失败保留该 commit 与 `issue-<n>.publish-pending` 标记，重领取后直接从 fence/push/PR 断点续跑。进程级失败自动重排队一次；模型行为类失败与修复预算耗尽转 `agent:blocked`；CI 失败自动 repair，超预算同样转 blocked。
 
 ### 看似占用 slot
 
