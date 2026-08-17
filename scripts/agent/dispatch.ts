@@ -26,9 +26,11 @@ import {
   syncDependencies,
 } from "./gh.ts";
 import { DirLock, pidFileAlive } from "./lock.ts";
-import { netCall, netCallFast } from "./net.ts";
+import { callGit } from "./net.ts";
 import { scrubSessionEnv } from "./session-env.ts";
 import { daemonShouldKill, evaluateHealth, readStatus } from "./status.ts";
+
+const FAST_PROBE = { attempts: 2, timeoutSeconds: 15 };
 
 const log = (msg: string) => process.stderr.write(`${new Date().toISOString()} ${msg}\n`);
 const out = (msg: string) => process.stdout.write(`${new Date().toISOString()} ${msg}\n`);
@@ -164,7 +166,7 @@ async function artifactCleanup(worktrees: string, issue: number): Promise<void> 
 }
 
 async function git(root: string, args: string[]): Promise<string> {
-  return netCall("git", ["-C", root, ...args]);
+  return callGit(root, args);
 }
 
 async function ghIssueClosed(issue: number): Promise<boolean> {
@@ -259,7 +261,6 @@ export async function dispatchTick(root: string): Promise<void> {
         await forceReleaseDeadLocalClaim(root, worktrees, issue).catch(() => {});
     }
 
-    // 已关单 issue 的 worktree 清理。
     for (const { issue, path } of await issueWorktrees(worktrees)) {
       const state = await ghCall([
         "issue",
@@ -302,13 +303,11 @@ export async function dispatchTick(root: string): Promise<void> {
         await requeueWithBudget(issue, "Recovered a stale local agent:running claim.");
         continue;
       }
-      const remoteSha = await netCallFast("git", [
-        "-C",
+      const remoteSha = await callGit(
         root,
-        "ls-remote",
-        "origin",
-        claimRefOf(issue),
-      ]).then((out) => out.split(/\s+/)[0] ?? "");
+        ["ls-remote", "origin", claimRefOf(issue)],
+        FAST_PROBE,
+      ).then((out) => out.split(/\s+/)[0] ?? "");
       if (!remoteSha) {
         await requeueWithBudget(
           issue,

@@ -9,14 +9,14 @@ import {
   transition,
   validateBody,
 } from "./dispatch.ts";
-import { netCall } from "./net.ts";
+import { callGit } from "./net.ts";
 import { renderAll } from "./status.ts";
 import { runWorker } from "./worker.ts";
 
 const usage = `usage: main.ts {bootstrap|validate-body|transition|queue|dispatch|daemon|status|worker|reconcile-ci} [arg]`;
 
 async function repoRoot(): Promise<string> {
-  return (await netCall("git", ["rev-parse", "--show-toplevel"])).trim();
+  return (await callGit(".", ["rev-parse", "--show-toplevel"])).trim();
 }
 
 const [command, arg] = process.argv.slice(2);

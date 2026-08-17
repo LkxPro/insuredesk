@@ -6,7 +6,7 @@ import { type AgentSession, type ExecutorResult, openAgentSession } from "./exec
 import { normalizeIssue, outsideTouchSet } from "./frontier.ts";
 import { commentIssue, editIssue, ghCall, ghJson } from "./gh.ts";
 import { DirLock } from "./lock.ts";
-import { netCall } from "./net.ts";
+import { callGit, run } from "./net.ts";
 import { appendEvent, patchStatus, readStatus } from "./status.ts";
 
 type FailureClass = "process" | "fatal" | "exhausted";
@@ -144,7 +144,7 @@ interface PipelineContext {
 }
 
 async function git(worktree: string, args: string[]): Promise<string> {
-  return netCall("git", ["-C", worktree, ...args]);
+  return callGit(worktree, args);
 }
 
 async function runPipeline(
@@ -738,7 +738,7 @@ async function handleFailure(
   );
   // 桌面通知只在真实跑单时有意义;测试用 AGENT_BLOCK_NOTIFY=0 关掉。
   if (process.env.AGENT_BLOCK_NOTIFY === "0") return;
-  await netCall(
+  await run(
     "osascript",
     [
       "-e",
