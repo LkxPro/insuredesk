@@ -16,9 +16,13 @@ describe("RequiredFieldsChecklist", () => {
     }
     // 描述表加字段但漏排进分组时，这里按清单逐个点名报警
     for (const key of TICKET_CREATE_FIELD_KEYS) {
+      // 清单不渲染 complaintLevel——其必填由 slaPolicyId 项承载
+      if (key === "complaintLevel") {
+        continue;
+      }
       expect(screen.getByLabelText(TICKET_FIELDS[key].label)).toBeInTheDocument();
     }
-    expect(screen.getAllByRole("checkbox")).toHaveLength(TICKET_CREATE_FIELD_KEYS.length);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(TICKET_CREATE_FIELD_KEYS.length - 1);
   });
 
   it("reflects selected fields as checked", () => {

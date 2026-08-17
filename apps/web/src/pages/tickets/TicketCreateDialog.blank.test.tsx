@@ -131,6 +131,7 @@ function respond(path: string): unknown {
     path === "channel.options" ||
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
+    path === "sla.options" ||
     path === "completionStatus.filterOptions"
   ) {
     return [];
@@ -201,12 +202,10 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
     });
     const mutation = calls.find((call) => call.path === "ticket.create");
     // feedbackTime defaults to the open instant, minute precision (秒归零)；
-    // 多值保单号的「未填写」形态是空数组而非 null；slaPolicyId 是表单未渲染的
-    // 双轨引用字段，缺席即 null（未指定）
+    // 多值保单号的「未填写」形态是空数组而非 null
     expect(mutation?.input).toEqual({
       ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
       feedbackTime: NOW.toISOString(),
-      slaPolicyId: null,
       policyNumbers: [],
       noPolicyNumber: false,
     });
@@ -269,7 +268,6 @@ describe("空值展示 (issue #43)", () => {
     expect(await screen.findByRole("heading", { name: "WO100001" })).toBeInTheDocument();
     // Unfilled fields all show the same placeholder
     expect(screen.getAllByText("—").length).toBeGreaterThan(5);
-    // hasContacted unknown: neither 是 nor 否 is asserted
-    expect(screen.queryByText("不设时限（特急）")).not.toBeInTheDocument();
+    expect(screen.queryByText("不设时限")).not.toBeInTheDocument();
   });
 });

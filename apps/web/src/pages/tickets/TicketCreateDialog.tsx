@@ -60,6 +60,7 @@ function createDefaults(): TicketFormValues {
     contactId: "",
     categoryId: "",
     complaintLevel: "",
+    slaPolicyId: "",
     priority: "",
   };
 }
@@ -152,7 +153,7 @@ export function TicketCreateDialog({
           <DialogHeader className="border-b px-6 py-4">
             <DialogTitle>新建工单</DialogTitle>
             <DialogDescription>
-              工单号、处理时限与跟进要求由系统按投诉等级自动生成。
+              工单号、处理时限与跟进要求由系统按时效策略自动生成。
             </DialogDescription>
           </DialogHeader>
 

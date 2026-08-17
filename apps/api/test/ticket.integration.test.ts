@@ -153,6 +153,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
         where: { complaintLevel: "一般投诉" },
       });
       expect(detail.slaPolicyId).toBe(policy.id);
+      expect(detail.slaPolicy).toEqual({ id: policy.id, name: policy.name, active: true });
 
       // creatorId recorded for source=manual
       const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });

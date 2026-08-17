@@ -84,7 +84,7 @@ export function TicketInfoColumn({
 
       <Section title="分类与等级">
         {field("categoryId")}
-        {field("complaintLevel")}
+        {field("slaPolicyId")}
         {field("priority")}
         <Item label="跟进频次要求">{ticket.followUpFrequency}</Item>
         <Item label="首响要求">{ticket.firstResponseRequirement}</Item>
@@ -97,12 +97,8 @@ export function TicketInfoColumn({
         <Item label="责任人">{ticket.assigneeName}</Item>
         <Item label="分配时间">{formatDateTime(ticket.assignedAt)}</Item>
         <Item label="处理时限">
-          {/* dueAt null means 特急 (不设时限) when a level exists, 未定级 otherwise */}
-          {ticket.dueAt
-            ? formatDateTime(ticket.dueAt)
-            : ticket.complaintLevel
-              ? "不设时限（特急）"
-              : null}
+          {/* dueAt null = 策略不设时限（如出厂特急行）when a policy exists, 未指定策略 otherwise */}
+          {ticket.dueAt ? formatDateTime(ticket.dueAt) : ticket.slaPolicyId ? "不设时限" : null}
         </Item>
         <Item label="下次联系时间">{formatDateTime(ticket.nextContactTime)}</Item>
         <Item label="联系次数">{ticket.contactCount}</Item>

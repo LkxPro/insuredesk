@@ -104,6 +104,7 @@ describe("ticket list (Testcontainers)", () => {
       expect(item?.customerName).toBe("客户三");
       expect(item?.channel).toBe("保司");
       expect(item?.complaintLevel).toBe("一般投诉");
+      expect(item?.slaPolicyName).toBe("一般投诉");
       expect(item?.source).toBe("manual");
       expect(item?.status).toBe("unassigned");
       // Fresh 一般投诉 is 48h from due — no computed override

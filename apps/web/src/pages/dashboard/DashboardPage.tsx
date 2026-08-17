@@ -50,33 +50,35 @@ const METRIC_TONES: Partial<Record<DashboardMetricKey, string>> = {
 const METRIC_HINTS: Partial<Record<DashboardMetricKey, string>> = {
   pendingTimeout: "距时限不足 2 小时",
   overdue: "在途已过时限，完结即移出",
-  urgent: "特急投诉，不设时限",
 };
 
 function MetricCard({
   metric,
   value,
   href,
+  label,
+  hint,
 }: {
   metric: DashboardMetricKey;
   value: number;
   href: string;
+  label?: string;
+  hint?: string;
 }) {
+  const finePrint = hint ?? METRIC_HINTS[metric];
   return (
     <Link to={href} className="block">
       <Card className="gap-2 py-4 transition-colors hover:bg-accent">
         <CardHeader className="px-4">
           <CardTitle className="text-sm font-medium text-muted-foreground">
-            {DASHBOARD_METRIC_LABELS[metric]}
+            {label ?? DASHBOARD_METRIC_LABELS[metric]}
           </CardTitle>
         </CardHeader>
         <CardContent className="px-4">
           <div className={cn("text-3xl font-semibold tabular-nums", METRIC_TONES[metric])}>
             {value}
           </div>
-          {METRIC_HINTS[metric] && (
-            <p className="mt-1 text-xs text-muted-foreground">{METRIC_HINTS[metric]}</p>
-          )}
+          {finePrint && <p className="mt-1 text-xs text-muted-foreground">{finePrint}</p>}
         </CardContent>
       </Card>
     </Link>
@@ -146,7 +148,17 @@ export function DashboardPage() {
                   key={metric}
                   metric={metric}
                   value={stats.metrics[metric]}
-                  href={buildTicketListUrl(metric, createdRange)}
+                  label={
+                    metric === "urgent" && stats.urgentPolicy ? stats.urgentPolicy.name : undefined
+                  }
+                  hint={
+                    metric === "urgent"
+                      ? stats.urgentPolicy
+                        ? "最高档时效策略"
+                        : "无启用的时效策略"
+                      : undefined
+                  }
+                  href={buildTicketListUrl(metric, createdRange, stats.urgentPolicy?.id ?? null)}
                 />
               ))
             ) : (

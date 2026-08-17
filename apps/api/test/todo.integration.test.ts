@@ -142,6 +142,8 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const ownerTodos = await todosAt(owner, seeded.roles.frontline, instant);
       expect(ownerTodos.count).toBe(1);
       expect(ownerTodos.items[0]?.ticketId).toBe(ticket.id);
+      expect(ownerTodos.items[0]?.slaPolicyName).toBe("一般投诉");
+      expect(ownerTodos.items[0]).not.toHaveProperty("complaintLevel");
 
       expect((await todosAt(seeded.users.manager, seeded.roles.csManager, instant)).count).toBe(0);
     });

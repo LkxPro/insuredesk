@@ -86,7 +86,7 @@ export function TodoBell() {
                       {item.customerName ?? "—"}
                     </span>
                     <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                      {item.complaintLevel ?? "—"}
+                      {item.slaPolicyName ?? "—"}
                     </span>
                   </span>
                   {item.alerts.map((alert) => (

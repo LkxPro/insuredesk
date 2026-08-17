@@ -17,6 +17,8 @@ type ListItem = {
   channel: string;
   category: string;
   complaintLevel: string;
+  slaPolicyId: string;
+  slaPolicyName: string;
   customerName: string;
   policyNumbers: string[];
   noPolicyNumber?: boolean;
@@ -35,6 +37,8 @@ function listItem(overrides: Partial<ListItem> = {}): ListItem {
     channel: "保司",
     category: "投诉-保费收取问题",
     complaintLevel: "一般投诉",
+    slaPolicyId: "pol-normal",
+    slaPolicyName: "一般投诉",
     customerName: "王小明",
     policyNumbers: ["P2026070900123"],
     status: "processing",
@@ -44,6 +48,13 @@ function listItem(overrides: Partial<ListItem> = {}): ListItem {
     ...overrides,
   };
 }
+
+/** sla.options 的筛选 feed：仅启用策略（目录序）。 */
+const SLA_OPTIONS = [
+  { id: "pol-normal", name: "一般投诉", description: "常规投诉：48 小时处理时限。" },
+  { id: "pol-high", name: "高级投诉", description: "重要投诉：48 小时处理时限。" },
+  { id: "pol-urgent", name: "特急投诉", description: "特急投诉：不设处理时限。" },
+];
 
 // Per-test canned list payload behind ticket.list.
 const canned = { items: [] as ListItem[], total: 0 };
@@ -65,6 +76,7 @@ function renderAt(path: string) {
         { id: "cs-normal", name: "正常完结", active: true },
         { id: "cs-legacy", name: "旧完结状态", active: false },
       ],
+      "sla.options": SLA_OPTIONS,
       "ticket.list": (input: unknown) => {
         const page =
           ((input as Record<string, unknown> | undefined)?.page as number | undefined) ?? 1;
@@ -113,6 +125,16 @@ describe("list rendering", () => {
   it("shows an empty state when nothing matches", async () => {
     renderAt("/tickets");
     expect(await screen.findByText("暂无匹配的工单")).toBeInTheDocument();
+  });
+
+  it("时效策略列：列头与单元格都走策略名（引用口径，不读旧等级文本）", async () => {
+    canned.items = [listItem({ slaPolicyName: "VIP 通道", complaintLevel: "特急投诉" })];
+    canned.total = 1;
+    renderAt("/tickets");
+
+    const row = (await screen.findByText("WO100001")).closest("tr") as HTMLTableRowElement;
+    expect(within(row).getByText("VIP 通道")).toBeInTheDocument();
+    expect(within(row).queryByText("特急投诉")).not.toBeInTheDocument();
   });
 });
 
@@ -190,13 +212,33 @@ describe("URL-driven filters (deep-linkable)", () => {
   });
 
   it("逗号分隔的多值参数解析为数组", async () => {
-    renderAt("/tickets?status=overdue,completed&level=一般投诉,高级投诉");
+    renderAt("/tickets?status=overdue,completed&policyId=pol-normal,pol-high");
 
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
     expect(listInputs()[0]).toMatchObject({
       status: ["overdue", "completed"],
-      complaintLevel: ["一般投诉", "高级投诉"],
+      slaPolicyId: ["pol-normal", "pol-high"],
     });
+  });
+
+  it("时效策略筛选：?policyId= 入参落到 slaPolicyId，触发器挂计数徽标", async () => {
+    renderAt("/tickets?policyId=pol-urgent");
+
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ slaPolicyId: ["pol-urgent"] });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "时效策略" })).toHaveTextContent("1"),
+    );
+  });
+
+  it("旧 ?level= 参数静默忽略：不按等级筛选，也不报错", async () => {
+    renderAt("/tickets?level=%E4%B8%80%E8%88%AC%E6%8A%95%E8%AF%89");
+
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]?.complaintLevel).toBeUndefined();
+    expect(listInputs()[0]?.slaPolicyId).toBeUndefined();
+    expect(await screen.findByText("暂无匹配的工单")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "时效策略" })).not.toHaveTextContent(/\d/);
   });
 
   it("类别筛选：查询串带 category id，入参落到 categoryId，触发器挂计数徽标", async () => {
@@ -336,25 +378,20 @@ describe("多选交互与 URL 序列化", () => {
     renderAt("/tickets");
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
 
-    fireEvent.click(screen.getByRole("button", { name: "投诉等级" }));
+    fireEvent.click(screen.getByRole("button", { name: "时效策略" }));
     fireEvent.click(await screen.findByRole("button", { name: "全选" }));
 
     await waitFor(() =>
-      expect(listInputs().at(-1)?.complaintLevel).toEqual([
-        "一般投诉",
-        "高级投诉",
-        "加急投诉",
-        "特急投诉",
-      ]),
+      expect(listInputs().at(-1)?.slaPolicyId).toEqual(["pol-normal", "pol-high", "pol-urgent"]),
     );
   });
 
   it("再次点击已勾选项取消选择", async () => {
-    renderAt("/tickets?level=一般投诉");
+    renderAt("/tickets?policyId=pol-normal");
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
 
-    await toggleOption("投诉等级", "一般投诉");
-    await waitFor(() => expect(listInputs().at(-1)?.complaintLevel).toBeUndefined());
+    await toggleOption("时效策略", "一般投诉");
+    await waitFor(() => expect(listInputs().at(-1)?.slaPolicyId).toBeUndefined());
   });
 
   it("筛选变更后 URL 落在地址栏（深链可分享），并重置页码", async () => {

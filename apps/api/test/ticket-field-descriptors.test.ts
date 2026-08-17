@@ -142,7 +142,6 @@ const GOLDEN_DESCRIPTORS = [
     label: "时效策略",
     catalog: "slaPolicy",
     maxLength: 100,
-    importOnly: true,
     importNoteTail: "留空=未定级（无处理时限与 SLA 告警）",
   },
   {
@@ -192,7 +191,6 @@ describe("ticket field descriptors (golden)", () => {
       GOLDEN_DESCRIPTORS.filter((row) => !("formOnly" in row)).map((row) => row.label),
     );
     expect(GOLDEN_DESCRIPTORS.filter((row) => "importOnly" in row).map((row) => row.key)).toEqual([
-      "slaPolicyId",
       "completionStatusId",
       "completionRemark",
     ]);

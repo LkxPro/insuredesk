@@ -35,6 +35,7 @@ const exportInclude = {
   category: { select: { name: true } },
   channel: { select: { name: true } },
   completionStatus: { select: { name: true } },
+  slaPolicy: { select: { name: true } },
   // internalOnly 不过滤：内部导出照常包含
   processLogs: {
     where: { action: "comment" },
@@ -66,7 +67,7 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
     value: (t) => (t.noPolicyNumber ? "无" : joinPolicyNumbers(t.policyNumbers)),
   },
   { header: ticketExportHeader("channelId"), value: (t) => t.channel?.name ?? "" },
-  { header: ticketExportHeader("complaintLevel"), value: (t) => t.complaintLevel ?? "" },
+  { header: ticketExportHeader("slaPolicyId"), value: (t) => t.slaPolicy?.name ?? "" },
   { header: ticketExportHeader("categoryId"), value: (t) => t.category?.name ?? "" },
   {
     header: ticketExportHeader("priority"),

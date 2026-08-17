@@ -82,6 +82,18 @@ describe("按列表当前筛选条件导出", () => {
     expect(url.searchParams.get("createdTo")).toBe(to);
   });
 
+  it("时效策略筛选随导出下传（policyId → slaPolicyId）", async () => {
+    restFetch.mockResolvedValue(new Response("x", { status: 200 }));
+    renderAt("/tickets?policyId=pol-urgent,pol-normal");
+
+    await pickExport(/CSV/);
+
+    await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
+    const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
+    expect(url.searchParams.get("slaPolicyId")).toBe("pol-urgent,pol-normal");
+    expect(url.searchParams.get("complaintLevel")).toBeNull();
+  });
+
   it("requests xlsx when Excel is picked", async () => {
     restFetch.mockResolvedValue(new Response("x", { status: 200 }));
     renderAt("/tickets");
@@ -118,7 +130,7 @@ describe("buildTicketExportUrl", () => {
         channelId: undefined,
         categoryId: undefined,
         completionStatusId: undefined,
-        complaintLevel: ["特急投诉"],
+        slaPolicyId: ["pol-urgent"],
         source: ["manual"],
         search: undefined,
         sortBy: "createdAt",
@@ -131,7 +143,8 @@ describe("buildTicketExportUrl", () => {
     );
     const params = new URL(url, "http://localhost").searchParams;
     expect(params.get("status")).toBe("processing");
-    expect(params.get("complaintLevel")).toBe("特急投诉");
+    expect(params.get("slaPolicyId")).toBe("pol-urgent");
+    expect(params.get("complaintLevel")).toBeNull();
     expect(params.get("channelId")).toBeNull();
     expect(params.get("source")).toBe("manual");
     expect(params.get("search")).toBeNull();
@@ -147,7 +160,7 @@ describe("buildTicketExportUrl", () => {
         channelId: ["ch-pay", "ch-bank"],
         categoryId: undefined,
         completionStatusId: undefined,
-        complaintLevel: undefined,
+        slaPolicyId: undefined,
         source: [],
         search: "三丰",
         sortBy: "dueAt",
