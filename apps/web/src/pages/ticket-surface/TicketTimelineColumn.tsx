@@ -1,5 +1,5 @@
 import { PROCESS_LOG_ACTION_LABELS, type ProcessLogAction } from "@insuredesk/shared";
-import { ArrowDown, ChevronDown, CircleCheck } from "lucide-react";
+import { ArrowUp, ChevronDown, CircleCheck } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
  * createdAt 映射成 at 传入），composer 由调用方按门控决定给不给。
  *
  * 渲染规则：
+ * - 倒序：最新条目在最上（API 给正序，本栏渲染前反转）
  * - 沟通条目（external_note/comment）是气泡：颜色区分类型（蓝=留言，琥珀=
  *   跟进），左右区分谁发的——incomingActions 落左侧带头像，让"对方在工单上
  *   有更新"一眼可见。内部默认客户留言是对方；外部端传 ["comment"]（客服跟进
@@ -21,8 +22,8 @@ import { cn } from "@/lib/utils";
  * - status_change 不渲染：流转已由完结里程碑与沟通气泡讲完，独立一行是噪音
  *
  * 布局契约：本栏自身撑满详情区高度，只有时间线那一段滚动，composer 始终在
- * 视口内。时间线默认贴底（最新即所见，换单也回到底部）；新增条目时用户若
- * 翻上去则不拽回，改弹「↓ 新记录」跳转钮。
+ * 视口内。时间线倒序，默认视口即顶部（最新即所见，换单也回到顶部）；新增
+ * 条目时用户若翻下去看旧记录则不拽回，改弹「↑ 新记录」跳转钮。
  */
 
 /** 时间线条目的归一形状：内外两端的 ProcessLog wire shape 都能映射进来。 */
@@ -83,26 +84,27 @@ function parseEditRemark(remark: string): EditDiffSegment[] {
 }
 
 /**
- * 贴底滚动：首屏与换单（首条 id 变化）都滚到底；新增条目时若本就在底部附近
- * 则跟着滚到底，用户翻上去时不拽回，改弹跳转钮。
+ * 贴顶滚动（倒序）：首屏与换单（最旧一条 id 变化——它按单稳定，新增条目
+ * 不动它）都滚到顶；新增条目时若本就在顶部附近则跟着滚到顶，用户翻下去
+ * 看旧记录时不拽回，改弹跳转钮。
  */
-function useStickToBottom(logs: readonly TimelineLog[]) {
+function useStickToTop(logs: readonly TimelineLog[]) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const nearBottomRef = useRef(true);
+  const nearTopRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
 
-  const firstLogId = logs[0]?.id ?? null;
+  const oldestLogId = logs[logs.length - 1]?.id ?? null;
   const entryCount = logs.length;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: firstLogId 是换单信号，不在 effect 体内使用
+  // biome-ignore lint/correctness/useExhaustiveDependencies: oldestLogId 是换单信号，不在 effect 体内使用
   useLayoutEffect(() => {
-    nearBottomRef.current = true;
+    nearTopRef.current = true;
     setShowJump(false);
     const el = scrollRef.current;
     if (el) {
-      el.scrollTop = el.scrollHeight;
+      el.scrollTop = 0;
     }
-  }, [firstLogId]);
+  }, [oldestLogId]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: entryCount 是新增条目的触发信号，不在 effect 体内使用
   useLayoutEffect(() => {
@@ -110,8 +112,8 @@ function useStickToBottom(logs: readonly TimelineLog[]) {
     if (!el) {
       return;
     }
-    if (nearBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
+    if (nearTopRef.current) {
+      el.scrollTop = 0;
     } else {
       setShowJump(true);
     }
@@ -122,15 +124,15 @@ function useStickToBottom(logs: readonly TimelineLog[]) {
     if (!el) {
       return;
     }
-    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (nearBottomRef.current) {
+    nearTopRef.current = el.scrollTop < 80;
+    if (nearTopRef.current) {
       setShowJump(false);
     }
   }
 
   function jumpToLatest() {
     scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
+      top: 0,
       behavior: "smooth",
     });
   }
@@ -151,8 +153,8 @@ export function TicketTimelineColumn({
   incomingActions?: readonly ProcessLogAction[];
   completionStatus?: string | null;
 }) {
-  const visibleLogs = logs.filter((log) => log.action !== "status_change");
-  const { scrollRef, handleScroll, showJump, jumpToLatest } = useStickToBottom(visibleLogs);
+  const visibleLogs = logs.filter((log) => log.action !== "status_change").reverse();
+  const { scrollRef, handleScroll, showJump, jumpToLatest } = useStickToTop(visibleLogs);
 
   return (
     <div className="flex flex-col xl:min-h-0">
@@ -181,9 +183,9 @@ export function TicketTimelineColumn({
           <button
             type="button"
             onClick={jumpToLatest}
-            className="absolute bottom-3 right-4 hidden items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-lg xl:flex"
+            className="absolute top-3 right-4 hidden items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-lg xl:flex"
           >
-            <ArrowDown className="size-3.5" />
+            <ArrowUp className="size-3.5" />
             新记录
           </button>
         )}
