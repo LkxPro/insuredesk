@@ -31,7 +31,7 @@ type TodoItem = {
   ticketId: string;
   workOrderNumber: string;
   customerName: string;
-  complaintLevel: string;
+  slaPolicyName: string | null;
   createdAt: string;
   dueAt: string | null;
   severity: "warning" | "critical";
@@ -42,7 +42,7 @@ function todoItem(overrides: Partial<TodoItem> & Pick<TodoItem, "ticketId">): To
   return {
     workOrderNumber: "WO100001",
     customerName: "赵待办",
-    complaintLevel: "一般投诉",
+    slaPolicyName: "一般投诉",
     createdAt: "2026-07-09T08:00:00.000Z",
     dueAt: "2026-07-11T08:00:00.000Z",
     severity: "warning",
@@ -139,7 +139,7 @@ describe("red-dot badge and list", () => {
         ticketId: "t2",
         workOrderNumber: "WO100002",
         customerName: "特急客户",
-        complaintLevel: "特急投诉",
+        slaPolicyName: "特急投诉",
         dueAt: null,
         severity: "critical",
         alerts: [
@@ -163,6 +163,8 @@ describe("red-dot badge and list", () => {
     expect(screen.getByText("尚未首次跟进，已等待 3 小时")).toBeInTheDocument();
     expect(screen.getByText("WO100002")).toBeInTheDocument();
     expect(screen.getByText("滚动跟进")).toBeInTheDocument();
+    expect(screen.getByText("一般投诉")).toBeInTheDocument();
+    expect(screen.getByText("特急投诉")).toBeInTheDocument();
 
     // 黄转红 is a rendering concern here: severities arrive per alert
     const critical = screen.getByText("尚未首次跟进，已等待 3 小时").closest("[data-severity]");

@@ -1,7 +1,6 @@
 import type { AppRouter } from "@insuredesk/api";
 import {
   BATCH_ASSIGN_LIMIT,
-  COMPLAINT_LEVELS,
   DEFAULT_TICKET_SOURCE_FILTER,
   isTicketInFlight,
   POLICY_NUMBER_STATE_FILTERS,
@@ -72,7 +71,7 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
     channelId: multi("channel"),
     categoryId: multi("category"),
     completionStatusId: multi("completionStatus"),
-    complaintLevel: multi("level"),
+    slaPolicyId: multi("policyId"),
     policyNumberState: multi("policyNumber"),
     source: multi("source"),
     search: params.get("q") ?? undefined,
@@ -132,7 +131,6 @@ const STATUS_FILTER_OPTIONS = TICKET_DISPLAY_STATUSES.map((status) => ({
   value: status,
   label: TICKET_STATUS_LABELS[status],
 }));
-const LEVEL_FILTER_OPTIONS = COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }));
 const POLICY_NUMBER_STATE_LABELS: Record<PolicyNumberStateFilter, string> = {
   none: "无保单号",
 };
@@ -168,6 +166,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const channelOptions = trpc.channel.filterOptions.useQuery().data ?? [];
   const categoryOptions = trpc.ticketCategory.filterOptions.useQuery().data ?? [];
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
+  // 策略筛选只列启用项（sla.options 口径），与目录 filterOptions 的停用标注口径不同
+  const slaOptions = trpc.sla.options.useQuery().data ?? [];
 
   const channels = useMemo(
     () =>
@@ -192,6 +192,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         label: status.active ? status.name : `${status.name}（已停用）`,
       })),
     [completionStatusOptions],
+  );
+  const slaPolicies = useMemo(
+    () => slaOptions.map((policy) => ({ value: policy.id, label: policy.name })),
+    [slaOptions],
   );
 
   const columns: ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>> = useMemo(
@@ -235,9 +239,9 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         render: (ticket) => ticket.channel ?? <Unknown />,
       },
       {
-        key: "complaintLevel",
-        header: TICKET_FIELDS.complaintLevel.label,
-        render: (ticket) => ticket.complaintLevel ?? <Unknown />,
+        key: "slaPolicy",
+        header: TICKET_FIELDS.slaPolicyId.label,
+        render: (ticket) => ticket.slaPolicyName ?? <Unknown />,
       },
       {
         key: "source",
@@ -262,10 +266,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         // 处理时限 defaults to soonest-first — that's the queue-working order
         sort: { field: "dueAt", initialOrder: "asc" },
         render: (ticket) =>
-          // dueAt null = 特急不设时限 when a level exists, 未定级 otherwise
+          // dueAt null = 策略不设时限（如出厂特急行）when a policy exists, 未指定策略 otherwise
           ticket.dueAt ? (
             formatDateTime(ticket.dueAt)
-          ) : ticket.complaintLevel ? (
+          ) : ticket.slaPolicyId ? (
             <span className="text-muted-foreground">不设时限</span>
           ) : (
             <Unknown />
@@ -441,10 +445,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             onChange={(values) => setParam("completionStatus", serializeSelection(values, []))}
           />
           <MultiSelectFilter
-            label={TICKET_FIELDS.complaintLevel.label}
-            values={query.complaintLevel ?? []}
-            options={LEVEL_FILTER_OPTIONS}
-            onChange={(values) => setParam("level", serializeSelection(values, []))}
+            label={TICKET_FIELDS.slaPolicyId.label}
+            values={query.slaPolicyId ?? []}
+            options={slaPolicies}
+            onChange={(values) => setParam("policyId", serializeSelection(values, []))}
           />
           <MultiSelectFilter
             label={TICKET_FIELDS.policyNumbers.label}
@@ -484,7 +488,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           query.channelId?.length,
           query.categoryId?.length,
           query.completionStatusId?.length,
-          query.complaintLevel?.length,
+          query.slaPolicyId?.length,
           query.policyNumberState?.length,
           query.search ? 1 : 0,
           query.createdFrom || query.createdTo ? 1 : 0,

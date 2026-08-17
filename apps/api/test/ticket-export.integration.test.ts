@@ -314,7 +314,8 @@ describe("ticket export (Testcontainers)", () => {
       const header = rows[0];
       expect(header?.[0]).toBe("工单号");
       expect(header).toContain("状态");
-      expect(header).toContain("投诉等级");
+      expect(header).toContain("时效策略");
+      expect(header).not.toContain("投诉等级");
       expect(header).toContain("完结状态");
 
       // Same rows, same order as the list — and nobody else's
@@ -595,8 +596,10 @@ describe("ticket export (Testcontainers)", () => {
       const headerCells = (sheet?.getRow(1).values as Array<string | undefined>) ?? [];
       expect(headerCells).toContain("跟进记录");
       expect(headerCells).not.toContain("处理结果");
-      const levelColumn = headerCells.indexOf("投诉等级");
-      expect(sheet?.getRow(3).getCell(levelColumn).value).toBe("特急投诉");
+      const policyColumn = headerCells.indexOf("时效策略");
+      expect(policyColumn).toBeGreaterThan(-1);
+      expect(sheet?.getRow(3).getCell(policyColumn).value).toBe("特急投诉");
+      expect(sheet?.getRow(2).getCell(policyColumn).value).toBe("一般投诉");
       const dueColumn = headerCells.indexOf("处理时限");
       expect(sheet?.getRow(3).getCell(dueColumn).value ?? "").toBe(""); // 特急: no dueAt
     });

@@ -90,7 +90,7 @@ function defaultData(path: string): unknown {
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
-  if (path.endsWith(".filterOptions")) {
+  if (path.endsWith(".filterOptions") || path.endsWith(".options")) {
     return [];
   }
   // 详情页条幅会查 ticket.findDuplicates；空数组 = 无命中，条幅不渲染

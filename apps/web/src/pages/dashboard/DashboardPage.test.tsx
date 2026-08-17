@@ -52,6 +52,7 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
 type StatsPayload = {
   scope: "all" | "own";
   metrics: Record<string, number>;
+  urgentPolicy: { id: string; name: string } | null;
   channels: Array<{ channelId: string; name: string; count: number }>;
   assignees: Array<{
     assigneeId: string;
@@ -77,6 +78,7 @@ function statsPayload(overrides: Partial<StatsPayload> = {}): StatsPayload {
       overdue: 2,
       urgent: 1,
     },
+    urgentPolicy: { id: "pol-top", name: "特急投诉" },
     channels: [
       { channelId: "ch-1", name: "保司", count: 20 },
       { channelId: "ch-2", name: "经纪", count: 10 },
@@ -162,12 +164,25 @@ describe("指标卡", () => {
     renderDashboard();
 
     expect(await screen.findByText("工单总数")).toBeInTheDocument();
-    for (const label of ["未分配", "已分配", "处理中", "已完结", "待超时", "已超时", "特急工单"]) {
+    for (const label of ["未分配", "已分配", "处理中", "已完结", "待超时", "已超时"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+    expect(screen.getByText("特急投诉")).toBeInTheDocument();
+    expect(screen.getByText("最高档时效策略")).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument(); // total
     expect(screen.getByText("19")).toBeInTheDocument(); // completed
     expect(screen.getByText("2")).toBeInTheDocument(); // overdue
+  });
+
+  it("无 active 策略时特急卡降级：固定文案，不随策略名", async () => {
+    canned.stats = statsPayload({
+      urgentPolicy: null,
+      metrics: { ...statsPayload().metrics, urgent: 0 },
+    });
+    renderDashboard();
+
+    expect(await screen.findByText("特急工单")).toBeInTheDocument();
+    expect(screen.getByText("无启用的时效策略")).toBeInTheDocument();
   });
 });
 
@@ -256,14 +271,11 @@ describe("卡片跳转工单管理", () => {
     expect(overdueCard).toHaveAttribute("href", "/tickets?status=overdue");
   });
 
-  it("urgent card links to tickets with level=特急投诉", async () => {
+  it("urgent card links to tickets with policyId of the bound policy", async () => {
     renderDashboard();
 
-    const urgentCard = (await screen.findByText("特急工单")).closest("a");
-    expect(urgentCard).toHaveAttribute(
-      "href",
-      "/tickets?level=%E7%89%B9%E6%80%A5%E6%8A%95%E8%AF%89",
-    );
+    const urgentCard = (await screen.findByText("特急投诉")).closest("a");
+    expect(urgentCard).toHaveAttribute("href", "/tickets?policyId=pol-top");
   });
 
   it("cards include createdFrom/createdTo when dashboard has a time range", async () => {

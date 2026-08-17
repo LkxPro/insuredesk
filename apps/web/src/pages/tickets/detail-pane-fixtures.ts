@@ -35,6 +35,8 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
     contactId: null,
     category: { id: "cat-claims", name: "理赔投诉", active: true },
     complaintLevel: "一般投诉",
+    slaPolicyId: "pol-normal",
+    slaPolicy: { id: "pol-normal", name: "一般投诉", active: true },
     priority: null,
     followUpFrequency: "24小时内累计跟进1次",
     firstResponseRequirement: "120分钟内完成首次响应",
@@ -75,6 +77,8 @@ export function listItem(overrides: Record<string, unknown> = {}) {
     channel: "保司",
     category: "理赔投诉",
     complaintLevel: "一般投诉",
+    slaPolicyId: "pol-normal",
+    slaPolicyName: "一般投诉",
     customerName: "王小明",
     policyNumbers: ["P2026070900123"],
     status: "processing",
@@ -100,4 +104,10 @@ export const categoryOptions = [
 export const completionStatusOptions = [
   { id: "cs-normal", name: "正常完结" },
   { id: "cs-negotiated", name: "已协商解决" },
+];
+
+/** sla.options 的选项 feed：仅启用策略（id/name/description，按目录序）。 */
+export const slaPolicyOptions = [
+  { id: "pol-normal", name: "一般投诉", description: "常规投诉：48 小时处理时限。" },
+  { id: "pol-urgent", name: "特急投诉", description: "特急投诉：不设处理时限，滚动跟进。" },
 ];

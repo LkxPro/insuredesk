@@ -1,5 +1,4 @@
 import {
-  COMPLAINT_LEVELS,
   NUCLEAR_BODY_STATUSES,
   PRIORITIES,
   PRIORITY_LABELS,
@@ -11,6 +10,8 @@ import {
   type TicketCreateInput,
   ticketCreateInputSchema,
 } from "@insuredesk/shared";
+import { CheckIcon } from "lucide-react";
+import { Select as SelectPrimitive } from "radix-ui";
 import { Controller, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 import { DateTimePicker } from "@/components/DateTimePicker";
@@ -63,9 +64,13 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
   const requiredExtension: Record<string, z.ZodTypeAny> = {};
   for (const key of TICKET_CREATE_FIELD_KEYS) {
     // 保单号的必填判定在对象级（勾选「无保单号」算明确表态）
-    if (requiredFields.includes(key) && key !== "policyNumbers") {
+    if (requiredFields.includes(key) && key !== "policyNumbers" && key !== "complaintLevel") {
       requiredExtension[key] = requiredFieldSchema(TICKET_FIELDS[key]);
     }
+  }
+  // 存量角色必填集里的 complaintLevel 由 slaPolicyId 控件承载（与服务端必填校验同一映射）
+  if (requiredFields.includes("complaintLevel") && requiredExtension.slaPolicyId === undefined) {
+    requiredExtension.slaPolicyId = requiredFieldSchema(TICKET_FIELDS.slaPolicyId);
   }
 
   if (Object.keys(requiredExtension).length > 0) {
@@ -247,6 +252,73 @@ export function withCurrentOption(
     ...options,
     { id: current.id, name: current.active ? current.name : `${current.name}（已停用）` },
   ];
+}
+
+/**
+ * 时效策略下拉项：名称为主、说明小字随行。说明不进 ItemText——触发器回显只有
+ * 名称一行；小字只在展开的选项列表里（内部选型控件的统一口径）。
+ */
+export function SlaPolicyOptionItem({
+  option,
+}: {
+  option: { id: string; name: string; description?: string | null };
+}) {
+  return (
+    <SelectPrimitive.Item
+      value={option.id}
+      className="relative flex w-full cursor-default flex-col items-start gap-0.5 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+    >
+      <span
+        data-slot="select-item-indicator"
+        className="absolute top-1.5 right-2 flex size-3.5 items-center justify-center"
+      >
+        <SelectPrimitive.ItemIndicator>
+          <CheckIcon className="size-4" />
+        </SelectPrimitive.ItemIndicator>
+      </span>
+      <SelectPrimitive.ItemText>
+        <span>{option.name}</span>
+      </SelectPrimitive.ItemText>
+      {option.description ? (
+        <span className="text-xs text-muted-foreground">{option.description}</span>
+      ) : null}
+    </SelectPrimitive.Item>
+  );
+}
+
+export function SlaPolicySelect({
+  id,
+  value,
+  onChange,
+  invalid,
+  current,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  invalid?: boolean;
+  /** 编辑表单传入工单当前策略；建单不传。 */
+  current?: CurrentCatalogOption | null;
+}) {
+  const options = withCurrentOption(trpc.sla.options.useQuery().data ?? [], current);
+  return (
+    <Select
+      value={value ? value : UNSET}
+      onValueChange={(next) => onChange(next === UNSET ? "" : next)}
+    >
+      <SelectTrigger id={id} className="w-full" aria-invalid={invalid}>
+        <SelectValue placeholder="请选择" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectItem value={UNSET}>未设置</SelectItem>
+          {options.map((option) => (
+            <SlaPolicyOptionItem key={option.id} option={option} />
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
 }
 
 export function TicketFormFields({
@@ -638,40 +710,26 @@ export function TicketFormFields({
             />
             <FieldError errors={[errors.categoryId]} />
           </Field>
-          <Field data-invalid={!!errors.complaintLevel}>
-            <FieldLabel htmlFor="complaintLevel">
-              {TICKET_FIELDS.complaintLevel.label}
-              {isRequired("complaintLevel") && <span className="text-destructive">*</span>}
+          <Field data-invalid={!!errors.slaPolicyId}>
+            <FieldLabel htmlFor="slaPolicyId">
+              {TICKET_FIELDS.slaPolicyId.label}
+              {(isRequired("slaPolicyId") || isRequired("complaintLevel")) && (
+                <span className="text-destructive">*</span>
+              )}
             </FieldLabel>
             <Controller
               control={control}
-              name="complaintLevel"
+              name="slaPolicyId"
               render={({ field }) => (
-                <Select
-                  value={field.value ? field.value : UNSET}
-                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
-                >
-                  <SelectTrigger
-                    id="complaintLevel"
-                    className="w-full"
-                    aria-invalid={!!errors.complaintLevel}
-                  >
-                    <SelectValue placeholder="请选择" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={UNSET}>未设置</SelectItem>
-                      {COMPLAINT_LEVELS.map((level) => (
-                        <SelectItem key={level} value={level}>
-                          {level}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <SlaPolicySelect
+                  id="slaPolicyId"
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  invalid={!!errors.slaPolicyId}
+                />
               )}
             />
-            <FieldError errors={[errors.complaintLevel]} />
+            <FieldError errors={[errors.slaPolicyId]} />
           </Field>
           <Field data-invalid={!!errors.priority}>
             <FieldLabel htmlFor="priority">

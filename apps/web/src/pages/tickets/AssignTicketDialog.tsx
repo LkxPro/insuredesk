@@ -43,7 +43,7 @@ export type AssignTarget = {
 /** 改派不重置时限 hint — say how much of the deadline is already gone. */
 function remainingTimeHint(dueAt: string | null): string {
   if (!dueAt) {
-    return "不设时限（特急）";
+    return "不设时限";
   }
   const minutes = Math.round((new Date(dueAt).getTime() - Date.now()) / 60_000);
   const hint = `${Math.floor(Math.abs(minutes) / 60)}小时${Math.abs(minutes) % 60}分`;

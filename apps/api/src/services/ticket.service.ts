@@ -277,6 +277,7 @@ const listInclude = {
   // Catalog references render their CURRENT names — a rename shows through
   category: { select: { name: true } },
   channel: { select: { name: true } },
+  slaPolicy: { select: { name: true } },
 } satisfies Prisma.TicketInclude;
 
 type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
@@ -466,6 +467,7 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
     category: ticket.category?.name ?? null,
     complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     slaPolicyId: ticket.slaPolicyId,
+    slaPolicyName: ticket.slaPolicy?.name ?? null,
     customerName: ticket.customerName,
     policyNumbers: ticket.policyNumbers,
     noPolicyNumber: ticket.noPolicyNumber,
@@ -484,6 +486,7 @@ const detailInclude = {
   // selectable (labelled 已停用) while other disabled options never appear
   category: { select: { id: true, name: true, active: true } },
   channel: { select: { id: true, name: true, active: true } },
+  slaPolicy: { select: { id: true, name: true, active: true } },
   // 完结状态 is display-only on the detail page — the CURRENT name suffices
   completionStatus: { select: { name: true } },
   processLogs: { orderBy: [{ at: "asc" }, { id: "asc" }] },
@@ -557,6 +560,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     category: ticket.category,
     complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     slaPolicyId: ticket.slaPolicyId,
+    slaPolicy: ticket.slaPolicy,
     priority,
     followUpFrequency: ticket.followUpFrequency,
     firstResponseRequirement: ticket.firstResponseRequirement,

@@ -54,24 +54,16 @@ import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
 type EditableFields = Omit<TicketEditData, "ticketId">;
 type EditableFieldKey = keyof EditableFields;
 
-/**
- * 编辑字段集＝建单字段集剔除 complaintLevel（时效策略引用由专属块处理，留痕占其
- * 表单槽位），留痕段落按此（＝表单）顺序。条件类型注解把「编辑 schema 长出描述
- * 表外的字段」变成编译错误——那种字段进不了清单，diff 与留痕会静默漏掉它。
- * 豁免：noPolicyNumber（变化折进保单号一行留痕）、complaintLevel 与 slaPolicyId
- * （双轨引用，专属块按策略 id 比对）。
- */
 const EDITABLE_FIELD_KEYS: [
   Exclude<
     EditableFieldKey,
     TicketCreateFieldKey | "noPolicyNumber" | "complaintLevel" | "slaPolicyId"
   >,
 ] extends [never]
-  ? readonly Exclude<TicketCreateFieldKey, "complaintLevel">[]
-  : never = TICKET_CREATE_FIELD_KEYS.filter((key) => key !== "complaintLevel") as readonly Exclude<
-  TicketCreateFieldKey,
-  "complaintLevel"
->[];
+  ? readonly Exclude<TicketCreateFieldKey, "complaintLevel" | "slaPolicyId">[]
+  : never = TICKET_CREATE_FIELD_KEYS.filter(
+  (key) => key !== "complaintLevel" && key !== "slaPolicyId",
+) as readonly Exclude<TicketCreateFieldKey, "complaintLevel" | "slaPolicyId">[];
 
 type EditableValue = string | string[] | boolean | Date | null;
 

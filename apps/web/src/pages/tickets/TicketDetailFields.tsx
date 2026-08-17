@@ -1,6 +1,5 @@
-import type { ComplaintLevel, NuclearBodyStatus, Priority } from "@insuredesk/shared";
+import type { NuclearBodyStatus, Priority } from "@insuredesk/shared";
 import {
-  COMPLAINT_LEVELS,
   joinPolicyNumbers,
   NUCLEAR_BODY_STATUSES,
   PRIORITY_LABELS,
@@ -29,6 +28,7 @@ import {
   type CurrentCatalogOption,
   HAS_CONTACTED_OPTIONS,
   PolicyNumbersControl,
+  SlaPolicySelect,
   type TicketFormValues,
   UNSET,
   withCurrentOption,
@@ -67,7 +67,7 @@ export interface EditableTicket {
   contactTime: string | null;
   contactId: string | null;
   category: CurrentCatalogOption | null;
-  complaintLevel: ComplaintLevel | null;
+  slaPolicy: CurrentCatalogOption | null;
   priority: Priority | null;
 }
 
@@ -101,7 +101,8 @@ export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
       : "",
     contactId: ticket?.contactId ?? "",
     categoryId: ticket?.category?.id ?? "",
-    complaintLevel: ticket?.complaintLevel ?? "",
+    complaintLevel: "",
+    slaPolicyId: ticket?.slaPolicy?.id ?? "",
     priority: ticket?.priority ?? "",
   };
 }
@@ -116,6 +117,10 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
       return ticket.channel?.name ?? null;
     case "categoryId":
       return ticket.category?.name ?? null;
+    case "slaPolicyId":
+      return ticket.slaPolicy?.name ?? null;
+    case "complaintLevel":
+      return null;
     case "hasContacted":
       return (
         TICKET_FIELDS.hasContacted.options.find((option) => option.value === ticket.hasContacted)
@@ -132,7 +137,6 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
       // [] = 未填写，交给调用方的 "—" 兜底
       return ticket.policyNumbers.length > 0 ? joinPolicyNumbers(ticket.policyNumbers) : null;
     case "nuclearBodyStatus":
-    case "complaintLevel":
     case "project":
     case "brokerageEntity":
     case "paymentChannel":
@@ -154,7 +158,7 @@ function EnumControl({
   invalid,
 }: {
   form: UseFormReturn<TicketFormValues>;
-  name: "nuclearBodyStatus" | "complaintLevel" | "priority";
+  name: "nuclearBodyStatus" | "priority";
   options: ReadonlyArray<{ value: string; label: string }>;
   invalid: boolean;
 }) {
@@ -280,15 +284,24 @@ function EditControl({
           invalid={invalid}
         />
       );
-    case "complaintLevel":
+    case "slaPolicyId":
       return (
-        <EnumControl
-          form={form}
-          name={name}
-          options={COMPLAINT_LEVELS.map((level) => ({ value: level, label: level }))}
-          invalid={invalid}
+        <Controller
+          control={control}
+          name="slaPolicyId"
+          render={({ field }) => (
+            <SlaPolicySelect
+              id="slaPolicyId"
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              invalid={invalid}
+              current={ticket.slaPolicy}
+            />
+          )}
         />
       );
+    case "complaintLevel":
+      return null;
     case "priority":
       return (
         <EnumControl

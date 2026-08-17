@@ -1,8 +1,8 @@
 import { COMPLAINT_LEVELS, NUCLEAR_BODY_STATUSES, PRIORITIES, PRIORITY_LABELS } from "./enums.ts";
 
 /**
- * 工单字段描述表：20 个建单字段 + 3 个导入专属列（时效策略引用 + 完结迁移对）
- * 的唯一声明处。每行声明
+ * 工单字段描述表：21 个建单字段 + 完结迁移对两个导入专属列的唯一声明处。
+ * 每行声明
  * key、标准名（＝表单用词）、类型与取值约束（长度上限/枚举取值/日期格式/
  * 目录引用）、导入填写说明的素材，以及显式的 per-surface override 槽位。
  * 加字段＝在表里加一行：字段 key 清单、文本长度上限、导入解析列与导入
@@ -45,7 +45,7 @@ type TicketFieldSpec = {
   readonly key: string;
   readonly label: string;
   readonly overrides?: TicketFieldOverrides;
-  /** 仅存在于批量导入（完结迁移对、时效策略引用列），不属于建单表单字段。 */
+  /** 仅存在于批量导入（完结迁移对），不属于建单表单字段。 */
   readonly importOnly?: true;
   /** 不进导入列：旧投诉等级文本轨留在建单/编辑契约里，导入由 slaPolicyId 列承载。 */
   readonly formOnly?: true;
@@ -195,7 +195,6 @@ export const TICKET_FIELD_DESCRIPTORS = [
     label: "时效策略",
     catalog: "slaPolicy",
     maxLength: 100,
-    importOnly: true,
     importNoteTail: "留空=未定级（无处理时限与 SLA 告警）",
   },
   {

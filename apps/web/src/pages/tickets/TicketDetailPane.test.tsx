@@ -71,13 +71,13 @@ describe("左栏工单信息", () => {
     expect(orderNumberCell).toHaveTextContent("—");
   });
 
-  it("特急不设时限与未定级两种 dueAt 空值分别说明", async () => {
-    const urgent = renderDetail({ complaintLevel: "特急", dueAt: null });
+  it("策略不设时限与未指定策略两种 dueAt 空值分别说明", async () => {
+    const noDeadline = renderDetail({ slaPolicyId: "pol-urgent", dueAt: null });
     let pane = await findPane();
-    expect(within(pane).getByText("不设时限（特急）")).toBeInTheDocument();
-    urgent.unmount();
+    expect(within(pane).getByText("不设时限")).toBeInTheDocument();
+    noDeadline.unmount();
 
-    renderDetail({ complaintLevel: null, dueAt: null });
+    renderDetail({ slaPolicyId: null, slaPolicy: null, dueAt: null });
     pane = await findPane();
     const dueCell = within(pane).getByText("处理时限").closest("div");
     expect(dueCell).toHaveTextContent("—");

@@ -111,7 +111,7 @@ export function RequiredFieldsChecklist({
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-sm font-medium">分类与等级</legend>
         <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
-          {["categoryId", "complaintLevel", "priority"].map((field) => (
+          {["categoryId", "slaPolicyId", "priority"].map((field) => (
             <div key={field} className="flex items-start gap-2 text-sm">
               <Checkbox
                 id={`required-field-${field}`}

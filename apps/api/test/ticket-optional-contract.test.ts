@@ -14,11 +14,9 @@ import { describe, expect, it } from "vitest";
 describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
   it("accepts a completely empty object and yields all-null data across every create field", () => {
     const data = ticketCreateInputSchema.parse({});
-    // 多值保单号的「未填写」形态是空数组而非 null; 「无保单号」缺省未勾选;
-    // slaPolicyId 是时效策略的双轨引用（描述表之外的服务端字段）
+    // 多值保单号的「未填写」形态是空数组而非 null; 「无保单号」缺省未勾选
     expect(data).toEqual({
       ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
-      slaPolicyId: null,
       policyNumbers: [],
       noPolicyNumber: false,
     });

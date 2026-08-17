@@ -35,10 +35,18 @@ describe("buildTicketListUrl", () => {
     expect(buildTicketListUrl("overdue", {})).toBe("/tickets?status=overdue");
   });
 
-  it("urgent card returns level=特急投诉", () => {
-    expect(buildTicketListUrl("urgent", {})).toBe(
-      "/tickets?level=%E7%89%B9%E6%80%A5%E6%8A%95%E8%AF%89",
-    );
+  it("urgent card returns policyId of the bound top-sortOrder active policy", () => {
+    expect(buildTicketListUrl("urgent", {}, "pol-top")).toBe("/tickets?policyId=pol-top");
+  });
+
+  it("urgent card degrades to an unfiltered list when no active policy exists", () => {
+    expect(buildTicketListUrl("urgent", {}, null)).toBe("/tickets");
+  });
+
+  it("urgent card keeps the time range alongside policyId", () => {
+    expect(
+      buildTicketListUrl("urgent", { createdFrom: "2026-07-01", createdTo: "2026-07-31" }, "p1"),
+    ).toBe("/tickets?policyId=p1&createdFrom=2026-07-01&createdTo=2026-07-31");
   });
 
   it("includes createdFrom when present", () => {

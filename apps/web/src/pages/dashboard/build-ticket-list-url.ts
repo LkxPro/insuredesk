@@ -12,6 +12,7 @@ function appendCreatedRange(params: URLSearchParams, createdRange: CreatedRangeQ
 export function buildTicketListUrl(
   metric: DashboardMetricKey,
   createdRange: CreatedRangeQuery,
+  urgentPolicyId?: string | null,
 ): string {
   const params = new URLSearchParams();
 
@@ -37,7 +38,9 @@ export function buildTicketListUrl(
       params.set("status", "overdue");
       break;
     case "urgent":
-      params.set("level", "特急投诉");
+      if (urgentPolicyId) {
+        params.set("policyId", urgentPolicyId);
+      }
       break;
   }
 

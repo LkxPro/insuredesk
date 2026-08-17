@@ -31,7 +31,7 @@ export function buildTicketExportUrl(
     "channelId",
     "categoryId",
     "completionStatusId",
-    "complaintLevel",
+    "slaPolicyId",
     "source",
   ] as const) {
     const value = query[key];

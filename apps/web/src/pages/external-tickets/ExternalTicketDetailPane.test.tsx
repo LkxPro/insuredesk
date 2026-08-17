@@ -34,6 +34,7 @@ function ticket(overrides: Record<string, unknown> = {}) {
     categoryId: null,
     categoryName: null,
     complaintLevel: null,
+    slaPolicyName: null,
     priority: "high",
     completionStatusId: null,
     completionStatusName: null,
@@ -167,7 +168,7 @@ describe("左栏", () => {
     expect(within(pane).getByText("工单原文").parentElement).toHaveTextContent("—");
   });
 
-  it("只渲染 保单号/客户/两个电话 四个字段，空值落 —，其余字段有值也不出", async () => {
+  it("渲染 保单号/客户/两个电话/时效策略 五个字段，空值落 —，其余字段有值也不出", async () => {
     renderDetail({
       ticket: {
         customerName: "张三",
@@ -186,12 +187,21 @@ describe("左栏", () => {
     expect(within(pane).getByText("13800000000")).toBeInTheDocument();
     // 空值整条仍在，落 —（fixture 的 contactPhone 未填）
     expect(within(pane).getByText("联系人电话（备用）").parentElement).toHaveTextContent("—");
+    expect(within(pane).getByText("时效策略").parentElement).toHaveTextContent("—");
 
     // 其余字段有值也不渲染（fixture 自带 渠道=微信 / 优先级=高 / 已联系=是）
     expect(within(pane).queryByText("微信")).not.toBeInTheDocument();
     expect(within(pane).queryByText("优先级")).not.toBeInTheDocument();
     expect(within(pane).queryByText("是否已联系")).not.toBeInTheDocument();
     expect(within(pane).queryByText("客服团队还未补充工单信息。")).not.toBeInTheDocument();
+  });
+
+  it("时效策略字段显示策略当前名（只读）", async () => {
+    renderDetail({ ticket: { slaPolicyName: "VIP 通道" } });
+    const pane = await findPaneShowing("WO100001");
+
+    expect(within(pane).getByText("时效策略").parentElement).toHaveTextContent("VIP 通道");
+    expect(within(pane).queryByRole("combobox", { name: /时效策略/ })).not.toBeInTheDocument();
   });
 
   it("工单号与状态已挂在头部，字段栅格不重复", async () => {
