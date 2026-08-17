@@ -2,7 +2,7 @@ import {
   slaPolicyCreateInputSchema,
   slaPolicySetActiveInputSchema,
   slaPolicySortInputSchema,
-  slaUpdateInputSchema,
+  slaPolicyUpdateInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { systemClock } from "../clock.ts";
@@ -61,12 +61,11 @@ export const slaRouter = router({
     }),
 
   /**
-   * 更新策略 — 双轨：旧轨按 complaintLevel 整体替换规则（旧前端在用），新轨
-   * 按 id 分项更新（改名撞含停用行的全表即报错）。保存即时生效 on the next
-   * dueAt stamp / 待办 poll。
+   * 按 id 分项更新策略（改名撞含停用行的全表即报错）。保存即时生效 on the
+   * next dueAt stamp / 待办 poll。
    */
   update: requirePermission("sla.edit")
-    .input(slaUpdateInputSchema)
+    .input(slaPolicyUpdateInputSchema)
     .mutation(async ({ input }) => {
       try {
         return await updateSlaPolicy(deps, input);

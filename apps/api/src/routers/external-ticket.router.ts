@@ -71,7 +71,6 @@ function serializeExternalTicket(ticket: TicketWithCatalogs) {
     contactId: ticket.contactId,
     categoryId: ticket.categoryId,
     categoryName: ticket.category?.name ?? null,
-    complaintLevel: ticket.complaintLevel,
     /** 时效策略名（引用随客服补录；外部提交恒未定级）。 */
     slaPolicyName: ticket.slaPolicy?.name ?? null,
     priority: ticket.priority === null ? null : prioritySchema.parse(ticket.priority),

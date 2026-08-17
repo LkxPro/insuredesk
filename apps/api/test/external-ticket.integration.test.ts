@@ -623,7 +623,7 @@ describe("external ticket API (Testcontainers)", () => {
 
       // 客服补录时效策略（按 slaPolicyId 新轨）
       const policy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "加急投诉" },
+        where: { name: "加急投诉" },
       });
       const internal = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
       await internal.ticket.edit({ ticketId: ticket.id, slaPolicyId: policy.id });
@@ -922,7 +922,6 @@ describe("external ticket API (Testcontainers)", () => {
         contactTime: null,
         contactId: null,
         categoryId: null,
-        complaintLevel: null,
         priority: null,
       });
       await prisma.ticket.update({
@@ -998,7 +997,6 @@ describe("external ticket API (Testcontainers)", () => {
         contactTime: null,
         contactId: null,
         categoryId: null,
-        complaintLevel: null,
         priority: null,
       });
 

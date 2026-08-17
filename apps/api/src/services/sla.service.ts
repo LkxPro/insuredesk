@@ -1,13 +1,10 @@
 import {
-  type ComplaintLevel,
   reminderRulesSchema,
   type SlaPolicyCreateInput,
-  type SlaPolicyEditInput,
   type SlaPolicyEntity,
   type SlaPolicyOption,
   type SlaPolicySortInput,
   type SlaPolicyUpdateInput,
-  type SlaUpdateInput,
 } from "@insuredesk/shared";
 import type { SlaPolicy } from "../generated/prisma/client.ts";
 import { Prisma } from "../generated/prisma/client.ts";
@@ -21,9 +18,6 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
  * 复活，无物理删除。写策略没有 "apply to existing tickets" 步骤：dueAt 建单
  * 盖章（改策略引用时锚定原始 createdAt 重盖），其余消费方（待办、dashboard）
  * 读时判定——保存即发布。
- *
- * 双轨：sla.update 同时接受旧 complaintLevel 整体替换（旧前端 SLA 页在用）
- * 与按 id 分项更新。
  */
 
 /** 策略名撞车（含停用行）。 */
@@ -48,15 +42,13 @@ export class SlaPolicySortMismatchError extends Error {
   }
 }
 
-function toDto(row: SlaPolicy): SlaPolicyEntity & { complaintLevel: ComplaintLevel } {
+function toDto(row: SlaPolicy): SlaPolicyEntity {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
     sortOrder: row.sortOrder,
     active: row.active,
-    // 旧前端按投诉等级渲染：旧锚行出示锚值，无锚新策略以名称占位。
-    complaintLevel: (row.complaintLevel ?? row.name) as ComplaintLevel,
     firstResponseMinutes: row.firstResponseMinutes,
     overdueHours: row.overdueHours,
     reminderRules: reminderRulesSchema.parse(row.reminderRules),
@@ -109,7 +101,7 @@ export async function createSlaPolicy({ prisma }: TicketServiceDeps, input: SlaP
 }
 
 /** 按 id 分项更新：缺席字段保持原值；改名撞任何行（含停用）即拒绝。 */
-async function updateSlaPolicyById({ prisma }: TicketServiceDeps, input: SlaPolicyEditInput) {
+export async function updateSlaPolicy({ prisma }: TicketServiceDeps, input: SlaPolicyUpdateInput) {
   const existing = await prisma.slaPolicy.findUnique({ where: { id: input.id } });
   if (!existing) {
     throw new SlaPolicyNotFoundError();
@@ -131,42 +123,6 @@ async function updateSlaPolicyById({ prisma }: TicketServiceDeps, input: SlaPoli
     }
     throw error;
   }
-}
-
-/**
- * 旧轨：按 complaintLevel 旧锚整体替换策略配置（名称/目录属性不动）。缺行时
- * 自愈补种——出厂库必然有行，此路只兜未播种库。
- */
-async function updateSlaPolicyByLevel({ prisma }: TicketServiceDeps, input: SlaPolicyUpdateInput) {
-  const data = {
-    firstResponseMinutes: input.firstResponseMinutes,
-    overdueHours: input.overdueHours,
-    reminderRules: input.reminderRules,
-  };
-  const existing = await prisma.slaPolicy.findUnique({
-    where: { complaintLevel: input.complaintLevel },
-  });
-  if (existing) {
-    return toDto(await prisma.slaPolicy.update({ where: { id: existing.id }, data }));
-  }
-  const max = await prisma.slaPolicy.aggregate({ _max: { sortOrder: true } });
-  return toDto(
-    await prisma.slaPolicy.create({
-      data: {
-        complaintLevel: input.complaintLevel,
-        name: input.complaintLevel,
-        sortOrder: (max._max.sortOrder ?? 0) + 1,
-        active: true,
-        ...data,
-      },
-    }),
-  );
-}
-
-export async function updateSlaPolicy(deps: TicketServiceDeps, input: SlaUpdateInput) {
-  return "complaintLevel" in input
-    ? updateSlaPolicyByLevel(deps, input)
-    : updateSlaPolicyById(deps, input);
 }
 
 /** 整组重排：清单须恰好覆盖全部策略（含停用行），顺序即新 sortOrder 1..n。 */

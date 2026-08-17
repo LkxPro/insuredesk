@@ -39,6 +39,22 @@ describe("ticket export (Testcontainers)", () => {
     });
     prisma = harness.prisma;
     seeded = harness.seeded;
+
+    baseInput = {
+      feedbackTime: "2026-07-09T02:00:00.000Z",
+      project: "融盛",
+      brokerageEntity: "东方大地",
+      paymentChannel: "连连支付",
+      policyNumbers: ["P2026070900123"],
+      userComplaintChannel: "400热线",
+      customerName: "王小明",
+      phone: "13800000000",
+      customerRequest: "对保费收取金额有异议，要求核实并回复",
+      nuclearBodyStatus: "待核实",
+      hasContacted: false,
+      slaPolicyId: harness.slaPolicyId("一般投诉"),
+      allowDuplicate: true,
+    };
     const databaseUrl = harness.databaseUrl;
 
     const channels = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
@@ -128,22 +144,7 @@ describe("ticket export (Testcontainers)", () => {
     return id;
   };
 
-  const baseInput = {
-    feedbackTime: "2026-07-09T02:00:00.000Z",
-    project: "融盛",
-    brokerageEntity: "东方大地",
-    paymentChannel: "连连支付",
-    policyNumbers: ["P2026070900123"],
-    userComplaintChannel: "400热线",
-    customerName: "王小明",
-    phone: "13800000000",
-    customerRequest: "对保费收取金额有异议，要求核实并回复",
-    nuclearBodyStatus: "待核实",
-    hasContacted: false,
-    complaintLevel: "一般投诉",
-    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
-    allowDuplicate: true,
-  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
+  let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
   async function makeTicket(
     input: Partial<TicketCreateInput> = {},
@@ -213,6 +214,13 @@ describe("ticket export (Testcontainers)", () => {
       const res = await exportRequest(session, { format: "pdf" });
       expect(res.statusCode).toBe(400);
       expect(res.json().zodError).toBeTruthy();
+    });
+
+    it("旧 complaintLevel 查询参数返回 400 与明确校验错误", async () => {
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv", complaintLevel: "特急投诉" });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.stringify(res.json().zodError)).toContain("投诉等级文本轨已下线");
     });
   });
 
@@ -571,7 +579,10 @@ describe("ticket export (Testcontainers)", () => {
 
   describe("Excel (xlsx)", () => {
     it("round-trips through exceljs with the same rows the list returns", async () => {
-      const urgent = await makeTicket({ complaintLevel: "特急投诉", customerName: "特急客户" });
+      const urgent = await makeTicket({
+        slaPolicyId: harness.slaPolicyId("特急投诉"),
+        customerName: "特急客户",
+      });
       const normal = await makeTicket({ customerName: "普通客户" });
 
       const session = await sessionFor("manager");

@@ -59,7 +59,6 @@ function createDefaults(): TicketFormValues {
     contactTime: "",
     contactId: "",
     categoryId: "",
-    complaintLevel: "",
     slaPolicyId: "",
     priority: "",
   };

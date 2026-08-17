@@ -124,19 +124,6 @@ const GOLDEN_DESCRIPTORS = [
     overrides: { exportHeader: "分类", listLabel: "类别" },
   },
   {
-    type: "enum",
-    key: "complaintLevel",
-    label: "投诉等级",
-    options: [
-      { label: "一般投诉", value: "一般投诉" },
-      { label: "高级投诉", value: "高级投诉" },
-      { label: "加急投诉", value: "加急投诉" },
-      { label: "特急投诉", value: "特急投诉" },
-    ],
-    emptyMeaning: "未定级（无处理时限与 SLA 告警）",
-    formOnly: true,
-  },
-  {
     type: "catalog",
     key: "slaPolicyId",
     label: "时效策略",
@@ -186,19 +173,13 @@ describe("ticket field descriptors (golden)", () => {
     );
   });
 
-  it("导入表头＝金样剔除 formOnly 行的标准名（列序即表序），完结迁移对固定收尾", () => {
-    expect(TICKET_IMPORT_HEADERS).toEqual(
-      GOLDEN_DESCRIPTORS.filter((row) => !("formOnly" in row)).map((row) => row.label),
-    );
+  it("导入表头＝金样各行的标准名（列序即表序），完结迁移对固定收尾", () => {
+    expect(TICKET_IMPORT_HEADERS).toEqual(GOLDEN_DESCRIPTORS.map((row) => row.label));
     expect(GOLDEN_DESCRIPTORS.filter((row) => "importOnly" in row).map((row) => row.key)).toEqual([
       "completionStatusId",
       "completionRemark",
     ]);
     expect(TICKET_IMPORT_HEADERS.slice(-2)).toEqual(["完结状态", "完结备注"]);
-    // 时效策略引用列占据投诉等级的表序位置
-    expect(TICKET_IMPORT_HEADERS.indexOf("时效策略")).toBe(
-      GOLDEN_DESCRIPTORS.findIndex((row) => row.key === "slaPolicyId") - 1,
-    );
   });
 
   it("文本长度上限＝金样建单文本行的 maxLength；完结备注上限单独出口", () => {

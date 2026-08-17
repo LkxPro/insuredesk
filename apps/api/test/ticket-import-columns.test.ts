@@ -17,10 +17,7 @@ import { TICKET_IMPORT_TEMPLATE_COLUMNS } from "../src/services/ticket-import-te
  */
 
 function columnOf(key: TicketFieldKey) {
-  const importDescriptors = TICKET_FIELD_DESCRIPTORS.filter(
-    (descriptor) => !("formOnly" in descriptor && descriptor.formOnly === true),
-  );
-  const index = importDescriptors.findIndex((descriptor) => descriptor.key === key);
+  const index = TICKET_FIELD_DESCRIPTORS.findIndex((descriptor) => descriptor.key === key);
   const column = TICKET_IMPORT_TEMPLATE_COLUMNS[index];
   if (!column) {
     throw new Error(`模板缺少「${key}」列`);
@@ -75,8 +72,7 @@ describe("ticket import template columns", () => {
     );
   });
 
-  /** formOnly 行（旧投诉等级文本轨）不进导入列。 */
-  it("投诉等级为 formOnly：不占导入列，时效策略引用列占据其表序位置", () => {
+  it("时效策略引用列紧随客诉类别列，导入表头无投诉等级", () => {
     expect(TICKET_IMPORT_HEADERS).not.toContain("投诉等级");
     expect(TICKET_IMPORT_HEADERS.indexOf("时效策略")).toBe(
       TICKET_IMPORT_HEADERS.indexOf("客诉类别") + 1,
@@ -100,9 +96,6 @@ describe("ticket import template columns", () => {
 
   it("下拉来源：枚举列取自己的选项 label，目录列接各自目录，其余列无下拉", () => {
     for (const descriptor of TICKET_FIELD_DESCRIPTORS) {
-      if ("formOnly" in descriptor && descriptor.formOnly === true) {
-        continue;
-      }
       const column = columnOf(descriptor.key);
       if (descriptor.type === "enum") {
         expect(column.options?.(catalogFixture), descriptor.key).toEqual(

@@ -1,6 +1,5 @@
 import {
   applyNoPolicyNumber,
-  complaintLevelSchema,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
   formatFollowUpFrequency,
@@ -73,45 +72,30 @@ export function computeDueAt(createdAt: Date, overdueHours: number | null): Date
   return overdueHours === null ? null : new Date(createdAt.getTime() + overdueHours * HOUR_MS);
 }
 
-/** 双轨引用：slaPolicyId 优先，complaintLevel 文本仅作回落（经旧锚列映射到策略行）。 */
-export interface SlaPolicyRef {
-  slaPolicyId: string | null;
-  complaintLevel: string | null;
-}
-
 /**
- * 双轨解析到策略行。ref 非空而查无此行 = 配置故障（抛 SlaPolicyNotConfiguredError）；
- * 停用行照常返回——是否接受停用由调用方按场景决定（写入拒绝，读侧降级）。
+ * 解析策略引用到策略行。引用非空而查无此行 = 配置故障（抛
+ * SlaPolicyNotConfiguredError）；停用行照常返回——是否接受停用由调用方按
+ * 场景决定（写入拒绝，读侧降级）。
  */
-export async function findSlaPolicyByRef(
+export async function findSlaPolicyById(
   db: Pick<PrismaClient, "slaPolicy">,
-  ref: SlaPolicyRef,
+  slaPolicyId: string | null,
 ): Promise<SlaPolicy | null> {
-  if (ref.slaPolicyId !== null) {
-    const policy = await db.slaPolicy.findUnique({ where: { id: ref.slaPolicyId } });
-    if (!policy) {
-      throw new SlaPolicyNotConfiguredError(ref.slaPolicyId);
-    }
-    return policy;
+  if (slaPolicyId === null) {
+    return null;
   }
-  if (ref.complaintLevel !== null) {
-    const policy = await db.slaPolicy.findUnique({
-      where: { complaintLevel: ref.complaintLevel },
-    });
-    if (!policy) {
-      throw new SlaPolicyNotConfiguredError(ref.complaintLevel);
-    }
-    return policy;
+  const policy = await db.slaPolicy.findUnique({ where: { id: slaPolicyId } });
+  if (!policy) {
+    throw new SlaPolicyNotConfiguredError(slaPolicyId);
   }
-  return null;
+  return policy;
 }
 
-/** 写入口径：引用缺失或已停用即拒绝（两条轨同一后果）。 */
 export async function resolveSlaPolicy(
   db: Pick<PrismaClient, "slaPolicy">,
-  ref: SlaPolicyRef,
+  slaPolicyId: string | null,
 ): Promise<SlaPolicy | null> {
-  const policy = await findSlaPolicyByRef(db, ref);
+  const policy = await findSlaPolicyById(db, slaPolicyId);
   if (policy !== null && !policy.active) {
     throw new SlaPolicyNotConfiguredError(policy.name);
   }
@@ -122,14 +106,12 @@ export async function resolveSlaPolicy(
  * The SLA fields a 时效策略引用 stamps onto a ticket. A null policy (未指定)
  * stamps all-null: no dueAt, no 首响/跟进 requirements — and hence no SLA time
  * alerts until an edit sets a reference (off the original createdAt).
- * complaintLevel 文本列随引用派生盖章（旧锚值，新策略为 null），不随输入原文。
  */
 export function stampFromPolicy(
   policy: SlaPolicy | null,
   createdAt: Date,
 ): {
   slaPolicyId: string | null;
-  complaintLevel: string | null;
   dueAt: Date | null;
   followUpFrequency: string | null;
   firstResponseRequirement: string | null;
@@ -137,7 +119,6 @@ export function stampFromPolicy(
   if (policy === null) {
     return {
       slaPolicyId: null,
-      complaintLevel: null,
       dueAt: null,
       followUpFrequency: null,
       firstResponseRequirement: null,
@@ -145,7 +126,6 @@ export function stampFromPolicy(
   }
   return {
     slaPolicyId: policy.id,
-    complaintLevel: policy.complaintLevel,
     dueAt: computeDueAt(createdAt, policy.overdueHours),
     followUpFrequency: formatFollowUpFrequency(reminderRulesSchema.parse(policy.reminderRules)),
     firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
@@ -154,10 +134,10 @@ export function stampFromPolicy(
 
 export async function computeSlaStamp(
   db: Pick<PrismaClient, "slaPolicy">,
-  ref: SlaPolicyRef,
+  slaPolicyId: string | null,
   createdAt: Date,
 ) {
-  return stampFromPolicy(await resolveSlaPolicy(db, ref), createdAt);
+  return stampFromPolicy(await resolveSlaPolicy(db, slaPolicyId), createdAt);
 }
 
 /**
@@ -173,10 +153,6 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
     }
     // 「无保单号」是明确表态，不算未填写
     if (field === "policyNumbers" && input.noPolicyNumber) {
-      continue;
-    }
-    // 双轨：slaPolicyId 引用同样满足「投诉等级」必填
-    if (field === "complaintLevel" && input.slaPolicyId !== null) {
       continue;
     }
     const value = input[field as TicketCreateFieldKey];
@@ -196,9 +172,9 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
  *   unfilled fields persist as NULL ("unknown", never "")
  * - requiredTicketFields of creator's role: missing any → reject with all missing fields
  * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
- * - dueAt is fixed once, here: createdAt + the level's SLA overdueHours
+ * - dueAt is fixed once, here: createdAt + the policy's SLA overdueHours
  *   (null for 特急 — never overdue; null while 未定级 — no SLA clock fields)
- * - 跟进频次/首响要求 are stamped from the level's SLA config, not hardcoded
+ * - 跟进频次/首响要求 are stamped from the policy's SLA config, not hardcoded
  * - source=manual records creatorId; "由谁创建" derives at read time
  * - the first `create` ProcessLog (operator name snapshot) lands in the same
  *   transaction, so a ticket can never exist without its timeline root
@@ -209,7 +185,7 @@ export async function createTicket(
   input: TicketCreateData,
   options?: { allowDuplicate?: boolean },
 ) {
-  const data = applyNoPolicyNumber(input);
+  const { complaintLevel: _legacy, ...data } = applyNoPolicyNumber(input);
   const role = await prisma.role.findUnique({
     where: { id: creator.roleId },
     select: { requiredTicketFields: true },
@@ -219,11 +195,7 @@ export async function createTicket(
   }
 
   const now = clock.now();
-  const slaStamp = await computeSlaStamp(
-    prisma,
-    { slaPolicyId: data.slaPolicyId, complaintLevel: data.complaintLevel },
-    now,
-  );
+  const slaStamp = await computeSlaStamp(prisma, data.slaPolicyId, now);
 
   return prisma.$transaction(async (tx) => {
     // 提交兜底查重：与插入同事务，命中即整体回滚；批量导入不经此路，天然豁免
@@ -289,7 +261,6 @@ type TicketListFilters = Pick<
   | "channelId"
   | "categoryId"
   | "completionStatusId"
-  | "complaintLevel"
   | "slaPolicyId"
   | "policyNumberState"
   | "source"
@@ -344,16 +315,8 @@ export async function buildTicketListWhere(
   if (query.completionStatusId && query.completionStatusId.length > 0) {
     filters.push({ completionStatusId: { in: query.completionStatusId } });
   }
-  // 时效策略筛选双轨：slaPolicyId 优先；文本轨经旧锚列映射到策略 id，
-  // 与迁移回填/建单盖章的 slaPolicyId 同源，两轨结果一致。
   if (query.slaPolicyId && query.slaPolicyId.length > 0) {
     filters.push({ slaPolicyId: { in: query.slaPolicyId } });
-  } else if (query.complaintLevel && query.complaintLevel.length > 0) {
-    const policies = await prisma.slaPolicy.findMany({
-      where: { complaintLevel: { in: query.complaintLevel } },
-      select: { id: true },
-    });
-    filters.push({ slaPolicyId: { in: policies.map((policy) => policy.id) } });
   }
   if (query.policyNumberState?.includes("none")) {
     filters.push({ noPolicyNumber: true });
@@ -465,7 +428,6 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
     source,
     channel: ticket.channel?.name ?? null,
     category: ticket.category?.name ?? null,
-    complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     slaPolicyId: ticket.slaPolicyId,
     slaPolicyName: ticket.slaPolicy?.name ?? null,
     customerName: ticket.customerName,
@@ -558,7 +520,6 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     contactTime: ticket.contactTime?.toISOString() ?? null,
     contactId: ticket.contactId,
     category: ticket.category,
-    complaintLevel: parseNullable(complaintLevelSchema, ticket.complaintLevel),
     slaPolicyId: ticket.slaPolicyId,
     slaPolicy: ticket.slaPolicy,
     priority,

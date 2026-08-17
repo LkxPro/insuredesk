@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  complaintLevelSchema,
   DEFAULT_TICKET_SOURCE_FILTER,
   nuclearBodyStatusSchema,
   prioritySchema,
@@ -43,6 +42,14 @@ const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
     .or(z.literal(""))
     .nullish()
     .transform((value): z.output<T> | null => (value ? value : null));
+
+/**
+ * 旧投诉等级文本轨的墓碑：zod 默认 strip 会静默吞掉未知键，旧客户端携带
+ * complaintLevel 的输入必须明确报错，不能无声通过。
+ */
+export const legacyComplaintLevelInputSchema = z
+  .undefined({ error: "投诉等级文本轨已下线，请改用时效策略（slaPolicyId）" })
+  .optional();
 
 /**
  * Optional multi-value text (保单号): items are trimmed, blanks dropped and
@@ -94,8 +101,8 @@ export const ticketCreateInputSchema = z.object({
   contactId: optionalText(TICKET_TEXT_LIMITS.contactId),
   /** 客诉类别目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
   categoryId: optionalText(TICKET_FIELDS.categoryId.maxLength),
-  complaintLevel: optionalEnum(complaintLevelSchema),
-  /** 时效策略目录引用；与 complaintLevel 双轨并存——非空时优先，文本轨仅作回落映射。 */
+  complaintLevel: legacyComplaintLevelInputSchema,
+  /** 时效策略目录引用；null = 未定级（无处理时限与 SLA 告警）。 */
   slaPolicyId: optionalText(100),
   /** 独立自由标签，默认空；"" 来自未选择的下拉框。 */
   priority: optionalEnum(prioritySchema),
@@ -330,8 +337,8 @@ export const ticketListInputSchema = z.object({
   categoryId: multiFilter(z.string().min(1)).optional(),
   /** 完结状态目录引用筛选；停用状态也可选，仍能查到其存量工单。 */
   completionStatusId: multiFilter(z.string().min(1)).optional(),
-  complaintLevel: multiFilter(complaintLevelSchema).optional(),
-  /** 时效策略目录引用筛选；与 complaintLevel 双轨——非空时优先，文本轨映射到策略 id。 */
+  complaintLevel: legacyComplaintLevelInputSchema,
+  /** 时效策略目录引用筛选；停用策略也可选，仍能查到其存量工单。 */
   slaPolicyId: multiFilter(z.string().min(1)).optional(),
   policyNumberState: multiFilter(policyNumberStateFilterSchema).optional(),
   /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */

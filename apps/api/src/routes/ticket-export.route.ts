@@ -19,7 +19,6 @@ const MULTI_VALUE_PARAMS = [
   "channelId",
   "categoryId",
   "completionStatusId",
-  "complaintLevel",
   "slaPolicyId",
   "source",
 ] as const;

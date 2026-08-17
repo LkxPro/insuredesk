@@ -16,10 +16,9 @@ import { ticketCategoryCatalog } from "./ticket-category.service.ts";
  * the 渠道/客诉类别/完结状态/时效策略 dropdowns are the ACTIVE catalog rows at
  * download time, so a stale file is fixed by re-downloading, not by re-deploying.
  *
- * Column set = the 建单表单 fields (剔除 formOnly 的旧投诉等级文本列，由时效策略
- * 引用列取代其位置) plus the 完结状态/完结备注 pair (历史工单迁移: both filled ⇒
- * the row lands already completed), Chinese headers in the form's visual order —
- * the same descriptor rows upload parsing resolves columns by.
+ * Column set = the 建单表单 fields plus the 完结状态/完结备注 pair (历史工单迁移:
+ * both filled ⇒ the row lands already completed), Chinese headers in the form's
+ * visual order — the same descriptor rows upload parsing resolves columns by.
  */
 
 export interface TicketImportTemplateFile {

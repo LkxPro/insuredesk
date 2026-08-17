@@ -21,15 +21,19 @@ describe("formatFirstResponseRequirement", () => {
 
 describe("formatFollowUpFrequency", () => {
   it("renders checkpoint rules cumulatively, joined with ；", () => {
-    expect(formatFollowUpFrequency(DEFAULT_SLA_POLICIES.一般投诉.reminderRules)).toBe(
-      "24小时内累计跟进1次；48小时内累计跟进2次",
-    );
+    expect(
+      formatFollowUpFrequency(
+        DEFAULT_SLA_POLICIES.find((policy) => policy.name === "一般投诉")?.reminderRules ?? [],
+      ),
+    ).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
   });
 
   it("renders the 特急 rolling rule after its checkpoints", () => {
-    expect(formatFollowUpFrequency(DEFAULT_SLA_POLICIES.特急投诉.reminderRules)).toBe(
-      "24小时内累计跟进2次；48小时内累计跟进4次；每12小时至少跟进1次直至完结",
-    );
+    expect(
+      formatFollowUpFrequency(
+        DEFAULT_SLA_POLICIES.find((policy) => policy.name === "特急投诉")?.reminderRules ?? [],
+      ),
+    ).toBe("24小时内累计跟进2次；48小时内累计跟进4次；每12小时至少跟进1次直至完结");
   });
 });
 

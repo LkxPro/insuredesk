@@ -24,7 +24,7 @@ import type { SlaPolicyRow } from "./SlaPage";
 
 /**
  * 校验口径镜像服务端 slaPolicyCreateInputSchema /
- * slaPolicyEditInputSchema；名称全表唯一（含停用行）由服务端执法，CONFLICT
+ * slaPolicyUpdateInputSchema；名称全表唯一（含停用行）由服务端执法，CONFLICT
  * 回执落回名称字段。
  */
 

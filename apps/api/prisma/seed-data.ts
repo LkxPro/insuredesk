@@ -1,10 +1,5 @@
-import type { ComplaintLevel, Permission, TicketCreateData } from "@insuredesk/shared";
-import {
-  COMPLAINT_LEVELS,
-  DEFAULT_SLA_POLICIES,
-  isExternalRole,
-  TicketStatus,
-} from "@insuredesk/shared";
+import type { Permission, TicketCreateData } from "@insuredesk/shared";
+import { DEFAULT_SLA_POLICIES, isExternalRole, TicketStatus } from "@insuredesk/shared";
 import type { Clock } from "../src/clock.ts";
 import type {
   Channel,
@@ -297,7 +292,7 @@ export async function seedExternalUserRole(prisma: PrismaClient): Promise<Role> 
  * 出厂四条时效策略的口径文案（description），仅播种时使用；此后策略归管理员
  * 维护，重跑种子不覆盖修改。
  */
-export const DEFAULT_SLA_POLICY_DESCRIPTIONS: Record<ComplaintLevel, string> = {
+export const DEFAULT_SLA_POLICY_DESCRIPTIONS: Record<string, string> = {
   一般投诉: "常规投诉：48 小时处理时限，首响 120 分钟；24 小时检查点累计 1 次、48 小时累计 2 次。",
   高级投诉: "重要投诉：48 小时处理时限，首响 120 分钟；24 小时检查点累计 1 次、48 小时累计 3 次。",
   加急投诉: "加急投诉：72 小时处理时限，首响 60 分钟；24/48/72 小时检查点，分别累计 2/4/6 次。",
@@ -306,33 +301,27 @@ export const DEFAULT_SLA_POLICY_DESCRIPTIONS: Record<ComplaintLevel, string> = {
 };
 
 /**
- * Create the four 时效策略 rows (one per legacy complaint level anchor), with
- * the defaults from DEFAULT_SLA_POLICIES. Create-if-missing only: policies are
- * admin-editable, so re-seeding must never silently revert an admin's
- * configuration back to the defaults.
+ * First initialization only: seed the four factory 时效策略 while the catalog
+ * is empty. Once any policy exists the catalog belongs to the administrator —
+ * renames, 停用 and rule edits must survive every startup.
  */
 export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]> {
-  const policies: SlaPolicy[] = [];
-  for (const [index, complaintLevel] of COMPLAINT_LEVELS.entries()) {
-    const defaults = DEFAULT_SLA_POLICIES[complaintLevel];
-    policies.push(
-      await prisma.slaPolicy.upsert({
-        where: { complaintLevel },
-        update: {},
-        create: {
-          complaintLevel,
-          name: complaintLevel,
-          description: DEFAULT_SLA_POLICY_DESCRIPTIONS[complaintLevel],
+  return prisma.$transaction(async (tx) => {
+    if ((await tx.slaPolicy.count()) === 0) {
+      await tx.slaPolicy.createMany({
+        data: DEFAULT_SLA_POLICIES.map((defaults, index) => ({
+          name: defaults.name,
+          description: DEFAULT_SLA_POLICY_DESCRIPTIONS[defaults.name] ?? null,
           sortOrder: index + 1,
           active: true,
           firstResponseMinutes: defaults.firstResponseMinutes,
           overdueHours: defaults.overdueHours,
           reminderRules: defaults.reminderRules,
-        },
-      }),
-    );
-  }
-  return policies;
+        })),
+      });
+    }
+    return tx.slaPolicy.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  });
 }
 
 /**
@@ -420,6 +409,8 @@ interface DemoTicketSpec {
   title: string;
   createdHoursAgo: number;
   input: TicketCreateData;
+  /** 时效策略按名称引用，播种时解析为 slaPolicyId；缺省「一般投诉」，改名后的库回退为未定级。 */
+  slaPolicyName?: string;
   /** 目录项按名称引用，播种时解析为 categoryId；改名/删除后的库回退为未填写。 */
   categoryName?: string;
   /** 同 categoryName：按名称解析为 channelId，解析不到回退为未填写。 */
@@ -494,7 +485,6 @@ function demoInput(
     contactTime: null,
     contactId: null,
     categoryId: null,
-    complaintLevel: "一般投诉",
     slaPolicyId: null,
     priority: null,
     ...overrides,
@@ -519,10 +509,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     title: "待超时未分配",
     createdHoursAgo: 47,
     channelName: "监管",
+    slaPolicyName: "高级投诉",
     input: demoInput("DEMO-POL-1002", {
       customerName: "周明轩",
       phone: "13810001002",
-      complaintLevel: "高级投诉",
       priority: "high",
       customerRequest: "客户已向监管渠道反馈销售说明不清，要求主管介入处理。",
     }),
@@ -536,7 +526,6 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     input: demoInput("DEMO-POL-1003", {
       customerName: "林思远",
       phone: "13810001003",
-      complaintLevel: "一般投诉",
       priority: "urgent",
       customerRequest: "客户称收到疑似营销电话，要求确认信息来源并给出书面回复。",
     }),
@@ -561,10 +550,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     createdHoursAgo: 47,
     assignee: "manager",
     channelName: "经纪",
+    slaPolicyName: "高级投诉",
     input: demoInput("DEMO-POL-1005", {
       customerName: "吴承泽",
       phone: "13810001005",
-      complaintLevel: "高级投诉",
       priority: "medium",
       customerRequest: "客户对退保金额有异议，要求重新测算现金价值。",
     }),
@@ -579,10 +568,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     contactCount: 2,
     nextContactHoursFromNow: 6,
     channelName: "保司",
+    slaPolicyName: "加急投诉",
     input: demoInput("DEMO-POL-1006", {
       customerName: "郑沐辰",
       phone: "13810001006",
-      complaintLevel: "加急投诉",
       priority: "high",
       hasContacted: true,
       contactId: "CALL-DEMO-1006",
@@ -627,10 +616,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     contactCount: 1,
     nextContactHoursFromNow: -2,
     channelName: "支付",
+    slaPolicyName: "高级投诉",
     input: demoInput("DEMO-POL-1007", {
       customerName: "王亦凡",
       phone: "13810001007",
-      complaintLevel: "高级投诉",
       priority: "urgent",
       hasContacted: true,
       customerRequest: "客户反馈重复扣费且未收到退款，要求当天给出处理方案。",
@@ -707,10 +696,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     completionStatusName: "已协商解决",
     completionHoursAgo: 6,
     channelName: "监管",
+    slaPolicyName: "高级投诉",
     input: demoInput("DEMO-POL-1009", {
       customerName: "孙若溪",
       phone: "13810001009",
-      complaintLevel: "高级投诉",
       customerRequest: "客户对销售告知流程提出监管投诉，要求补偿方案。",
       hasContacted: true,
     }),
@@ -745,10 +734,10 @@ const demoTicketSpecs: DemoTicketSpec[] = [
     contactCount: 1,
     nextContactHoursFromNow: 2,
     channelName: "监管",
+    slaPolicyName: "特急投诉",
     input: demoInput("DEMO-POL-1010", {
       customerName: "刘安宁",
       phone: "13810001010",
-      complaintLevel: "特急投诉",
       priority: "urgent",
       hasContacted: true,
       customerRequest: "监管转办特急投诉，客户要求立即联系并说明处理负责人。",
@@ -837,11 +826,7 @@ async function createExternalTicket(
   input: TicketCreateData,
   createdAt: Date,
 ): Promise<Ticket> {
-  const slaStamp = await computeSlaStamp(
-    prisma,
-    { slaPolicyId: input.slaPolicyId, complaintLevel: input.complaintLevel },
-    createdAt,
-  );
+  const slaStamp = await computeSlaStamp(prisma, input.slaPolicyId, createdAt);
 
   const ticket = await prisma.ticket.create({
     data: {
@@ -927,7 +912,7 @@ async function applyDemoState(
  *
  * The fixture deliberately covers the list/detail states that developers need
  * to see: unassigned, assigned, processing, completed, pending-timeout,
- * overdue, external sources, all complaint levels, and multiple assignees.
+ * overdue, external sources, every factory 时效策略, and multiple assignees.
  * Re-running seed replaces this same demo set instead of duplicating rows.
  */
 export async function seedDemoTickets(
@@ -959,6 +944,12 @@ export async function seedDemoTickets(
       status.id,
     ]),
   );
+  const slaPolicyIdByName = new Map(
+    (await prisma.slaPolicy.findMany({ where: { active: true } })).map((policy) => [
+      policy.name,
+      policy.id,
+    ]),
+  );
 
   for (const spec of demoTicketSpecs) {
     const createdAt = hoursAgo(spec.createdHoursAgo, now);
@@ -967,6 +958,7 @@ export async function seedDemoTickets(
       feedbackTime: hoursAgo(spec.createdHoursAgo + 1, now).toISOString(),
       categoryId: spec.categoryName ? (categoryIdByName.get(spec.categoryName) ?? null) : null,
       channelId: spec.channelName ? (channelIdByName.get(spec.channelName) ?? null) : null,
+      slaPolicyId: slaPolicyIdByName.get(spec.slaPolicyName ?? "一般投诉") ?? null,
     };
     const ticket =
       spec.source === undefined || spec.source === "manual"

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { type ComplaintLevel, complaintLevelSchema, reminderRuleTypeSchema } from "./enums.ts";
+import { reminderRuleTypeSchema } from "./enums.ts";
+import { legacyComplaintLevelInputSchema } from "./ticket.ts";
 
 /**
  * SLAPolicy contracts: the 时效策略 catalog entity holds the first-response
@@ -36,12 +37,12 @@ export type RollingFollowUpRule = z.infer<typeof rollingFollowUpRuleSchema>;
 export type ReminderRule = z.infer<typeof reminderRuleSchema>;
 
 /**
- * 管理员编辑器 payload, one save per complaint level. Stricter than
- * the storage schema on purpose: the read boundary tolerates
- * advanceMinutes = 0, but saving one would create a dead rule (the alert
- * window [checkpoint − advance, checkpoint) is empty), and an advance ≥ the
- * checkpoint itself would open the window before the ticket even exists —
- * both are admin mistakes the form must reject, not shapes to store.
+ * 管理员编辑器 payload. Stricter than the storage schema on purpose: the
+ * read boundary tolerates advanceMinutes = 0, but saving one would create a
+ * dead rule (the alert window [checkpoint − advance, checkpoint) is empty),
+ * and an advance ≥ the checkpoint itself would open the window before the
+ * ticket even exists — both are admin mistakes the form must reject, not
+ * shapes to store.
  */
 export const slaPolicyEditableRuleSchema = reminderRuleSchema.superRefine((rule, ctx) => {
   if (rule.type !== "follow_up_checkpoint") {
@@ -61,15 +62,6 @@ export const slaPolicyEditableRuleSchema = reminderRuleSchema.superRefine((rule,
     });
   }
 });
-
-export const slaPolicyUpdateInputSchema = z.object({
-  complaintLevel: complaintLevelSchema,
-  firstResponseMinutes: z.number().int().positive("首响违约线需为正整数（分钟）"),
-  /** null = 不设超时 (never overdue); the editor offers it for any level. */
-  overdueHours: z.number().int().positive("超时时长需为正整数（小时）").nullable(),
-  reminderRules: z.array(slaPolicyEditableRuleSchema),
-});
-export type SlaPolicyUpdateInput = z.infer<typeof slaPolicyUpdateInputSchema>;
 
 // ---------------------------------------------------------------------------
 // 时效策略目录契约：实体类型 + CRUD input + sla.options 输出
@@ -98,23 +90,17 @@ export const slaPolicyCreateInputSchema = z.object({
 });
 export type SlaPolicyCreateInput = z.output<typeof slaPolicyCreateInputSchema>;
 
-/** 按 id 分项更新 (sla.update 新轨)：缺席字段保持原值；description 传 null = 清空。 */
-export const slaPolicyEditInputSchema = z.object({
+/** 按 id 分项更新 (sla.update)：缺席字段保持原值；description 传 null = 清空。 */
+export const slaPolicyUpdateInputSchema = z.object({
   id: z.string().min(1),
+  complaintLevel: legacyComplaintLevelInputSchema,
   name: slaPolicyNameSchema.optional(),
   description: z.string().trim().max(500, "策略描述不能超过 500 字").nullable().optional(),
   firstResponseMinutes: z.number().int().positive("首响违约线需为正整数（分钟）").optional(),
   overdueHours: z.number().int().positive("超时时长需为正整数（小时）").nullable().optional(),
   reminderRules: z.array(slaPolicyEditableRuleSchema).optional(),
 });
-export type SlaPolicyEditInput = z.infer<typeof slaPolicyEditInputSchema>;
-
-/**
- * sla.update 双轨输入：旧轨按 complaintLevel 整体替换（旧前端 SLA 页在用），
- * 新轨按 id 分项更新。两轨字段集互斥，union 按形分派。
- */
-export const slaUpdateInputSchema = z.union([slaPolicyUpdateInputSchema, slaPolicyEditInputSchema]);
-export type SlaUpdateInput = z.infer<typeof slaUpdateInputSchema>;
+export type SlaPolicyUpdateInput = z.infer<typeof slaPolicyUpdateInputSchema>;
 
 /** 整组排序 (sla.sort)：清单须恰好覆盖全部策略（含停用行），顺序即新 sortOrder。 */
 export const slaPolicySortInputSchema = z.object({
@@ -156,11 +142,12 @@ export interface SlaPolicyDefaults {
 }
 
 /**
- * Seed defaults (admin-editable). dueAt derives from overdueHours at ticket
- * creation — never hardcoded in ticket logic.
+ * 出厂策略的播种默认值（此后归管理员维护）。顺序即出厂 sortOrder；dueAt
+ * derives from overdueHours at ticket creation — never hardcoded in ticket logic.
  */
-export const DEFAULT_SLA_POLICIES: Record<ComplaintLevel, SlaPolicyDefaults> = {
-  一般投诉: {
+export const DEFAULT_SLA_POLICIES: readonly (SlaPolicyDefaults & { name: string })[] = [
+  {
+    name: "一般投诉",
     firstResponseMinutes: 120,
     overdueHours: 48,
     reminderRules: [
@@ -168,7 +155,8 @@ export const DEFAULT_SLA_POLICIES: Record<ComplaintLevel, SlaPolicyDefaults> = {
       { type: "follow_up_checkpoint", checkpointHours: 48, requiredCount: 2, advanceMinutes: 180 },
     ],
   },
-  高级投诉: {
+  {
+    name: "高级投诉",
     firstResponseMinutes: 120,
     overdueHours: 48,
     reminderRules: [
@@ -176,7 +164,8 @@ export const DEFAULT_SLA_POLICIES: Record<ComplaintLevel, SlaPolicyDefaults> = {
       { type: "follow_up_checkpoint", checkpointHours: 48, requiredCount: 3, advanceMinutes: 180 },
     ],
   },
-  加急投诉: {
+  {
+    name: "加急投诉",
     firstResponseMinutes: 60,
     overdueHours: 72,
     reminderRules: [
@@ -185,7 +174,8 @@ export const DEFAULT_SLA_POLICIES: Record<ComplaintLevel, SlaPolicyDefaults> = {
       { type: "follow_up_checkpoint", checkpointHours: 72, requiredCount: 6, advanceMinutes: 180 },
     ],
   },
-  特急投诉: {
+  {
+    name: "特急投诉",
     firstResponseMinutes: 30,
     overdueHours: null,
     reminderRules: [
@@ -194,7 +184,7 @@ export const DEFAULT_SLA_POLICIES: Record<ComplaintLevel, SlaPolicyDefaults> = {
       { type: "rolling_follow_up", intervalHours: 12 },
     ],
   },
-};
+];
 
 /**
  * Human-readable 首响要求 stamped onto the ticket at creation, derived from the

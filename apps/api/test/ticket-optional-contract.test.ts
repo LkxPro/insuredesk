@@ -30,7 +30,6 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
       customerName: "",
       nuclearBodyStatus: "",
       categoryId: "",
-      complaintLevel: "",
       slaPolicyId: "  ",
       priority: "",
     });
@@ -40,7 +39,6 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
     expect(data.customerName).toBeNull();
     expect(data.nuclearBodyStatus).toBeNull();
     expect(data.categoryId).toBeNull();
-    expect(data.complaintLevel).toBeNull();
     expect(data.slaPolicyId).toBeNull();
     expect(data.priority).toBeNull();
   });
@@ -53,11 +51,28 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
   });
 
   it("still validates filled values: bad enum members and malformed datetimes reject", () => {
-    expect(ticketCreateInputSchema.safeParse({ complaintLevel: "特大投诉" }).success).toBe(false);
+    expect(ticketCreateInputSchema.safeParse({ priority: "特大优先" }).success).toBe(false);
     expect(ticketCreateInputSchema.safeParse({ feedbackTime: "not-a-date" }).success).toBe(false);
     expect(
       ticketCreateInputSchema.safeParse({ feedbackTime: "2026-07-10T08:00:00.000Z" }).success,
     ).toBe(true);
+  });
+
+  it("旧投诉等级文本轨墓碑：携带 complaintLevel 即明确报错（任何非 undefined 取值）", () => {
+    for (const legacy of ["一般投诉", "", null, ["一般投诉"], 0]) {
+      const result = ticketCreateInputSchema.safeParse({ complaintLevel: legacy });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0]?.message).toContain("投诉等级文本轨已下线");
+      }
+    }
+    expect(
+      ticketEditInputSchema.safeParse({ ticketId: "t1", complaintLevel: "加急投诉" }).success,
+    ).toBe(false);
+    expect(ticketCreateInputSchema.parse({}).complaintLevel).toBeUndefined();
+    expect(
+      ticketCreateInputSchema.parse({ complaintLevel: undefined }).complaintLevel,
+    ).toBeUndefined();
   });
 
   it("edit shares the same optionality plus the ticketId routing key", () => {

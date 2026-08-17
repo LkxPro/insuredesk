@@ -235,8 +235,8 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       channelId: null,
       customerName: null,
       hasContacted: null,
-      complaintLevel: null,
     });
+    expect(mutation?.input).not.toHaveProperty("complaintLevel");
   });
 
   it("blocks creation when only the default feedback date remains", async () => {

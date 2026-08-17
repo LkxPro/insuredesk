@@ -3,9 +3,9 @@ import { z } from "zod";
 /**
  * Domain enum constants, single-sourced here and imported by both apps so the
  * database, API, and UI can never drift apart on the allowed values. Enums the
- * business defines with Chinese literals (complaint level, 核身 status, …) keep
- * those literals as the canonical stored values — inventing English codes
- * here would be exactly the drift this file exists to prevent.
+ * business defines with Chinese literals (核身 status, …) keep those literals
+ * as the canonical stored values — inventing English codes here would be
+ * exactly the drift this file exists to prevent.
  */
 
 // Ticket lifecycle — the stored base statuses (computed statuses are derived at
@@ -113,12 +113,6 @@ export const CREATOR_BACKED_SOURCES: readonly TicketSource[] = [
 export function isCreatorBackedSource(source: TicketSource): boolean {
   return CREATOR_BACKED_SOURCES.includes(source);
 }
-
-// Complaint levels — 旧投诉等级文本轨。时效策略目录实体是唯一 SLA 驱动；
-// 四个字面量同时是出厂策略行的 complaintLevel 旧锚，双轨输入经它映射到策略 id。
-export const COMPLAINT_LEVELS = ["一般投诉", "高级投诉", "加急投诉", "特急投诉"] as const;
-export const complaintLevelSchema = z.enum(COMPLAINT_LEVELS);
-export type ComplaintLevel = (typeof COMPLAINT_LEVELS)[number];
 
 // Priority — an independent free label: defaults to empty, set by hand, never
 // drives SLA or dueAt.

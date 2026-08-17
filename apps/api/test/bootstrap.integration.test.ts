@@ -51,7 +51,6 @@ describe("bootstrapSystemData (Testcontainers)", () => {
       "特急投诉",
     ]);
     for (const [index, policy] of policies.entries()) {
-      expect(policy.complaintLevel).toBe(policy.name); // 出厂行持旧锚
       expect(policy.sortOrder).toBe(index + 1);
       expect(policy.active).toBe(true);
       expect(policy.description).toBeTruthy();
@@ -121,7 +120,7 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     await prisma.role.delete({ where: { name: "只读观察" } });
     // 策略同样归管理员维护：改名/停用不被种子回写
     await prisma.slaPolicy.update({
-      where: { complaintLevel: "一般投诉" },
+      where: { name: "一般投诉" },
       data: { name: "常规件", active: false },
     });
 
@@ -143,11 +142,11 @@ describe("bootstrapSystemData (Testcontainers)", () => {
 
     const policies = await prisma.slaPolicy.findMany();
     expect(policies).toHaveLength(4);
-    const edited = policies.find((policy) => policy.complaintLevel === "一般投诉");
-    expect(edited).toMatchObject({ name: "常规件", active: false });
+    const edited = policies.find((policy) => policy.name === "常规件");
+    expect(edited).toMatchObject({ active: false });
     // 复位，后续用例读出厂口径
     await prisma.slaPolicy.update({
-      where: { complaintLevel: "一般投诉" },
+      where: { name: "常规件" },
       data: { name: "一般投诉", active: true },
     });
   });

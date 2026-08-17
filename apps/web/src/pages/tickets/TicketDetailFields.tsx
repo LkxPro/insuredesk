@@ -101,7 +101,6 @@ export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
       : "",
     contactId: ticket?.contactId ?? "",
     categoryId: ticket?.category?.id ?? "",
-    complaintLevel: "",
     slaPolicyId: ticket?.slaPolicy?.id ?? "",
     priority: ticket?.priority ?? "",
   };
@@ -119,8 +118,6 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
       return ticket.category?.name ?? null;
     case "slaPolicyId":
       return ticket.slaPolicy?.name ?? null;
-    case "complaintLevel":
-      return null;
     case "hasContacted":
       return (
         TICKET_FIELDS.hasContacted.options.find((option) => option.value === ticket.hasContacted)
@@ -300,8 +297,6 @@ function EditControl({
           )}
         />
       );
-    case "complaintLevel":
-      return null;
     case "priority":
       return (
         <EnumControl
