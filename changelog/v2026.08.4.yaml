@@ -9,7 +9,7 @@ entries:
   - category: 新增
     user: 工单保单号支持勾选「无保单号」
     full: 保单号字段新增「无保单号」勾选：勾选即明确该工单没有保单号，保单号必填时也视为已表态；列表中此类工单显示为「无」，与留空未填写的占位区分。
-    page: /tickets
+    page: /tickets/new
     screenshot: tickets-no-policy-number.png
   - category: 内部
     user: 自动化代理稳定性改进
