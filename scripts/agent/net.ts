@@ -1,11 +1,9 @@
 import { spawn } from "node:child_process";
 
-export interface NetCallOptions {
+interface NetPolicy {
   attempts?: number;
+  timeoutSeconds?: number;
   baseDelaySeconds?: number;
-  attemptTimeoutSeconds?: number;
-  stdin?: string;
-  env?: NodeJS.ProcessEnv;
 }
 
 export class NetCallError extends Error {
@@ -43,13 +41,16 @@ interface AttemptResult {
   timedOut: boolean;
 }
 
-function runOnce(command: string, args: string[], options: NetCallOptions): Promise<AttemptResult> {
+interface AttemptOptions extends NetPolicy {
+  stdin?: string;
+}
+
+function runOnce(command: string, args: string[], options: AttemptOptions): Promise<AttemptResult> {
   const timeoutSeconds =
-    options.attemptTimeoutSeconds ?? envInt(process.env, "AGENT_NET_CALL_TIMEOUT_SECONDS", 30);
+    options.timeoutSeconds ?? envInt(process.env, "AGENT_NET_CALL_TIMEOUT_SECONDS", 30);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       detached: true,
-      env: options.env ?? process.env,
       stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -87,7 +88,7 @@ function runOnce(command: string, args: string[], options: NetCallOptions): Prom
       if (settled) return;
       settled = true;
       clearTimeout(watchdog);
-      // 保持与 shell 看门狗一致的状态语义：被杀一律按 transient 处理。
+      // 被杀一律按 transient 处理：124=看门狗超时，143=SIGTERM，137=SIGKILL。
       const status =
         code ?? (timedOut ? 124 : signal === "SIGTERM" ? 143 : signal === "SIGKILL" ? 137 : 1);
       resolve({ status, stdout, stderr, timedOut });
@@ -99,12 +100,7 @@ function runOnce(command: string, args: string[], options: NetCallOptions): Prom
   });
 }
 
-// stdout 只在成功时返回，避免半截输出污染调用方的 JSON 解析。
-export async function netCall(
-  command: string,
-  args: string[],
-  options: NetCallOptions = {},
-): Promise<string> {
+async function call(command: string, args: string[], options: AttemptOptions): Promise<string> {
   const attempts = options.attempts ?? envInt(process.env, "AGENT_NET_CALL_ATTEMPTS", 4);
   const baseDelay = options.baseDelaySeconds ?? envInt(process.env, "AGENT_NET_CALL_BASE_DELAY", 2);
   let delay = baseDelay;
@@ -138,14 +134,14 @@ export async function netCall(
   );
 }
 
-export function netCallFast(
-  command: string,
-  args: string[],
-  options: NetCallOptions = {},
-): Promise<string> {
-  return netCall(command, args, {
-    attempts: 2,
-    attemptTimeoutSeconds: 15,
-    ...options,
-  });
+export function run(command: string, args: string[], policy: NetPolicy = {}): Promise<string> {
+  return call(command, args, policy);
+}
+
+export function callGit(dir: string, args: string[], policy: NetPolicy = {}): Promise<string> {
+  return call("git", ["-C", dir, ...args], policy);
+}
+
+export function callGh(args: string[], stdin?: string, policy: NetPolicy = {}): Promise<string> {
+  return call(process.env.AGENT_LOOP_GH ?? "gh", args, { ...policy, stdin });
 }

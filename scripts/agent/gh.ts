@@ -1,11 +1,7 @@
-import { netCall } from "./net.ts";
-
-function ghBin(): string {
-  return process.env.AGENT_LOOP_GH ?? "gh";
-}
+import { callGh } from "./net.ts";
 
 export function ghCall(args: string[], stdin?: string): Promise<string> {
-  return netCall(ghBin(), args, { stdin });
+  return callGh(args, stdin);
 }
 
 export async function ghJson<T>(args: string[], stdin?: string): Promise<T> {
@@ -31,7 +27,6 @@ export async function issueView(issue: number): Promise<Issue> {
   return ghJson<Issue>(["issue", "view", String(issue), "--json", "number,state,body,labels"]);
 }
 
-// queued + running 合并去重，是 frontier 的统一输入。
 export async function queueIssues(): Promise<IssueRef[]> {
   const base = ["issue", "list", "--state", "open", "--limit", "100", "--json", "number,labels"];
   const [queued, running] = await Promise.all([

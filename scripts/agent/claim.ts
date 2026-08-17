@@ -1,6 +1,8 @@
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { netCall, netCallFast } from "./net.ts";
+import { callGit } from "./net.ts";
+
+const FAST_PROBE = { attempts: 2, timeoutSeconds: 15 };
 
 const CLAIM_AUTHOR = [
   "-c",
@@ -46,12 +48,11 @@ async function writeClaimFile(path: string, claim: ClaimFile): Promise<void> {
 }
 
 function git(root: string, args: string[]): Promise<string> {
-  return netCall("git", ["-C", root, ...args]);
+  return callGit(root, args);
 }
 
 async function lsRemoteSha(root: string, ref: string, fast = false): Promise<string> {
-  const call = fast ? netCallFast : netCall;
-  const out = await call("git", ["-C", root, "ls-remote", "origin", ref]);
+  const out = await callGit(root, ["ls-remote", "origin", ref], fast ? FAST_PROBE : {});
   return out.split(/\s+/)[0] ?? "";
 }
 
@@ -73,11 +74,11 @@ async function pushAtomic(
   refspecs: string[],
   leases: Array<[ref: string, expected: string]> = [],
 ): Promise<boolean> {
-  const args = ["-C", root, "push", "--atomic"];
+  const args = ["push", "--atomic"];
   for (const [ref, expected] of leases) args.push(`--force-with-lease=${ref}:${expected}`);
   args.push("origin", ...refspecs);
   try {
-    await netCall("git", args);
+    await callGit(root, args);
     return true;
   } catch {
     return false;
@@ -177,7 +178,6 @@ export async function releaseRemoteClaim(
   return true;
 }
 
-// 返回 stale claim 的 sha；未过期或不存在返回 null。
 export async function remoteClaimStaleSha(root: string, issue: number): Promise<string | null> {
   const staleSeconds = Number.parseInt(process.env.AGENT_CLAIM_STALE_SECONDS ?? "300", 10) || 300;
   const claimRef = claimRefOf(issue);
@@ -230,7 +230,6 @@ export async function heartbeatClaim(
   return true;
 }
 
-// 发布前把 claim 推进一格"publish"提交，标记发布窗口；lease 被拒即抛错重试。
 export async function fenceClaim(
   root: string,
   worktrees: string,
@@ -254,7 +253,6 @@ export async function fenceClaim(
   await writeClaimFile(claimFile, { ...claim, sha: fenced });
 }
 
-// worker 侧发布前校验：claim 文件还在且远端 sha 与本地一致。
 // 两次 ls-remote 之间 heartbeat 可能推进 sha 造成假丢失，退避复查再定性。
 // 传输层故障证明不了丢租约（此时真丢了也会被 fence CAS 拦住），同样退避复查；
 // 不走 fast 路径：发布窗口要的是扛住分钟级网络风暴，不是省几秒。
