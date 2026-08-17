@@ -15,17 +15,6 @@ import { type AuthenticatedUser, hashPassword } from "../src/services/auth.servi
 import { computeSlaStamp, createTicket } from "../src/services/ticket.service.ts";
 import { assignTicket } from "../src/services/ticket-assign.service.ts";
 
-/**
- * Single source of truth for the factory roles and demo users. Consumed by
- * both seed.ts (dev database) and the Testcontainers auth tests, so the two
- * can never drift apart.
- *
- * Lives in the api package (not @insuredesk/shared) on purpose: factory roles
- * are a seed-time concern that must not ride the browser bundle, and this
- * module depends on @prisma/client and bcryptjs.
- */
-
-/** Password shared by every demo account. */
 export const DEMO_PASSWORD = "password123";
 
 export const DEFAULT_SHIFT_TYPES = [
@@ -50,7 +39,6 @@ export const DEFAULT_SHIFT_TYPES = [
   { name: "休", color: "#9ca3af", segments: [], displayOrder: 99 },
 ] as const;
 
-/** 首次初始化播种的客诉类别目录，displayOrder 按列表顺序 1..17。 */
 export const DEFAULT_TICKET_CATEGORIES = [
   "监管投诉-引导性",
   "监管投诉-非引导性",
@@ -71,7 +59,6 @@ export const DEFAULT_TICKET_CATEGORIES = [
   "其他",
 ] as const;
 
-/** 首次初始化播种的反馈渠道目录。 */
 export const DEFAULT_CHANNELS = [
   { name: "保司", displayOrder: 1 },
   { name: "经纪", displayOrder: 2 },
@@ -79,11 +66,6 @@ export const DEFAULT_CHANNELS = [
   { name: "监管", displayOrder: 4 },
 ] as const;
 
-/**
- * 出厂角色: created once, only while the roles table is still empty. After
- * first initialization every non-system role belongs to the operator — it can
- * be renamed, re-permissioned, or deleted, and no re-run may undo that.
- */
 export const FACTORY_ROLES = {
   ADMIN: {
     name: "管理员",
@@ -130,11 +112,6 @@ export const FACTORY_ROLES = {
 
 type FactoryRoles = { admin: Role; csManager: Role; frontline: Role; readOnly: Role };
 
-/**
- * First initialization only: create the factory roles while the roles table
- * is empty. Any existing row means the system is already initialized and the
- * roles belong to the operator — return null and touch nothing.
- */
 export async function createFactoryRoles(prisma: PrismaClient): Promise<FactoryRoles | null> {
   return prisma.$transaction(async (tx) => {
     if ((await tx.role.count()) > 0) {
@@ -165,10 +142,8 @@ async function upsertUser(
 }
 
 /**
- * Production bootstrap: factory roles (first initialization only), default
- * SLA policies, and a single admin account. Never touches an existing user —
- * the operator may have rotated the password long after first install, so a
- * re-run only reports `adminCreated: false`.
+ * Never touches an existing user — the operator may have rotated the password
+ * long after first install.
  */
 export async function bootstrapSystemData(
   prisma: PrismaClient,
@@ -200,7 +175,6 @@ export async function bootstrapSystemData(
   return { adminCreated: true, rolesCreated: factoryRoles !== null };
 }
 
-/** Resolve the factory roles by name on an already-initialized database. */
 async function findFactoryRoles(prisma: PrismaClient): Promise<FactoryRoles> {
   const byName = async (name: string) => {
     const role = await prisma.role.findUnique({ where: { name } });
@@ -219,11 +193,6 @@ async function findFactoryRoles(prisma: PrismaClient): Promise<FactoryRoles> {
   };
 }
 
-/**
- * Dev fixture: the factory roles (created only on first initialization) and
- * one demo user per role. Returns the rows so callers can log or assert
- * against them.
- */
 export async function seedFactoryRolesAndDemoUsers(prisma: PrismaClient): Promise<{
   roles: FactoryRoles;
   users: { admin: User; manager: User; cs1: User; observer: User };
@@ -267,11 +236,6 @@ export async function seedFactoryRolesAndDemoUsers(prisma: PrismaClient): Promis
 }
 
 /**
- * Create-if-missing: the "外部用户" role with external submission permissions
- * (提交/留言). Non-factory role (system=false) that survives bootstrap
- * replay. Created by name upsert so renames/permission edits persist across
- * restarts.
- *
  * 这是全库唯一的外部角色,建外部账号靠它落 roleId(账号不选角色)。再添一个外部
  * 角色会让建号直接失败,而不是随机挑一个。
  */
@@ -288,10 +252,6 @@ export async function seedExternalUserRole(prisma: PrismaClient): Promise<Role> 
   });
 }
 
-/**
- * 出厂四条时效策略的口径文案（description），仅播种时使用；此后策略归管理员
- * 维护，重跑种子不覆盖修改。
- */
 export const DEFAULT_SLA_POLICY_DESCRIPTIONS: Record<string, string> = {
   一般投诉: "常规投诉：48 小时处理时限，首响 120 分钟；24 小时检查点累计 1 次、48 小时累计 2 次。",
   高级投诉: "重要投诉：48 小时处理时限，首响 120 分钟；24 小时检查点累计 1 次、48 小时累计 3 次。",
@@ -300,11 +260,6 @@ export const DEFAULT_SLA_POLICY_DESCRIPTIONS: Record<string, string> = {
     "特急投诉：不设处理时限，首响 30 分钟；24/48 小时检查点，此后每 12 小时滚动跟进直至完结。",
 };
 
-/**
- * First initialization only: seed the four factory 时效策略 while the catalog
- * is empty. Once any policy exists the catalog belongs to the administrator —
- * renames, 停用 and rule edits must survive every startup.
- */
 export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]> {
   return prisma.$transaction(async (tx) => {
     if ((await tx.slaPolicy.count()) === 0) {
@@ -324,11 +279,6 @@ export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]
   });
 }
 
-/**
- * First initialization only: create the four standard shift definitions when
- * the catalog is empty. Once any shift exists, the catalog belongs to the
- * administrator — later renames and deletions must survive every startup.
- */
 export async function seedShiftTypes(prisma: PrismaClient): Promise<ShiftType[]> {
   return prisma.$transaction(async (tx) => {
     if ((await tx.shiftType.count()) === 0) {
@@ -346,11 +296,6 @@ export async function seedShiftTypes(prisma: PrismaClient): Promise<ShiftType[]>
   });
 }
 
-/**
- * First initialization only: seed the 17 factory categories while the catalog
- * is empty. Once any category exists it belongs to the administrator — later
- * deletions, renames, and 停用 must survive every startup.
- */
 export async function seedTicketCategories(prisma: PrismaClient): Promise<TicketCategory[]> {
   return prisma.$transaction(async (tx) => {
     if ((await tx.ticketCategory.count()) === 0) {
@@ -366,11 +311,6 @@ export async function seedTicketCategories(prisma: PrismaClient): Promise<Ticket
   });
 }
 
-/**
- * First initialization only: seed the four factory channels while the catalog
- * is empty. Once any channel exists it belongs to the administrator — later
- * deletions, renames and 停用 must survive every startup.
- */
 export async function seedChannels(prisma: PrismaClient): Promise<Channel[]> {
   return prisma.$transaction(async (tx) => {
     if ((await tx.channel.count()) === 0) {
@@ -409,11 +349,8 @@ interface DemoTicketSpec {
   title: string;
   createdHoursAgo: number;
   input: TicketCreateData;
-  /** 时效策略按名称引用，播种时解析为 slaPolicyId；缺省「一般投诉」，改名后的库回退为未定级。 */
   slaPolicyName?: string;
-  /** 目录项按名称引用，播种时解析为 categoryId；改名/删除后的库回退为未填写。 */
   categoryName?: string;
-  /** 同 categoryName：按名称解析为 channelId，解析不到回退为未填写。 */
   channelName?: string;
   source?: "manual" | "feishu_form" | "community";
   creator?: keyof SeededUsersAndRoles["users"];
@@ -421,7 +358,6 @@ interface DemoTicketSpec {
   status?: "unassigned" | "assigned" | "processing" | "completed";
   contactCount?: number;
   nextContactHoursFromNow?: number;
-  /** 同 categoryName：按名称解析为 completionStatusId，解析不到回退为未填写。 */
   completionStatusName?: string;
   completionHoursAgo?: number;
   logs?: Array<{
@@ -907,14 +843,6 @@ async function applyDemoState(
   }
 }
 
-/**
- * Rebuild a compact demo ticket set for local development.
- *
- * The fixture deliberately covers the list/detail states that developers need
- * to see: unassigned, assigned, processing, completed, pending-timeout,
- * overdue, external sources, every factory 时效策略, and multiple assignees.
- * Re-running seed replaces this same demo set instead of duplicating rows.
- */
 export async function seedDemoTickets(
   prisma: PrismaClient,
   rolesAndUsers: SeededUsersAndRoles,

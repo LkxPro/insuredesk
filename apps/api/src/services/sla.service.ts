@@ -10,17 +10,6 @@ import type { SlaPolicy } from "../generated/prisma/client.ts";
 import { Prisma } from "../generated/prisma/client.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 
-/**
- * 时效策略 domain logic. Pure service layer — the router wraps these with
- * sla.view / sla.edit（options 仅登录）.
- *
- * 时效策略是目录实体：name 全表唯一（含停用行）、sortOrder 排序、active 停用/
- * 复活，无物理删除。写策略没有 "apply to existing tickets" 步骤：dueAt 建单
- * 盖章（改策略引用时锚定原始 createdAt 重盖），其余消费方（待办、dashboard）
- * 读时判定——保存即发布。
- */
-
-/** 策略名撞车（含停用行）。 */
 export class SlaPolicyNameConflictError extends Error {
   constructor(name: string) {
     super(`时效策略「${name}」名称已存在`);
@@ -56,7 +45,6 @@ function toDto(row: SlaPolicy): SlaPolicyEntity {
   };
 }
 
-/** The full catalog for the SLA 管理页 — 停用行在内, 按目录序. */
 export async function listSlaPolicies({ prisma }: TicketServiceDeps) {
   const rows = await prisma.slaPolicy.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -64,7 +52,6 @@ export async function listSlaPolicies({ prisma }: TicketServiceDeps) {
   return rows.map(toDto);
 }
 
-/** 录入下拉源（登录可用）：仅启用策略, 按目录序. */
 export async function listSlaPolicyOptions({
   prisma,
 }: TicketServiceDeps): Promise<SlaPolicyOption[]> {
@@ -76,7 +63,6 @@ export async function listSlaPolicyOptions({
   return rows;
 }
 
-/** 新建策略：名称全表唯一（含停用行），sortOrder 追加到末尾，恒为启用。 */
 export async function createSlaPolicy({ prisma }: TicketServiceDeps, input: SlaPolicyCreateInput) {
   const max = await prisma.slaPolicy.aggregate({ _max: { sortOrder: true } });
   try {
@@ -100,7 +86,6 @@ export async function createSlaPolicy({ prisma }: TicketServiceDeps, input: SlaP
   }
 }
 
-/** 按 id 分项更新：缺席字段保持原值；改名撞任何行（含停用）即拒绝。 */
 export async function updateSlaPolicy({ prisma }: TicketServiceDeps, input: SlaPolicyUpdateInput) {
   const existing = await prisma.slaPolicy.findUnique({ where: { id: input.id } });
   if (!existing) {
@@ -125,7 +110,6 @@ export async function updateSlaPolicy({ prisma }: TicketServiceDeps, input: SlaP
   }
 }
 
-/** 整组重排：清单须恰好覆盖全部策略（含停用行），顺序即新 sortOrder 1..n。 */
 export async function sortSlaPolicies(deps: TicketServiceDeps, input: SlaPolicySortInput) {
   const { prisma } = deps;
   const rows = await prisma.slaPolicy.findMany({ select: { id: true } });
@@ -145,7 +129,6 @@ export async function sortSlaPolicies(deps: TicketServiceDeps, input: SlaPolicyS
   return listSlaPolicies(deps);
 }
 
-/** 停用/复活。停用不拆引用：存量工单照常显示，读时判定走降级路径。 */
 export async function setSlaPolicyActive(
   { prisma }: TicketServiceDeps,
   input: { id: string; active: boolean },
