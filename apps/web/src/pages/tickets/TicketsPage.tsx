@@ -399,7 +399,15 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           )}
         </>
       )}
-      filters={({ query, searchDraft, setSearchDraft, submitSearch, clearSearch, setParam, setParams }) => (
+      filters={({
+        query,
+        searchDraft,
+        setSearchDraft,
+        submitSearch,
+        clearSearch,
+        setParam,
+        setParams,
+      }) => (
         <>
           <MultiSelectFilter
             label="状态"
