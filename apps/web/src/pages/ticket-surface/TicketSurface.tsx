@@ -71,6 +71,7 @@ export type SurfaceCtx<TItem, TQuery extends SurfaceQuery> = {
   searchDraft: string;
   setSearchDraft: (value: string) => void;
   submitSearch: () => void;
+  clearSearch: () => void;
   setParam: (key: string, value: string | null, opts?: { resetPage?: boolean }) => void;
   setParams: (updates: Readonly<Record<string, string | null>>) => void;
   detailOpen: boolean;
@@ -159,7 +160,7 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   const navigate = useNavigate();
   const location = useLocation();
   const { id: detailId } = useParams<{ id: string }>();
-  const { query, searchDraft, setSearchDraft, submitSearch, setParam, setParams } =
+  const { query, searchDraft, setSearchDraft, submitSearch, clearSearch, setParam, setParams } =
     useTicketListUrl(parseQuery);
   // 处理态的筛选器折叠：默认收起（屏幕预算给详情），展开后保持展开
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -264,6 +265,7 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
       searchDraft,
       setSearchDraft,
       submitSearch,
+      clearSearch,
       setParam,
       setParams,
       detailOpen,
@@ -278,6 +280,7 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
       searchDraft,
       setSearchDraft,
       submitSearch,
+      clearSearch,
       setParam,
       setParams,
       detailOpen,

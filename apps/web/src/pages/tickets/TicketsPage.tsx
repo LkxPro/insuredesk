@@ -399,7 +399,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           )}
         </>
       )}
-      filters={({ query, searchDraft, setSearchDraft, submitSearch, setParam, setParams }) => (
+      filters={({ query, searchDraft, setSearchDraft, submitSearch, clearSearch, setParam, setParams }) => (
         <>
           <MultiSelectFilter
             label="状态"
@@ -453,6 +453,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             draft={searchDraft}
             onDraftChange={setSearchDraft}
             onSubmit={submitSearch}
+            onClear={clearSearch}
             placeholder="工单号 / 客户姓名 / 保单号 / 电话"
           />
         </>

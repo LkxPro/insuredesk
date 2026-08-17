@@ -57,5 +57,13 @@ export function useTicketListUrl<TQuery extends { search?: string }>(
     setParam("q", searchDraft.trim() || null);
   }, [setParam, searchDraft]);
 
-  return { query, searchDraft, setSearchDraft, submitSearch, setParam, setParams };
+  /** 一键清除：草稿与已提交的 q 一起撤。q 本就不在 URL 时不动 URL，免得误回第 1 页。 */
+  const clearSearch = useCallback(() => {
+    setSearchDraft("");
+    if (searchParams.has("q")) {
+      setParam("q", null);
+    }
+  }, [setParam, searchParams]);
+
+  return { query, searchDraft, setSearchDraft, submitSearch, clearSearch, setParam, setParams };
 }

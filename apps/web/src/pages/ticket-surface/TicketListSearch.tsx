@@ -1,17 +1,19 @@
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-/** 草稿不写在 URL 里，提交（回车或点「搜索」）才落入。 */
+/** 草稿不写在 URL 里，提交（回车或点「搜索」）才落入；X 一键清空草稿并撤掉已提交的搜索。 */
 export function TicketListSearch({
   draft,
   onDraftChange,
   onSubmit,
+  onClear,
   placeholder,
 }: {
   draft: string;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
+  onClear: () => void;
   placeholder: string;
 }) {
   return (
@@ -29,8 +31,19 @@ export function TicketListSearch({
           value={draft}
           onChange={(event) => onDraftChange(event.target.value)}
           placeholder={placeholder}
-          className="h-8 w-60 pl-8"
+          // 浏览器原生 search 清除钮风格突兀，藏掉换下方自绘的 X
+          className="h-8 w-60 pl-8 pr-7 [&::-webkit-search-cancel-button]:hidden"
         />
+        {draft.length > 0 && (
+          <button
+            type="button"
+            aria-label="清除搜索"
+            onClick={onClear}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
       </div>
       <Button type="submit" size="sm">
         搜索

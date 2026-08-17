@@ -201,6 +201,7 @@ function TestSurface({
             draft={ctx.searchDraft}
             onDraftChange={ctx.setSearchDraft}
             onSubmit={ctx.submitSearch}
+            onClear={ctx.clearSearch}
             placeholder="搜索"
           />
         </>
@@ -581,6 +582,23 @@ describe("URL 筛选态", () => {
     fireEvent.click(screen.getByRole("button", { name: "搜索" }));
     await waitFor(() => expect(listInputs.at(-1)).toMatchObject({ search: "三丰" }));
     expect(locationText()).toBe("/surface?q=%E4%B8%89%E4%B8%B0");
+  });
+
+  it("清除钮一键撤掉草稿与已提交的搜索", async () => {
+    renderSurface("/surface");
+    await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
+
+    // 框空时没有清除钮
+    expect(screen.queryByRole("button", { name: "清除搜索" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "三丰" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await waitFor(() => expect(locationText()).toBe("/surface?q=%E4%B8%89%E4%B8%B0"));
+
+    fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
+    await waitFor(() => expect(locationText()).toBe("/surface"));
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+    expect(listInputs.at(-1)?.search).toBeUndefined();
   });
 
   it("排序表头：首击用列定义的初始方向，再击翻转", async () => {
