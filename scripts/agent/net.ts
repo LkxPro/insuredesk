@@ -21,7 +21,7 @@ export class NetCallError extends Error {
 
 // 传输层特征：命中即退避重试；确定性错误（lease 拒绝、4xx 校验）首败即返回。
 const TRANSIENT =
-  /connection (reset|refused|closed|aborted)|operation timed out|i\/o timeout|timed out|could not resolve host|temporary failure in name resolution|no route to host|network (is )?unreachable|tls handshake timeout|context deadline exceeded|unexpected eof|eof$|gnutls recv error|http 5[0-9][0-9]|returned error: 5[0-9][0-9]|rate limit|ssl_error_syscall|ssl routines|sslv3 alert|tlsv1 alert|handshake failure|securetransport/i;
+  /connection (reset|refused|closed|aborted)|operation timed out|i\/o timeout|timed out|could not resolve host|temporary failure in name resolution|no route to host|network (is )?unreachable|tls handshake timeout|context deadline exceeded|unexpected eof|eof$|gnutls recv error|http 5[0-9][0-9]|returned error: 5[0-9][0-9]|rate limit|ssl_error_syscall|ssl routines|sslv3 alert|tlsv1 alert|handshake failure|securetransport|unexpected end of json input/i;
 
 function envInt(source: NodeJS.ProcessEnv, key: string, fallback: number): number {
   const raw = source[key];
