@@ -141,7 +141,9 @@ describe("建单即时查重提示", () => {
     renderCreate();
     await screen.findByRole("heading", { name: "新建工单" });
 
-    fireEvent.change(screen.getByLabelText("保单号"), { target: { value: "PA1，PA2" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "保单号" }), {
+      target: { value: "PA1，PA2" },
+    });
 
     expect(await screen.findByText(/个工单使用相同保单号/)).toBeInTheDocument();
     const query = callsTo("ticket.findDuplicates").at(-1);

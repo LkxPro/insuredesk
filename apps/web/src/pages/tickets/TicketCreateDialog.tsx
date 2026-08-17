@@ -47,6 +47,7 @@ function createDefaults(): TicketFormValues {
     paymentChannel: "",
     internalOrderNumber: "",
     policyNumbers: "",
+    noPolicyNumber: false,
     userComplaintChannel: "",
     complaintReceiveChannel: "",
     customerName: "",

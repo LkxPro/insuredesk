@@ -14,6 +14,7 @@ import {
 import { Controller, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 import { DateTimePicker } from "@/components/DateTimePicker";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
   FieldError,
@@ -61,7 +62,8 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
 
   const requiredExtension: Record<string, z.ZodTypeAny> = {};
   for (const key of TICKET_CREATE_FIELD_KEYS) {
-    if (requiredFields.includes(key)) {
+    // 保单号的必填判定在对象级（勾选「无保单号」算明确表态）
+    if (requiredFields.includes(key) && key !== "policyNumbers") {
       requiredExtension[key] = requiredFieldSchema(TICKET_FIELDS[key]);
     }
   }
@@ -70,7 +72,19 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
     schema = schema.extend(requiredExtension) as typeof schema;
   }
 
-  return schema;
+  return schema.superRefine((values, ctx) => {
+    if (
+      requiredFields.includes("policyNumbers") &&
+      values.noPolicyNumber !== true &&
+      !values.policyNumbers?.trim()
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["policyNumbers"],
+        message: `${TICKET_FIELDS.policyNumbers.label}为必填项`,
+      });
+    }
+  });
 }
 
 /** 类型错误也用必填句——未触碰的下拉提交时是 undefined，不能落到 zod 默认英文文案。 */
@@ -165,6 +179,44 @@ export function ticketFormValuesToInput(values: TicketFormValues): TicketCreateI
 
 /** Radix Select forbids `value=""` items; stand-in for the "未设置" choice. */
 export const UNSET = "__unset__";
+
+/**
+ * 「无保单号」勾选框：无 = 明确没有保单号（与留空未填写不同）；
+ * 取消勾选不恢复已清空的原文。
+ */
+export function PolicyNumbersControl({
+  form,
+  invalid,
+}: {
+  form: UseFormReturn<TicketFormValues>;
+  invalid: boolean;
+}) {
+  const none = form.watch("noPolicyNumber") === true;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Input
+        id="policyNumbers"
+        aria-invalid={invalid}
+        disabled={none}
+        {...form.register("policyNumbers")}
+      />
+      {/* biome-ignore lint/a11y/noLabelWithoutControl: Radix Checkbox 渲染为 button（可标签元素），整行点击经 label 激活它；biome 只认原生 input */}
+      <label className="flex w-fit cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
+        <Checkbox
+          checked={none}
+          onCheckedChange={(checked) => {
+            const next = checked === true;
+            form.setValue("noPolicyNumber", next, { shouldDirty: true });
+            if (next) {
+              form.setValue("policyNumbers", "", { shouldDirty: true });
+            }
+          }}
+        />
+        无保单号
+      </label>
+    </div>
+  );
+}
 
 /** hasContacted is tri-state (是/否/未知) — a checkbox can't say "unknown". Radix 不收布尔 value，转码为哨兵串。 */
 export const HAS_CONTACTED_OPTIONS = TICKET_FIELDS.hasContacted.options.map((option) => ({
@@ -356,11 +408,7 @@ export function TicketFormFields({
               {TICKET_FIELDS.policyNumbers.label}
               {isRequired("policyNumbers") && <span className="text-destructive">*</span>}
             </FieldLabel>
-            <Input
-              id="policyNumbers"
-              aria-invalid={!!errors.policyNumbers}
-              {...register("policyNumbers")}
-            />
+            <PolicyNumbersControl form={form} invalid={!!errors.policyNumbers} />
             <FieldError errors={[errors.policyNumbers]} />
             <DuplicateFieldHint field="policyNumbers" duplicates={duplicates} />
           </Field>

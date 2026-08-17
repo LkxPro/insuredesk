@@ -35,6 +35,12 @@ describe("buildTicketFormSchema 必填消息（描述表派生）", () => {
     const schema = buildTicketFormSchema(["completionStatusId", "nonexistent"]);
     expect(schema.safeParse(BLANK_FORM).success).toBe(true);
   });
+
+  it("保单号必填时，勾选「无保单号」算明确表态（空文本通过）", () => {
+    const schema = buildTicketFormSchema(["policyNumbers"]);
+    expect(schema.safeParse({ ...BLANK_FORM, noPolicyNumber: true }).success).toBe(true);
+    expect(schema.safeParse({ ...BLANK_FORM, noPolicyNumber: false }).success).toBe(false);
+  });
 });
 
 describe("buildTicketFormSchema 长度上限（描述表派生）", () => {

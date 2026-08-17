@@ -1,4 +1,5 @@
 import {
+  applyNoPolicyNumber,
   joinPolicyNumbers,
   PRIORITY_LABELS,
   type Priority,
@@ -47,10 +48,12 @@ type EditableFieldKey = keyof EditableFields;
 /**
  * 编辑字段集＝建单字段集，留痕段落按此（＝表单）顺序。条件类型注解把
  * 「编辑 schema 长出描述表外的字段」变成编译错误——那种字段进不了清单，
- * diff 与留痕会静默漏掉它。
+ * diff 与留痕会静默漏掉它。唯一豁免 noPolicyNumber: 变化折进保单号一行留痕。
  */
-const EDITABLE_FIELD_KEYS: [Exclude<EditableFieldKey, TicketCreateFieldKey>] extends [never]
-  ? readonly EditableFieldKey[]
+const EDITABLE_FIELD_KEYS: [
+  Exclude<EditableFieldKey, TicketCreateFieldKey | "noPolicyNumber">,
+] extends [never]
+  ? readonly TicketCreateFieldKey[]
   : never = TICKET_CREATE_FIELD_KEYS;
 
 type EditableValue = string | string[] | boolean | Date | null;
@@ -109,14 +112,11 @@ export async function editTicket(
   const { ticketId, ...fields } = input;
   // The wire carries datetimes as ISO strings (or null = 未填写);
   // everything downstream (diff, remark, update) works on the parsed instant.
-  const next: Omit<EditableFields, "feedbackTime" | "contactTime"> & {
-    feedbackTime: Date | null;
-    contactTime: Date | null;
-  } = {
+  const next = applyNoPolicyNumber({
     ...fields,
     feedbackTime: toDateOrNull(fields.feedbackTime),
     contactTime: toDateOrNull(fields.contactTime),
-  };
+  });
 
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
@@ -129,7 +129,11 @@ export async function editTicket(
       throw new TicketNotFoundError();
     }
 
-    const changedFields = EDITABLE_FIELD_KEYS.filter((key) => !sameValue(ticket[key], next[key]));
+    // 数组两侧都是 [] 时靠 flag 识别 无↔留空 的变化
+    const noneToggled = ticket.noPolicyNumber !== next.noPolicyNumber;
+    const changedFields = EDITABLE_FIELD_KEYS.filter(
+      (key) => !sameValue(ticket[key], next[key]) || (key === "policyNumbers" && noneToggled),
+    );
     if (changedFields.length === 0) {
       // Nothing changed → no update, no log: a remark with no field diffs
       // would violate its own contract (remark 记录改动的字段)
@@ -197,6 +201,16 @@ export async function editTicket(
       }
       return side === "from" ? ticket[key] : next[key];
     };
+    // 留痕里「无」与（空）= 未填写是两种状态
+    const formatSide = (key: EditableFieldKey, side: "from" | "to") => {
+      if (
+        key === "policyNumbers" &&
+        (side === "from" ? ticket.noPolicyNumber : next.noPolicyNumber)
+      ) {
+        return "无";
+      }
+      return formatValue(key, sideValue(key, side));
+    };
     await tx.processLog.create({
       data: {
         ticketId: ticket.id,
@@ -206,7 +220,7 @@ export async function editTicket(
         remark: changedFields
           .map(
             (key) =>
-              `${ticketProcessLogLabel(key)}: ${formatValue(key, sideValue(key, "from"))}→${formatValue(key, sideValue(key, "to"))}`,
+              `${ticketProcessLogLabel(key)}: ${formatSide(key, "from")}→${formatSide(key, "to")}`,
           )
           .join("；"),
         at: now,

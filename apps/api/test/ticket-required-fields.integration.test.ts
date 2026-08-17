@@ -231,6 +231,22 @@ describe("role required ticket fields (Testcontainers)", () => {
       expect(detail.policyNumbers).toEqual(["P2026-118"]);
     });
 
+    it("required 保单号可用「无保单号」表态满足", async () => {
+      await prisma.role.update({
+        where: { id: roleWithRequired.id },
+        data: { requiredTicketFields: ["policyNumbers"] },
+      });
+
+      const result = await requiredUser().ticket.create({
+        ...validInput(),
+        policyNumbers: [],
+        noPolicyNumber: true,
+      });
+      const detail = await requiredUser().ticket.detail({ id: result.id });
+      expect(detail.noPolicyNumber).toBe(true);
+      expect(detail.policyNumbers).toEqual([]);
+    });
+
     it("enforces categoryId as a required field against the catalog shape", async () => {
       await prisma.role.update({
         where: { id: roleWithRequired.id },

@@ -38,7 +38,7 @@ export function TicketInfoColumn({
       ticket={ticket}
       editing={editing}
       form={form}
-      dirty={!!dirtyFields[name]}
+      dirty={!!dirtyFields[name] || (name === "policyNumbers" && !!dirtyFields.noPolicyNumber)}
       error={errors[name]?.message}
       addon={fieldAddon?.(name)}
     />

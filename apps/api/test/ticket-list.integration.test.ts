@@ -314,6 +314,19 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
+  describe("保单号状态筛选", () => {
+    it("policyNumberState=[none] 只命中「无保单号」工单，留空与已填都不命中", async () => {
+      const none = await makeTicket({ policyNumbers: [], noPolicyNumber: true });
+      await makeTicket({ policyNumbers: [] });
+      await makeTicket();
+
+      const result = await manager().ticket.list({ policyNumberState: ["none"] });
+      expect(result.total).toBe(1);
+      expect(result.items[0]?.id).toBe(none.id);
+      expect(result.items[0]?.noPolicyNumber).toBe(true);
+    });
+  });
+
   describe("multi-select filters", () => {
     it("multi-value filters take the union within a dimension, intersect across dimensions", async () => {
       const payHigh = await makeTicket({

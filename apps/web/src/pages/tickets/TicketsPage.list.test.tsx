@@ -19,6 +19,7 @@ type ListItem = {
   complaintLevel: string;
   customerName: string;
   policyNumbers: string[];
+  noPolicyNumber?: boolean;
   status: string;
   displayStatus: string;
   assigneeName: string | null;
@@ -134,6 +135,17 @@ describe("保单号列: 首个 + N 徽标", () => {
     const row = screen.getByText("WO100001").closest("tr") as HTMLTableRowElement;
     expect(within(row).getByText("—")).toBeInTheDocument();
     expect(within(row).queryByRole("button", { name: /还有.*个保单号/ })).not.toBeInTheDocument();
+  });
+
+  it("「无保单号」工单显示 muted 的无，与未填写占位区分", async () => {
+    canned.items = [listItem({ policyNumbers: [], noPolicyNumber: true })];
+    canned.total = 1;
+    renderAt("/tickets");
+
+    await screen.findByText("WO100001");
+    const row = screen.getByText("WO100001").closest("tr") as HTMLTableRowElement;
+    expect(within(row).getByText("无")).toBeInTheDocument();
+    expect(within(row).queryByText("—")).not.toBeInTheDocument();
   });
 
   it("多保单号只显首个 + N 徽标，点徽标弹出全部", async () => {

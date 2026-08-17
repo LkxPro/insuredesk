@@ -206,6 +206,7 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
       feedbackTime: NOW.toISOString(),
       policyNumbers: [],
+      noPolicyNumber: false,
     });
 
     // 建单后留列表: the dialog closes onto 工单管理, no detail opens

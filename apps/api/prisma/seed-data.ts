@@ -466,6 +466,7 @@ function demoInput(
     paymentChannel: "连连支付",
     internalOrderNumber: `DEMO-ORDER-${demoPolicyNumber.slice(-4)}`,
     policyNumbers: [demoPolicyNumber],
+    noPolicyNumber: false,
     userComplaintChannel: "400热线",
     complaintReceiveChannel: null,
     customerName: "演示客户",
