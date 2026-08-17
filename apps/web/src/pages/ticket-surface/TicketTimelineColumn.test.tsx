@@ -15,6 +15,23 @@ function log(overrides: Partial<TimelineLog> & Pick<TimelineLog, "id" | "action"
   };
 }
 
+describe("排序", () => {
+  it("倒序渲染：数组末尾（最新）的条目排在最上", () => {
+    render(
+      <TicketTimelineColumn
+        logs={[
+          log({ id: "l1", action: "comment", remark: "较早的跟进" }),
+          log({ id: "l2", action: "external_note", remark: "最新的留言" }),
+        ]}
+      />,
+    );
+
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("最新的留言");
+    expect(items[1]).toHaveTextContent("较早的跟进");
+  });
+});
+
 describe("沟通气泡", () => {
   it("留言/跟进带类型徽章与备注气泡；对方（默认 external_note）落左侧带头像", () => {
     render(
