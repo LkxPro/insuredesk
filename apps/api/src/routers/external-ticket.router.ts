@@ -33,6 +33,8 @@ const catalogInclude = {
   channel: { select: { name: true } },
   category: { select: { name: true } },
   completionStatus: { select: { name: true } },
+  // 时效策略：暴露当前策略名（改名即显新名；未指定为 null）
+  slaPolicy: { select: { name: true } },
 } as const;
 
 type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclude }>;
@@ -70,6 +72,8 @@ function serializeExternalTicket(ticket: TicketWithCatalogs) {
     categoryId: ticket.categoryId,
     categoryName: ticket.category?.name ?? null,
     complaintLevel: ticket.complaintLevel,
+    /** 时效策略名（引用随客服补录；外部提交恒未定级）。 */
+    slaPolicyName: ticket.slaPolicy?.name ?? null,
     priority: ticket.priority === null ? null : prioritySchema.parse(ticket.priority),
     completionStatusId: ticket.completionStatusId,
     completionStatusName: ticket.completionStatus?.name ?? null,

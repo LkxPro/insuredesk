@@ -17,7 +17,10 @@ import { TICKET_IMPORT_TEMPLATE_COLUMNS } from "../src/services/ticket-import-te
  */
 
 function columnOf(key: TicketFieldKey) {
-  const index = TICKET_FIELD_DESCRIPTORS.findIndex((descriptor) => descriptor.key === key);
+  const importDescriptors = TICKET_FIELD_DESCRIPTORS.filter(
+    (descriptor) => !("formOnly" in descriptor && descriptor.formOnly === true),
+  );
+  const index = importDescriptors.findIndex((descriptor) => descriptor.key === key);
   const column = TICKET_IMPORT_TEMPLATE_COLUMNS[index];
   if (!column) {
     throw new Error(`模板缺少「${key}」列`);
@@ -55,8 +58,8 @@ describe("ticket import template columns", () => {
   });
 
   it("枚举列句式：「从下拉选择：A / B；留空=空值含义」", () => {
-    const { options, emptyMeaning } = TICKET_FIELDS.complaintLevel;
-    expect(columnOf("complaintLevel").note).toBe(
+    const { options, emptyMeaning } = TICKET_FIELDS.priority;
+    expect(columnOf("priority").note).toBe(
       `从下拉选择：${options.map((option) => option.label).join(" / ")}；留空=${emptyMeaning}`,
     );
   });
@@ -64,8 +67,19 @@ describe("ticket import template columns", () => {
   it("目录列句式：「从下拉选择（下载模板时启用的◯◯目录）」，默认尾注可被完结对规则覆盖", () => {
     expect(columnOf("channelId").note).toBe("从下拉选择（下载模板时启用的渠道目录）；留空=未填写");
     expect(columnOf("categoryId").note).toBe("从下拉选择（下载模板时启用的类别目录）；留空=未填写");
+    expect(columnOf("slaPolicyId").note).toBe(
+      `从下拉选择（下载模板时启用的时效策略目录）；${TICKET_FIELDS.slaPolicyId.importNoteTail}`,
+    );
     expect(columnOf("completionStatusId").note).toBe(
       `从下拉选择（下载模板时启用的完结状态目录）；${TICKET_FIELDS.completionStatusId.importNoteTail}`,
+    );
+  });
+
+  /** formOnly 行（旧投诉等级文本轨）不进导入列。 */
+  it("投诉等级为 formOnly：不占导入列，时效策略引用列占据其表序位置", () => {
+    expect(TICKET_IMPORT_HEADERS).not.toContain("投诉等级");
+    expect(TICKET_IMPORT_HEADERS.indexOf("时效策略")).toBe(
+      TICKET_IMPORT_HEADERS.indexOf("客诉类别") + 1,
     );
   });
 
@@ -74,16 +88,21 @@ describe("ticket import template columns", () => {
     channels: ["渠道甲"],
     categories: ["类别乙"],
     completionStatuses: ["完结丙"],
+    slaPolicies: ["策略丁"],
   };
 
   const CATALOG_DROPDOWNS: Record<TicketCatalogKind, readonly string[]> = {
     channel: catalogFixture.channels,
     category: catalogFixture.categories,
     completionStatus: catalogFixture.completionStatuses,
+    slaPolicy: catalogFixture.slaPolicies,
   };
 
   it("下拉来源：枚举列取自己的选项 label，目录列接各自目录，其余列无下拉", () => {
     for (const descriptor of TICKET_FIELD_DESCRIPTORS) {
+      if ("formOnly" in descriptor && descriptor.formOnly === true) {
+        continue;
+      }
       const column = columnOf(descriptor.key);
       if (descriptor.type === "enum") {
         expect(column.options?.(catalogFixture), descriptor.key).toEqual(

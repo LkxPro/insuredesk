@@ -95,6 +95,8 @@ export const ticketCreateInputSchema = z.object({
   /** 客诉类别目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
   categoryId: optionalText(TICKET_FIELDS.categoryId.maxLength),
   complaintLevel: optionalEnum(complaintLevelSchema),
+  /** 时效策略目录引用；与 complaintLevel 双轨并存——非空时优先，文本轨仅作回落映射。 */
+  slaPolicyId: optionalText(100),
   /** 独立自由标签，默认空；"" 来自未选择的下拉框。 */
   priority: optionalEnum(prioritySchema),
 });
@@ -109,8 +111,8 @@ export type TicketCreateData = z.output<typeof ticketCreateInputSchema>;
  * collects — editable in any status, 已完结 included. status is deliberately
  * absent: it moves only through lifecycle actions, and editing can never
  * reopen a completed ticket. System-derived fields (dueAt, followUpFrequency,
- * firstResponseRequirement…) stay server-stamped — a complaintLevel change
- * recomputes them from the new level's SLA policy.
+ * firstResponseRequirement…) stay server-stamped — a 时效策略引用 change
+ * recomputes them from the new policy.
  */
 export const ticketEditInputSchema = ticketCreateInputSchema.extend({
   ticketId: z.string().min(1),
@@ -329,6 +331,8 @@ export const ticketListInputSchema = z.object({
   /** 完结状态目录引用筛选；停用状态也可选，仍能查到其存量工单。 */
   completionStatusId: multiFilter(z.string().min(1)).optional(),
   complaintLevel: multiFilter(complaintLevelSchema).optional(),
+  /** 时效策略目录引用筛选；与 complaintLevel 双轨——非空时优先，文本轨映射到策略 id。 */
+  slaPolicyId: multiFilter(z.string().min(1)).optional(),
   policyNumberState: multiFilter(policyNumberStateFilterSchema).optional(),
   /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */
   source: multiFilter(ticketSourceSchema).default([...DEFAULT_TICKET_SOURCE_FILTER]),

@@ -2,11 +2,11 @@ import { z } from "zod";
 import { type ComplaintLevel, complaintLevelSchema, reminderRuleTypeSchema } from "./enums.ts";
 
 /**
- * SLAPolicy contracts: one policy row per complaint level, holding the
- * first-response red-line, the overdue duration, and a typed list of
- * reminder rules. The rules are stored as JSONB and validated with these
- * schemas at every read/write boundary, so the database column can never
- * hold a shape the apps don't understand.
+ * SLAPolicy contracts: the 时效策略 catalog entity holds the first-response
+ * red-line, the overdue duration, and a typed list of reminder rules. The
+ * rules are stored as JSONB and validated with these schemas at every
+ * read/write boundary, so the database column can never hold a shape the
+ * apps don't understand.
  */
 
 export const followUpCheckpointRuleSchema = z.object({
@@ -70,6 +70,83 @@ export const slaPolicyUpdateInputSchema = z.object({
   reminderRules: z.array(slaPolicyEditableRuleSchema),
 });
 export type SlaPolicyUpdateInput = z.infer<typeof slaPolicyUpdateInputSchema>;
+
+// ---------------------------------------------------------------------------
+// 时效策略目录契约：实体类型 + CRUD input + sla.options 输出
+// ---------------------------------------------------------------------------
+
+/** 策略名：trim 后非空；全表唯一（含停用行）由服务端执法。 */
+export const slaPolicyNameSchema = z
+  .string()
+  .trim()
+  .min(1, "策略名称不能为空")
+  .max(100, "策略名称不能超过 100 字");
+
+/** 新建时效策略 (sla.create)：sortOrder 服务端追加到末尾，active 恒 true。 */
+export const slaPolicyCreateInputSchema = z.object({
+  name: slaPolicyNameSchema,
+  description: z
+    .string()
+    .trim()
+    .max(500, "策略描述不能超过 500 字")
+    .nullish()
+    .transform((value) => (value ? value : null)),
+  firstResponseMinutes: z.number().int().positive("首响违约线需为正整数（分钟）"),
+  /** null = 不设超时 (never overdue). */
+  overdueHours: z.number().int().positive("超时时长需为正整数（小时）").nullable(),
+  reminderRules: z.array(slaPolicyEditableRuleSchema),
+});
+export type SlaPolicyCreateInput = z.output<typeof slaPolicyCreateInputSchema>;
+
+/** 按 id 分项更新 (sla.update 新轨)：缺席字段保持原值；description 传 null = 清空。 */
+export const slaPolicyEditInputSchema = z.object({
+  id: z.string().min(1),
+  name: slaPolicyNameSchema.optional(),
+  description: z.string().trim().max(500, "策略描述不能超过 500 字").nullable().optional(),
+  firstResponseMinutes: z.number().int().positive("首响违约线需为正整数（分钟）").optional(),
+  overdueHours: z.number().int().positive("超时时长需为正整数（小时）").nullable().optional(),
+  reminderRules: z.array(slaPolicyEditableRuleSchema).optional(),
+});
+export type SlaPolicyEditInput = z.infer<typeof slaPolicyEditInputSchema>;
+
+/**
+ * sla.update 双轨输入：旧轨按 complaintLevel 整体替换（旧前端 SLA 页在用），
+ * 新轨按 id 分项更新。两轨字段集互斥，union 按形分派。
+ */
+export const slaUpdateInputSchema = z.union([slaPolicyUpdateInputSchema, slaPolicyEditInputSchema]);
+export type SlaUpdateInput = z.infer<typeof slaUpdateInputSchema>;
+
+/** 整组排序 (sla.sort)：清单须恰好覆盖全部策略（含停用行），顺序即新 sortOrder。 */
+export const slaPolicySortInputSchema = z.object({
+  policyIds: z.array(z.string().min(1)).min(1),
+});
+export type SlaPolicySortInput = z.infer<typeof slaPolicySortInputSchema>;
+
+export const slaPolicySetActiveInputSchema = z.object({
+  id: z.string().min(1),
+  active: z.boolean(),
+});
+export type SlaPolicySetActiveInput = z.infer<typeof slaPolicySetActiveInputSchema>;
+
+/** 时效策略实体（sla.list 行，含停用行）。 */
+export interface SlaPolicyEntity {
+  id: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  active: boolean;
+  firstResponseMinutes: number;
+  overdueHours: number | null;
+  reminderRules: ReminderRule[];
+  updatedAt: string;
+}
+
+/** sla.options 输出项：登录可用的录入下拉源，只含启用策略（按 sortOrder 升序）。 */
+export interface SlaPolicyOption {
+  id: string;
+  name: string;
+  description: string | null;
+}
 
 export interface SlaPolicyDefaults {
   firstResponseMinutes: number;

@@ -9,9 +9,10 @@ const HOUR_MS = 60 * 60 * 1000;
 
 /**
  * Acceptance tests against a real Postgres: 编辑工单 (any status,
- * 已完结 included; status untouchable; 改 complaintLevel 重算 dueAt off
+ * 已完结 included; status untouchable; 改时效策略引用重算 dueAt off
  * createdAt + re-stamps the SLA requirement strings; one `edit` ProcessLog
- * per effective edit with the field diff in remark) and 软删除
+ * per effective edit with the field diff in remark、改策略引用时 from/to 存
+ * 策略名快照) and 软删除
  * (deletedAt tombstone; default list, detail and every lifecycle action
  * exclude it; ProcessLogs survive; no restore). Runs through
  * appRouter.createCaller — the same procedure pipeline (permission middleware
@@ -322,7 +323,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     });
   });
 
-  describe("改 complaintLevel = 改 SLA（重算 dueAt、切换要求）", () => {
+  describe("改时效策略引用 = 改 SLA（重算 dueAt、切换要求、策略名快照留痕）", () => {
     it("特急→一般 on a 70h-old ticket: dueAt = createdAt + 48h, immediately overdue", async () => {
       const ticketId = await createTicket({ complaintLevel: "特急投诉" });
       // 特急: no deadline at all
@@ -339,11 +340,14 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 48 * HOUR_MS).toISOString());
       // 录入已超 48h → the ticket flips overdue the moment the edit commits
       expect(detail.displayStatus).toBe("overdue");
-      // The requirement strings re-stamp from the NEW level's policy
+      // The requirement strings re-stamp from the NEW policy
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
       expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
-      // …and the edit remark records the level change
-      expect(detail.processLogs.at(-1)?.remark).toContain("投诉等级: 特急投诉→一般投诉");
+      // …and the edit remark records the 时效策略 change with policy-name snapshots
+      // in from/to (种子策略名即旧投诉等级文本)
+      const editLog = detail.processLogs.at(-1);
+      expect(editLog?.remark).toContain("时效策略: 特急投诉→一般投诉");
+      expect(editLog).toMatchObject({ from: "特急投诉", to: "一般投诉" });
 
       // The overdue 口径 (list filter side) picks it up with no extra writes
       const { items } = await manager().ticket.list({
@@ -369,6 +373,70 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.dueAt).toBeNull();
       expect(detail.displayStatus).toBe("unassigned");
       expect(detail.firstResponseRequirement).toBe("30分钟内完成首次响应");
+    });
+
+    it("双轨编辑：slaPolicyId 与文本轨产出相同重盖章，锚定原始 createdAt", async () => {
+      const rush = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "加急投诉" },
+      });
+      const ticketId = await createTicket();
+      const createdAt = new Date(Date.now() - 10 * HOUR_MS);
+      await prisma.ticket.update({ where: { id: ticketId }, data: { createdAt } });
+
+      const result = await manager().ticket.edit(
+        editInput(ticketId, { complaintLevel: null, slaPolicyId: rush.id }),
+      );
+      expect(result.changedFields).toContain("slaPolicyId");
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.slaPolicyId).toBe(rush.id);
+      expect(detail.complaintLevel).toBe("加急投诉"); // 旧锚文本随引用派生
+      // 锚定原始 createdAt：10h 前录入 + 72h → 仍有 62h
+      expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 72 * HOUR_MS).toISOString());
+      expect(detail.firstResponseRequirement).toBe("60分钟内完成首次响应");
+      const editLog = detail.processLogs.at(-1);
+      expect(editLog?.remark).toContain("时效策略: 一般投诉→加急投诉");
+      expect(editLog).toMatchObject({ from: "一般投诉", to: "加急投诉" });
+    });
+
+    it("清除策略引用（两轨皆空）清空全部盖章，from/to 落 名→null", async () => {
+      const ticketId = await createTicket();
+      await manager().ticket.edit(editInput(ticketId, { complaintLevel: null, slaPolicyId: null }));
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.slaPolicyId).toBeNull();
+      expect(detail.complaintLevel).toBeNull();
+      expect(detail.dueAt).toBeNull();
+      expect(detail.firstResponseRequirement).toBeNull();
+      const editLog = detail.processLogs.at(-1);
+      expect(editLog?.remark).toContain("时效策略: 一般投诉→（空）");
+      expect(editLog).toMatchObject({ from: "一般投诉", to: null });
+    });
+
+    it("引用未变的编辑保持停用策略不报错；新选停用策略即拒绝", async () => {
+      const rush = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "加急投诉" },
+      });
+      const ticketId = await createTicket({ complaintLevel: "加急投诉" });
+      await admin().sla.setActive({ id: rush.id, active: false });
+      try {
+        // 引用未变（文本轨回落到同一停用策略）：无关字段编辑照常，不重盖章
+        const before = await manager().ticket.detail({ id: ticketId });
+        const result = await manager().ticket.edit(
+          editInput(ticketId, { customerName: "引用未动", complaintLevel: "加急投诉" }),
+        );
+        expect(result.changedFields).toEqual(["customerName"]);
+        const detail = await manager().ticket.detail({ id: ticketId });
+        expect(detail.slaPolicyId).toBe(rush.id);
+        expect(detail.dueAt).toBe(before.dueAt);
+
+        // 新选停用策略：与缺行同错
+        const otherId = await createTicket();
+        await expect(
+          manager().ticket.edit(editInput(otherId, { complaintLevel: null, slaPolicyId: rush.id })),
+        ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      } finally {
+        await admin().sla.setActive({ id: rush.id, active: true });
+      }
     });
 
     it("priority edits drive no SLA field (dueAt/要求串 untouched)", async () => {

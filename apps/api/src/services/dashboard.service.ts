@@ -1,5 +1,4 @@
 import {
-  type ComplaintLevel,
   DASHBOARD_TOP_ASSIGNEE_LIMIT,
   type DashboardMetricKey,
   type DashboardStatsInput,
@@ -28,11 +27,10 @@ import { displayStatusTicketWhere } from "./ticket-display-status.ts";
  * - 已超时 card  = 实时运营视角: in-flight past dueAt, drops out on completion
  * - 考核 超时单数 = 历史追责视角: ever overdue — in-flight past dueAt OR
  *   completed late (completionTime > dueAt)
- * 特急 (dueAt null) never counts in either.
+ *
+ * 特急卡绑定 sortOrder 最高的 active 时效策略（无 active 策略时安全降级为
+ * 0/null）；无处理时限的策略永不在两个超时口径计数。
  */
-
-/** 特急投诉 — the level with no dueAt, surfaced as its own card. */
-const URGENT_LEVEL = "特急投诉" satisfies ComplaintLevel;
 
 export interface DashboardAssigneeStats {
   assigneeId: string;
@@ -54,6 +52,8 @@ export interface DashboardStats {
   /** "own" when the viewer lacks dashboard.view_all and sees only their tickets. */
   scope: "all" | "own";
   metrics: Record<DashboardMetricKey, number>;
+  /** 特急卡绑定的策略（sortOrder 最高的 active 行）；无 active 策略时为 null（卡片降级）。 */
+  urgentPolicy: { id: string; name: string } | null;
   /** The whole catalog in display order, zero-filled; 未填写 tickets stay out. */
   channels: Array<{ channelId: string; name: string; count: number }>;
   /** Top 10 by 完单数 (the leading 考核 dimension), 名下工单数 then id as tiebreaks. */
@@ -88,6 +88,12 @@ export async function getDashboardStats(
   });
   const anyAssignee: Prisma.TicketWhereInput = { assigneeId: { not: null } };
 
+  const urgentPolicy = await prisma.slaPolicy.findFirst({
+    where: { active: true },
+    orderBy: [{ sortOrder: "desc" }, { id: "asc" }],
+    select: { id: true, name: true },
+  });
+
   const [
     displayStatusGroups,
     urgent,
@@ -106,7 +112,9 @@ export async function getDashboardStats(
       prisma.ticket.count({ where: and(displayStatusTicketWhere("pending_timeout", now)) }),
       prisma.ticket.count({ where: and(displayStatusTicketWhere("overdue", now)) }),
     ]),
-    prisma.ticket.count({ where: and({ complaintLevel: URGENT_LEVEL }) }),
+    urgentPolicy === null
+      ? Promise.resolve(0)
+      : prisma.ticket.count({ where: and({ slaPolicyId: urgentPolicy.id }) }),
     prisma.channel.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }),
     prisma.ticket.groupBy({
       by: ["channelId"],
@@ -133,7 +141,7 @@ export async function getDashboardStats(
       orderBy: { assigneeId: "asc" },
     }),
     // 超时完结: completed later than its deadline. Column-to-column via field
-    // reference; dueAt IS NULL (特急) compares to nothing and never matches.
+    // reference; dueAt IS NULL (不设超时的策略) compares to nothing and never matches.
     prisma.ticket.groupBy({
       by: ["assigneeId"],
       where: and(anyAssignee, {
@@ -245,6 +253,7 @@ export async function getDashboardStats(
   return {
     scope: viewer.permissions.includes("dashboard.view_all") ? "all" : "own",
     metrics,
+    urgentPolicy,
     channels,
     assignees,
   };

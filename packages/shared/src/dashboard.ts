@@ -10,7 +10,7 @@ import { createdRangeFields } from "./time-range.ts";
  * The 6 status cards (unassigned/assigned/processing/completed/pendingTimeout/
  * overdue) partition the (non-deleted, non-file_import) ticket set — each
  * ticket matches exactly one at a given instant, and their sum = total.
- * The 特急 card slices by level independently.
+ * The 特急 card slices by the highest-sortOrder active 时效策略 independently.
  */
 
 export const DASHBOARD_METRIC_KEYS = [
@@ -21,7 +21,7 @@ export const DASHBOARD_METRIC_KEYS = [
   "completed", // 已完结数 (display status = completed)
   "pendingTimeout", // 待超时数 (display status = pending_timeout, 距时限不足 2 小时)
   "overdue", // 已超时数 (display status = overdue, 在途已过时限)
-  "urgent", // 特急工单数 (complaintLevel = 特急投诉)
+  "urgent", // 特急工单数 (slaPolicyId = sortOrder 最高的 active 时效策略)
 ] as const;
 export type DashboardMetricKey = (typeof DASHBOARD_METRIC_KEYS)[number];
 

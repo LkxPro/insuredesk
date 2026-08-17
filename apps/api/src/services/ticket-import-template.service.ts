@@ -13,13 +13,13 @@ import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 
 /**
  * 批量导入 template: a dynamically generated workbook, never a static asset —
- * the 渠道/客诉类别/完结状态 dropdowns are the ACTIVE catalog rows at download
- * time, so a stale file is fixed by re-downloading, not by re-deploying.
+ * the 渠道/客诉类别/完结状态/时效策略 dropdowns are the ACTIVE catalog rows at
+ * download time, so a stale file is fixed by re-downloading, not by re-deploying.
  *
- * Column set = the 建单表单 fields plus the 完结状态/完结备注 pair (历史
- * 工单迁移: both filled ⇒ the row lands already completed), Chinese headers
- * in the form's visual order — the same descriptor rows upload parsing
- * resolves columns by.
+ * Column set = the 建单表单 fields (剔除 formOnly 的旧投诉等级文本列，由时效策略
+ * 引用列取代其位置) plus the 完结状态/完结备注 pair (历史工单迁移: both filled ⇒
+ * the row lands already completed), Chinese headers in the form's visual order —
+ * the same descriptor rows upload parsing resolves columns by.
  */
 
 export interface TicketImportTemplateFile {
@@ -30,12 +30,18 @@ export interface TicketImportTemplateFile {
 }
 
 /** The active-catalog names resolved once per download, fed to every dropdown. */
-type CatalogOptions = { channels: string[]; categories: string[]; completionStatuses: string[] };
+type CatalogOptions = {
+  channels: string[];
+  categories: string[];
+  completionStatuses: string[];
+  slaPolicies: string[];
+};
 
 const CATALOG_OPTION_KEYS: Record<TicketCatalogKind, keyof CatalogOptions> = {
   channel: "channels",
   category: "categories",
   completionStatus: "completionStatuses",
+  slaPolicy: "slaPolicies",
 };
 
 type ImportColumn = {
@@ -62,7 +68,9 @@ function toTemplateColumn(descriptor: TicketFieldDescriptor): ImportColumn {
 }
 
 export const TICKET_IMPORT_TEMPLATE_COLUMNS: readonly ImportColumn[] =
-  TICKET_FIELD_DESCRIPTORS.map(toTemplateColumn);
+  TICKET_FIELD_DESCRIPTORS.filter(
+    (descriptor) => !("formOnly" in descriptor && descriptor.formOnly === true),
+  ).map(toTemplateColumn);
 
 /**
  * exceljs implements worksheet.dataValidations (range-level validations,
@@ -82,15 +90,21 @@ function columnLetter(column: number): string {
 export async function buildTicketImportTemplate(
   prisma: PrismaClient,
 ): Promise<TicketImportTemplateFile> {
-  const [channels, categories, completionStatuses] = await Promise.all([
+  const [channels, categories, completionStatuses, slaPolicies] = await Promise.all([
     channelCatalog.listOptions(prisma),
     ticketCategoryCatalog.listOptions(prisma),
     completionStatusCatalog.listOptions(prisma),
+    prisma.slaPolicy.findMany({
+      where: { active: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { name: true },
+    }),
   ]);
   const catalogs: CatalogOptions = {
     channels: channels.map((channel) => channel.name),
     categories: categories.map((category) => category.name),
     completionStatuses: completionStatuses.map((status) => status.name),
+    slaPolicies: slaPolicies.map((policy) => policy.name),
   };
 
   const workbook = new ExcelJS.Workbook();

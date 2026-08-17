@@ -334,6 +334,55 @@ describe("dashboard stats (Testcontainers)", () => {
     });
   });
 
+  describe("特急卡绑定 sortOrder 最高的 active 时效策略", () => {
+    it("默认绑定特急投诉，urgentPolicy 携 id/name（跳转参数随之）", async () => {
+      const urgentPolicy = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "特急投诉" },
+      });
+      await makeTicket({ customerName: "特急", complaintLevel: "特急投诉" });
+      await makeTicket({ customerName: "一般", complaintLevel: "一般投诉" });
+
+      const stats = await statsAt(new Date());
+      expect(stats.urgentPolicy).toEqual({ id: urgentPolicy.id, name: "特急投诉" });
+      expect(stats.metrics.urgent).toBe(1);
+    });
+
+    it("停用最高位策略后卡片切换到次高 active 策略，计数随之", async () => {
+      const urgentPolicy = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "特急投诉" },
+      });
+      const rushPolicy = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "加急投诉" },
+      });
+      await makeTicket({ customerName: "特急", complaintLevel: "特急投诉" });
+      await makeTicket({ customerName: "加急甲", complaintLevel: "加急投诉" });
+      await makeTicket({ customerName: "加急乙", complaintLevel: "加急投诉" });
+
+      await prisma.slaPolicy.update({ where: { id: urgentPolicy.id }, data: { active: false } });
+      try {
+        const stats = await statsAt(new Date());
+        expect(stats.urgentPolicy).toEqual({ id: rushPolicy.id, name: "加急投诉" });
+        // 计数按新绑定策略的引用；被停用策略的工单不再计入
+        expect(stats.metrics.urgent).toBe(2);
+      } finally {
+        await prisma.slaPolicy.update({ where: { id: urgentPolicy.id }, data: { active: true } });
+      }
+    });
+
+    it("无 active 策略时卡片安全降级：urgent=0、urgentPolicy=null", async () => {
+      await prisma.slaPolicy.updateMany({ data: { active: false } });
+      try {
+        const stats = await statsAt(new Date());
+        expect(stats.urgentPolicy).toBeNull();
+        expect(stats.metrics.urgent).toBe(0);
+        // 其余卡片照常
+        expect(stats.metrics.total).toBe(0);
+      } finally {
+        await prisma.slaPolicy.updateMany({ data: { active: true } });
+      }
+    });
+  });
+
   describe("软删排除 — 全部指标、渠道表、考核表", () => {
     it("soft-deleted tickets count nowhere, whatever state they died in", async () => {
       const now = new Date();

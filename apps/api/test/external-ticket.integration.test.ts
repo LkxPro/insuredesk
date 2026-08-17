@@ -18,7 +18,9 @@ describe("external ticket API (Testcontainers)", () => {
   let externalRole: Role;
 
   beforeAll(async () => {
-    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "channels"] });
+    harness = await startIntegrationHarness({
+      seed: ["rolesAndUsers", "channels", "slaPolicies"],
+    });
     prisma = harness.prisma;
     seeded = harness.seeded;
     channelId = harness.channelId("保司");
@@ -607,6 +609,36 @@ describe("external ticket API (Testcontainers)", () => {
       expect(detail.ticket.contactId).toBe("CONTACT456");
       expect(detail.ticket).not.toHaveProperty("processingResult");
       expect(detail).not.toHaveProperty("visibleFields");
+    });
+
+    it("外部详情暴露时效策略名：提交恒为 null，客服补录后即显当前策略名", async () => {
+      const caller = externalCaller1();
+      const ticket = await caller.externalTicket.submit({
+        submissionText: "时效策略可见性",
+      });
+
+      // 外部提交不接受策略输入：未定级
+      const fresh = await caller.externalTicket.detail({ ticketId: ticket.id });
+      expect(fresh.ticket.slaPolicyName).toBeNull();
+
+      // 客服补录时效策略（按 slaPolicyId 新轨）
+      const policy = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "加急投诉" },
+      });
+      const internal = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
+      await internal.ticket.edit({ ticketId: ticket.id, slaPolicyId: policy.id });
+
+      const detail = await caller.externalTicket.detail({ ticketId: ticket.id });
+      expect(detail.ticket.slaPolicyName).toBe("加急投诉");
+
+      // 改名即时显新名（引用而非快照）
+      await prisma.slaPolicy.update({ where: { id: policy.id }, data: { name: "加急专线" } });
+      try {
+        const renamed = await caller.externalTicket.detail({ ticketId: ticket.id });
+        expect(renamed.ticket.slaPolicyName).toBe("加急专线");
+      } finally {
+        await prisma.slaPolicy.update({ where: { id: policy.id }, data: { name: "加急投诉" } });
+      }
     });
 
     it("returns 404 for soft-deleted ticket", async () => {

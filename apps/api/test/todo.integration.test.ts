@@ -415,6 +415,49 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     });
   });
 
+  describe("策略停用语义 (引用停用策略的工单走缺行降级路径，不抛错)", () => {
+    it("停用后：检查点/染红消失，待首响与 due_soon/overdue 照常", async () => {
+      const owner = await createAssignee();
+      const ticket = await createTicket(); // 一般投诉: dueAt 48h, 红线 120min, {24h,1次,提前60min}
+      await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
+      const policy = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "一般投诉" },
+      });
+      const at = (offsetMs: number) =>
+        todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, offsetMs));
+
+      // 基线：23.5h 在检查点窗口内
+      expect(typesOf((await at(23.5 * HOUR)).items[0])).toEqual([
+        "awaiting_first_response",
+        "follow_up_checkpoint",
+      ]);
+
+      await prisma.slaPolicy.update({ where: { id: policy.id }, data: { active: false } });
+      try {
+        // 同一时刻同一工单：检查点消失，待首响常驻——poll 不抛错
+        const degraded = await at(23.5 * HOUR);
+        expect(typesOf(degraded.items[0])).toEqual(["awaiting_first_response"]);
+
+        // 越过 120min 红线也不染红（策略行缺位 → 无红线口径）
+        const pastRedLine = await at(3 * HOUR);
+        expect(typesOf(pastRedLine.items[0])).toEqual(["awaiting_first_response"]);
+        expect(pastRedLine.items[0]?.severity).toBe("warning");
+
+        // dueAt 派生的告警与策略行无关：47h 进 due_soon（不足 2h 严格），49h 进 overdue
+        expect(typesOf((await at(47 * HOUR)).items[0])).toEqual([
+          "awaiting_first_response",
+          "due_soon",
+        ]);
+        expect(typesOf((await at(49 * HOUR)).items[0])).toEqual([
+          "awaiting_first_response",
+          "overdue",
+        ]);
+      } finally {
+        await prisma.slaPolicy.update({ where: { id: policy.id }, data: { active: true } });
+      }
+    });
+  });
+
   describe("轨道合并 (送达: 一次请求)", () => {
     it("notification.list 同时携带轨 1 收件箱与轨 2 待办", async () => {
       const owner = await createAssignee();

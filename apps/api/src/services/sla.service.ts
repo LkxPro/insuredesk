@@ -1,28 +1,62 @@
 import {
-  COMPLAINT_LEVELS,
   type ComplaintLevel,
   reminderRulesSchema,
+  type SlaPolicyCreateInput,
+  type SlaPolicyEditInput,
+  type SlaPolicyEntity,
+  type SlaPolicyOption,
+  type SlaPolicySortInput,
   type SlaPolicyUpdateInput,
+  type SlaUpdateInput,
 } from "@insuredesk/shared";
 import type { SlaPolicy } from "../generated/prisma/client.ts";
+import { Prisma } from "../generated/prisma/client.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
- * SLA 策略配置 domain logic. Pure service layer — the router wraps these
- * with sla.view / sla.edit.
+ * 时效策略 domain logic. Pure service layer — the router wraps these with
+ * sla.view / sla.edit（options 仅登录）.
  *
- * There is deliberately no "apply to existing tickets" step: dueAt is stamped
- * once at creation (re-stamped only on a complaintLevel edit), and every
- * other consumer — the 我的待办 predicates, the dashboard counters — reads
- * the policy rows at evaluation time. Saving a row IS the rollout —
- * 只影响之后的读时判定.
+ * 时效策略是目录实体：name 全表唯一（含停用行）、sortOrder 排序、active 停用/
+ * 复活，无物理删除。写策略没有 "apply to existing tickets" 步骤：dueAt 建单
+ * 盖章（改策略引用时锚定原始 createdAt 重盖），其余消费方（待办、dashboard）
+ * 读时判定——保存即发布。
+ *
+ * 双轨：sla.update 同时接受旧 complaintLevel 整体替换（旧前端 SLA 页在用）
+ * 与按 id 分项更新。
  */
 
-function toDto(row: SlaPolicy) {
+/** 策略名撞车（含停用行）。 */
+export class SlaPolicyNameConflictError extends Error {
+  constructor(name: string) {
+    super(`时效策略「${name}」名称已存在`);
+    this.name = "SlaPolicyNameConflictError";
+  }
+}
+
+export class SlaPolicyNotFoundError extends Error {
+  constructor() {
+    super("时效策略不存在");
+    this.name = "SlaPolicyNotFoundError";
+  }
+}
+
+export class SlaPolicySortMismatchError extends Error {
+  constructor() {
+    super("排序清单须恰好包含全部时效策略");
+    this.name = "SlaPolicySortMismatchError";
+  }
+}
+
+function toDto(row: SlaPolicy): SlaPolicyEntity & { complaintLevel: ComplaintLevel } {
   return {
-    // Truthful cast: list rows are looked up via COMPLAINT_LEVELS and update
-    // rows arrive enum-validated, so the column value is always a level.
-    complaintLevel: row.complaintLevel as ComplaintLevel,
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    sortOrder: row.sortOrder,
+    active: row.active,
+    // 旧前端按投诉等级渲染：旧锚行出示锚值，无锚新策略以名称占位。
+    complaintLevel: (row.complaintLevel ?? row.name) as ComplaintLevel,
     firstResponseMinutes: row.firstResponseMinutes,
     overdueHours: row.overdueHours,
     reminderRules: reminderRulesSchema.parse(row.reminderRules),
@@ -30,31 +64,144 @@ function toDto(row: SlaPolicy) {
   };
 }
 
-/** The four policies in fixed 等级 order — the whole page in one read. */
+/** The full catalog for the SLA 管理页 — 停用行在内, 按目录序. */
 export async function listSlaPolicies({ prisma }: TicketServiceDeps) {
-  const rows = await prisma.slaPolicy.findMany();
-  const byLevel = new Map(rows.map((row) => [row.complaintLevel, row]));
-  return COMPLAINT_LEVELS.flatMap((level) => {
-    const row = byLevel.get(level);
-    return row ? [toDto(row)] : [];
+  const rows = await prisma.slaPolicy.findMany({
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
+  return rows.map(toDto);
+}
+
+/** 录入下拉源（登录可用）：仅启用策略, 按目录序. */
+export async function listSlaPolicyOptions({
+  prisma,
+}: TicketServiceDeps): Promise<SlaPolicyOption[]> {
+  const rows = await prisma.slaPolicy.findMany({
+    where: { active: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, description: true },
+  });
+  return rows;
+}
+
+/** 新建策略：名称全表唯一（含停用行），sortOrder 追加到末尾，恒为启用。 */
+export async function createSlaPolicy({ prisma }: TicketServiceDeps, input: SlaPolicyCreateInput) {
+  const max = await prisma.slaPolicy.aggregate({ _max: { sortOrder: true } });
+  try {
+    const row = await prisma.slaPolicy.create({
+      data: {
+        name: input.name,
+        description: input.description,
+        sortOrder: (max._max.sortOrder ?? 0) + 1,
+        active: true,
+        firstResponseMinutes: input.firstResponseMinutes,
+        overdueHours: input.overdueHours,
+        reminderRules: input.reminderRules,
+      },
+    });
+    return toDto(row);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new SlaPolicyNameConflictError(input.name);
+    }
+    throw error;
+  }
+}
+
+/** 按 id 分项更新：缺席字段保持原值；改名撞任何行（含停用）即拒绝。 */
+async function updateSlaPolicyById({ prisma }: TicketServiceDeps, input: SlaPolicyEditInput) {
+  const existing = await prisma.slaPolicy.findUnique({ where: { id: input.id } });
+  if (!existing) {
+    throw new SlaPolicyNotFoundError();
+  }
+  const data: Prisma.SlaPolicyUpdateInput = {
+    ...(input.name !== undefined && { name: input.name }),
+    ...(input.description !== undefined && { description: input.description }),
+    ...(input.firstResponseMinutes !== undefined && {
+      firstResponseMinutes: input.firstResponseMinutes,
+    }),
+    ...(input.overdueHours !== undefined && { overdueHours: input.overdueHours }),
+    ...(input.reminderRules !== undefined && { reminderRules: input.reminderRules }),
+  };
+  try {
+    return toDto(await prisma.slaPolicy.update({ where: { id: input.id }, data }));
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new SlaPolicyNameConflictError(input.name ?? existing.name);
+    }
+    throw error;
+  }
 }
 
 /**
- * Replace one level's policy (sla.edit). Upsert on the complaintLevel natural
- * key: the level enum is the validated identifier, so a missing row (a
- * never-seeded database) is self-healed rather than erred on.
+ * 旧轨：按 complaintLevel 旧锚整体替换策略配置（名称/目录属性不动）。缺行时
+ * 自愈补种——出厂库必然有行，此路只兜未播种库。
  */
-export async function updateSlaPolicy({ prisma }: TicketServiceDeps, input: SlaPolicyUpdateInput) {
+async function updateSlaPolicyByLevel({ prisma }: TicketServiceDeps, input: SlaPolicyUpdateInput) {
   const data = {
     firstResponseMinutes: input.firstResponseMinutes,
     overdueHours: input.overdueHours,
     reminderRules: input.reminderRules,
   };
-  const row = await prisma.slaPolicy.upsert({
+  const existing = await prisma.slaPolicy.findUnique({
     where: { complaintLevel: input.complaintLevel },
-    update: data,
-    create: { complaintLevel: input.complaintLevel, ...data },
   });
-  return toDto(row);
+  if (existing) {
+    return toDto(await prisma.slaPolicy.update({ where: { id: existing.id }, data }));
+  }
+  const max = await prisma.slaPolicy.aggregate({ _max: { sortOrder: true } });
+  return toDto(
+    await prisma.slaPolicy.create({
+      data: {
+        complaintLevel: input.complaintLevel,
+        name: input.complaintLevel,
+        sortOrder: (max._max.sortOrder ?? 0) + 1,
+        active: true,
+        ...data,
+      },
+    }),
+  );
+}
+
+export async function updateSlaPolicy(deps: TicketServiceDeps, input: SlaUpdateInput) {
+  return "complaintLevel" in input
+    ? updateSlaPolicyByLevel(deps, input)
+    : updateSlaPolicyById(deps, input);
+}
+
+/** 整组重排：清单须恰好覆盖全部策略（含停用行），顺序即新 sortOrder 1..n。 */
+export async function sortSlaPolicies(deps: TicketServiceDeps, input: SlaPolicySortInput) {
+  const { prisma } = deps;
+  const rows = await prisma.slaPolicy.findMany({ select: { id: true } });
+  const incoming = new Set(input.policyIds);
+  if (
+    incoming.size !== input.policyIds.length ||
+    incoming.size !== rows.length ||
+    rows.some((row) => !incoming.has(row.id))
+  ) {
+    throw new SlaPolicySortMismatchError();
+  }
+  await prisma.$transaction(
+    input.policyIds.map((id, index) =>
+      prisma.slaPolicy.update({ where: { id }, data: { sortOrder: index + 1 } }),
+    ),
+  );
+  return listSlaPolicies(deps);
+}
+
+/** 停用/复活。停用不拆引用：存量工单照常显示，读时判定走降级路径。 */
+export async function setSlaPolicyActive(
+  { prisma }: TicketServiceDeps,
+  input: { id: string; active: boolean },
+) {
+  const existing = await prisma.slaPolicy.findUnique({ where: { id: input.id } });
+  if (!existing) {
+    throw new SlaPolicyNotFoundError();
+  }
+  if (existing.active === input.active) {
+    return toDto(existing);
+  }
+  return toDto(
+    await prisma.slaPolicy.update({ where: { id: input.id }, data: { active: input.active } }),
+  );
 }

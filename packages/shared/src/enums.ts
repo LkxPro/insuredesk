@@ -114,8 +114,8 @@ export function isCreatorBackedSource(source: TicketSource): boolean {
   return CREATOR_BACKED_SOURCES.includes(source);
 }
 
-// Complaint levels — the ONLY SLA driver. Each level has exactly one
-// SLAPolicy row keyed by these literals.
+// Complaint levels — 旧投诉等级文本轨。时效策略目录实体是唯一 SLA 驱动；
+// 四个字面量同时是出厂策略行的 complaintLevel 旧锚，双轨输入经它映射到策略 id。
 export const COMPLAINT_LEVELS = ["一般投诉", "高级投诉", "加急投诉", "特急投诉"] as const;
 export const complaintLevelSchema = z.enum(COMPLAINT_LEVELS);
 export type ComplaintLevel = (typeof COMPLAINT_LEVELS)[number];

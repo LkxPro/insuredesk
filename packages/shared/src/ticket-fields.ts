@@ -1,7 +1,8 @@
 import { COMPLAINT_LEVELS, NUCLEAR_BODY_STATUSES, PRIORITIES, PRIORITY_LABELS } from "./enums.ts";
 
 /**
- * 工单字段描述表：20 个建单字段 + 2 个导入专属列的唯一声明处。每行声明
+ * 工单字段描述表：20 个建单字段 + 3 个导入专属列（时效策略引用 + 完结迁移对）
+ * 的唯一声明处。每行声明
  * key、标准名（＝表单用词）、类型与取值约束（长度上限/枚举取值/日期格式/
  * 目录引用）、导入填写说明的素材，以及显式的 per-surface override 槽位。
  * 加字段＝在表里加一行：字段 key 清单、文本长度上限、导入解析列与导入
@@ -29,13 +30,14 @@ export interface TicketEnumOption {
   readonly value: string | boolean;
 }
 
-export type TicketCatalogKind = "channel" | "category" | "completionStatus";
+export type TicketCatalogKind = "channel" | "category" | "completionStatus" | "slaPolicy";
 
 /** 填写说明里的目录名词（「下载模板时启用的◯◯目录」）。 */
 const CATALOG_NOUNS: Record<TicketCatalogKind, string> = {
   channel: "渠道",
   category: "类别",
   completionStatus: "完结状态",
+  slaPolicy: "时效策略",
 };
 
 /** 行的声明语法；`TicketFieldDescriptor` 是表里各行的精确类型。 */
@@ -43,8 +45,10 @@ type TicketFieldSpec = {
   readonly key: string;
   readonly label: string;
   readonly overrides?: TicketFieldOverrides;
-  /** 仅存在于批量导入的完结迁移对，不属于建单表单字段。 */
+  /** 仅存在于批量导入（完结迁移对、时效策略引用列），不属于建单表单字段。 */
   readonly importOnly?: true;
+  /** 不进导入列：旧投诉等级文本轨留在建单/编辑契约里，导入由 slaPolicyId 列承载。 */
+  readonly formOnly?: true;
 } & (
   | {
       readonly type: "text";
@@ -77,7 +81,7 @@ type TicketFieldSpec = {
     }
 );
 
-/** 行序＝表单呈现顺序＝导入模板列序；导入专属列固定收尾。 */
+/** 行序＝表单呈现顺序；导入列序＝表序剔除 formOnly 行（时效策略列占据投诉等级的位置），完结迁移对固定收尾。 */
 export const TICKET_FIELD_DESCRIPTORS = [
   { type: "date", key: "feedbackTime", label: "反馈时间" },
   {
@@ -183,6 +187,16 @@ export const TICKET_FIELD_DESCRIPTORS = [
     label: "投诉等级",
     options: COMPLAINT_LEVELS.map((level) => ({ label: level, value: level })),
     emptyMeaning: "未定级（无处理时限与 SLA 告警）",
+    formOnly: true,
+  },
+  {
+    type: "catalog",
+    key: "slaPolicyId",
+    label: "时效策略",
+    catalog: "slaPolicy",
+    maxLength: 100,
+    importOnly: true,
+    importNoteTail: "留空=未定级（无处理时限与 SLA 告警）",
   },
   {
     type: "enum",
@@ -257,10 +271,10 @@ export const TICKET_TEXT_LIMITS = Object.fromEntries(
 /** 完结备注长度上限；完结弹窗与批量导入的完结备注列共用这一个数。 */
 export const TICKET_COMPLETION_REMARK_LIMIT = TICKET_FIELDS.completionRemark.maxLength;
 
-/** 导入表头契约（列序即表序）＝各行标准名；模板生成与上传解析共用。 */
-export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS.map(
-  (descriptor) => descriptor.label,
-);
+/** 导入表头契约（列序＝表序剔除 formOnly 行）＝各行标准名；模板生成与上传解析共用。 */
+export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS.filter(
+  (descriptor) => !("formOnly" in descriptor && descriptor.formOnly === true),
+).map((descriptor) => descriptor.label);
 
 /**
  * 保单号的分隔字符串形态 ⇄ 数组形态。多值字段各表面（表单输入、详情/

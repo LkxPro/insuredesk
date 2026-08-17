@@ -56,6 +56,13 @@ const catalogs = {
     ["已解决", { id: "cs-resolved", active: true }],
     ["旧口径", { id: "cs-legacy", active: false }],
   ]),
+  slaPolicies: new Map([
+    ["一般投诉", { id: "sla-normal", active: true }],
+    ["高级投诉", { id: "sla-high", active: true }],
+    ["加急投诉", { id: "sla-rush", active: true }],
+    ["特急投诉", { id: "sla-urgent", active: true }],
+    ["旧策略", { id: "sla-legacy", active: false }],
+  ]),
 };
 
 async function expectFileError(body: Buffer, messagePart: string) {
@@ -132,7 +139,7 @@ describe("validateTicketImportRows", () => {
           客户曾进线: "是",
           进线时间: "2026-06-30 21:15",
           客诉类别: "理赔",
-          投诉等级: "高级投诉",
+          时效策略: "高级投诉",
           优先级: "紧急",
         },
       ],
@@ -150,7 +157,9 @@ describe("validateTicketImportRows", () => {
     expect(ticket.hasContacted).toBe(true);
     expect(ticket.contactTime).toBe("2026-06-30T13:15:00.000Z");
     expect(ticket.categoryId).toBe("cat-claims");
-    expect(ticket.complaintLevel).toBe("高级投诉");
+    // 时效策略列按策略名匹配启用策略，payload 承载解析出的引用 id
+    expect(ticket.slaPolicyId).toBe("sla-high");
+    expect(ticket.complaintLevel).toBeNull();
     expect(ticket.priority).toBe("urgent");
   });
 
@@ -163,6 +172,7 @@ describe("validateTicketImportRows", () => {
     expect(ticket.channelId).toBeNull();
     expect(ticket.categoryId).toBeNull();
     expect(ticket.complaintLevel).toBeNull();
+    expect(ticket.slaPolicyId).toBeNull();
     expect(ticket.priority).toBeNull();
     expect(ticket.customerName).toBeNull();
     expect(ticket.complaintReceiveChannel).toBeNull();
@@ -279,9 +289,22 @@ describe("validateTicketImportRows", () => {
     expect(errors[3]?.message).toContain("已停用");
   });
 
+  it("时效策略列：撞停用名或查无此名都是报错行（与目录列同款三分支）", async () => {
+    const { errors } = await validate([
+      { 时效策略: "不存在的策略" },
+      { 时效策略: "旧策略" },
+      { 时效策略: "加急投诉" },
+    ]);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toMatchObject({ row: 2, column: "时效策略" });
+    expect(errors[0]?.message).toContain("不存在");
+    expect(errors[1]).toMatchObject({ row: 3, column: "时效策略" });
+    expect(errors[1]?.message).toContain("已停用");
+  });
+
   it("rejects bad enum literals and over-length text, accumulating across rows", async () => {
     const { errors } = await validate([
-      { 投诉等级: "特级投诉" },
+      { 时效策略: "特级投诉" },
       { 优先级: "特急" },
       { 保司侧是否核身: "未知" },
       { 客户曾进线: "也许" },
@@ -290,14 +313,13 @@ describe("validateTicketImportRows", () => {
     ]);
     expect(errors).toHaveLength(6);
     expect(errors.map((error) => error.column)).toEqual([
-      "投诉等级",
+      "时效策略",
       "优先级",
       "保司侧是否核身",
       "客户曾进线",
       "客户姓名",
       "客户电话（投保人）",
     ]);
-    expect(errors[0]?.message).toContain("一般投诉");
     expect(errors[4]?.message).toContain("100");
     expect(errors[5]?.message).toContain("50");
   });
@@ -318,7 +340,7 @@ describe("validateTicketImportRows", () => {
   });
 
   it("flags fully identical rows as duplicates of the first occurrence", async () => {
-    const row: RowInput = { 客户姓名: "张三", 投诉等级: "一般投诉" };
+    const row: RowInput = { 客户姓名: "张三", 时效策略: "一般投诉" };
     const { errors } = await validate([row, { 客户姓名: "张三" }, { ...row }, { ...row }]);
     expect(errors).toHaveLength(2);
     expect(errors[0]).toMatchObject({ row: 4, column: null });

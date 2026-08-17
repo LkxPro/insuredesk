@@ -157,10 +157,14 @@ model Ticket {
   /// 客诉类别目录引用; null = 未填写. Referenced rows can only be 停用, never
   /// deleted — Restrict is the DB backstop behind the service's refusal.
   categoryId     String?
-  /// The ONLY SLA driver — determines dueAt, 首响 and 跟进 requirements.
-  /// null = 未定级: no dueAt, no 首响/跟进 requirements, no SLA time alerts
-  /// until a later edit sets it (SLA then counts from the original createdAt).
+  /// 旧投诉等级文本（双轨回落轨）；新事实源是 slaPolicyId，本列随引用派生盖章。
+  /// null = 未指定时效策略
   complaintLevel String?
+  /// 时效策略目录引用; null = 未指定: no dueAt, no 首响/跟进 requirements, no
+  /// SLA time alerts until a later edit sets it (SLA then counts from the
+  /// original createdAt). Referenced rows can only be 停用, never deleted —
+  /// Restrict is the DB backstop.
+  slaPolicyId    String?
   /// Independent free label (low/medium/high/urgent), default empty, no SLA role
   priority       String?
   /// 跟进频次要求, stamped from the level's SLA config; null while 未定级
@@ -205,6 +209,7 @@ model Ticket {
   category         TicketCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   channel          Channel?           @relation(fields: [channelId], references: [id], onDelete: Restrict)
   completionStatus CompletionStatus?  @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
+  slaPolicy        SlaPolicy?         @relation(fields: [slaPolicyId], references: [id], onDelete: Restrict)
   importBatch      TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
   processLogs      ProcessLog[]
 
@@ -214,6 +219,7 @@ model Ticket {
   @@index([categoryId])
   @@index([channelId])
   @@index([completionStatusId])
+  @@index([slaPolicyId])
   @@index([status])
   @@index([createdAt])
   /// Computed-status predicates (pending_timeout/overdue) and 处理时限 sorting
@@ -276,21 +282,32 @@ model ProcessLog {
   @@map("process_logs")
 }
 
-/// SLA rule configuration, one row per complaint level. All
-/// durations count from ticket createdAt.
+/// 时效策略目录实体 + SLA rule configuration. Tickets reference a row via
+/// slaPolicyId; all durations count from ticket createdAt. Referenced rows are
+/// never deleted — 停用 only.
 model SlaPolicy {
   id                   String   @id @default(cuid())
-  /// 一般投诉/高级投诉/加急投诉/特急投诉 — natural key, one row each
-  complaintLevel       String   @unique
+  /// 旧投诉等级锚（双轨回落轨的映射键）：四个出厂行各持一个等级字面量，
+  /// 接口新建的策略为 null。
+  complaintLevel       String?  @unique
+  /// 策略名，全表唯一（含停用行）
+  name                 String   @unique
+  description          String?
+  /// 目录序；dashboard 特急卡绑定 active 中 sortOrder 最大者
+  sortOrder            Int      @default(0)
+  /// false = 停用：退出录入下拉/导入匹配/待办判定，存量引用照常显示
+  active               Boolean  @default(true)
   /// 首响违约线 (minutes from createdAt); red-line threshold only, no counting
   firstResponseMinutes Int
-  /// Overdue duration (hours from createdAt); null = no deadline (特急)
+  /// Overdue duration (hours from createdAt); null = no deadline
   overdueHours         Int?
   /// Typed ReminderRule[] (packages/shared/src/sla.ts), validated by Zod at
   /// every boundary
   reminderRules        Json
   createdAt            DateTime @default(now()) @db.Timestamptz
   updatedAt            DateTime @updatedAt @db.Timestamptz
+
+  tickets Ticket[]
 
   @@map("sla_policies")
 }
