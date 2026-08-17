@@ -64,13 +64,9 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
   const requiredExtension: Record<string, z.ZodTypeAny> = {};
   for (const key of TICKET_CREATE_FIELD_KEYS) {
     // 保单号的必填判定在对象级（勾选「无保单号」算明确表态）
-    if (requiredFields.includes(key) && key !== "policyNumbers" && key !== "complaintLevel") {
+    if (requiredFields.includes(key) && key !== "policyNumbers") {
       requiredExtension[key] = requiredFieldSchema(TICKET_FIELDS[key]);
     }
-  }
-  // 存量角色必填集里的 complaintLevel 由 slaPolicyId 控件承载（与服务端必填校验同一映射）
-  if (requiredFields.includes("complaintLevel") && requiredExtension.slaPolicyId === undefined) {
-    requiredExtension.slaPolicyId = requiredFieldSchema(TICKET_FIELDS.slaPolicyId);
   }
 
   if (Object.keys(requiredExtension).length > 0) {
@@ -713,9 +709,7 @@ export function TicketFormFields({
           <Field data-invalid={!!errors.slaPolicyId}>
             <FieldLabel htmlFor="slaPolicyId">
               {TICKET_FIELDS.slaPolicyId.label}
-              {(isRequired("slaPolicyId") || isRequired("complaintLevel")) && (
-                <span className="text-destructive">*</span>
-              )}
+              {isRequired("slaPolicyId") && <span className="text-destructive">*</span>}
             </FieldLabel>
             <Controller
               control={control}

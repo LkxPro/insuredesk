@@ -74,16 +74,12 @@ describe("assigned notifications (Testcontainers)", () => {
     customerRequest: "希望尽快跟进理赔",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    complaintLevel: "一般投诉",
-    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
     allowDuplicate: true,
   } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   /** A fresh unassigned ticket, created through the real create procedure. */
-  async function createTicket(
-    complaintLevel: TicketCreateInput["complaintLevel"] = baseInput.complaintLevel,
-  ) {
-    return manager().ticket.create({ ...baseInput, complaintLevel });
+  async function createTicket(policyName = "一般投诉") {
+    return manager().ticket.create({ ...baseInput, slaPolicyId: harness.slaPolicyId(policyName) });
   }
 
   describe("assignment writes the notification (轨 1, same transaction)", () => {

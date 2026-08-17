@@ -73,31 +73,33 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
 
-  const baseInput = {
-    feedbackTime: "2026-07-09T02:00:00.000Z",
-    project: "融盛",
-    brokerageEntity: "东方大地",
-    paymentChannel: "连连支付",
-    policyNumbers: ["P2026071000829"],
-    userComplaintChannel: "400热线",
-    customerName: "张三",
-    phone: "13800000004",
-    customerRequest: "对理赔金额有异议，要求复核",
-    nuclearBodyStatus: "待核实",
-    hasContacted: false,
-    complaintLevel: "一般投诉",
-    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
-    allowDuplicate: true,
-  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
+  const policyId = (name: string) => harness.slaPolicyId(name);
+
+  const baseInput = () =>
+    ({
+      feedbackTime: "2026-07-09T02:00:00.000Z",
+      project: "融盛",
+      brokerageEntity: "东方大地",
+      paymentChannel: "连连支付",
+      policyNumbers: ["P2026071000829"],
+      userComplaintChannel: "400热线",
+      customerName: "张三",
+      phone: "13800000004",
+      customerRequest: "对理赔金额有异议，要求复核",
+      nuclearBodyStatus: "待核实",
+      hasContacted: false,
+      slaPolicyId: policyId("一般投诉"),
+      allowDuplicate: true,
+    }) satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   /** Full edit payload for the ticket: the unchanged base fields + overrides. */
   function editInput(ticketId: string, overrides: Partial<TicketEditInput> = {}): TicketEditInput {
-    return { ticketId, ...baseInput, ...overrides };
+    return { ticketId, ...baseInput(), ...overrides };
   }
 
   /** A fresh unassigned ticket, created through the real create procedure. */
   async function createTicket(overrides: Partial<TicketCreateInput> = {}) {
-    const created = await manager().ticket.create({ ...baseInput, ...overrides });
+    const created = await manager().ticket.create({ ...baseInput(), ...overrides });
     return created.id;
   }
 
@@ -325,7 +327,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
 
   describe("改时效策略引用 = 改 SLA（重算 dueAt、切换要求、策略名快照留痕）", () => {
     it("特急→一般 on a 70h-old ticket: dueAt = createdAt + 48h, immediately overdue", async () => {
-      const ticketId = await createTicket({ complaintLevel: "特急投诉" });
+      const ticketId = await createTicket({ slaPolicyId: policyId("特急投诉") });
       // 特急: no deadline at all
       expect((await manager().ticket.detail({ id: ticketId })).dueAt).toBeNull();
 
@@ -333,7 +335,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
       await prisma.ticket.update({ where: { id: ticketId }, data: { createdAt } });
 
-      await manager().ticket.edit(editInput(ticketId, { complaintLevel: "一般投诉" }));
+      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("一般投诉") }));
 
       const detail = await manager().ticket.detail({ id: ticketId });
       // The creation formula re-runs off the UNCHANGED createdAt
@@ -343,8 +345,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       // The requirement strings re-stamp from the NEW policy
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
       expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
-      // …and the edit remark records the 时效策略 change with policy-name snapshots
-      // in from/to (种子策略名即旧投诉等级文本)
       const editLog = detail.processLogs.at(-1);
       expect(editLog?.remark).toContain("时效策略: 特急投诉→一般投诉");
       expect(editLog).toMatchObject({ from: "特急投诉", to: "一般投诉" });
@@ -367,7 +367,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       });
       expect((await manager().ticket.detail({ id: ticketId })).displayStatus).toBe("overdue");
 
-      await manager().ticket.edit(editInput(ticketId, { complaintLevel: "特急投诉" }));
+      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("特急投诉") }));
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.dueAt).toBeNull();
@@ -375,22 +375,17 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.firstResponseRequirement).toBe("30分钟内完成首次响应");
     });
 
-    it("双轨编辑：slaPolicyId 与文本轨产出相同重盖章，锚定原始 createdAt", async () => {
-      const rush = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "加急投诉" },
-      });
+    it("改引用重盖章锚定原始 createdAt，留痕 from/to 存策略名快照", async () => {
+      const rushId = policyId("加急投诉");
       const ticketId = await createTicket();
       const createdAt = new Date(Date.now() - 10 * HOUR_MS);
       await prisma.ticket.update({ where: { id: ticketId }, data: { createdAt } });
 
-      const result = await manager().ticket.edit(
-        editInput(ticketId, { complaintLevel: null, slaPolicyId: rush.id }),
-      );
+      const result = await manager().ticket.edit(editInput(ticketId, { slaPolicyId: rushId }));
       expect(result.changedFields).toContain("slaPolicyId");
 
       const detail = await manager().ticket.detail({ id: ticketId });
-      expect(detail.slaPolicyId).toBe(rush.id);
-      expect(detail.complaintLevel).toBe("加急投诉"); // 旧锚文本随引用派生
+      expect(detail.slaPolicyId).toBe(rushId);
       // 锚定原始 createdAt：10h 前录入 + 72h → 仍有 62h
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 72 * HOUR_MS).toISOString());
       expect(detail.firstResponseRequirement).toBe("60分钟内完成首次响应");
@@ -399,12 +394,11 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(editLog).toMatchObject({ from: "一般投诉", to: "加急投诉" });
     });
 
-    it("清除策略引用（两轨皆空）清空全部盖章，from/to 落 名→null", async () => {
+    it("清除策略引用清空全部盖章，from/to 落 名→null", async () => {
       const ticketId = await createTicket();
-      await manager().ticket.edit(editInput(ticketId, { complaintLevel: null, slaPolicyId: null }));
+      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: null }));
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.slaPolicyId).toBeNull();
-      expect(detail.complaintLevel).toBeNull();
       expect(detail.dueAt).toBeNull();
       expect(detail.firstResponseRequirement).toBeNull();
       const editLog = detail.processLogs.at(-1);
@@ -413,30 +407,38 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     });
 
     it("引用未变的编辑保持停用策略不报错；新选停用策略即拒绝", async () => {
-      const rush = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "加急投诉" },
-      });
-      const ticketId = await createTicket({ complaintLevel: "加急投诉" });
-      await admin().sla.setActive({ id: rush.id, active: false });
+      const rushId = policyId("加急投诉");
+      const ticketId = await createTicket({ slaPolicyId: rushId });
+      await admin().sla.setActive({ id: rushId, active: false });
       try {
-        // 引用未变（文本轨回落到同一停用策略）：无关字段编辑照常，不重盖章
         const before = await manager().ticket.detail({ id: ticketId });
         const result = await manager().ticket.edit(
-          editInput(ticketId, { customerName: "引用未动", complaintLevel: "加急投诉" }),
+          editInput(ticketId, { customerName: "引用未动", slaPolicyId: rushId }),
         );
         expect(result.changedFields).toEqual(["customerName"]);
         const detail = await manager().ticket.detail({ id: ticketId });
-        expect(detail.slaPolicyId).toBe(rush.id);
+        expect(detail.slaPolicyId).toBe(rushId);
         expect(detail.dueAt).toBe(before.dueAt);
 
         // 新选停用策略：与缺行同错
         const otherId = await createTicket();
         await expect(
-          manager().ticket.edit(editInput(otherId, { complaintLevel: null, slaPolicyId: rush.id })),
+          manager().ticket.edit(editInput(otherId, { slaPolicyId: rushId })),
         ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
       } finally {
-        await admin().sla.setActive({ id: rush.id, active: true });
+        await admin().sla.setActive({ id: rushId, active: true });
       }
+    });
+
+    it("旧 complaintLevel 文本轨编辑输入返回明确校验错误", async () => {
+      const ticketId = await createTicket();
+      const error = await manager()
+        .ticket.edit(editInput(ticketId, { complaintLevel: "加急投诉" } as never))
+        .catch((e: unknown) => e);
+      expect(error).toMatchObject({ code: "BAD_REQUEST" });
+      expect((error as Error).message).toContain("投诉等级文本轨已下线");
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.slaPolicyId).toBe(policyId("一般投诉"));
     });
 
     it("priority edits drive no SLA field (dueAt/要求串 untouched)", async () => {
@@ -559,7 +561,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("lets the creator without ticket.view_all edit their own ticket — unassigned and after handoff", async () => {
       const creatorEditor = () =>
         callerWith(seeded.users.cs1, "受限创建人", ["ticket.view", "ticket.create", "ticket.edit"]);
-      const created = await creatorEditor().ticket.create(baseInput);
+      const created = await creatorEditor().ticket.create(baseInput());
 
       const whileUnassigned = await creatorEditor().ticket.edit(
         editInput(created.id, { customerName: "创建人未指派时改" }),
@@ -580,7 +582,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
           "ticket.create",
           "ticket.delete",
         ]);
-      const created = await creatorDeleter().ticket.create(baseInput);
+      const created = await creatorDeleter().ticket.create(baseInput());
       await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
 
       const result = await creatorDeleter().ticket.delete({ ticketId: created.id });

@@ -73,7 +73,7 @@ export const appRouter = router({
   role: roleRouter,
 
   /**
-   * SLA 策略配置 - 按投诉等级编辑首响/超时/提醒规则，限管理员
+   * 时效策略目录 - 目录 CRUD/排序/启停与首响/超时/提醒规则编辑，限管理员
    */
   sla: slaRouter,
 

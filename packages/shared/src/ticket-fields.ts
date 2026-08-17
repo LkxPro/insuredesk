@@ -1,7 +1,7 @@
-import { COMPLAINT_LEVELS, NUCLEAR_BODY_STATUSES, PRIORITIES, PRIORITY_LABELS } from "./enums.ts";
+import { NUCLEAR_BODY_STATUSES, PRIORITIES, PRIORITY_LABELS } from "./enums.ts";
 
 /**
- * 工单字段描述表：21 个建单字段 + 完结迁移对两个导入专属列的唯一声明处。
+ * 工单字段描述表：20 个建单字段 + 完结迁移对两个导入专属列的唯一声明处。
  * 每行声明
  * key、标准名（＝表单用词）、类型与取值约束（长度上限/枚举取值/日期格式/
  * 目录引用）、导入填写说明的素材，以及显式的 per-surface override 槽位。
@@ -26,7 +26,7 @@ export interface TicketFieldOverrides {
 export interface TicketEnumOption {
   /** 表单/模板里的中文字面量。 */
   readonly label: string;
-  /** 落库取值；核身/等级存中文字面量本身，优先级存英文码，曾进线存布尔。 */
+  /** 落库取值；核身存中文字面量本身，优先级存英文码，曾进线存布尔。 */
   readonly value: string | boolean;
 }
 
@@ -47,8 +47,6 @@ type TicketFieldSpec = {
   readonly overrides?: TicketFieldOverrides;
   /** 仅存在于批量导入（完结迁移对），不属于建单表单字段。 */
   readonly importOnly?: true;
-  /** 不进导入列：旧投诉等级文本轨留在建单/编辑契约里，导入由 slaPolicyId 列承载。 */
-  readonly formOnly?: true;
 } & (
   | {
       readonly type: "text";
@@ -81,7 +79,7 @@ type TicketFieldSpec = {
     }
 );
 
-/** 行序＝表单呈现顺序；导入列序＝表序剔除 formOnly 行（时效策略列占据投诉等级的位置），完结迁移对固定收尾。 */
+/** 行序＝表单呈现顺序；导入列序＝表序，完结迁移对固定收尾。 */
 export const TICKET_FIELD_DESCRIPTORS = [
   { type: "date", key: "feedbackTime", label: "反馈时间" },
   {
@@ -182,14 +180,6 @@ export const TICKET_FIELD_DESCRIPTORS = [
     overrides: { exportHeader: "分类", listLabel: "类别" },
   },
   {
-    type: "enum",
-    key: "complaintLevel",
-    label: "投诉等级",
-    options: COMPLAINT_LEVELS.map((level) => ({ label: level, value: level })),
-    emptyMeaning: "未定级（无处理时限与 SLA 告警）",
-    formOnly: true,
-  },
-  {
     type: "catalog",
     key: "slaPolicyId",
     label: "时效策略",
@@ -270,10 +260,10 @@ export const TICKET_TEXT_LIMITS = Object.fromEntries(
 /** 完结备注长度上限；完结弹窗与批量导入的完结备注列共用这一个数。 */
 export const TICKET_COMPLETION_REMARK_LIMIT = TICKET_FIELDS.completionRemark.maxLength;
 
-/** 导入表头契约（列序＝表序剔除 formOnly 行）＝各行标准名；模板生成与上传解析共用。 */
-export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS.filter(
-  (descriptor) => !("formOnly" in descriptor && descriptor.formOnly === true),
-).map((descriptor) => descriptor.label);
+/** 导入表头契约（列序＝表序）＝各行标准名；模板生成与上传解析共用。 */
+export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS.map(
+  (descriptor) => descriptor.label,
+);
 
 /**
  * 保单号的分隔字符串形态 ⇄ 数组形态。多值字段各表面（表单输入、详情/

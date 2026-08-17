@@ -114,8 +114,7 @@ describe("role required ticket fields (Testcontainers)", () => {
     customerName: "张三",
     phone: "13900000000",
     hasContacted: true,
-    complaintLevel: "一般投诉" as const,
-    // fixture 有意复用相同手机号，绕过提交兜底查重
+    slaPolicyId: harness.slaPolicyId("一般投诉"),
     allowDuplicate: true,
   });
 
@@ -182,7 +181,7 @@ describe("role required ticket fields (Testcontainers)", () => {
     it("rejects when missing multiple required fields and lists them all", async () => {
       const input = {
         feedbackTime: "2026-07-15T10:00:00.000Z",
-        complaintLevel: "一般投诉",
+        slaPolicyId: harness.slaPolicyId("一般投诉"),
       } satisfies TicketCreateInput;
 
       const error = await requiredUser()
@@ -247,27 +246,25 @@ describe("role required ticket fields (Testcontainers)", () => {
       expect(detail.policyNumbers).toEqual([]);
     });
 
-    it("required 投诉等级可用 slaPolicyId 引用满足（双轨）", async () => {
+    it("required 时效策略：缺引用即拒，引用满足即过", async () => {
       await prisma.role.update({
         where: { id: roleWithRequired.id },
-        data: { requiredTicketFields: ["complaintLevel"] },
+        data: { requiredTicketFields: ["slaPolicyId"] },
       });
       try {
-        const { complaintLevel: _dropped, ...withoutLevel } = validInput();
-        await expect(requiredUser().ticket.create(withoutLevel)).rejects.toThrow(
-          /以下字段为必填项：投诉等级/,
+        const { slaPolicyId: _dropped, ...withoutPolicy } = validInput();
+        await expect(requiredUser().ticket.create(withoutPolicy)).rejects.toThrow(
+          /以下字段为必填项：时效策略/,
         );
 
-        const policy = await prisma.slaPolicy.findUniqueOrThrow({
-          where: { complaintLevel: "一般投诉" },
-        });
+        const policyId = harness.slaPolicyId("一般投诉");
         const result = await requiredUser().ticket.create({
-          ...withoutLevel,
-          slaPolicyId: policy.id,
+          ...withoutPolicy,
+          slaPolicyId: policyId,
         });
         const detail = await requiredUser().ticket.detail({ id: result.id });
-        expect(detail.slaPolicyId).toBe(policy.id);
-        expect(detail.complaintLevel).toBe("一般投诉");
+        expect(detail.slaPolicyId).toBe(policyId);
+        expect(detail.slaPolicy?.name).toBe("一般投诉");
       } finally {
         await prisma.role.update({
           where: { id: roleWithRequired.id },
@@ -350,7 +347,7 @@ describe("role required ticket fields (Testcontainers)", () => {
 
     it("allows ticket creation when role has empty requiredTicketFields", async () => {
       const input = {
-        complaintLevel: "一般投诉",
+        slaPolicyId: harness.slaPolicyId("一般投诉"),
       } satisfies TicketCreateInput;
       const result = await manager().ticket.create(input);
       expect(result.workOrderNumber).toMatch(/^WO\d{6,}$/);

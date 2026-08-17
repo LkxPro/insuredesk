@@ -159,7 +159,6 @@ describe("validateTicketImportRows", () => {
     expect(ticket.categoryId).toBe("cat-claims");
     // 时效策略列按策略名匹配启用策略，payload 承载解析出的引用 id
     expect(ticket.slaPolicyId).toBe("sla-high");
-    expect(ticket.complaintLevel).toBeNull();
     expect(ticket.priority).toBe("urgent");
   });
 
@@ -171,7 +170,6 @@ describe("validateTicketImportRows", () => {
     expect(ticket.feedbackTime).toBeNull();
     expect(ticket.channelId).toBeNull();
     expect(ticket.categoryId).toBeNull();
-    expect(ticket.complaintLevel).toBeNull();
     expect(ticket.slaPolicyId).toBeNull();
     expect(ticket.priority).toBeNull();
     expect(ticket.customerName).toBeNull();

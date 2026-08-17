@@ -18,7 +18,7 @@ const HOUR_MS = 60 * 60 * 1000;
  * fields persist as NULL (never ""); hasContacted unfilled means 未知, not
  * false; system fields (workOrderNumber/source/createdAt/creatorId/status)
  * still generate. 未定级 tickets carry no dueAt / SLA requirement strings and
- * raise no SLA time alerts; a later complaintLevel edit computes SLA off the
+ * raise no SLA time alerts; a later 时效策略 edit computes SLA off the
  * ORIGINAL createdAt. 未填渠道 tickets stay manually assignable but 按排班
  * 自动分配 skips them with an explicit reason. List / detail / todo / export
  * all read null-heavy rows without failing.
@@ -126,7 +126,7 @@ describe("optional business fields (Testcontainers)", () => {
   });
 
   describe("未定级工单的 SLA 与告警", () => {
-    it("no complaintLevel → no dueAt, no requirement strings, and no SLA time alerts in 我的待办 beyond 待首响", async () => {
+    it("未指定时效策略 → no dueAt, no requirement strings, and no SLA time alerts in 我的待办 beyond 待首响", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
       await manager().ticket.assign({ ticketId: created.id, assigneeId: seeded.users.cs1.id });
       // Backdate far past every level's thresholds: were any SLA rule active,
@@ -161,12 +161,14 @@ describe("optional business fields (Testcontainers)", () => {
       expect(entry?.severity).toBe("warning");
     });
 
-    it("a later complaintLevel edit computes SLA off the ORIGINAL createdAt", async () => {
+    it("a later 时效策略 edit computes SLA off the ORIGINAL createdAt", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
       await prisma.ticket.update({ where: { id: created.id }, data: { createdAt } });
 
-      await manager().ticket.edit(blankEditInput(created.id, { complaintLevel: "一般投诉" }));
+      await manager().ticket.edit(
+        blankEditInput(created.id, { slaPolicyId: harness.slaPolicyId("一般投诉") }),
+      );
 
       const detail = await manager().ticket.detail({ id: created.id });
       // dueAt anchors to 录入时刻, not the edit instant — 70h old
@@ -176,16 +178,16 @@ describe("optional business fields (Testcontainers)", () => {
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
     });
 
-    it("clearing complaintLevel clears the SLA stamps again", async () => {
+    it("clearing the 策略引用 clears the SLA stamps again", async () => {
       const created = await manager().ticket.create({
-        complaintLevel: "一般投诉",
+        slaPolicyId: harness.slaPolicyId("一般投诉"),
       } as TicketCreateInput);
       expect((await manager().ticket.detail({ id: created.id })).dueAt).not.toBeNull();
 
       await manager().ticket.edit(blankEditInput(created.id));
 
       const detail = await manager().ticket.detail({ id: created.id });
-      expect(detail.complaintLevel).toBeNull();
+      expect(detail.slaPolicyId).toBeNull();
       expect(detail.dueAt).toBeNull();
       expect(detail.followUpFrequency).toBeNull();
       expect(detail.firstResponseRequirement).toBeNull();
@@ -233,7 +235,7 @@ describe("optional business fields (Testcontainers)", () => {
       expect(detail).toMatchObject({
         channel: null,
         customerName: null,
-        complaintLevel: null,
+        slaPolicyId: null,
         hasContacted: null,
         feedbackTime: null,
         dueAt: null,
@@ -247,7 +249,7 @@ describe("optional business fields (Testcontainers)", () => {
         customerName: null,
         policyNumbers: [],
         channel: null,
-        complaintLevel: null,
+        slaPolicyId: null,
         dueAt: null,
       });
     });

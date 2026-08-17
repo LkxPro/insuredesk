@@ -13,7 +13,7 @@ import type { AuthenticatedUser } from "./auth.service.ts";
 import { channelCatalog } from "./channel.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
 import {
-  findSlaPolicyByRef,
+  findSlaPolicyById,
   SlaPolicyNotConfiguredError,
   stampFromPolicy,
   type TicketServiceDeps,
@@ -37,7 +37,6 @@ import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
  *   base), and 跟进频次/首响要求 re-stamp from the new policy. This may flip the
  *   ticket straight into overdue (e.g. 特急→一般 past 48h) — intended, and the
  *   read-time display/list predicates pick it up with no further writes.
- *   输入双轨：slaPolicyId 优先，complaintLevel 文本回落映射；两轨同一盖章。
  * - 保持原引用不重校验：引用未变时即便策略已停用也不报错（目录语义同款——
  *   编辑可保持原停用值）；只有新选才要求存在且启用。
  * - 提醒只对未来生效: nothing to do here BY DESIGN — 轨 2 reminders are
@@ -50,8 +49,7 @@ import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
  *   an edit that changes nothing writes nothing
  */
 
-/** The editable basic-info fields, minus the ticketId routing key. */
-type EditableFields = Omit<TicketEditData, "ticketId">;
+type EditableFields = Omit<TicketEditData, "ticketId" | "complaintLevel">;
 type EditableFieldKey = keyof EditableFields;
 
 const EDITABLE_FIELD_KEYS: [
@@ -60,10 +58,11 @@ const EDITABLE_FIELD_KEYS: [
     TicketCreateFieldKey | "noPolicyNumber" | "complaintLevel" | "slaPolicyId"
   >,
 ] extends [never]
-  ? readonly Exclude<TicketCreateFieldKey, "complaintLevel" | "slaPolicyId">[]
-  : never = TICKET_CREATE_FIELD_KEYS.filter(
-  (key) => key !== "complaintLevel" && key !== "slaPolicyId",
-) as readonly Exclude<TicketCreateFieldKey, "complaintLevel" | "slaPolicyId">[];
+  ? readonly Exclude<TicketCreateFieldKey, "slaPolicyId">[]
+  : never = TICKET_CREATE_FIELD_KEYS.filter((key) => key !== "slaPolicyId") as readonly Exclude<
+  TicketCreateFieldKey,
+  "slaPolicyId"
+>[];
 
 type EditableValue = string | string[] | boolean | Date | null;
 
@@ -126,13 +125,7 @@ export async function editTicket(
     feedbackTime: toDateOrNull(fields.feedbackTime),
     contactTime: toDateOrNull(fields.contactTime),
   });
-  // 双轨引用不进通用 diff/写入：slaPolicyId/complaintLevel 由 SLA 专属块按
-  // 解析后的策略行处置——未变时原列原样保留（含停用策略的存量引用）。
-  const {
-    slaPolicyId: nextSlaPolicyId,
-    complaintLevel: nextComplaintLevel,
-    ...writableNext
-  } = next;
+  const { slaPolicyId: nextSlaPolicyId, complaintLevel: _legacy, ...writableNext } = next;
 
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
@@ -156,13 +149,7 @@ export async function editTicket(
         !sameValue(ticket[key], writableNext[key]) || (key === "policyNumbers" && noneToggled),
     );
 
-    // 双轨解析到策略行（ref 非空而查无此行 = 配置故障，即便未变也抛——与原
-    // computeSlaStamp 的缺行口径一致）；引用未变即不重校验，停用策略的存量
-    // 引用得以保持。变了才要求新引用存在且启用。
-    const refPolicy = await findSlaPolicyByRef(tx, {
-      slaPolicyId: nextSlaPolicyId,
-      complaintLevel: nextComplaintLevel,
-    });
+    const refPolicy = await findSlaPolicyById(tx, nextSlaPolicyId);
     const slaChanged = (refPolicy?.id ?? null) !== ticket.slaPolicyId;
     if (slaChanged && refPolicy !== null && !refPolicy.active) {
       throw new SlaPolicyNotConfiguredError(refPolicy.name);
@@ -248,7 +235,7 @@ export async function editTicket(
       ? `${ticketProcessLogLabel("slaPolicyId")}: ${ticket.slaPolicy?.name ?? "（空）"}→${refPolicy?.name ?? "（空）"}`
       : null;
     const remarkLines = TICKET_CREATE_FIELD_KEYS.flatMap((key) => {
-      if (key === "complaintLevel") {
+      if (key === "slaPolicyId") {
         return slaLine === null ? [] : [slaLine];
       }
       return changedFields.includes(key as (typeof changedFields)[number])

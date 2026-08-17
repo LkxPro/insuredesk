@@ -1,9 +1,4 @@
-import {
-  COMPLAINT_LEVELS,
-  DEFAULT_SLA_POLICIES,
-  type Permission,
-  type TicketCreateInput,
-} from "@insuredesk/shared";
+import { DEFAULT_SLA_POLICIES, type Permission, type TicketCreateInput } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
@@ -78,36 +73,33 @@ describe("ticket creation + detail (Testcontainers)", () => {
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
 
-  const baseInput = {
-    feedbackTime: "2026-07-09T02:00:00.000Z",
-    project: "融盛",
-    brokerageEntity: "东方大地",
-    paymentChannel: "连连支付",
-    policyNumbers: ["P2026070900123"],
-    userComplaintChannel: "400热线",
-    customerName: "王小明",
-    phone: "13800000000",
-    customerRequest: "对保费收取金额有异议，要求核实并回复",
-    nuclearBodyStatus: "待核实",
-    hasContacted: false,
-    complaintLevel: "一般投诉",
-    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
-    allowDuplicate: true,
-  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
+  const baseInput = () =>
+    ({
+      feedbackTime: "2026-07-09T02:00:00.000Z",
+      project: "融盛",
+      brokerageEntity: "东方大地",
+      paymentChannel: "连连支付",
+      policyNumbers: ["P2026070900123"],
+      userComplaintChannel: "400热线",
+      customerName: "王小明",
+      phone: "13800000000",
+      customerRequest: "对保费收取金额有异议，要求核实并回复",
+      nuclearBodyStatus: "待核实",
+      hasContacted: false,
+      slaPolicyId: harness.slaPolicyId("一般投诉"),
+      allowDuplicate: true,
+    }) satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  it("seeds exactly one 时效策略 per legacy complaint level with the expected defaults + 目录字段", async () => {
+  it("seeds the four factory 时效策略 with the expected defaults + 目录字段", async () => {
     const policies = await prisma.slaPolicy.findMany();
-    expect(policies).toHaveLength(COMPLAINT_LEVELS.length);
+    expect(policies).toHaveLength(DEFAULT_SLA_POLICIES.length);
 
-    for (const [index, level] of COMPLAINT_LEVELS.entries()) {
-      const expected = DEFAULT_SLA_POLICIES[level];
-      const policy = policies.find((p) => p.complaintLevel === level);
-      expect(policy, level).toBeDefined();
+    for (const [index, expected] of DEFAULT_SLA_POLICIES.entries()) {
+      const policy = policies.find((p) => p.name === expected.name);
+      expect(policy, expected.name).toBeDefined();
       expect(policy?.firstResponseMinutes).toBe(expected.firstResponseMinutes);
       expect(policy?.overdueHours).toBe(expected.overdueHours);
       expect(policy?.reminderRules).toEqual(expected.reminderRules);
-      // 实体目录字段：name=旧锚文本、出厂序、启用、含口径文案
-      expect(policy?.name).toBe(level);
       expect(policy?.sortOrder).toBe(index + 1);
       expect(policy?.active).toBe(true);
       expect(policy?.description).toBeTruthy();
@@ -117,7 +109,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
   describe("create (一般投诉)", () => {
     it("generates WO+sequence number, fixes dueAt = createdAt + 48h, stamps SLA texts, writes the create log", async () => {
       const created = await manager().ticket.create({
-        ...baseInput,
+        ...baseInput(),
         contactTime: "2026-07-08T13:15:00.000Z",
         complaintReceiveChannel: "监管转办",
       });
@@ -133,7 +125,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(detail.contactCount).toBe(0);
       expect(detail).not.toHaveProperty("processingResult");
       expect(detail.priority).toBeNull(); // free label defaults to empty
-      expect(detail.feedbackTime).toBe(baseInput.feedbackTime);
+      expect(detail.feedbackTime).toBe(baseInput().feedbackTime);
       expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");
       expect(detail.complaintReceiveChannel).toBe("监管转办");
       expect("deletedAt" in detail).toBe(false); // soft-delete marker never leaves the API
@@ -148,9 +140,8 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
       expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
 
-      // 时效策略引用随建单盖章（文本轨经旧锚映射到策略 id）
       const policy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "一般投诉" },
+        where: { name: "一般投诉" },
       });
       expect(detail.slaPolicyId).toBe(policy.id);
       expect(detail.slaPolicy).toEqual({ id: policy.id, name: policy.name, active: true });
@@ -171,7 +162,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
     });
 
     it("derives 由谁创建 from the creator's CURRENT name, while the log keeps the snapshot", async () => {
-      const created = await manager().ticket.create(baseInput);
+      const created = await manager().ticket.create(baseInput());
 
       const originalName = seeded.users.manager.name;
       await prisma.user.update({
@@ -194,7 +185,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
   describe("policyNumbers 多值契约（trim/去空/去重与上限）", () => {
     it("persists multiple values; items are trimmed, blanks dropped, duplicates deduped case-sensitively", async () => {
       const created = await manager().ticket.create({
-        ...baseInput,
+        ...baseInput(),
         policyNumbers: ["  P-001  ", "P-002", "P-001", " ", "p-001"],
       });
       const detail = await manager().ticket.detail({ id: created.id });
@@ -205,22 +196,22 @@ describe("ticket creation + detail (Testcontainers)", () => {
     });
 
     it("empty array and absent field both persist as [] (未填写)", async () => {
-      const explicit = await manager().ticket.create({ ...baseInput, policyNumbers: [] });
+      const explicit = await manager().ticket.create({ ...baseInput(), policyNumbers: [] });
       expect((await manager().ticket.detail({ id: explicit.id })).policyNumbers).toEqual([]);
 
-      const { policyNumbers: _omitted, ...withoutField } = baseInput;
+      const { policyNumbers: _omitted, ...withoutField } = baseInput();
       const absent = await manager().ticket.create(withoutField);
       expect((await manager().ticket.detail({ id: absent.id })).policyNumbers).toEqual([]);
     });
 
     it("rejects a single value over 100 chars and more than 50 deduped values", async () => {
       await expect(
-        manager().ticket.create({ ...baseInput, policyNumbers: ["P".repeat(101)] }),
+        manager().ticket.create({ ...baseInput(), policyNumbers: ["P".repeat(101)] }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
       await expect(
         manager().ticket.create({
-          ...baseInput,
+          ...baseInput(),
           policyNumbers: Array.from({ length: 51 }, (_, i) => `P-${i}`),
         }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -228,7 +219,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       // 上限按去重后计数：50 个不同值加上重复项照常放行
       const fifty = Array.from({ length: 50 }, (_, i) => `P-${i}`);
       const created = await manager().ticket.create({
-        ...baseInput,
+        ...baseInput(),
         policyNumbers: [...fifty, "P-0"],
       });
       expect((await manager().ticket.detail({ id: created.id })).policyNumbers).toEqual(fifty);
@@ -237,7 +228,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
 
   describe("noPolicyNumber 无保单号表态", () => {
     it("勾选「无」持久化 flag + 空数组；与值同传时 flag 优先，数组清空", async () => {
-      const created = await manager().ticket.create({ ...baseInput, noPolicyNumber: true });
+      const created = await manager().ticket.create({ ...baseInput(), noPolicyNumber: true });
 
       const detail = await manager().ticket.detail({ id: created.id });
       expect(detail.noPolicyNumber).toBe(true);
@@ -248,14 +239,17 @@ describe("ticket creation + detail (Testcontainers)", () => {
     });
 
     it("未勾选持久化 false（缺省）", async () => {
-      const created = await manager().ticket.create(baseInput);
+      const created = await manager().ticket.create(baseInput());
       expect((await manager().ticket.detail({ id: created.id })).noPolicyNumber).toBe(false);
     });
   });
 
-  describe("dueAt per complaint level", () => {
+  describe("dueAt per 时效策略", () => {
     it("加急投诉 → createdAt + 72h", async () => {
-      const created = await manager().ticket.create({ ...baseInput, complaintLevel: "加急投诉" });
+      const created = await manager().ticket.create({
+        ...baseInput(),
+        slaPolicyId: harness.slaPolicyId("加急投诉"),
+      });
       const detail = await manager().ticket.detail({ id: created.id });
       const delta =
         new Date(detail.dueAt as string).getTime() - new Date(detail.createdAt).getTime();
@@ -264,7 +258,10 @@ describe("ticket creation + detail (Testcontainers)", () => {
     });
 
     it("特急投诉 → no dueAt at all (never overdue, rolling follow-up drives it)", async () => {
-      const created = await manager().ticket.create({ ...baseInput, complaintLevel: "特急投诉" });
+      const created = await manager().ticket.create({
+        ...baseInput(),
+        slaPolicyId: harness.slaPolicyId("特急投诉"),
+      });
       const detail = await manager().ticket.detail({ id: created.id });
       expect(detail.dueAt).toBeNull();
       expect(detail.displayStatus).toBe("unassigned"); // no dueAt → nothing to compute
@@ -274,7 +271,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
 
   it("concurrent creations never collide on workOrderNumber", async () => {
     const created = await Promise.all(
-      Array.from({ length: 10 }, () => manager().ticket.create(baseInput)),
+      Array.from({ length: 10 }, () => manager().ticket.create(baseInput())),
     );
     const numbers = created.map((t) => t.workOrderNumber);
     expect(new Set(numbers).size).toBe(numbers.length);
@@ -288,8 +285,8 @@ describe("ticket creation + detail (Testcontainers)", () => {
     // so later tests are unaffected.
     await prisma.$executeRaw`SELECT setval('work_order_number_seq', 999999)`;
 
-    const first = await manager().ticket.create(baseInput);
-    const second = await manager().ticket.create(baseInput);
+    const first = await manager().ticket.create(baseInput());
+    const second = await manager().ticket.create(baseInput());
     expect(first.workOrderNumber).toBe("WO1000000");
     expect(second.workOrderNumber).toBe("WO1000001");
   });
@@ -297,14 +294,14 @@ describe("ticket creation + detail (Testcontainers)", () => {
   describe("RBAC", () => {
     it("rejects create without ticket.create (一线客服, 只读观察)", async () => {
       for (const caller of [frontline(), observer()]) {
-        const attempt = caller.ticket.create(baseInput);
+        const attempt = caller.ticket.create(baseInput());
         await expect(attempt).rejects.toThrowError(TRPCError);
         await expect(attempt).rejects.toMatchObject({ code: "FORBIDDEN" });
       }
     });
 
     it("data scope hides other people's tickets from users without ticket.view_all", async () => {
-      const created = await manager().ticket.create(baseInput);
+      const created = await manager().ticket.create(baseInput());
 
       // cs1 holds ticket.view but not ticket.view_all, and the ticket is not
       // assigned to them → invisible, surfaced as NOT_FOUND (no existence leak)
@@ -320,7 +317,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
     it("data scope keeps a creator without ticket.view_all on their manual ticket — unassigned and after handoff", async () => {
       const creator = () =>
         callerWith(seeded.users.cs1, "受限创建人", ["ticket.view", "ticket.create"]);
-      const created = await creator().ticket.create(baseInput);
+      const created = await creator().ticket.create(baseInput());
 
       // Visible to the creator the moment it exists, before any assignment
       const fresh = await creator().ticket.detail({ id: created.id });

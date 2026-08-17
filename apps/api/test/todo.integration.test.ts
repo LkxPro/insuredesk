@@ -87,16 +87,15 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     customerRequest: "希望尽快跟进理赔",
     nuclearBodyStatus: "待核实",
     hasContacted: false,
-    complaintLevel: "一般投诉",
-    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
     allowDuplicate: true,
   } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   /** Create through the real procedure; return ids + the stamped createdAt. */
-  async function createTicket(
-    complaintLevel: TicketCreateInput["complaintLevel"] = baseInput.complaintLevel,
-  ) {
-    const created = await manager().ticket.create({ ...baseInput, complaintLevel });
+  async function createTicket(policyName = "一般投诉") {
+    const created = await manager().ticket.create({
+      ...baseInput,
+      slaPolicyId: harness.slaPolicyId(policyName),
+    });
     const { createdAt } = await prisma.ticket.findUniqueOrThrow({
       where: { id: created.id },
       select: { createdAt: true },
@@ -388,7 +387,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       await manager().ticket.edit({
         ...baseInput,
         ticketId: ticket.id,
-        complaintLevel: "加急投诉", // dueAt → 72h, 红线 → 60min, checkpoints {24h,2},{48h,4},{72h,6}
+        slaPolicyId: harness.slaPolicyId("加急投诉"),
       });
       const todosFor = (offsetMs: number) =>
         todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, offsetMs));
@@ -423,7 +422,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const ticket = await createTicket(); // 一般投诉: dueAt 48h, 红线 120min, {24h,1次,提前60min}
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
       const policy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "一般投诉" },
+        where: { name: "一般投诉" },
       });
       const at = (offsetMs: number) =>
         todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, offsetMs));

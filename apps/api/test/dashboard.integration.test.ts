@@ -30,6 +30,21 @@ describe("dashboard stats (Testcontainers)", () => {
     });
     prisma = harness.prisma;
     seeded = harness.seeded;
+    baseInput = {
+      feedbackTime: "2026-07-09T02:00:00.000Z",
+      project: "融盛",
+      brokerageEntity: "东方大地",
+      paymentChannel: "连连支付",
+      policyNumbers: ["P2026070900123"],
+      userComplaintChannel: "400热线",
+      customerName: "王小明",
+      phone: "13800000000",
+      customerRequest: "对保费收取金额有异议，要求核实并回复",
+      nuclearBodyStatus: "待核实",
+      hasContacted: false,
+      slaPolicyId: harness.slaPolicyId("一般投诉"),
+      allowDuplicate: true,
+    };
     channelRows = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
     channelIds = new Map(channelRows.map((channel) => [channel.name, channel.id]));
   }, 180_000);
@@ -93,22 +108,7 @@ describe("dashboard stats (Testcontainers)", () => {
     return id;
   };
 
-  const baseInput = {
-    feedbackTime: "2026-07-09T02:00:00.000Z",
-    project: "融盛",
-    brokerageEntity: "东方大地",
-    paymentChannel: "连连支付",
-    policyNumbers: ["P2026070900123"],
-    userComplaintChannel: "400热线",
-    customerName: "王小明",
-    phone: "13800000000",
-    customerRequest: "对保费收取金额有异议，要求核实并回复",
-    nuclearBodyStatus: "待核实",
-    hasContacted: false,
-    complaintLevel: "一般投诉",
-    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
-    allowDuplicate: true,
-  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
+  let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
   /**
    * Create a ticket through the real creation flow, then shape the row
@@ -147,7 +147,7 @@ describe("dashboard stats (Testcontainers)", () => {
       customerRequest: "批量数据",
       nuclearBodyStatus: "待核实",
       hasContacted: false,
-      complaintLevel: "一般投诉",
+      slaPolicyId: harness.slaPolicyId("一般投诉"),
       followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
       firstResponseRequirement: "120分钟内完成首次响应",
       ...overrides,
@@ -186,7 +186,7 @@ describe("dashboard stats (Testcontainers)", () => {
         { status: "processing", assigneeId: seeded.users.cs1.id, dueAt: at(-1) },
       );
       await makeTicket(
-        { customerName: "特急", complaintLevel: "特急投诉" },
+        { customerName: "特急", slaPolicyId: harness.slaPolicyId("特急投诉") },
         { createdAt: at(-100) }, // dueAt stays null however old it gets
       );
       await makeTicket({ customerName: "监管件", channelId: channelId("监管") });
@@ -306,7 +306,7 @@ describe("dashboard stats (Testcontainers)", () => {
     it("特急 (无 dueAt) 永不计入任何超时口径", async () => {
       const now = new Date();
       await makeTicket(
-        { customerName: "特急在途", complaintLevel: "特急投诉" },
+        { customerName: "特急在途", slaPolicyId: harness.slaPolicyId("特急投诉") },
         {
           status: "processing",
           assigneeId: seeded.users.cs1.id,
@@ -314,7 +314,7 @@ describe("dashboard stats (Testcontainers)", () => {
         },
       );
       await makeTicket(
-        { customerName: "特急完结", complaintLevel: "特急投诉" },
+        { customerName: "特急完结", slaPolicyId: harness.slaPolicyId("特急投诉") },
         {
           status: "completed",
           assigneeId: seeded.users.cs1.id,
@@ -337,10 +337,10 @@ describe("dashboard stats (Testcontainers)", () => {
   describe("特急卡绑定 sortOrder 最高的 active 时效策略", () => {
     it("默认绑定特急投诉，urgentPolicy 携 id/name（跳转参数随之）", async () => {
       const urgentPolicy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "特急投诉" },
+        where: { name: "特急投诉" },
       });
-      await makeTicket({ customerName: "特急", complaintLevel: "特急投诉" });
-      await makeTicket({ customerName: "一般", complaintLevel: "一般投诉" });
+      await makeTicket({ customerName: "特急", slaPolicyId: harness.slaPolicyId("特急投诉") });
+      await makeTicket({ customerName: "一般", slaPolicyId: harness.slaPolicyId("一般投诉") });
 
       const stats = await statsAt(new Date());
       expect(stats.urgentPolicy).toEqual({ id: urgentPolicy.id, name: "特急投诉" });
@@ -349,14 +349,14 @@ describe("dashboard stats (Testcontainers)", () => {
 
     it("停用最高位策略后卡片切换到次高 active 策略，计数随之", async () => {
       const urgentPolicy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "特急投诉" },
+        where: { name: "特急投诉" },
       });
       const rushPolicy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "加急投诉" },
+        where: { name: "加急投诉" },
       });
-      await makeTicket({ customerName: "特急", complaintLevel: "特急投诉" });
-      await makeTicket({ customerName: "加急甲", complaintLevel: "加急投诉" });
-      await makeTicket({ customerName: "加急乙", complaintLevel: "加急投诉" });
+      await makeTicket({ customerName: "特急", slaPolicyId: harness.slaPolicyId("特急投诉") });
+      await makeTicket({ customerName: "加急甲", slaPolicyId: harness.slaPolicyId("加急投诉") });
+      await makeTicket({ customerName: "加急乙", slaPolicyId: harness.slaPolicyId("加急投诉") });
 
       await prisma.slaPolicy.update({ where: { id: urgentPolicy.id }, data: { active: false } });
       try {
@@ -389,7 +389,11 @@ describe("dashboard stats (Testcontainers)", () => {
       const kept = await makeTicket({ customerName: "存活" });
       // One deleted ticket per 口径 it could have influenced:
       await makeTicket(
-        { customerName: "删·超时", channelId: channelId("监管"), complaintLevel: "特急投诉" },
+        {
+          customerName: "删·超时",
+          channelId: channelId("监管"),
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+        },
         { deletedAt: now },
       );
       await makeTicket(
@@ -440,7 +444,11 @@ describe("dashboard stats (Testcontainers)", () => {
       const now = new Date();
       await makeTicket({ customerName: "手工单" }, { source: "manual" });
       await makeTicket(
-        { customerName: "归档·完结", channelId: channelId("监管"), complaintLevel: "特急投诉" },
+        {
+          customerName: "归档·完结",
+          channelId: channelId("监管"),
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+        },
         {
           source: "file_import",
           status: "completed",
@@ -669,7 +677,7 @@ describe("dashboard stats (Testcontainers)", () => {
           const completed = status === "completed";
           return bulkRow({
             channelId: channelRows[i % channelRows.length]?.id,
-            complaintLevel: i % 11 === 0 ? "特急投诉" : "一般投诉",
+            slaPolicyId: harness.slaPolicyId(i % 11 === 0 ? "特急投诉" : "一般投诉"),
             status,
             assigneeId,
             createdAt: new Date(now - (i % 96) * HOUR_MS),
@@ -730,7 +738,11 @@ describe("dashboard stats (Testcontainers)", () => {
         },
       );
       await makeTicket(
-        { customerName: "区间内特急", channelId: channelId("保司"), complaintLevel: "特急投诉" },
+        {
+          customerName: "区间内特急",
+          channelId: channelId("保司"),
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+        },
         {
           createdAt: new Date("2026-07-17T10:00:00Z"),
         },

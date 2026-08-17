@@ -55,6 +55,8 @@ export interface IntegrationHarness {
   depsAt(at: Date): ServiceDeps;
   /** 出厂角色与 demo 用户；需声明 seed 集 "rolesAndUsers"。 */
   seeded: SeededRolesAndUsers;
+  /** 时效策略名 → id；需声明 seed 集 "slaPolicies"。 */
+  slaPolicyId(name: string): string;
   /** 渠道名 → id；需声明 seed 集 "channels"。 */
   channelId(name: string): string;
   /** 类别名 → id；需声明 seed 集 "categories"。 */
@@ -133,9 +135,7 @@ export async function startIntegrationHarness(
     const seededRolesAndUsers = selected.has("rolesAndUsers")
       ? await seedFactoryRolesAndDemoUsers(prisma)
       : undefined;
-    if (selected.has("slaPolicies")) {
-      await seedSlaPolicies(prisma);
-    }
+    const slaPolicies = selected.has("slaPolicies") ? await seedSlaPolicies(prisma) : undefined;
     if (selected.has("shiftTypes")) {
       await seedShiftTypes(prisma);
     }
@@ -174,6 +174,7 @@ export async function startIntegrationHarness(
       },
       channelId: idLookup(channels, "channels", "渠道"),
       categoryId: idLookup(categories, "categories", "类别"),
+      slaPolicyId: idLookup(slaPolicies, "slaPolicies", "时效策略"),
       authUserFor,
       callerFor: (user, role) => caller(authUserFor(user, role)),
       callerWith: (user, role, permissions) => caller(authUserFor(user, role, permissions)),

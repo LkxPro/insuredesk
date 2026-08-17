@@ -96,11 +96,10 @@ model Role {
 // Ticket domain
 // ============================================================================
 //
-// Enum-like columns (source, channel, category, complaintLevel, status, …) are
-// plain String on purpose: their canonical values live in
-// packages/shared/src/enums.ts (several are Chinese literals, which Prisma enums
-// cannot express) and are enforced by Zod at the API boundary — one source of
-// truth.
+// Enum-like columns (source, channel, category, status, …) are plain String on
+// purpose: their canonical values live in packages/shared/src/enums.ts (several
+// are Chinese literals, which Prisma enums cannot express) and are enforced by
+// Zod at the API boundary — one source of truth.
 
 /// A customer-service work order — the system's core entity.
 model Ticket {
@@ -157,9 +156,6 @@ model Ticket {
   /// 客诉类别目录引用; null = 未填写. Referenced rows can only be 停用, never
   /// deleted — Restrict is the DB backstop behind the service's refusal.
   categoryId     String?
-  /// 旧投诉等级文本（双轨回落轨）；新事实源是 slaPolicyId，本列随引用派生盖章。
-  /// null = 未指定时效策略
-  complaintLevel String?
   /// 时效策略目录引用; null = 未指定: no dueAt, no 首响/跟进 requirements, no
   /// SLA time alerts until a later edit sets it (SLA then counts from the
   /// original createdAt). Referenced rows can only be 停用, never deleted —
@@ -287,9 +283,6 @@ model ProcessLog {
 /// never deleted — 停用 only.
 model SlaPolicy {
   id                   String   @id @default(cuid())
-  /// 旧投诉等级锚（双轨回落轨的映射键）：四个出厂行各持一个等级字面量，
-  /// 接口新建的策略为 null。
-  complaintLevel       String?  @unique
   /// 策略名，全表唯一（含停用行）
   name                 String   @unique
   description          String?

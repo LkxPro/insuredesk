@@ -41,7 +41,7 @@ describe("建单表单的策略下拉", () => {
     expect(within(urgent).getByText("特急投诉：不设处理时限，滚动跟进。")).toBeInTheDocument();
   });
 
-  it("选中策略后提交：slaPolicyId 随行，旧投诉等级文本保持 null", async () => {
+  it("选中策略后提交：slaPolicyId 随行，不携带旧投诉等级文本键", async () => {
     renderCreate();
     await screen.findByRole("heading", { name: "新建工单" });
 
@@ -53,7 +53,7 @@ describe("建单表单的策略下拉", () => {
     await waitFor(() => expect(callsTo("ticket.create")).toHaveLength(1));
     const input = callsTo("ticket.create")[0]?.input as Record<string, unknown>;
     expect(input.slaPolicyId).toBe("pol-urgent");
-    expect(input.complaintLevel).toBeNull();
+    expect(input).not.toHaveProperty("complaintLevel");
   });
 
   it("可不选：未指定策略提交 slaPolicyId 为 null", async () => {

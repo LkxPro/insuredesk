@@ -27,24 +27,8 @@ function requiredMessage(field: string): string | undefined {
 describe("buildTicketFormSchema 必填消息（描述表派生）", () => {
   it("每个建单字段的红字都是「标准名为必填项」", () => {
     for (const key of TICKET_CREATE_FIELD_KEYS) {
-      if (key === "complaintLevel") {
-        continue;
-      }
       expect(requiredMessage(key)).toBe(`${TICKET_FIELDS[key].label}为必填项`);
     }
-  });
-
-  it("「投诉等级」必填映射到时效策略控件：红字挂在 slaPolicyId 上", () => {
-    const schema = buildTicketFormSchema(["complaintLevel"]);
-    const result = schema.safeParse(BLANK_FORM);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues.find((issue) => issue.path[0] === "slaPolicyId")?.message).toBe(
-        "时效策略为必填项",
-      );
-      expect(result.error.issues.some((issue) => issue.path[0] === "complaintLevel")).toBe(false);
-    }
-    expect(schema.safeParse({ ...BLANK_FORM, slaPolicyId: "pol-1" }).success).toBe(true);
   });
 
   it("不在建单清单里的 key 被忽略（防御字段改名）", () => {

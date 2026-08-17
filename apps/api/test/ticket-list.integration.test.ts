@@ -50,23 +50,24 @@ describe("ticket list (Testcontainers)", () => {
 
   const channelId = (name: string) => harness.channelId(name);
   const categoryId = (name: string) => harness.categoryId(name);
+  const policyId = (name: string) => harness.slaPolicyId(name);
 
-  const baseInput = {
-    feedbackTime: "2026-07-09T02:00:00.000Z",
-    project: "融盛",
-    brokerageEntity: "东方大地",
-    paymentChannel: "连连支付",
-    policyNumbers: ["P2026070900123"],
-    userComplaintChannel: "400热线",
-    customerName: "王小明",
-    phone: "13800000000",
-    customerRequest: "对保费收取金额有异议，要求核实并回复",
-    nuclearBodyStatus: "待核实",
-    hasContacted: false,
-    complaintLevel: "一般投诉",
-    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
-    allowDuplicate: true,
-  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
+  const baseInput = () =>
+    ({
+      feedbackTime: "2026-07-09T02:00:00.000Z",
+      project: "融盛",
+      brokerageEntity: "东方大地",
+      paymentChannel: "连连支付",
+      policyNumbers: ["P2026070900123"],
+      userComplaintChannel: "400热线",
+      customerName: "王小明",
+      phone: "13800000000",
+      customerRequest: "对保费收取金额有异议，要求核实并回复",
+      nuclearBodyStatus: "待核实",
+      hasContacted: false,
+      slaPolicyId: policyId("一般投诉"),
+      allowDuplicate: true,
+    }) satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   /**
    * Create a ticket through the real creation flow, then shape the row
@@ -77,7 +78,7 @@ describe("ticket list (Testcontainers)", () => {
     row: Prisma.TicketUncheckedUpdateInput = {},
   ) {
     const created = await manager().ticket.create({
-      ...baseInput,
+      ...baseInput(),
       channelId: channelId("保司"),
       ...input,
     });
@@ -103,7 +104,7 @@ describe("ticket list (Testcontainers)", () => {
       expect(item?.workOrderNumber).toBe(third.workOrderNumber);
       expect(item?.customerName).toBe("客户三");
       expect(item?.channel).toBe("保司");
-      expect(item?.complaintLevel).toBe("一般投诉");
+      expect(item?.slaPolicyId).toBe(policyId("一般投诉"));
       expect(item?.slaPolicyName).toBe("一般投诉");
       expect(item?.source).toBe("manual");
       expect(item?.status).toBe("unassigned");
@@ -207,7 +208,7 @@ describe("ticket list (Testcontainers)", () => {
     it("特急永不 overdue — no dueAt means no computed status, however old the ticket", async () => {
       const now = Date.now();
       const urgent = await makeTicket(
-        { complaintLevel: "特急投诉" },
+        { slaPolicyId: policyId("特急投诉") },
         {
           createdAt: new Date(now - 100 * HOUR_MS),
         },
@@ -279,59 +280,54 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
-  describe("channel / complaintLevel / source filters", () => {
+  describe("channel / 时效策略 / source filters", () => {
     it("filters by each dimension and combines them", async () => {
       const payment = await makeTicket({
         channelId: channelId("支付"),
-        complaintLevel: "高级投诉",
+        slaPolicyId: policyId("高级投诉"),
       });
       const regulator = await makeTicket({
         channelId: channelId("监管"),
-        complaintLevel: "高级投诉",
+        slaPolicyId: policyId("高级投诉"),
       });
-      await makeTicket({ channelId: channelId("保司"), complaintLevel: "一般投诉" });
+      await makeTicket({ channelId: channelId("保司"), slaPolicyId: policyId("一般投诉") });
 
       expect(
         (await manager().ticket.list({ channelId: channelId("支付") })).items.map((t) => t.id),
       ).toEqual([payment.id]);
 
-      const highLevel = await manager().ticket.list({ complaintLevel: "高级投诉" });
-      expect(highLevel.items.map((t) => t.id).sort()).toEqual([payment.id, regulator.id].sort());
+      const highPolicy = await manager().ticket.list({ slaPolicyId: policyId("高级投诉") });
+      expect(highPolicy.items.map((t) => t.id).sort()).toEqual([payment.id, regulator.id].sort());
 
       const combined = await manager().ticket.list({
         channelId: channelId("监管"),
-        complaintLevel: "高级投诉",
+        slaPolicyId: policyId("高级投诉"),
       });
       expect(combined.items.map((t) => t.id)).toEqual([regulator.id]);
     });
 
-    it("时效策略筛选双轨：slaPolicyId 与 complaintLevel 文本产出相同结果，同传以 id 为准", async () => {
-      const high = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "高级投诉" },
-      });
-      const normal = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { complaintLevel: "一般投诉" },
-      });
-      const byId = await makeTicket({ complaintLevel: null, slaPolicyId: high.id });
-      const byText = await makeTicket({ complaintLevel: "高级投诉" });
-      const normalTicket = await makeTicket({ complaintLevel: "一般投诉" });
+    it("时效策略筛选：多选取并集；旧 complaintLevel 筛选返回明确校验错误", async () => {
+      const high = await makeTicket({ slaPolicyId: policyId("高级投诉") });
+      const normal = await makeTicket({ slaPolicyId: policyId("一般投诉") });
+      await makeTicket({ slaPolicyId: policyId("加急投诉") });
 
-      const viaText = await manager().ticket.list({ complaintLevel: "高级投诉" });
-      const viaId = await manager().ticket.list({ slaPolicyId: high.id });
-      expect(viaText.items.map((t) => t.id).sort()).toEqual([byId.id, byText.id].sort());
-      expect(viaId.items.map((t) => t.id).sort()).toEqual(viaText.items.map((t) => t.id).sort());
-      expect(viaId.items[0]?.slaPolicyId).toBe(high.id);
+      const viaId = await manager().ticket.list({ slaPolicyId: policyId("高级投诉") });
+      expect(viaId.items.map((t) => t.id)).toEqual([high.id]);
+      expect(viaId.items[0]?.slaPolicyId).toBe(policyId("高级投诉"));
 
       // 多选并集：两个策略的工单都命中
-      const union = await manager().ticket.list({ slaPolicyId: [high.id, normal.id] });
-      expect(union.total).toBe(3);
-
-      // 同传以 slaPolicyId 为准（文本值被忽略）
-      const idWins = await manager().ticket.list({
-        slaPolicyId: normal.id,
-        complaintLevel: "高级投诉",
+      const union = await manager().ticket.list({
+        slaPolicyId: [policyId("高级投诉"), policyId("一般投诉")],
       });
-      expect(idWins.items.map((t) => t.id)).toEqual([normalTicket.id]);
+      expect(union.items.map((t) => t.id).sort()).toEqual([high.id, normal.id].sort());
+
+      for (const legacy of ["高级投诉", ["高级投诉", "一般投诉"]]) {
+        const error = await manager()
+          .ticket.list({ complaintLevel: legacy } as never)
+          .catch((e: unknown) => e);
+        expect(error).toMatchObject({ code: "BAD_REQUEST" });
+        expect((error as Error).message).toContain("投诉等级文本轨已下线");
+      }
     });
 
     it("filters by source — external rows surface once integrations write them", async () => {
@@ -361,14 +357,17 @@ describe("ticket list (Testcontainers)", () => {
     it("multi-value filters take the union within a dimension, intersect across dimensions", async () => {
       const payHigh = await makeTicket({
         channelId: channelId("支付"),
-        complaintLevel: "高级投诉",
+        slaPolicyId: policyId("高级投诉"),
       });
       const regulatorHigh = await makeTicket({
         channelId: channelId("监管"),
-        complaintLevel: "高级投诉",
+        slaPolicyId: policyId("高级投诉"),
       });
-      const payLow = await makeTicket({ channelId: channelId("支付"), complaintLevel: "一般投诉" });
-      await makeTicket({ channelId: channelId("保司"), complaintLevel: "一般投诉" });
+      const payLow = await makeTicket({
+        channelId: channelId("支付"),
+        slaPolicyId: policyId("一般投诉"),
+      });
+      await makeTicket({ channelId: channelId("保司"), slaPolicyId: policyId("一般投诉") });
 
       const channels = await manager().ticket.list({
         channelId: [channelId("支付"), channelId("监管")],
@@ -378,7 +377,7 @@ describe("ticket list (Testcontainers)", () => {
       );
 
       const levels = await manager().ticket.list({
-        complaintLevel: ["高级投诉", "一般投诉"],
+        slaPolicyId: [policyId("高级投诉"), policyId("一般投诉")],
         channelId: [channelId("支付")],
       });
       expect(levels.items.map((t) => t.id).sort()).toEqual([payHigh.id, payLow.id].sort());
@@ -404,7 +403,7 @@ describe("ticket list (Testcontainers)", () => {
       await makeTicket();
       await makeTicket();
 
-      const result = await manager().ticket.list({ status: [], channelId: [], complaintLevel: [] });
+      const result = await manager().ticket.list({ status: [], channelId: [], slaPolicyId: [] });
       expect(result.total).toBe(2);
     });
 
@@ -776,7 +775,7 @@ describe("ticket list (Testcontainers)", () => {
       const now = Date.now();
       const later = await makeTicket({}, { dueAt: new Date(now + 40 * HOUR_MS) });
       const sooner = await makeTicket({}, { dueAt: new Date(now + 10 * HOUR_MS) });
-      const urgent = await makeTicket({ complaintLevel: "特急投诉" }); // dueAt null
+      const urgent = await makeTicket({ slaPolicyId: policyId("特急投诉") });
 
       const asc = await manager().ticket.list({ sortBy: "dueAt", sortOrder: "asc" });
       expect(asc.items.map((t) => t.id)).toEqual([sooner.id, later.id, urgent.id]);
@@ -824,7 +823,7 @@ describe("ticket list (Testcontainers)", () => {
           customerRequest: "压测数据",
           nuclearBodyStatus: "待核实",
           hasContacted: false,
-          complaintLevel: "一般投诉",
+          slaPolicyId: policyId("一般投诉"),
           dueAt: new Date(now + (i - 60) * HOUR_MS),
           followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
           firstResponseRequirement: "120分钟内完成首次响应",

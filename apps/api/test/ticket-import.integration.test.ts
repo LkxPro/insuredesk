@@ -56,7 +56,7 @@ describe("ticket import upload (Testcontainers)", () => {
       data: {
         name: "导入员",
         permissions: ["ticket.view", "ticket.import"],
-        requiredTicketFields: ["customerName", "complaintLevel"],
+        requiredTicketFields: ["customerName", "slaPolicyId"],
       },
     });
     importerUser = await prisma.user.create({
@@ -194,8 +194,6 @@ describe("ticket import upload (Testcontainers)", () => {
           时效策略: "高级投诉",
           优先级: "紧急",
         },
-        // 未指定时效策略、无客户姓名 — the importer role's requiredTicketFields
-        // (customerName/complaintLevel) must NOT apply to file rows
         { 保单号: "P202607010002" },
       ]),
     );
@@ -230,10 +228,9 @@ describe("ticket import upload (Testcontainers)", () => {
 
     // SLA 快照自导入时刻起算；未指定策略的行全空
     const policy = await prisma.slaPolicy.findUniqueOrThrow({
-      where: { complaintLevel: "高级投诉" },
+      where: { name: "高级投诉" },
     });
     expect(leveled.slaPolicyId).toBe(policy.id);
-    expect(leveled.complaintLevel).toBe("高级投诉"); // 旧锚文本随引用派生
     expect(leveled.dueAt?.getTime()).toBe(
       leveled.createdAt.getTime() + (policy.overdueHours as number) * HOUR_MS,
     );
@@ -241,7 +238,6 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(leveled.firstResponseRequirement).not.toBeNull();
     expect(unleveled.dueAt).toBeNull();
     expect(unleveled.slaPolicyId).toBeNull();
-    expect(unleveled.complaintLevel).toBeNull();
     expect(unleveled.followUpFrequency).toBeNull();
     expect(unleveled.firstResponseRequirement).toBeNull();
 
@@ -332,7 +328,6 @@ describe("ticket import upload (Testcontainers)", () => {
       where: { customerName: "专线客户" },
     });
     expect(landed.slaPolicyId).toBe(custom.id);
-    expect(landed.complaintLevel).toBeNull(); // 新策略无旧锚，文本列保持 null
     expect(landed.dueAt?.getTime()).toBe(landed.createdAt.getTime() + 12 * HOUR_MS);
     expect(landed.firstResponseRequirement).toBe("45分钟内完成首次响应");
 
@@ -399,7 +394,7 @@ describe("ticket import upload (Testcontainers)", () => {
 
     // SLA 照常按策略引用盖章
     const policy = await prisma.slaPolicy.findUniqueOrThrow({
-      where: { complaintLevel: "高级投诉" },
+      where: { name: "高级投诉" },
     });
     expect(completed.slaPolicyId).toBe(policy.id);
     expect(completed.dueAt?.getTime()).toBe(

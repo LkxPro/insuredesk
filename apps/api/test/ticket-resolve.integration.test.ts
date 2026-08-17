@@ -25,6 +25,22 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
     prisma = harness.prisma;
     seeded = harness.seeded;
 
+    baseInput = {
+      feedbackTime: "2026-07-09T02:00:00.000Z",
+      project: "融盛",
+      brokerageEntity: "东方大地",
+      paymentChannel: "连连支付",
+      policyNumbers: ["P2026071000728"],
+      userComplaintChannel: "400热线",
+      customerName: "孙完结",
+      phone: "13800000003",
+      customerRequest: "对理赔金额有异议，要求复核",
+      nuclearBodyStatus: "待核实",
+      hasContacted: false,
+      slaPolicyId: harness.slaPolicyId("一般投诉"),
+      allowDuplicate: true,
+    };
+
     cs2 = await prisma.user.create({
       data: {
         username: "cs2",
@@ -74,22 +90,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
 
-  const baseInput = {
-    feedbackTime: "2026-07-09T02:00:00.000Z",
-    project: "融盛",
-    brokerageEntity: "东方大地",
-    paymentChannel: "连连支付",
-    policyNumbers: ["P2026071000728"],
-    userComplaintChannel: "400热线",
-    customerName: "孙完结",
-    phone: "13800000003",
-    customerRequest: "对理赔金额有异议，要求复核",
-    nuclearBodyStatus: "待核实",
-    hasContacted: false,
-    complaintLevel: "一般投诉",
-    // fixture 有意复用相同手机号/保单号，绕过提交兜底查重
-    allowDuplicate: true,
-  } satisfies TicketCreateInput & { allowDuplicate?: boolean };
+  let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
   /** A fresh unassigned ticket, created through the real create procedure. */
   async function createTicket() {

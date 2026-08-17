@@ -375,11 +375,11 @@ function wallClockColumn(
 }
 
 /**
- * Template order, formOnly rows（旧投诉等级文本轨）剔除。Semantics = 手工建单契约:
- * every column may be blank (null, never "" or a default), catalog names must be
- * 存在且启用, enum columns take the template's Chinese literals. The trailing 完结
- * pair additionally binds cross-field: both filled or both blank (checked on the
- * raw cells in validateTicketImportRows).
+ * Template order. Semantics = 手工建单契约: every column may be blank (null,
+ * never "" or a default), catalog names must be 存在且启用, enum columns take
+ * the template's Chinese literals. The trailing 完结 pair additionally binds
+ * cross-field: both filled or both blank (checked on the raw cells in
+ * validateTicketImportRows).
  */
 function toColumnSpec(descriptor: TicketFieldDescriptor): ImportColumnSpec {
   switch (descriptor.type) {
@@ -396,9 +396,7 @@ function toColumnSpec(descriptor: TicketFieldDescriptor): ImportColumnSpec {
   }
 }
 
-const IMPORT_COLUMNS: readonly ImportColumnSpec[] = TICKET_FIELD_DESCRIPTORS.filter(
-  (descriptor) => !("formOnly" in descriptor && descriptor.formOnly === true),
-).map(toColumnSpec);
+const IMPORT_COLUMNS: readonly ImportColumnSpec[] = TICKET_FIELD_DESCRIPTORS.map(toColumnSpec);
 
 const COMPLETION_STATUS_INDEX = IMPORT_COLUMNS.findIndex(
   (column) => column.field === "completionStatusId",
@@ -449,8 +447,6 @@ export function validateTicketImportRows(
       TicketImportRowData[keyof TicketImportRowData]
     >;
     ticket.noPolicyNumber = false;
-    // 导入无双轨文本列：complaintLevel 恒 null，时效策略经 slaPolicyId 列承载
-    ticket.complaintLevel = null;
     for (const [index, column] of IMPORT_COLUMNS.entries()) {
       const outcome = column.parse(row.cells[index] ?? "", ctx);
       if ("fail" in outcome) {
@@ -557,14 +553,7 @@ export async function importTickets(
       const slaStamps = new Map<string | null, Awaited<ReturnType<typeof computeSlaStamp>>>();
       for (const ticket of tickets) {
         if (!slaStamps.has(ticket.slaPolicyId)) {
-          slaStamps.set(
-            ticket.slaPolicyId,
-            await computeSlaStamp(
-              tx,
-              { slaPolicyId: ticket.slaPolicyId, complaintLevel: null },
-              now,
-            ),
-          );
+          slaStamps.set(ticket.slaPolicyId, await computeSlaStamp(tx, ticket.slaPolicyId, now));
         }
       }
 
