@@ -41,8 +41,21 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     // 管理员 is the one and only system role
     expect(roles.filter((role) => role.system).map((role) => role.name)).toEqual(["管理员"]);
 
-    const policies = await prisma.slaPolicy.findMany();
-    expect(policies).toHaveLength(4);
+    const policies = await prisma.slaPolicy.findMany({
+      orderBy: { sortOrder: "asc" },
+    });
+    expect(policies.map((policy) => policy.name)).toEqual([
+      "一般投诉",
+      "高级投诉",
+      "加急投诉",
+      "特急投诉",
+    ]);
+    for (const [index, policy] of policies.entries()) {
+      expect(policy.complaintLevel).toBe(policy.name); // 出厂行持旧锚
+      expect(policy.sortOrder).toBe(index + 1);
+      expect(policy.active).toBe(true);
+      expect(policy.description).toBeTruthy();
+    }
 
     expect(
       await prisma.shiftType.findMany({
@@ -106,6 +119,11 @@ describe("bootstrapSystemData (Testcontainers)", () => {
       data: { name: "运营主管", permissions: ["ticket.view"] },
     });
     await prisma.role.delete({ where: { name: "只读观察" } });
+    // 策略同样归管理员维护：改名/停用不被种子回写
+    await prisma.slaPolicy.update({
+      where: { complaintLevel: "一般投诉" },
+      data: { name: "常规件", active: false },
+    });
 
     const result = await bootstrapSystemData(prisma, {
       adminUsername: "sysadmin",
@@ -122,6 +140,16 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     ]);
     const renamed = roles.find((role) => role.name === "运营主管");
     expect(renamed?.permissions).toEqual(["ticket.view"]);
+
+    const policies = await prisma.slaPolicy.findMany();
+    expect(policies).toHaveLength(4);
+    const edited = policies.find((policy) => policy.complaintLevel === "一般投诉");
+    expect(edited).toMatchObject({ name: "常规件", active: false });
+    // 复位，后续用例读出厂口径
+    await prisma.slaPolicy.update({
+      where: { complaintLevel: "一般投诉" },
+      data: { name: "一般投诉", active: true },
+    });
   });
 
   it("re-running never recreates renamed or deleted default shifts", async () => {

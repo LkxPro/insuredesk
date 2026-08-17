@@ -191,10 +191,10 @@ describe("ticket import upload (Testcontainers)", () => {
           客户曾进线: "是",
           进线时间: "2026-06-30 21:15",
           客诉类别: categoryName,
-          投诉等级: "高级投诉",
+          时效策略: "高级投诉",
           优先级: "紧急",
         },
-        // 未定级、无客户姓名 — the importer role's requiredTicketFields
+        // 未指定时效策略、无客户姓名 — the importer role's requiredTicketFields
         // (customerName/complaintLevel) must NOT apply to file rows
         { 保单号: "P202607010002" },
       ]),
@@ -228,16 +228,20 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(leveled.channelId).not.toBeNull();
     expect(leveled.categoryId).not.toBeNull();
 
-    // SLA 快照自导入时刻起算；未定级行全空
+    // SLA 快照自导入时刻起算；未指定策略的行全空
     const policy = await prisma.slaPolicy.findUniqueOrThrow({
       where: { complaintLevel: "高级投诉" },
     });
+    expect(leveled.slaPolicyId).toBe(policy.id);
+    expect(leveled.complaintLevel).toBe("高级投诉"); // 旧锚文本随引用派生
     expect(leveled.dueAt?.getTime()).toBe(
       leveled.createdAt.getTime() + (policy.overdueHours as number) * HOUR_MS,
     );
     expect(leveled.followUpFrequency).not.toBeNull();
     expect(leveled.firstResponseRequirement).not.toBeNull();
     expect(unleveled.dueAt).toBeNull();
+    expect(unleveled.slaPolicyId).toBeNull();
+    expect(unleveled.complaintLevel).toBeNull();
     expect(unleveled.followUpFrequency).toBeNull();
     expect(unleveled.firstResponseRequirement).toBeNull();
 
@@ -306,6 +310,53 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(await prisma.ticket.count()).toBe(1);
   });
 
+  it("时效策略列按策略名匹配启用策略：接口新建的策略可导入，停用名即报错行", async () => {
+    const session = await sessionFor("importer");
+    // 管理员经 sla.create 新建策略（无旧锚），导入按名命中
+    const custom = await harness
+      .callerFor(harness.seeded.users.admin, harness.seeded.roles.admin)
+      .sla.create({
+        name: "团体专线",
+        description: "大客户团单专线",
+        firstResponseMinutes: 45,
+        overdueHours: 12,
+        reminderRules: [],
+      });
+
+    const ok = await uploadRequest(
+      session,
+      await buildFile([{ 客户姓名: "专线客户", 时效策略: "团体专线" }]),
+    );
+    expect(ok.statusCode).toBe(200);
+    const landed = await prisma.ticket.findFirstOrThrow({
+      where: { customerName: "专线客户" },
+    });
+    expect(landed.slaPolicyId).toBe(custom.id);
+    expect(landed.complaintLevel).toBeNull(); // 新策略无旧锚，文本列保持 null
+    expect(landed.dueAt?.getTime()).toBe(landed.createdAt.getTime() + 12 * HOUR_MS);
+    expect(landed.firstResponseRequirement).toBe("45分钟内完成首次响应");
+
+    // 停用其名：按停用名导入整批报错（与目录列同款口径）
+    await prisma.slaPolicy.update({ where: { id: custom.id }, data: { active: false } });
+    try {
+      const bad = await uploadRequest(
+        session,
+        await buildFile([{ 客户姓名: "停用策略客户", 时效策略: "团体专线" }]),
+      );
+      expect(bad.statusCode).toBe(400);
+      expect(bad.json().rowErrors).toEqual([
+        expect.objectContaining({
+          row: 2,
+          column: "时效策略",
+          message: expect.stringContaining("已停用"),
+        }),
+      ]);
+    } finally {
+      await prisma.slaPolicy.update({ where: { id: custom.id }, data: { active: true } });
+    }
+    expect(await prisma.ticket.count({ where: { customerName: "停用策略客户" } })).toBe(0);
+  });
+
   it("lands both-filled 完结 rows as completed, both-empty rows as unassigned, in one batch", async () => {
     const completionStatus = await prisma.completionStatus.findFirstOrThrow({
       where: { name: "已达成一致", active: true },
@@ -319,7 +370,7 @@ describe("ticket import upload (Testcontainers)", () => {
       await buildFile([
         {
           客户姓名: "迁移客户",
-          投诉等级: "高级投诉",
+          时效策略: "高级投诉",
           完结状态: "已达成一致",
           完结备注: "历史工单迁移，电话回访已确认",
         },
@@ -346,10 +397,11 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(completed.assigneeId).toBeNull();
     expect(completed.assignedAt).toBeNull();
 
-    // SLA 照常按投诉等级盖章
+    // SLA 照常按策略引用盖章
     const policy = await prisma.slaPolicy.findUniqueOrThrow({
       where: { complaintLevel: "高级投诉" },
     });
+    expect(completed.slaPolicyId).toBe(policy.id);
     expect(completed.dueAt?.getTime()).toBe(
       batch.importedAt.getTime() + (policy.overdueHours as number) * HOUR_MS,
     );
@@ -487,7 +539,7 @@ describe("ticket import upload (Testcontainers)", () => {
         { 客户姓名: "合法行" }, // row 2: valid — must still not be imported
         { 反馈渠道: "没有这个渠道" }, // row 3
         { 客诉类别: "停用类别X" }, // row 4
-        { 投诉等级: "特级投诉" }, // row 5
+        { 时效策略: "特级投诉" }, // row 5
         { 反馈时间: "2026/07/01" }, // row 6
         { 客户姓名: "重".repeat(101) }, // row 7
         { 客户姓名: "重复行", 保单号: "P1" }, // row 8
@@ -506,7 +558,7 @@ describe("ticket import upload (Testcontainers)", () => {
       expect.arrayContaining([
         expect.objectContaining({ row: 3, column: "反馈渠道" }),
         expect.objectContaining({ row: 4, column: "客诉类别" }),
-        expect.objectContaining({ row: 5, column: "投诉等级" }),
+        expect.objectContaining({ row: 5, column: "时效策略" }),
         expect.objectContaining({ row: 6, column: "反馈时间" }),
         expect.objectContaining({ row: 7, column: "客户姓名" }),
         expect.objectContaining({ row: 9, column: null }),
@@ -567,7 +619,7 @@ describe("ticket import upload (Testcontainers)", () => {
     const session = await sessionFor("importer");
     const rows = Array.from({ length: 2000 }, (_, i) => ({
       客户姓名: `批量客户${i}`,
-      投诉等级: "一般投诉",
+      时效策略: "一般投诉",
     }));
     const res = await uploadRequest(session, await buildFile(rows));
     expect(res.statusCode).toBe(200);

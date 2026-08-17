@@ -44,9 +44,7 @@ async function main() {
   const policies = await seedSlaPolicies(prisma);
   for (const policy of policies) {
     const overdue = policy.overdueHours === null ? "不设超时" : `超时${policy.overdueHours}h`;
-    console.log(
-      `✓ SLAPolicy: ${policy.complaintLevel}（首响${policy.firstResponseMinutes}min / ${overdue}）`,
-    );
+    console.log(`✓ 时效策略: ${policy.name}（首响${policy.firstResponseMinutes}min / ${overdue}）`);
   }
 
   const shifts = await seedShiftTypes(prisma);

@@ -1,4 +1,4 @@
-import type { Permission, TicketCreateData } from "@insuredesk/shared";
+import type { ComplaintLevel, Permission, TicketCreateData } from "@insuredesk/shared";
 import {
   COMPLAINT_LEVELS,
   DEFAULT_SLA_POLICIES,
@@ -294,14 +294,26 @@ export async function seedExternalUserRole(prisma: PrismaClient): Promise<Role> 
 }
 
 /**
- * Create the four SLAPolicy rows, one per complaint level, with the defaults
- * from DEFAULT_SLA_POLICIES. Create-if-missing only: policies are
+ * 出厂四条时效策略的口径文案（description），仅播种时使用；此后策略归管理员
+ * 维护，重跑种子不覆盖修改。
+ */
+export const DEFAULT_SLA_POLICY_DESCRIPTIONS: Record<ComplaintLevel, string> = {
+  一般投诉: "常规投诉：48 小时处理时限，首响 120 分钟；24 小时检查点累计 1 次、48 小时累计 2 次。",
+  高级投诉: "重要投诉：48 小时处理时限，首响 120 分钟；24 小时检查点累计 1 次、48 小时累计 3 次。",
+  加急投诉: "加急投诉：72 小时处理时限，首响 60 分钟；24/48/72 小时检查点，分别累计 2/4/6 次。",
+  特急投诉:
+    "特急投诉：不设处理时限，首响 30 分钟；24/48 小时检查点，此后每 12 小时滚动跟进直至完结。",
+};
+
+/**
+ * Create the four 时效策略 rows (one per legacy complaint level anchor), with
+ * the defaults from DEFAULT_SLA_POLICIES. Create-if-missing only: policies are
  * admin-editable, so re-seeding must never silently revert an admin's
  * configuration back to the defaults.
  */
 export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]> {
   const policies: SlaPolicy[] = [];
-  for (const complaintLevel of COMPLAINT_LEVELS) {
+  for (const [index, complaintLevel] of COMPLAINT_LEVELS.entries()) {
     const defaults = DEFAULT_SLA_POLICIES[complaintLevel];
     policies.push(
       await prisma.slaPolicy.upsert({
@@ -309,6 +321,10 @@ export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]
         update: {},
         create: {
           complaintLevel,
+          name: complaintLevel,
+          description: DEFAULT_SLA_POLICY_DESCRIPTIONS[complaintLevel],
+          sortOrder: index + 1,
+          active: true,
           firstResponseMinutes: defaults.firstResponseMinutes,
           overdueHours: defaults.overdueHours,
           reminderRules: defaults.reminderRules,
@@ -479,6 +495,7 @@ function demoInput(
     contactId: null,
     categoryId: null,
     complaintLevel: "一般投诉",
+    slaPolicyId: null,
     priority: null,
     ...overrides,
   };
@@ -820,7 +837,11 @@ async function createExternalTicket(
   input: TicketCreateData,
   createdAt: Date,
 ): Promise<Ticket> {
-  const slaStamp = await computeSlaStamp(prisma, input.complaintLevel, createdAt);
+  const slaStamp = await computeSlaStamp(
+    prisma,
+    { slaPolicyId: input.slaPolicyId, complaintLevel: input.complaintLevel },
+    createdAt,
+  );
 
   const ticket = await prisma.ticket.create({
     data: {

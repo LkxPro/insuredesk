@@ -112,6 +112,17 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     }
   });
 
+  it("sla.list rows carry the 目录实体字段: name=旧锚文本, sortOrder 出厂序, active=true, description", async () => {
+    const policies = await admin().sla.list();
+    expect(policies.map((policy) => policy.name)).toEqual([...COMPLAINT_LEVELS]);
+    expect(policies.map((policy) => policy.sortOrder)).toEqual([1, 2, 3, 4]);
+    for (const policy of policies) {
+      expect(policy.id).toBeTruthy();
+      expect(policy.active).toBe(true);
+      expect(policy.description).toBeTruthy();
+    }
+  });
+
   describe("RBAC", () => {
     const validPayload = {
       complaintLevel: "特急投诉" as const,
@@ -292,6 +303,259 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       await expect(
         admin().sla.update({ ...base, reminderRules: checkpoint({ advanceMinutes: 0 }) }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+  });
+
+  describe("时效策略目录 CRUD（实体化）", () => {
+    const newPolicyInput = {
+      name: "VIP专线",
+      description: "大客户专线：24 小时处理时限，首响 30 分钟。",
+      firstResponseMinutes: 30,
+      overdueHours: 24,
+      reminderRules: [
+        {
+          type: "follow_up_checkpoint" as const,
+          checkpointHours: 12,
+          requiredCount: 1,
+          advanceMinutes: 60,
+        },
+      ],
+    };
+
+    it("create 追加新策略：sortOrder 落末尾、恒启用、无旧锚", async () => {
+      const created = await admin().sla.create(newPolicyInput);
+      expect(created).toMatchObject({
+        name: "VIP专线",
+        description: newPolicyInput.description,
+        sortOrder: 5,
+        active: true,
+        firstResponseMinutes: 30,
+        overdueHours: 24,
+      });
+
+      const row = await prisma.slaPolicy.findUniqueOrThrow({ where: { id: created.id } });
+      expect(row.complaintLevel).toBeNull();
+
+      const listed = await admin().sla.list();
+      expect(listed.map((policy) => policy.name)).toContain("VIP专线");
+      expect(listed.at(-1)?.name).toBe("VIP专线");
+    });
+
+    it("create 名称全表唯一：撞启用行与撞停用行同报 CONFLICT", async () => {
+      await expect(
+        admin().sla.create({ ...newPolicyInput, name: "一般投诉" }),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+
+      const retired = await admin().sla.create({ ...newPolicyInput, name: "已退役策略" });
+      await admin().sla.setActive({ id: retired.id, active: false });
+      await expect(
+        admin().sla.create({ ...newPolicyInput, name: "已退役策略" }),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      // 复活后撞名判定不变
+      await admin().sla.setActive({ id: retired.id, active: true });
+    });
+
+    it("create 拒绝 trim 后为空的名称", async () => {
+      await expect(admin().sla.create({ ...newPolicyInput, name: "   " })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    });
+
+    it("update 新轨按 id 分项更新：改名/描述/规则；缺席字段保持原值", async () => {
+      const created = await admin().sla.create({ ...newPolicyInput, name: "银卡专线" });
+      const renamed = await admin().sla.update({ id: created.id, name: "金卡专线" });
+      expect(renamed.name).toBe("金卡专线");
+      // 缺席字段原样保留
+      expect(renamed.firstResponseMinutes).toBe(30);
+      expect(renamed.overdueHours).toBe(24);
+      expect(renamed.description).toBe(newPolicyInput.description);
+
+      const edited = await admin().sla.update({
+        id: created.id,
+        description: null,
+        overdueHours: null,
+        reminderRules: [{ type: "rolling_follow_up", intervalHours: 6 }],
+      });
+      expect(edited.description).toBeNull();
+      expect(edited.overdueHours).toBeNull();
+      expect(edited.reminderRules).toEqual([{ type: "rolling_follow_up", intervalHours: 6 }]);
+    });
+
+    it("update 改名撞任何行（含停用行）即 CONFLICT；未知 id NOT_FOUND", async () => {
+      const retiring = await admin().sla.create({ ...newPolicyInput, name: "待停用策略" });
+      await admin().sla.setActive({ id: retiring.id, active: false });
+      const other = await admin().sla.create({ ...newPolicyInput, name: "另一专线" });
+      await expect(admin().sla.update({ id: other.id, name: "待停用策略" })).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      await expect(
+        admin().sla.update({ id: "no-such-id", name: "无的放矢" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("sort 整组重排：顺序即新 sortOrder，list/options 随之；清单须恰好全覆盖", async () => {
+      const before = await admin().sla.list();
+      const reversed = [...before].reverse();
+      const sorted = await admin().sla.sort({ policyIds: reversed.map((policy) => policy.id) });
+      expect(sorted.map((policy) => policy.id)).toEqual(reversed.map((policy) => policy.id));
+      expect(sorted.map((policy) => policy.sortOrder)).toEqual(
+        reversed.map((_, index) => index + 1),
+      );
+
+      const options = await frontline().sla.options();
+      expect(options.map((option) => option.id)).toEqual(
+        sorted.filter((policy) => policy.active).map((policy) => policy.id),
+      );
+
+      await expect(
+        admin().sla.sort({ policyIds: before.slice(1).map((policy) => policy.id) }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(
+        admin().sla.sort({ policyIds: [...before.map((policy) => policy.id), "no-such-id"] }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      // 全覆盖但含重复 id：集合判定之外还须拒绝，否则 sortOrder 出缺口
+      await expect(
+        admin().sla.sort({
+          policyIds: [...before.map((policy) => policy.id), before[0]?.id ?? ""],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      // 还原出厂序，免得后续用例读到重排后的目录
+      const isFactory = (policy: { complaintLevel: string }) =>
+        (COMPLAINT_LEVELS as readonly string[]).includes(policy.complaintLevel);
+      const factoryIds = [
+        ...before
+          .filter(isFactory)
+          .sort(
+            (a, b) =>
+              COMPLAINT_LEVELS.indexOf(a.complaintLevel as (typeof COMPLAINT_LEVELS)[number]) -
+              COMPLAINT_LEVELS.indexOf(b.complaintLevel as (typeof COMPLAINT_LEVELS)[number]),
+          )
+          .map((policy) => policy.id),
+        ...before.filter((policy) => !isFactory(policy)).map((policy) => policy.id),
+      ];
+      await admin().sla.sort({ policyIds: factoryIds });
+    });
+
+    it("setActive 停用即退出 options，复活即回归；重复表态幂等", async () => {
+      const victim = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "加急投诉" },
+      });
+      const deactivated = await admin().sla.setActive({ id: victim.id, active: false });
+      expect(deactivated.active).toBe(false);
+      expect((await frontline().sla.options()).map((option) => option.id)).not.toContain(victim.id);
+      // 完整 list 仍含停用行
+      expect((await admin().sla.list()).find((policy) => policy.id === victim.id)?.active).toBe(
+        false,
+      );
+
+      const revived = await admin().sla.setActive({ id: victim.id, active: true });
+      expect(revived.active).toBe(true);
+      expect((await frontline().sla.options()).map((option) => option.id)).toContain(victim.id);
+
+      await expect(
+        admin().sla.setActive({ id: "no-such-id", active: false }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("新 mutations 均需 sla.edit（客服主管/一线/只读一律 FORBIDDEN）", async () => {
+      for (const caller of [manager(), frontline(), observer()]) {
+        await expect(caller.sla.create(newPolicyInput)).rejects.toMatchObject({
+          code: "FORBIDDEN",
+        });
+        await expect(caller.sla.update({ id: "any", name: "x" })).rejects.toMatchObject({
+          code: "FORBIDDEN",
+        });
+        await expect(caller.sla.sort({ policyIds: ["any"] })).rejects.toMatchObject({
+          code: "FORBIDDEN",
+        });
+        await expect(caller.sla.setActive({ id: "any", active: false })).rejects.toMatchObject({
+          code: "FORBIDDEN",
+        });
+      }
+    });
+  });
+
+  describe("sla.options（登录可用）", () => {
+    it("未登录 UNAUTHORIZED；登录角色（无 sla.view）也可读", async () => {
+      const anonymous = appRouter.createCaller({
+        traceId: "sla-test",
+        user: null,
+        sessionToken: null,
+      });
+      await expect(anonymous.sla.options()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+      const options = await observer().sla.options();
+      const names = options.map((option) => option.name);
+      // 出厂四条按目录序打头，新建启用策略随其后；停用行不出现
+      expect(names.slice(0, 4)).toEqual([...COMPLAINT_LEVELS]);
+      expect(names).toContain("VIP专线");
+      expect(names).not.toContain("待停用策略");
+      // 只载 id/name/description
+      expect(Object.keys(options[0] ?? {}).sort()).toEqual(["description", "id", "name"]);
+    });
+  });
+
+  describe("双轨建单（slaPolicyId 优先，complaintLevel 文本回落）", () => {
+    it("slaPolicyId 与文本轨产出相同盖章：同策略、同 dueAt/要求串、同旧锚文本", async () => {
+      const policy = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "一般投诉" },
+      });
+      const byText = await manager().ticket.create(baseInput);
+      const byId = await manager().ticket.create({
+        ...baseInput,
+        complaintLevel: null,
+        slaPolicyId: policy.id,
+      });
+
+      const textDetail = await manager().ticket.detail({ id: byText.id });
+      const idDetail = await manager().ticket.detail({ id: byId.id });
+      expect(idDetail.slaPolicyId).toBe(policy.id);
+      expect(idDetail.complaintLevel).toBe("一般投诉"); // 旧锚文本随引用派生
+      expect(idDetail.firstResponseRequirement).toBe(textDetail.firstResponseRequirement);
+      expect(idDetail.followUpFrequency).toBe(textDetail.followUpFrequency);
+      expect(dueOffsetHours(idDetail)).toBe(dueOffsetHours(textDetail));
+
+      const row = await prisma.ticket.findUniqueOrThrow({ where: { id: byId.id } });
+      expect(row.slaPolicyId).toBe(policy.id);
+      expect(row.complaintLevel).toBe("一般投诉");
+    });
+
+    it("两轨同传以 slaPolicyId 为准", async () => {
+      const urgent = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "特急投诉" },
+      });
+      const created = await manager().ticket.create({
+        ...baseInput,
+        complaintLevel: "一般投诉",
+        slaPolicyId: urgent.id,
+      });
+      const detail = await manager().ticket.detail({ id: created.id });
+      expect(detail.slaPolicyId).toBe(urgent.id);
+      expect(detail.complaintLevel).toBe("特急投诉");
+      expect(detail.dueAt).toBeNull(); // 特急不设超时
+    });
+
+    it("引用缺失或已停用即拒绝（两轨同后果，与缺行同错）", async () => {
+      await expect(
+        manager().ticket.create({ ...baseInput, complaintLevel: null, slaPolicyId: "no-such-id" }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      const victim = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "加急投诉" },
+      });
+      await admin().sla.setActive({ id: victim.id, active: false });
+      try {
+        await expect(
+          manager().ticket.create({ ...baseInput, complaintLevel: null, slaPolicyId: victim.id }),
+        ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+        // 文本轨撞上同一停用策略同样拒绝
+        await expect(
+          manager().ticket.create({ ...baseInput, complaintLevel: "加急投诉" }),
+        ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      } finally {
+        await admin().sla.setActive({ id: victim.id, active: true });
+      }
     });
   });
 });

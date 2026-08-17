@@ -6,7 +6,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 /**
- * Issue #43 contract tests: every user-entered field of the shared ticket
+ * Contract tests: every user-entered field of the shared ticket
  * create/edit schemas is optional, and every unfilled representation the form
  * can produce (absent, null, "", whitespace) normalizes to null — "unknown",
  * never "" or an assumed value.
@@ -14,9 +14,11 @@ import { describe, expect, it } from "vitest";
 describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
   it("accepts a completely empty object and yields all-null data across every create field", () => {
     const data = ticketCreateInputSchema.parse({});
-    // 多值保单号的「未填写」形态是空数组而非 null; 「无保单号」缺省未勾选
+    // 多值保单号的「未填写」形态是空数组而非 null; 「无保单号」缺省未勾选;
+    // slaPolicyId 是时效策略的双轨引用（描述表之外的服务端字段）
     expect(data).toEqual({
       ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
+      slaPolicyId: null,
       policyNumbers: [],
       noPolicyNumber: false,
     });
@@ -31,6 +33,7 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
       nuclearBodyStatus: "",
       categoryId: "",
       complaintLevel: "",
+      slaPolicyId: "  ",
       priority: "",
     });
     expect(data.feedbackTime).toBeNull();
@@ -40,6 +43,7 @@ describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
     expect(data.nuclearBodyStatus).toBeNull();
     expect(data.categoryId).toBeNull();
     expect(data.complaintLevel).toBeNull();
+    expect(data.slaPolicyId).toBeNull();
     expect(data.priority).toBeNull();
   });
 

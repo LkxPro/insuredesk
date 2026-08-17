@@ -11,7 +11,7 @@ import { appRouter } from "../src/routers/index.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
- * 角色建单必填字段集验证（issue #63）：按请求者角色强制必填集，缺失字段一次性报错，
+ * 角色建单必填字段集验证：按请求者角色强制必填集，缺失字段一次性报错，
  * 三态字段必须明确选择，编辑不受约束，外部来源不适用，清单外 key 防御性忽略。
  */
 describe("role required ticket fields (Testcontainers)", () => {
@@ -245,6 +245,35 @@ describe("role required ticket fields (Testcontainers)", () => {
       const detail = await requiredUser().ticket.detail({ id: result.id });
       expect(detail.noPolicyNumber).toBe(true);
       expect(detail.policyNumbers).toEqual([]);
+    });
+
+    it("required 投诉等级可用 slaPolicyId 引用满足（双轨）", async () => {
+      await prisma.role.update({
+        where: { id: roleWithRequired.id },
+        data: { requiredTicketFields: ["complaintLevel"] },
+      });
+      try {
+        const { complaintLevel: _dropped, ...withoutLevel } = validInput();
+        await expect(requiredUser().ticket.create(withoutLevel)).rejects.toThrow(
+          /以下字段为必填项：投诉等级/,
+        );
+
+        const policy = await prisma.slaPolicy.findUniqueOrThrow({
+          where: { complaintLevel: "一般投诉" },
+        });
+        const result = await requiredUser().ticket.create({
+          ...withoutLevel,
+          slaPolicyId: policy.id,
+        });
+        const detail = await requiredUser().ticket.detail({ id: result.id });
+        expect(detail.slaPolicyId).toBe(policy.id);
+        expect(detail.complaintLevel).toBe("一般投诉");
+      } finally {
+        await prisma.role.update({
+          where: { id: roleWithRequired.id },
+          data: { requiredTicketFields: ["customerName", "phone", "channelId", "hasContacted"] },
+        });
+      }
     });
 
     it("enforces categoryId as a required field against the catalog shape", async () => {

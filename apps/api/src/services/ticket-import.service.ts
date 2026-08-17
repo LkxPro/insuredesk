@@ -143,6 +143,7 @@ export interface TicketImportCatalogs {
   channels: CatalogNameIndex;
   categories: CatalogNameIndex;
   completionStatuses: CatalogNameIndex;
+  slaPolicies: CatalogNameIndex;
 }
 
 /**
@@ -321,6 +322,7 @@ const CATALOG_INDEXES: Record<
   channel: (catalogs) => catalogs.channels,
   category: (catalogs) => catalogs.categories,
   completionStatus: (catalogs) => catalogs.completionStatuses,
+  slaPolicy: (catalogs) => catalogs.slaPolicies,
 };
 
 function catalogColumn(
@@ -373,10 +375,10 @@ function wallClockColumn(
 }
 
 /**
- * Template order. Semantics = 手工建单契约: every column may
- * be blank (null, never "" or a default), catalog names must be 存在且启用,
- * enum columns take the template's Chinese literals. The trailing 完结 pair
- * additionally binds cross-field: both filled or both blank (checked on the
+ * Template order, formOnly rows（旧投诉等级文本轨）剔除。Semantics = 手工建单契约:
+ * every column may be blank (null, never "" or a default), catalog names must be
+ * 存在且启用, enum columns take the template's Chinese literals. The trailing 完结
+ * pair additionally binds cross-field: both filled or both blank (checked on the
  * raw cells in validateTicketImportRows).
  */
 function toColumnSpec(descriptor: TicketFieldDescriptor): ImportColumnSpec {
@@ -394,7 +396,9 @@ function toColumnSpec(descriptor: TicketFieldDescriptor): ImportColumnSpec {
   }
 }
 
-const IMPORT_COLUMNS: readonly ImportColumnSpec[] = TICKET_FIELD_DESCRIPTORS.map(toColumnSpec);
+const IMPORT_COLUMNS: readonly ImportColumnSpec[] = TICKET_FIELD_DESCRIPTORS.filter(
+  (descriptor) => !("formOnly" in descriptor && descriptor.formOnly === true),
+).map(toColumnSpec);
 
 const COMPLETION_STATUS_INDEX = IMPORT_COLUMNS.findIndex(
   (column) => column.field === "completionStatusId",
@@ -445,6 +449,8 @@ export function validateTicketImportRows(
       TicketImportRowData[keyof TicketImportRowData]
     >;
     ticket.noPolicyNumber = false;
+    // 导入无双轨文本列：complaintLevel 恒 null，时效策略经 slaPolicyId 列承载
+    ticket.complaintLevel = null;
     for (const [index, column] of IMPORT_COLUMNS.entries()) {
       const outcome = column.parse(row.cells[index] ?? "", ctx);
       if ("fail" in outcome) {
@@ -503,7 +509,7 @@ export interface TicketImportInput {
  * nothing. Construction mirrors createTicket, deliberately:
  *
  * - createdAt = the import instant; SLA snapshot (dueAt/跟进/首响) counts from
- *   it per row's level; 未定级 rows stamp all-null
+ *   it per row's 时效策略引用; 未指定 rows stamp all-null
  * - source=file_import with creatorId = the importer, so the non-view_all
  *   data scope and "由谁创建" behave exactly like manual tickets
  * - the importer role's requiredTicketFields do NOT apply — the file contract
@@ -527,10 +533,11 @@ export async function importTickets(
 
   return prisma.$transaction(
     async (tx) => {
-      const [channels, categories, completionStatuses] = await Promise.all([
+      const [channels, categories, completionStatuses, slaPolicies] = await Promise.all([
         tx.channel.findMany(),
         tx.ticketCategory.findMany(),
         tx.completionStatus.findMany(),
+        tx.slaPolicy.findMany(),
       ]);
       const { tickets, errors } = validateTicketImportRows(
         rows,
@@ -538,6 +545,7 @@ export async function importTickets(
           channels: buildCatalogNameIndex(channels),
           categories: buildCatalogNameIndex(categories),
           completionStatuses: buildCatalogNameIndex(completionStatuses),
+          slaPolicies: buildCatalogNameIndex(slaPolicies),
         },
         input.timeZone,
       );
@@ -545,13 +553,17 @@ export async function importTickets(
         throw new TicketImportValidationError(errors);
       }
 
-      // One SLA snapshot per distinct level, all counted from the same instant
+      // One SLA snapshot per distinct 策略引用, all counted from the same instant
       const slaStamps = new Map<string | null, Awaited<ReturnType<typeof computeSlaStamp>>>();
       for (const ticket of tickets) {
-        if (!slaStamps.has(ticket.complaintLevel)) {
+        if (!slaStamps.has(ticket.slaPolicyId)) {
           slaStamps.set(
-            ticket.complaintLevel,
-            await computeSlaStamp(tx, ticket.complaintLevel, now),
+            ticket.slaPolicyId,
+            await computeSlaStamp(
+              tx,
+              { slaPolicyId: ticket.slaPolicyId, complaintLevel: null },
+              now,
+            ),
           );
         }
       }
@@ -577,7 +589,7 @@ export async function importTickets(
           ...(completionStatusId === null
             ? { status: TicketStatus.Unassigned }
             : { status: TicketStatus.Completed, completionTime: now, completionStatusId }),
-          ...slaStamps.get(ticket.complaintLevel),
+          ...slaStamps.get(ticket.slaPolicyId),
         })),
         select: { id: true },
       });

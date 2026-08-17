@@ -95,17 +95,22 @@ describe("ticket creation + detail (Testcontainers)", () => {
     allowDuplicate: true,
   } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  it("seeds exactly one SLAPolicy per complaint level with the expected defaults", async () => {
+  it("seeds exactly one 时效策略 per legacy complaint level with the expected defaults + 目录字段", async () => {
     const policies = await prisma.slaPolicy.findMany();
     expect(policies).toHaveLength(COMPLAINT_LEVELS.length);
 
-    for (const level of COMPLAINT_LEVELS) {
+    for (const [index, level] of COMPLAINT_LEVELS.entries()) {
       const expected = DEFAULT_SLA_POLICIES[level];
       const policy = policies.find((p) => p.complaintLevel === level);
       expect(policy, level).toBeDefined();
       expect(policy?.firstResponseMinutes).toBe(expected.firstResponseMinutes);
       expect(policy?.overdueHours).toBe(expected.overdueHours);
       expect(policy?.reminderRules).toEqual(expected.reminderRules);
+      // 实体目录字段：name=旧锚文本、出厂序、启用、含口径文案
+      expect(policy?.name).toBe(level);
+      expect(policy?.sortOrder).toBe(index + 1);
+      expect(policy?.active).toBe(true);
+      expect(policy?.description).toBeTruthy();
     }
   });
 
@@ -142,6 +147,12 @@ describe("ticket creation + detail (Testcontainers)", () => {
       // 跟进频次/首响要求 stamped from the level's SLA config, not hardcoded
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
       expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
+
+      // 时效策略引用随建单盖章（文本轨经旧锚映射到策略 id）
+      const policy = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "一般投诉" },
+      });
+      expect(detail.slaPolicyId).toBe(policy.id);
 
       // creatorId recorded for source=manual
       const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });

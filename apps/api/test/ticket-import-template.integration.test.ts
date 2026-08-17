@@ -1,6 +1,7 @@
 import {
   TICKET_IMPORT_HEADERS as EXPECTED_HEADERS,
   TICKET_FIELD_DESCRIPTORS,
+  type TicketFieldDescriptor,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
@@ -33,7 +34,7 @@ describe("ticket import template (Testcontainers)", () => {
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
-      seed: ["rolesAndUsers", "channels", "categories"],
+      seed: ["rolesAndUsers", "channels", "categories", "slaPolicies"],
     });
     prisma = harness.prisma;
     const databaseUrl = harness.databaseUrl;
@@ -181,7 +182,8 @@ describe("ticket import template (Testcontainers)", () => {
       expect(options?.state).not.toBe("visible");
 
       const enumFields = TICKET_FIELD_DESCRIPTORS.filter(
-        (descriptor) => descriptor.type === "enum",
+        (descriptor): descriptor is Extract<TicketFieldDescriptor, { type: "enum" }> =>
+          descriptor.type === "enum" && !("formOnly" in descriptor && descriptor.formOnly),
       );
       for (const { label: header } of enumFields) {
         const validation = sheet?.getRow(2).getCell(columnOf(header)).dataValidation;
@@ -267,6 +269,34 @@ describe("ticket import template (Testcontainers)", () => {
           data: { active: true },
         });
       }
+    });
+    it("时效策略 dropdown 取下载时刻的启用策略（停用后重新下载即消失）", async () => {
+      const importer = await sessionFor("importer");
+      const first = await downloadWorkbook(importer);
+      const collect = (workbook: ExcelJS.Workbook) => {
+        const values: string[] = [];
+        workbook.getWorksheet("选项")?.eachRow((row) => {
+          row.eachCell((cell) => values.push(String(cell.value ?? "")));
+        });
+        return values;
+      };
+
+      expect(collect(first)).toContain("特急投诉");
+
+      const victim = await prisma.slaPolicy.findFirstOrThrow({ where: { name: "特急投诉" } });
+      await prisma.slaPolicy.update({ where: { id: victim.id }, data: { active: false } });
+      try {
+        const second = collect(await downloadWorkbook(importer));
+        expect(second).not.toContain("特急投诉");
+        expect(second).toContain("一般投诉");
+      } finally {
+        await prisma.slaPolicy.update({ where: { id: victim.id }, data: { active: true } });
+      }
+
+      const sheet = first.getWorksheet("工单");
+      const validation = sheet?.getRow(2).getCell(columnOf("时效策略")).dataValidation;
+      expect(validation?.type).toBe("list");
+      expect(validation?.allowBlank).toBe(true);
     });
   });
 });

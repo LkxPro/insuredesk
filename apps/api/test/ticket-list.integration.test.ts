@@ -304,6 +304,35 @@ describe("ticket list (Testcontainers)", () => {
       expect(combined.items.map((t) => t.id)).toEqual([regulator.id]);
     });
 
+    it("时效策略筛选双轨：slaPolicyId 与 complaintLevel 文本产出相同结果，同传以 id 为准", async () => {
+      const high = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "高级投诉" },
+      });
+      const normal = await prisma.slaPolicy.findUniqueOrThrow({
+        where: { complaintLevel: "一般投诉" },
+      });
+      const byId = await makeTicket({ complaintLevel: null, slaPolicyId: high.id });
+      const byText = await makeTicket({ complaintLevel: "高级投诉" });
+      const normalTicket = await makeTicket({ complaintLevel: "一般投诉" });
+
+      const viaText = await manager().ticket.list({ complaintLevel: "高级投诉" });
+      const viaId = await manager().ticket.list({ slaPolicyId: high.id });
+      expect(viaText.items.map((t) => t.id).sort()).toEqual([byId.id, byText.id].sort());
+      expect(viaId.items.map((t) => t.id).sort()).toEqual(viaText.items.map((t) => t.id).sort());
+      expect(viaId.items[0]?.slaPolicyId).toBe(high.id);
+
+      // 多选并集：两个策略的工单都命中
+      const union = await manager().ticket.list({ slaPolicyId: [high.id, normal.id] });
+      expect(union.total).toBe(3);
+
+      // 同传以 slaPolicyId 为准（文本值被忽略）
+      const idWins = await manager().ticket.list({
+        slaPolicyId: normal.id,
+        complaintLevel: "高级投诉",
+      });
+      expect(idWins.items.map((t) => t.id)).toEqual([normalTicket.id]);
+    });
+
     it("filters by source — external rows surface once integrations write them", async () => {
       await makeTicket();
       const feishu = await makeTicket({}, { source: "feishu_form", creatorId: null });

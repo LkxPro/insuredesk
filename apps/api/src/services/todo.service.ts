@@ -24,10 +24,11 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
  *   dropping out of the query IS the stop, nothing to cancel.
  * - overdue / due_soon are not restated: they come from deriveDisplayStatus,
  *   the same single-truth predicate the list and dashboard use.
- * - checkpoint / rolling / 染红 thresholds all come from the SLAPolicy rows —
- *   an admin edit, or a complaintLevel edit, changes only the NEXT evaluation;
- *   a checkpoint whose window already passed simply never matches again, so
- *   "已过检查点不补发" needs no special case.
+ * - checkpoint / rolling / 染红 thresholds all come from the 时效策略 rows —
+ *   an admin edit, or a ticket's policy-reference edit, changes only the NEXT
+ *   evaluation; a checkpoint whose window already passed simply never matches
+ *   again, so "已过检查点不补发" needs no special case. 已停用策略退出判定，
+ *   引用它的工单走缺行降级路径。
  */
 
 const MINUTE_MS = 60 * 1000;
@@ -71,23 +72,25 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
         workOrderNumber: true,
         customerName: true,
         complaintLevel: true,
+        slaPolicyId: true,
         status: true,
         createdAt: true,
         dueAt: true,
         contactCount: true,
       },
     }),
-    prisma.slaPolicy.findMany(),
+    // 停用策略退出读时判定：其工单走缺行降级路径（不抛错）
+    prisma.slaPolicy.findMany({ where: { active: true } }),
   ]);
 
   // A deleted policy row must not break the poll: SLA-driven alerts degrade
   // (待首响 stays warning, no checkpoints/rolling) while the policy-free
   // alerts (待首响 presence, due_soon/overdue from dueAt) keep working.
-  // 未定级 tickets (complaintLevel null) take the same degraded
+  // 未指定策略的工单 (slaPolicyId null) take the same degraded
   // path by construction: no policy → no SLA time alerts.
   const policies = new Map(
     policyRows.map((row) => [
-      row.complaintLevel,
+      row.id,
       {
         firstResponseMinutes: row.firstResponseMinutes,
         rules: reminderRulesSchema.parse(row.reminderRules),
@@ -95,14 +98,14 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
     ]),
   );
 
-  const lookupPolicy = (complaintLevel: string | null) =>
-    complaintLevel === null ? undefined : policies.get(complaintLevel);
+  const lookupPolicy = (slaPolicyId: string | null) =>
+    slaPolicyId === null ? undefined : policies.get(slaPolicyId);
 
   // 滚动提醒时钟以上一条 comment 为基准 — fetch the latest comment
   // instant, only for tickets whose policy actually has a rolling rule.
   const rollingTicketIds = tickets
     .filter((ticket) =>
-      lookupPolicy(ticket.complaintLevel)?.rules.some((rule) => rule.type === "rolling_follow_up"),
+      lookupPolicy(ticket.slaPolicyId)?.rules.some((rule) => rule.type === "rolling_follow_up"),
     )
     .map((ticket) => ticket.id);
   const lastComments = rollingTicketIds.length
@@ -117,7 +120,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
 
   const items = tickets
     .map((ticket) => {
-      const policy = lookupPolicy(ticket.complaintLevel);
+      const policy = lookupPolicy(ticket.slaPolicyId);
       const alerts: TodoAlert[] = [];
 
       // 待首响: no first comment yet → in the todo from the moment it is
