@@ -1,0 +1,19 @@
+version: v2026.08.4
+date: 2026-08-18
+entries:
+  - category: 新增
+    user: SLA 策略页重写，支持自定义多套时效策略
+    full: 时效策略从固定档位升级为可自管的策略集：卡片墙展示，可新建、编辑、调整顺序、停用与恢复；建单、详情、筛选、看板与导入导出同步切换到按策略选择，存量角色的「投诉等级」必填设置自动迁移为对应策略。
+    page: /sla
+    screenshot: sla-policies.png
+  - category: 新增
+    user: 工单保单号支持勾选「无保单号」
+    full: 保单号字段新增「无保单号」勾选：勾选即明确该工单没有保单号，保单号必填时也视为已表态；列表中此类工单显示为「无」，与留空未填写的占位区分。
+    page: /tickets/new
+    screenshot: tickets-no-policy-number.png
+  - category: 内部
+    user: 自动化代理稳定性改进
+    full: agent-loop 网络调用统一收口并增强重试；发布阶段传输失败时保留本地提交，可从发布断点续跑。
+  - category: 内部
+    user: 开发体验与代码库清理
+    full: 本地开发日志降噪（请求日志降为 debug、错误按级别输出）；新克隆或 worktree 自动完成 prisma generate；下线投诉等级遗留字段并清理 SLA 链路存量注释。
