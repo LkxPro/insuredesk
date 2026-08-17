@@ -108,13 +108,12 @@ export async function runWorker(root: string, worktree: string, issue: number): 
     activeSession: { current: null },
     timer: new PhaseTimer(),
   };
-  let startHead = "";
   try {
-    startHead = await runPipeline(root, worktree, issue, worktrees, runDir, abort.signal, ctx);
+    await runPipeline(root, worktree, issue, worktrees, runDir, abort.signal, ctx);
     return 0;
   } catch (error) {
     if (error instanceof WorkerFailure) {
-      await handleFailure(issue, worktrees, worktree, startHead, error, ctx.timer);
+      await handleFailure(issue, worktrees, worktree, error, ctx);
       return 1;
     }
     throw error;
@@ -141,6 +140,8 @@ interface PipelineContext {
   timer: PhaseTimer;
   snapshotDir?: string | null;
   watchdog?: NodeJS.Timeout;
+  startHead?: string;
+  publishCommitted?: boolean;
 }
 
 async function git(worktree: string, args: string[]): Promise<string> {
@@ -155,7 +156,7 @@ async function runPipeline(
   runDir: string,
   signal: AbortSignal,
   ctx: PipelineContext,
-): Promise<string> {
+): Promise<void> {
   const issueJson = await ghCall([
     "issue",
     "view",
@@ -207,21 +208,36 @@ async function runPipeline(
     (await git(worktree, ["rev-parse", "--verify", "origin/main^{commit}"]).catch(() => "")) ||
     (await git(worktree, ["rev-parse", "--verify", "HEAD^{commit}"]))
   ).trim();
-  await git(worktree, ["reset", "--hard", startHead]);
-  await git(worktree, ["clean", "-fd"]);
+  ctx.startHead = startHead;
 
-  // message 文件落在 worktree 内(executor 沙箱只保证能写 cwd),但要对所有 git 检测隐身。
+  const branch = (await git(worktree, ["branch", "--show-current"])).trim();
   const messageFile = ".agent-commit-message";
-  const excludeFile = resolve(
-    worktree,
-    (await git(worktree, ["rev-parse", "--git-path", "info/exclude"])).trim(),
-  );
-  const excludeRules = await readFile(excludeFile, "utf8").catch(() => "");
-  if (!excludeRules.split("\n").includes(messageFile))
-    await appendFile(excludeFile, `${messageFile}\n`);
-
-  const historyUnchanged = async () =>
-    (await git(worktree, ["rev-parse", "HEAD"])).trim() === startHead;
+  const publishPendingFile = join(worktrees, `issue-${issue}.publish-pending`);
+  const pendingSha = await readFile(publishPendingFile, "utf8")
+    .then((text) => text.trim())
+    .catch(() => "");
+  const headSha = (await git(worktree, ["rev-parse", "HEAD"])).trim();
+  const aheadOfMain =
+    (await git(worktree, ["rev-list", "--count", "origin/main..HEAD"]).catch(() => "0")).trim() !==
+    "0";
+  const openPr = pendingSha
+    ? await ghJson<Array<{ number: number }>>([
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--state",
+        "open",
+        "--json",
+        "number",
+      ])
+        .then((prs) => prs.length > 0)
+        .catch(() => false)
+    : false;
+  const resumePublish =
+    !repair && pendingSha !== "" && pendingSha === headSha && aheadOfMain && !openPr;
+  if (resumePublish) ctx.publishCommitted = true;
+  else await rm(publishPendingFile, { force: true });
 
   const frontierIssue = normalizeIssue(JSON.parse(issueJson));
   // touch-set 只是并行调度的冲突参考,越界不判失败;发布时列出供审计。
@@ -231,367 +247,389 @@ async function runPipeline(
     )
       .split("\n")
       .filter(Boolean);
-    return outsideTouchSet(frontierIssue.touchSet, changed);
+    const committed = resumePublish
+      ? (await git(worktree, ["diff", "--name-only", "origin/main...HEAD"]))
+          .split("\n")
+          .filter(Boolean)
+      : [];
+    return outsideTouchSet(frontierIssue.touchSet, [...new Set([...changed, ...committed])]);
   };
 
-  const executorEnv: NodeJS.ProcessEnv = {
-    // 发布隔离：模型物理上无推送/调 API 凭据。
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_CONFIG_COUNT: "1",
-    GIT_CONFIG_KEY_0: "remote.origin.url",
-    GIT_CONFIG_VALUE_0: "disabled://agent-model-has-no-publish-authority",
-    GH_CONFIG_DIR: join(runDir, "gh"),
-    GH_TOKEN: "",
-    GITHUB_TOKEN: "",
-    SSH_AUTH_SOCK: "",
-  };
+  if (!resumePublish) {
+    await git(worktree, ["reset", "--hard", startHead]);
+    await git(worktree, ["clean", "-fd"]);
 
-  // claim 丢失 abort 与 stall abort 都经 sessionSignal 杀会话;只有 stall 在重试层短路成失败。
-  const stallAbort = new AbortController();
-  const sessionSignal = AbortSignal.any([signal, stallAbort.signal]);
+    // message 文件落在 worktree 内(executor 沙箱只保证能写 cwd),但要对所有 git 检测隐身。
+    const excludeFile = resolve(
+      worktree,
+      (await git(worktree, ["rev-parse", "--git-path", "info/exclude"])).trim(),
+    );
+    const excludeRules = await readFile(excludeFile, "utf8").catch(() => "");
+    if (!excludeRules.split("\n").includes(messageFile))
+      await appendFile(excludeFile, `${messageFile}\n`);
 
-  interface SessionHolder {
-    session: AgentSession | null;
-  }
+    const historyUnchanged = async () =>
+      (await git(worktree, ["rev-parse", "HEAD"])).trim() === startHead;
 
-  // error_during_execution 等 provider/网络 transient 同 run 内退避重试;
-  // error_max_turns 等行为类失败重试无益。
-  const runPhase = async (
-    holder: SessionHolder,
-    files: { warm: string; cold: string; resume?: string },
-    outputName: string,
-    keepAlive: boolean,
-  ): Promise<void> => {
-    const max = num("AGENT_EXECUTOR_ATTEMPTS", 4);
-    for (let attempt = 1; ; attempt += 1) {
-      let promptFile = files.warm;
-      if (!holder.session?.isAlive()) {
-        const resumeId = holder.session?.sessionId() ?? null;
-        if (holder.session) await holder.session.close().catch(() => {});
-        holder.session = openAgentSession({
-          worktree,
-          worktrees,
-          issue,
-          env: executorEnv,
-          signal: sessionSignal,
-          resumeSessionId: resumeId ?? undefined,
-        });
-        ctx.sessions.push(holder.session);
-        promptFile = resumeId ? (files.resume ?? files.warm) : files.cold;
-      }
-      ctx.activeSession.current = holder.session;
-      const result = await holder.session.run(promptFile, ctx.artifact(outputName));
-      ctx.activeSession.current = null;
-      if (result.ok) {
-        if (!keepAlive) {
-          await holder.session.close().catch(() => {});
-          holder.session = null;
-        }
-        return;
-      }
-      if (stallAbort.signal.aborted)
-        throw new WorkerFailure(
-          "Worker stalled and did not recover within the nudge grace period.",
-          "process",
-        );
-      if (attempt >= max || !transient(result)) {
-        await holder.session?.close().catch(() => {});
-        holder.session = null;
-        throw new WorkerFailure(
-          `executor failed: ${outputName} (${result.subtype || "unknown"})`,
-          "process",
-        );
-      }
-      process.stderr.write(`executor attempt ${attempt} failed (transient); retrying\n`);
-      const delay = num("AGENT_EXECUTOR_RETRY_DELAY", 30) * 2 ** (attempt - 1);
-      await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+    const executorEnv: NodeJS.ProcessEnv = {
+      // 发布隔离：模型物理上无推送/调 API 凭据。
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "remote.origin.url",
+      GIT_CONFIG_VALUE_0: "disabled://agent-model-has-no-publish-authority",
+      GH_CONFIG_DIR: join(runDir, "gh"),
+      GH_TOKEN: "",
+      GITHUB_TOKEN: "",
+      SSH_AUTH_SOCK: "",
+    };
+
+    const stallAbort = new AbortController();
+    const sessionSignal = AbortSignal.any([signal, stallAbort.signal]);
+
+    interface SessionHolder {
+      session: AgentSession | null;
     }
-  };
 
-  // nudge 只在 CLI 下一 tool round 生效,救得了慢/绕圈,救不了进程楔死。
-  const nudgeAfter = num("AGENT_NUDGE_AFTER_SECONDS", 600);
-  const nudgeGrace = num("AGENT_NUDGE_GRACE_SECONDS", 600);
-  const nudgeMax = num("AGENT_NUDGE_MAX_PER_RUN", 2);
-  const nudgeTemplate = await readFile(
-    join(root, ".github", "agent-prompts", "stuck-nudge.md"),
-    "utf8",
-  );
-  let nudgesUsed = 0;
-  let nudgePendingSince = 0;
-  const watchdog = setInterval(() => {
-    void (async () => {
-      const status = await readStatus(worktrees, issue);
-      if (!status) return;
-      if (["check", "publish", "done", "failed"].includes(status.phase)) return;
-      const now = Date.now();
-      if (nudgePendingSince > 0) {
-        if ((status.lastEvent?.ts ?? 0) > nudgePendingSince) {
-          nudgePendingSince = 0;
-          await patchStatus(worktrees, issue, { nudgedAt: null }).catch(() => {});
+    // error_during_execution 等 provider/网络 transient 同 run 内退避重试;
+    // error_max_turns 等行为类失败重试无益。
+    const runPhase = async (
+      holder: SessionHolder,
+      files: { warm: string; cold: string; resume?: string },
+      outputName: string,
+      keepAlive: boolean,
+    ): Promise<void> => {
+      const max = num("AGENT_EXECUTOR_ATTEMPTS", 4);
+      for (let attempt = 1; ; attempt += 1) {
+        let promptFile = files.warm;
+        if (!holder.session?.isAlive()) {
+          const resumeId = holder.session?.sessionId() ?? null;
+          if (holder.session) await holder.session.close().catch(() => {});
+          holder.session = openAgentSession({
+            worktree,
+            worktrees,
+            issue,
+            env: executorEnv,
+            signal: sessionSignal,
+            resumeSessionId: resumeId ?? undefined,
+          });
+          ctx.sessions.push(holder.session);
+          promptFile = resumeId ? (files.resume ?? files.warm) : files.cold;
+        }
+        ctx.activeSession.current = holder.session;
+        const result = await holder.session.run(promptFile, ctx.artifact(outputName));
+        ctx.activeSession.current = null;
+        if (result.ok) {
+          if (!keepAlive) {
+            await holder.session.close().catch(() => {});
+            holder.session = null;
+          }
           return;
         }
-        if (now - nudgePendingSince > nudgeGrace * 1000) stallAbort.abort();
-        return;
+        if (stallAbort.signal.aborted)
+          throw new WorkerFailure(
+            "Worker stalled and did not recover within the nudge grace period.",
+            "process",
+          );
+        if (attempt >= max || !transient(result)) {
+          await holder.session?.close().catch(() => {});
+          holder.session = null;
+          throw new WorkerFailure(
+            `executor failed: ${outputName} (${result.subtype || "unknown"})`,
+            "process",
+          );
+        }
+        process.stderr.write(`executor attempt ${attempt} failed (transient); retrying\n`);
+        const delay = num("AGENT_EXECUTOR_RETRY_DELAY", 30) * 2 ** (attempt - 1);
+        await new Promise((resolve) => setTimeout(resolve, delay * 1000));
       }
-      const lastTs = status.lastEvent?.ts ?? status.phaseSince;
-      const silentSeconds = Math.floor((now - lastTs) / 1000);
-      if (silentSeconds <= nudgeAfter) return;
-      const session = ctx.activeSession.current;
-      if (!session?.inFlight() || !session.isAlive()) return;
-      if (nudgesUsed >= nudgeMax) {
-        stallAbort.abort();
-        return;
-      }
-      nudgesUsed += 1;
-      nudgePendingSince = now;
-      const reason = `${status.phase}: no executor event for ${Math.floor(silentSeconds / 60)}min`;
-      session.sendNudge(nudgeTemplate.replaceAll("{reason}", reason));
-      await appendEvent(worktrees, issue, {
-        type: "agent",
-        subtype: "nudge",
-        reason,
-        count: nudgesUsed,
-      }).catch(() => {});
-      await patchStatus(worktrees, issue, { nudgedAt: now }).catch(() => {});
-    })().catch(() => {});
-  }, num("AGENT_NUDGE_WATCHDOG_SECONDS", 15) * 1000);
-  watchdog.unref();
-  ctx.watchdog = watchdog;
+    };
 
-  await patchStatus(worktrees, issue, { phase: "implementation" });
-  const implHolder: SessionHolder = { session: null };
-  const continueFile = join(runDir, "continue.md");
-  await writeFile(
-    continueFile,
-    "The previous turn was interrupted by a transport failure. Continue the task from the current worktree state; the issue JSON and instructions are in the earlier conversation.\n",
-  );
-  await runPhase(
-    implHolder,
-    { warm: taskFile, cold: taskFile, resume: continueFile },
-    "implementation.json",
-    true,
-  );
-  if (!(await historyUnchanged()))
-    throw new WorkerFailure(
-      "Agent changed git history instead of leaving a controller-owned diff.",
-      "fatal",
+    // nudge 只在 CLI 下一 tool round 生效,救得了慢/绕圈,救不了进程楔死。
+    const nudgeAfter = num("AGENT_NUDGE_AFTER_SECONDS", 600);
+    const nudgeGrace = num("AGENT_NUDGE_GRACE_SECONDS", 600);
+    const nudgeMax = num("AGENT_NUDGE_MAX_PER_RUN", 2);
+    const nudgeTemplate = await readFile(
+      join(root, ".github", "agent-prompts", "stuck-nudge.md"),
+      "utf8",
     );
+    let nudgesUsed = 0;
+    let nudgePendingSince = 0;
+    const watchdog = setInterval(() => {
+      void (async () => {
+        const status = await readStatus(worktrees, issue);
+        if (!status) return;
+        if (["check", "publish", "done", "failed"].includes(status.phase)) return;
+        const now = Date.now();
+        if (nudgePendingSince > 0) {
+          if ((status.lastEvent?.ts ?? 0) > nudgePendingSince) {
+            nudgePendingSince = 0;
+            await patchStatus(worktrees, issue, { nudgedAt: null }).catch(() => {});
+            return;
+          }
+          if (now - nudgePendingSince > nudgeGrace * 1000) stallAbort.abort();
+          return;
+        }
+        const lastTs = status.lastEvent?.ts ?? status.phaseSince;
+        const silentSeconds = Math.floor((now - lastTs) / 1000);
+        if (silentSeconds <= nudgeAfter) return;
+        const session = ctx.activeSession.current;
+        if (!session?.inFlight() || !session.isAlive()) return;
+        if (nudgesUsed >= nudgeMax) {
+          stallAbort.abort();
+          return;
+        }
+        nudgesUsed += 1;
+        nudgePendingSince = now;
+        const reason = `${status.phase}: no executor event for ${Math.floor(silentSeconds / 60)}min`;
+        session.sendNudge(nudgeTemplate.replaceAll("{reason}", reason));
+        await appendEvent(worktrees, issue, {
+          type: "agent",
+          subtype: "nudge",
+          reason,
+          count: nudgesUsed,
+        }).catch(() => {});
+        await patchStatus(worktrees, issue, { nudgedAt: now }).catch(() => {});
+      })().catch(() => {});
+    }, num("AGENT_NUDGE_WATCHDOG_SECONDS", 15) * 1000);
+    watchdog.unref();
+    ctx.watchdog = watchdog;
 
-  const changedFiles = (
-    await git(worktree, ["ls-files", "--modified", "--others", "--exclude-standard"])
-  )
-    .split("\n")
-    .filter(Boolean);
-  if (changedFiles.length === 0) {
-    const explained = await readFile(ctx.artifact("implementation.json"), "utf8")
-      .then((text) => {
-        const result = (JSON.parse(text) as { result?: unknown }).result;
-        return typeof result === "string" && result.trim() ? result.trim() : null;
-      })
-      .catch(() => null);
-    const detail = explained ? `\n\nAgent's blocker report:\n${explained.slice(0, 2000)}` : "";
-    throw new WorkerFailure(`Agent produced no repository change.${detail}`, "fatal");
-  }
+    await patchStatus(worktrees, issue, { phase: "implementation" });
+    const implHolder: SessionHolder = { session: null };
+    const continueFile = join(runDir, "continue.md");
+    await writeFile(
+      continueFile,
+      "The previous turn was interrupted by a transport failure. Continue the task from the current worktree state; the issue JSON and instructions are in the earlier conversation.\n",
+    );
+    await runPhase(
+      implHolder,
+      { warm: taskFile, cold: taskFile, resume: continueFile },
+      "implementation.json",
+      true,
+    );
+    if (!(await historyUnchanged()))
+      throw new WorkerFailure(
+        "Agent changed git history instead of leaving a controller-owned diff.",
+        "fatal",
+      );
 
-  const fingerprint = async (): Promise<string> => {
-    const diff = await git(worktree, ["diff", "--binary"]);
-    const others = (await git(worktree, ["ls-files", "--others", "--exclude-standard"]))
+    const changedFiles = (
+      await git(worktree, ["ls-files", "--modified", "--others", "--exclude-standard"])
+    )
       .split("\n")
       .filter(Boolean);
-    const hashes: string[] = [];
-    for (const file of others) {
-      hashes.push(`${file} ${await git(worktree, ["hash-object", "--", file]).catch(() => "")}`);
+    if (changedFiles.length === 0) {
+      const explained = await readFile(ctx.artifact("implementation.json"), "utf8")
+        .then((text) => {
+          const result = (JSON.parse(text) as { result?: unknown }).result;
+          return typeof result === "string" && result.trim() ? result.trim() : null;
+        })
+        .catch(() => null);
+      const detail = explained ? `\n\nAgent's blocker report:\n${explained.slice(0, 2000)}` : "";
+      throw new WorkerFailure(`Agent produced no repository change.${detail}`, "fatal");
     }
-    const { createHash } = await import("node:crypto");
-    return createHash("sha1").update(diff).update(hashes.join("\n")).digest("hex");
-  };
 
-  const checkLock = new DirLock(join(worktrees, ".check.lock"));
-  const checkLog = join(runDir, "check.log");
-  const runCheck = async (dir: string, setPhase = true): Promise<boolean> => {
-    if (setPhase) await ctx.timer.transition(worktrees, issue, "check");
-    await checkLock.acquireBlocking();
-    try {
-      const { spawn } = await import("node:child_process");
-      const output = await new Promise<string>((resolve) => {
-        const child = spawn("make", ["-C", dir, "check"], {
-          detached: true,
-          env: process.env,
-        });
-        let text = "";
-        child.stdout?.on("data", (c: string) => (text += c));
-        child.stderr?.on("data", (c: string) => (text += c));
-        const watchdog = setTimeout(() => {
-          try {
-            if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
-          } catch {}
-        }, num("AGENT_CHECK_TIMEOUT_SECONDS", 1800) * 1000);
-        watchdog.unref();
-        child.on("close", (code) => {
-          clearTimeout(watchdog);
-          resolve(`${text}\n__exit=${code ?? 1}`);
-        });
-      });
-      await writeFile(checkLog, output);
-      return output.endsWith("__exit=0");
-    } finally {
-      await checkLock.release();
-    }
-  };
-
-  // review.md 授权复审改码:check 必须与 review 隔离文件系统,故跑在快照里。
-  const createCheckSnapshot = async (): Promise<string | null> => {
-    const snap = join(runDir, "check-snapshot");
-    try {
-      await git(worktree, ["worktree", "add", "--detach", snap, startHead]);
+    const fingerprint = async (): Promise<string> => {
       const diff = await git(worktree, ["diff", "--binary"]);
-      if (diff.trim()) {
-        const diffFile = join(runDir, "check-snapshot.diff");
-        await writeFile(diffFile, diff);
-        await git(snap, ["apply", "--whitespace=nowarn", diffFile]);
-      }
       const others = (await git(worktree, ["ls-files", "--others", "--exclude-standard"]))
         .split("\n")
         .filter(Boolean);
+      const hashes: string[] = [];
       for (const file of others) {
-        await mkdir(join(snap, dirname(file)), { recursive: true });
-        await copyFile(join(worktree, file), join(snap, file));
+        hashes.push(`${file} ${await git(worktree, ["hash-object", "--", file]).catch(() => "")}`);
       }
-      ctx.snapshotDir = snap;
-      return snap;
-    } catch {
-      await git(worktree, ["worktree", "remove", "--force", snap]).catch(() => {});
-      return null;
-    }
-  };
+      const { createHash } = await import("node:crypto");
+      return createHash("sha1").update(diff).update(hashes.join("\n")).digest("hex");
+    };
 
-  let prechecked: boolean | null = null;
-  if (process.env.AGENT_REVIEW_ENABLED !== "0") {
-    await ctx.timer.transition(worktrees, issue, "review");
-    const fp0 = await fingerprint();
-    const snap = await createCheckSnapshot();
-    const snapshotCheck = snap ? runCheck(snap, false) : null;
-    const reviewFile = join(runDir, "review.md");
-    await writeFile(
-      reviewFile,
-      `${await readFile(join(root, ".github", "agent-prompts", "review.md"), "utf8")}${issueBlock}`,
-    );
-    // review 必须独立于 implementation 会话,保持新鲜眼睛。
-    await runPhase({ session: null }, { warm: reviewFile, cold: reviewFile }, "review.json", false);
-    if (!(await historyUnchanged()))
-      throw new WorkerFailure(
-        "Review agent changed git history instead of leaving a controller-owned diff.",
-        "fatal",
-      );
-    const reviewChanged = (await fingerprint()) !== fp0;
-    if (snapshotCheck) {
-      if (!reviewChanged) await ctx.timer.transition(worktrees, issue, "check");
-      const result = await snapshotCheck.catch(() => null);
-      if (!reviewChanged) prechecked = result;
-    }
-  }
+    const checkLock = new DirLock(join(worktrees, ".check.lock"));
+    const checkLog = join(runDir, "check.log");
+    const runCheck = async (dir: string, setPhase = true): Promise<boolean> => {
+      if (setPhase) await ctx.timer.transition(worktrees, issue, "check");
+      await checkLock.acquireBlocking();
+      try {
+        const { spawn } = await import("node:child_process");
+        const output = await new Promise<string>((resolve) => {
+          const child = spawn("make", ["-C", dir, "check"], {
+            detached: true,
+            env: process.env,
+          });
+          let text = "";
+          child.stdout?.on("data", (c: string) => (text += c));
+          child.stderr?.on("data", (c: string) => (text += c));
+          const watchdog = setTimeout(() => {
+            try {
+              if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+            } catch {}
+          }, num("AGENT_CHECK_TIMEOUT_SECONDS", 1800) * 1000);
+          watchdog.unref();
+          child.on("close", (code) => {
+            clearTimeout(watchdog);
+            resolve(`${text}\n__exit=${code ?? 1}`);
+          });
+        });
+        await writeFile(checkLog, output);
+        return output.endsWith("__exit=0");
+      } finally {
+        await checkLock.release();
+      }
+    };
 
-  const maxFixRounds = num("AGENT_FIX_MAX_ROUNDS", 3);
-  const maxSweepRounds = num("AGENT_SWEEP_MAX_ROUNDS", 3);
-  let fixRound = 0;
-  let sweepRound = 0;
-  for (;;) {
-    const ok = prechecked ?? (await runCheck(worktree));
-    prechecked = null;
-    if (ok) {
-      if (process.env.AGENT_COMMENT_SWEEP_ENABLED === "0") break;
-      if (sweepRound >= maxSweepRounds) break;
-      sweepRound += 1;
-      await ctx.timer.transition(worktrees, issue, "sweep");
-      const sweepFile = join(runDir, "sweep.md");
+    // review.md 授权复审改码:check 必须与 review 隔离文件系统,故跑在快照里。
+    const createCheckSnapshot = async (): Promise<string | null> => {
+      const snap = join(runDir, "check-snapshot");
+      try {
+        await git(worktree, ["worktree", "add", "--detach", snap, startHead]);
+        const diff = await git(worktree, ["diff", "--binary"]);
+        if (diff.trim()) {
+          const diffFile = join(runDir, "check-snapshot.diff");
+          await writeFile(diffFile, diff);
+          await git(snap, ["apply", "--whitespace=nowarn", diffFile]);
+        }
+        const others = (await git(worktree, ["ls-files", "--others", "--exclude-standard"]))
+          .split("\n")
+          .filter(Boolean);
+        for (const file of others) {
+          await mkdir(join(snap, dirname(file)), { recursive: true });
+          await copyFile(join(worktree, file), join(snap, file));
+        }
+        ctx.snapshotDir = snap;
+        return snap;
+      } catch {
+        await git(worktree, ["worktree", "remove", "--force", snap]).catch(() => {});
+        return null;
+      }
+    };
+
+    let prechecked: boolean | null = null;
+    if (process.env.AGENT_REVIEW_ENABLED !== "0") {
+      await ctx.timer.transition(worktrees, issue, "review");
+      const fp0 = await fingerprint();
+      const snap = await createCheckSnapshot();
+      const snapshotCheck = snap ? runCheck(snap, false) : null;
+      const reviewFile = join(runDir, "review.md");
       await writeFile(
-        sweepFile,
-        `${await readFile(join(root, ".github", "agent-prompts", "comment-sweep.md"), "utf8")}${issueBlock}`,
+        reviewFile,
+        `${await readFile(join(root, ".github", "agent-prompts", "review.md"), "utf8")}${issueBlock}`,
       );
-      const before = await fingerprint();
-      // sweep 同 review:独立会话,避免实现会话偏护自己写的注释。
       await runPhase(
         { session: null },
-        { warm: sweepFile, cold: sweepFile },
-        `sweep-${sweepRound}.json`,
+        { warm: reviewFile, cold: reviewFile },
+        "review.json",
         false,
       );
       if (!(await historyUnchanged()))
         throw new WorkerFailure(
-          "Comment sweep changed git history instead of leaving a controller-owned diff.",
+          "Review agent changed git history instead of leaving a controller-owned diff.",
           "fatal",
         );
-      // 清扫可能误删指令注释,有改动就必须重跑 check。
-      if (before === (await fingerprint())) break;
-    } else {
-      fixRound += 1;
-      if (fixRound > maxFixRounds)
-        throw new WorkerFailure(
-          `Deterministic make check failed after ${maxFixRounds} fix rounds.`,
-          "exhausted",
-        );
-      await ctx.timer.transition(worktrees, issue, "fix");
-      const checkTail = (await readFile(checkLog, "utf8").catch(() => ""))
-        .split("\n")
-        .slice(-200)
-        .join("\n");
-      const fixColdFile = join(runDir, "fix.md");
-      await writeFile(
-        fixColdFile,
-        `${await readFile(promptFile, "utf8")}${issueBlock}\n<failed_check_log>\n${checkTail}\n</failed_check_log>\nFull log: ${checkLog}\n`,
-      );
-      const fixWarmFile = join(runDir, "fix-warm.md");
-      await writeFile(
-        fixWarmFile,
-        `\`make check\` failed. Fix the failures below; keep changes minimal and do not rewrite git history. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
-      );
-      const fixResumeFile = join(runDir, "fix-resume.md");
-      await writeFile(
-        fixResumeFile,
-        `The previous turn was interrupted by a transport failure. Continue fixing the \`make check\` failures from the current worktree state. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
-      );
-      await runPhase(
-        implHolder,
-        { warm: fixWarmFile, cold: fixColdFile, resume: fixResumeFile },
-        `fix-${fixRound}.json`,
-        true,
-      );
-      if (!(await historyUnchanged()))
-        throw new WorkerFailure(
-          "Fix agent changed git history instead of leaving a controller-owned diff.",
-          "fatal",
-        );
+      const reviewChanged = (await fingerprint()) !== fp0;
+      if (snapshotCheck) {
+        if (!reviewChanged) await ctx.timer.transition(worktrees, issue, "check");
+        const result = await snapshotCheck.catch(() => null);
+        if (!reviewChanged) prechecked = result;
+      }
     }
-  }
 
-  // message 格式说明只进这个收尾轮,不进 task.md:实现阶段的注意力是稀缺资源。
-  await ctx.timer.transition(worktrees, issue, "message");
-  const messageColdFile = join(runDir, "commit-message.md");
-  await writeFile(
-    messageColdFile,
-    `Inspect the uncommitted worktree diff (\`git diff\` and untracked files) against the attached issue JSON and write the commit message for this work to \`${messageFile}\` in the worktree root. Format — first line \`<type>: <one-line summary>\` with type one of feat, fix, refactor, chore, docs, test, perf (no scope); then a blank line, a 2–3 line summary of what changed, a blank line, and \`Refs #${issue}\`. Match the issue's language. Write only that file: do not commit, do not edit code.${issueBlock}`,
-  );
-  const messageWarmFile = join(runDir, "commit-message-warm.md");
-  await writeFile(
-    messageWarmFile,
-    `The work is done and all checks pass. Write the commit message for what you implemented to \`${messageFile}\` in the worktree root. Format — first line \`<type>: <one-line summary>\` with type one of feat, fix, refactor, chore, docs, test, perf (no scope); then a blank line, a 2–3 line summary of what changed, a blank line, and \`Refs #${issue}\`. Match the issue's language. Write only that file: do not commit, do not edit code.\n`,
-  );
-  await runPhase(
-    implHolder,
-    { warm: messageWarmFile, cold: messageColdFile },
-    "commit-message.json",
-    false,
-  );
-  if (!(await historyUnchanged()))
-    throw new WorkerFailure(
-      "Commit-message agent changed git history instead of leaving a controller-owned diff.",
-      "fatal",
+    const maxFixRounds = num("AGENT_FIX_MAX_ROUNDS", 3);
+    const maxSweepRounds = num("AGENT_SWEEP_MAX_ROUNDS", 3);
+    let fixRound = 0;
+    let sweepRound = 0;
+    for (;;) {
+      const ok = prechecked ?? (await runCheck(worktree));
+      prechecked = null;
+      if (ok) {
+        if (process.env.AGENT_COMMENT_SWEEP_ENABLED === "0") break;
+        if (sweepRound >= maxSweepRounds) break;
+        sweepRound += 1;
+        await ctx.timer.transition(worktrees, issue, "sweep");
+        const sweepFile = join(runDir, "sweep.md");
+        await writeFile(
+          sweepFile,
+          `${await readFile(join(root, ".github", "agent-prompts", "comment-sweep.md"), "utf8")}${issueBlock}`,
+        );
+        const before = await fingerprint();
+        await runPhase(
+          { session: null },
+          { warm: sweepFile, cold: sweepFile },
+          `sweep-${sweepRound}.json`,
+          false,
+        );
+        if (!(await historyUnchanged()))
+          throw new WorkerFailure(
+            "Comment sweep changed git history instead of leaving a controller-owned diff.",
+            "fatal",
+          );
+        // 清扫可能误删指令注释。
+        if (before === (await fingerprint())) break;
+      } else {
+        fixRound += 1;
+        if (fixRound > maxFixRounds)
+          throw new WorkerFailure(
+            `Deterministic make check failed after ${maxFixRounds} fix rounds.`,
+            "exhausted",
+          );
+        await ctx.timer.transition(worktrees, issue, "fix");
+        const checkTail = (await readFile(checkLog, "utf8").catch(() => ""))
+          .split("\n")
+          .slice(-200)
+          .join("\n");
+        const fixColdFile = join(runDir, "fix.md");
+        await writeFile(
+          fixColdFile,
+          `${await readFile(promptFile, "utf8")}${issueBlock}\n<failed_check_log>\n${checkTail}\n</failed_check_log>\nFull log: ${checkLog}\n`,
+        );
+        const fixWarmFile = join(runDir, "fix-warm.md");
+        await writeFile(
+          fixWarmFile,
+          `\`make check\` failed. Fix the failures below; keep changes minimal and do not rewrite git history. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+        );
+        const fixResumeFile = join(runDir, "fix-resume.md");
+        await writeFile(
+          fixResumeFile,
+          `The previous turn was interrupted by a transport failure. Continue fixing the \`make check\` failures from the current worktree state. Full log: ${checkLog}.\n\n<failed_check_log>\n${checkTail}\n</failed_check_log>\n`,
+        );
+        await runPhase(
+          implHolder,
+          { warm: fixWarmFile, cold: fixColdFile, resume: fixResumeFile },
+          `fix-${fixRound}.json`,
+          true,
+        );
+        if (!(await historyUnchanged()))
+          throw new WorkerFailure(
+            "Fix agent changed git history instead of leaving a controller-owned diff.",
+            "fatal",
+          );
+      }
+    }
+
+    await ctx.timer.transition(worktrees, issue, "message");
+    const messageColdFile = join(runDir, "commit-message.md");
+    await writeFile(
+      messageColdFile,
+      `Inspect the uncommitted worktree diff (\`git diff\` and untracked files) against the attached issue JSON and write the commit message for this work to \`${messageFile}\` in the worktree root. Format — first line \`<type>: <one-line summary>\` with type one of feat, fix, refactor, chore, docs, test, perf (no scope); then a blank line, a 2–3 line summary of what changed, a blank line, and \`Refs #${issue}\`. Match the issue's language. Write only that file: do not commit, do not edit code.${issueBlock}`,
     );
+    const messageWarmFile = join(runDir, "commit-message-warm.md");
+    await writeFile(
+      messageWarmFile,
+      `The work is done and all checks pass. Write the commit message for what you implemented to \`${messageFile}\` in the worktree root. Format — first line \`<type>: <one-line summary>\` with type one of feat, fix, refactor, chore, docs, test, perf (no scope); then a blank line, a 2–3 line summary of what changed, a blank line, and \`Refs #${issue}\`. Match the issue's language. Write only that file: do not commit, do not edit code.\n`,
+    );
+    await runPhase(
+      implHolder,
+      { warm: messageWarmFile, cold: messageColdFile },
+      "commit-message.json",
+      false,
+    );
+    if (!(await historyUnchanged()))
+      throw new WorkerFailure(
+        "Commit-message agent changed git history instead of leaving a controller-owned diff.",
+        "fatal",
+      );
 
-  // publish 不再需要模型;先关会话,publish 挂起时不拖子进程。
-  if (implHolder.session) {
-    await implHolder.session.close().catch(() => {});
-    implHolder.session = null;
+    if (implHolder.session) {
+      await implHolder.session.close().catch(() => {});
+      implHolder.session = null;
+    }
   }
   if (!(await claimOwned(worktree, ctx.claimFile)))
     throw new WorkerFailure("Agent lost its distributed claim before publication.", "process");
@@ -622,9 +660,13 @@ async function runPipeline(
   await writeFile(messagePath, authored || fallback);
   await git(worktree, ["config", "user.name", "insuredesk-agent"]);
   await git(worktree, ["config", "user.email", "insuredesk-agent@users.noreply.github.com"]);
-  await git(worktree, ["add", "--all"]);
-  // repair 复跑改写已推送的 commit,顺带覆盖修复内容。
-  await git(worktree, ["commit", ...(repair ? ["--amend"] : []), "-F", messagePath]);
+  if (!resumePublish) {
+    await git(worktree, ["add", "--all"]);
+    // repair 复跑改写已推送的 commit,顺带覆盖修复内容。
+    await git(worktree, ["commit", ...(repair ? ["--amend"] : []), "-F", messagePath]);
+    ctx.publishCommitted = true;
+    await writeFile(publishPendingFile, `${(await git(worktree, ["rev-parse", "HEAD"])).trim()}\n`);
+  }
   try {
     // amend 后远端已有旧 commit,必须 lease 覆盖。
     await git(worktree, ["push", "--set-upstream", "--force-with-lease", "origin", "HEAD"]);
@@ -632,7 +674,6 @@ async function runPipeline(
     throw new WorkerFailure("Agent could not push its publication branch.", "process");
   }
 
-  const branch = (await git(worktree, ["branch", "--show-current"])).trim();
   const existing = await ghJson<Array<{ number: number }>>([
     "pr",
     "list",
@@ -681,20 +722,19 @@ async function runPipeline(
     issue,
     `Agent PR #${pr} published after review and full CI-equivalent checks.${outsideNote}${messageNote}\n\n${ctx.timer.report()}`,
   );
-  return startHead;
+  await rm(publishPendingFile, { force: true });
 }
 
 async function handleFailure(
   issue: number,
   worktrees: string,
   worktree: string,
-  startHead: string,
   error: WorkerFailure,
-  timer: PhaseTimer,
+  ctx: PipelineContext,
 ): Promise<void> {
-  await timer.finish(worktrees, issue, "failed");
-  if (startHead) {
-    await git(worktree, ["reset", "--hard", startHead]).catch(() => {});
+  await ctx.timer.finish(worktrees, issue, "failed");
+  if (!ctx.publishCommitted && ctx.startHead) {
+    await git(worktree, ["reset", "--hard", ctx.startHead]).catch(() => {});
     await git(worktree, ["clean", "-fd"]).catch(() => {});
   }
 
@@ -725,7 +765,7 @@ async function handleFailure(
     if (requeues < requeueMax) {
       await commentIssue(
         issue,
-        `<!-- agent-requeue:${requeues + 1} --> ${error.message} Requeued automatically (${requeues + 1}/${requeueMax}); a further process-level failure will block. ${timer.report()}`,
+        `<!-- agent-requeue:${requeues + 1} --> ${error.message} Requeued automatically (${requeues + 1}/${requeueMax}); a further process-level failure will block. ${ctx.timer.report()}`,
       );
       await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
       return;
@@ -734,7 +774,7 @@ async function handleFailure(
   await editIssue(issue, { add: ["agent:blocked"], remove: ["agent:running", "agent:queued"] });
   await commentIssue(
     issue,
-    `${error.message} See .worktrees/issue-${issue}.log for executor output. ${timer.report()}`,
+    `${error.message} See .worktrees/issue-${issue}.log for executor output. ${ctx.timer.report()}`,
   );
   // 桌面通知只在真实跑单时有意义;测试用 AGENT_BLOCK_NOTIFY=0 关掉。
   if (process.env.AGENT_BLOCK_NOTIFY === "0") return;

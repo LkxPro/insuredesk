@@ -40,7 +40,6 @@ const num = (key: string, fallback: number) => {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 };
 
-// 常驻下同一组 skip 每 tick 重打会淹没真异常。
 let lastSkipSignature = "";
 
 const LABELS: Array<[name: string, description: string, color: string]> = [
@@ -156,10 +155,10 @@ async function issueWorktrees(worktrees: string): Promise<WorktreeEntry[]> {
     .map((entry) => ({ issue: Number.parseInt(entry.slice(6), 10), path: join(worktrees, entry) }));
 }
 
-async function artifactCleanup(worktrees: string, issue: number): Promise<void> {
+export async function artifactCleanup(worktrees: string, issue: number): Promise<void> {
   const names = (await readdir(worktrees).catch(() => [] as string[])).filter((name) =>
     new RegExp(
-      `^issue-${issue}\\.(claim|pid|log|publishing|status\\.json|events\\.jsonl|implementation\\.json|review\\.json|commit-message\\.json|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
+      `^issue-${issue}\\.(claim|pid|log|publishing|publish-pending|status\\.json|events\\.jsonl|implementation\\.json|review\\.json|commit-message\\.json|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
     ).test(name),
   );
   for (const name of names) await rm(join(worktrees, name), { force: true });

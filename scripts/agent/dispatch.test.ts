@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
-import { releaseClosedRemoteClaims, requeueWithBudget, validateBody } from "./dispatch.ts";
+import {
+  artifactCleanup,
+  releaseClosedRemoteClaims,
+  requeueWithBudget,
+  validateBody,
+} from "./dispatch.ts";
 import { DirLock } from "./lock.ts";
 
 const execFileP = promisify(execFile);
@@ -217,4 +222,22 @@ test("恢复预算耗尽 → agent:blocked,不再复活", async () => {
     assert.ok(calls.includes("Requeue budget (2) exhausted"));
     assert.ok(!calls.includes("--add-label agent:queued"));
   });
+});
+
+test("artifactCleanup 清关单残留:含 publish-pending 标记,不碰其他 issue", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cleanup-test-"));
+  try {
+    for (const name of [
+      "issue-7.log",
+      "issue-7.publish-pending",
+      "issue-7.publishing",
+      "issue-8.publish-pending",
+      "keep.txt",
+    ])
+      await writeFile(join(dir, name), "x");
+    await artifactCleanup(dir, 7);
+    assert.deepEqual((await readdir(dir)).sort(), ["issue-8.publish-pending", "keep.txt"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

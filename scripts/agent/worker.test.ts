@@ -275,7 +275,6 @@ test("check 永久失败打满 fix 轮次 → exhausted→blocked", async () => 
 });
 
 test("pause_turn 自动续跑:executor 注 Continue.,run 等真完成", async () => {
-  // 任务轮先回 pause_turn(空 result),executor 必须续跑而不是把空 diff 交给后面。
   const claude = `while IFS= read -r line; do
   printf '%s\\n' "$line" >>"$AGENT_TEST_CLAUDE_STDIN"
   case $line in
@@ -304,7 +303,6 @@ done`;
 });
 
 test("fix 轮复用 implementation 会话(warm 短 prompt)", async () => {
-  // make 第一次失败、第二次成功,逼出恰好一轮 fix。
   const make = `if [ -f "$AGENT_TEST_CAPTURE.make-failed" ]; then exit 0
 else touch "$AGENT_TEST_CAPTURE.make-failed"; exit 1
 fi`;
@@ -315,14 +313,12 @@ fi`;
   });
   const captured = await readFile(join(sandbox.dir, "claude-stdin"), "utf8");
   const lines = captured.split("\n").filter(Boolean);
-  // 同一会话收到 impl + warm fix 两轮;task.md 只出现一次,warm 短指令带上日志块。
   assert.equal(lines.filter((l) => l.includes("Implement the issue")).length, 1);
   assert.ok(captured.includes("`make check` failed. Fix"));
   assert.ok(captured.includes("failed_check_log"));
 });
 
 test("implementation 会话死亡 → fix 轮以 --resume 续跑同会话", async () => {
-  // 会话在 implementation 轮后退出;fix 轮检测死亡 → 带 session_id 以 --resume 重开。
   const claude = `printf '%s\\n' "$*" >>"$AGENT_TEST_CLAUDE_ARGS"
 while IFS= read -r line; do
   printf '%s\\n' "$line" >>"$AGENT_TEST_CLAUDE_STDIN"
@@ -347,13 +343,11 @@ fi`;
   const args = await readFile(join(sandbox.dir, "claude-args"), "utf8");
   assert.ok(args.includes("--resume sess-7"));
   const captured = await readFile(join(sandbox.dir, "claude-stdin"), "utf8");
-  // 续跑收到的是中断续跑 prompt;完整 task.md 只发过一次(首轮)。
   assert.ok(captured.includes("interrupted by a transport failure"));
   assert.equal(captured.split("\n").filter((l) => l.includes("Implement the issue")).length, 1);
 });
 
 test("会话未 init 即死(无 session_id)→ 完整 prompt 冷启动,无 --resume", async () => {
-  // 首个进程不出任何事件直接退出;重开时无 session_id 可续,走 cold。
   const claude = `printf '%s\\n' "$*" >>"$AGENT_TEST_CLAUDE_ARGS"
 n=$(cat "$AGENT_TEST_CAPTURE.n" 2>/dev/null || echo 0)
 n=$((n+1))
@@ -378,7 +372,6 @@ done`;
 });
 
 test("stall 后 nudge 软干预恢复,pipeline 照常完成", async () => {
-  // implementation 轮静默 3s 触发 nudge;随后正常出 result。
   const claude = `while IFS= read -r line; do
   case $line in
     *'Implement the issue'*) sleep 3 ;;
@@ -410,7 +403,6 @@ done`;
 });
 
 test("nudge 宽限耗尽 → stall abort → process 级失败自动重排队", async () => {
-  // 吞掉所有输入永不出事件:楔死型 stall。
   const claude = "while IFS= read -r line; do :; done";
   const sandbox = await makeSandbox(claude, MAKE_OK);
   await withEnv(
@@ -467,7 +459,6 @@ done`;
 });
 
 test("success+is_error 矛盾结果按 transient 同会话重试,不消耗重排队", async () => {
-  // 第一轮回报 success 但 is_error=true(transport 层失败);重试轮正常。
   const claude = `count=0
 while IFS= read -r line; do
   count=$((count+1))
@@ -508,7 +499,6 @@ test("claude 启动即死:stdin EPIPE 不崩溃,transient 打满后按进程级�
 });
 
 test("sweep 每轮都改动也不死循环:达到上限在 check 绿态收束发布", async () => {
-  // sweep 轮每轮都删一点"注释"(改动 fingerprint),不收敛。
   const claude = `while IFS= read -r line; do
   printf '%s\\n' "$line" >>"$AGENT_TEST_CLAUDE_STDIN"
   case $line in
@@ -530,12 +520,9 @@ done`;
 });
 
 test("发布前 claim 丢失 → process 失败,自动重排队一次", async () => {
-  // heartbeat 间隔拉到 1 小时,模拟不到;直接让 fence 前的 claimOwned 失败:
-  // claim 之后立刻由"另一克隆"把远端 refs 删掉。
   const sandbox = await makeSandbox(CLAUDE_HAPPY, MAKE_OK);
   await withEnv(sandboxEnv(sandbox), async () => {
     assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
-    // 用 shim 包一层 git:收到 push --atomic 创建 claim 之外的 ls-remote 时先删远端。
     await git(sandbox.origin, ["update-ref", "-d", claimRefOf(7)]);
     await git(sandbox.origin, ["update-ref", "-d", "refs/heads/agent-slots/1"]);
     assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 1);
@@ -543,4 +530,96 @@ test("发布前 claim 丢失 → process 失败,自动重排队一次", async ()
   const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
   assert.ok(calls.includes("agent-requeue:1"));
   assert.ok(calls.includes("--add-label agent:queued"));
+});
+
+test("publish 相 push 失败保留本地 commit,重领取跳过实现直接从 publish 续跑", async () => {
+  const sandbox = await makeSandbox(
+    CLAUDE_HAPPY,
+    `printf 'ran\\n' >>"$AGENT_TEST_CAPTURE.make-runs"
+exit 0`,
+  );
+  // claim/fence 的 --atomic push 也经此 shim,case 不能误拦。
+  const realGit = (await run("which", ["git"])).stdout.trim();
+  await writeShim(
+    sandbox.bin,
+    "git",
+    `case "$*" in
+  *'push --set-upstream --force-with-lease origin HEAD'*)
+    if [ ! -f "$AGENT_TEST_CAPTURE.push-failed" ]; then
+      touch "$AGENT_TEST_CAPTURE.push-failed"
+      echo 'simulated push outage' >&2
+      exit 1
+    fi
+    ;;
+esac
+exec "${realGit}" "$@"`,
+  );
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 1);
+  });
+  const publishSha = await git(sandbox.repo, ["rev-parse", "HEAD"]);
+  assert.equal(await git(sandbox.repo, ["log", "-1", "--format=%s"]), "feat: 实现工单");
+  assert.equal(await git(sandbox.repo, ["rev-list", "--count", "origin/main..HEAD"]), "1");
+  assert.equal(
+    await git(sandbox.repo, ["ls-files", "--modified", "--others", "--exclude-standard"]),
+    "",
+  );
+  assert.equal(
+    (await readFile(join(sandbox.worktrees, "issue-7.publish-pending"), "utf8")).trim(),
+    publishSha,
+  );
+  const calls1 = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls1.includes("agent-requeue:1"));
+  assert.ok(!(await git(sandbox.origin, ["branch", "--list"])).includes("codex/issue-7"));
+
+  await rm(join(sandbox.dir, "claude-stdin"), { force: true });
+  await rm(join(sandbox.dir, "gh-calls.make-runs"), { force: true });
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  assert.equal(await git(sandbox.repo, ["rev-parse", "HEAD"]), publishSha);
+  await assert.rejects(readFile(join(sandbox.dir, "claude-stdin"), "utf8"));
+  await assert.rejects(readFile(join(sandbox.dir, "gh-calls.make-runs"), "utf8"));
+  const calls2 = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls2.includes("pr create"));
+  await assert.rejects(readFile(join(sandbox.worktrees, "issue-7.publish-pending"), "utf8"));
+  assert.equal(await git(sandbox.origin, ["rev-list", "--count", "main..codex/issue-7"]), "1");
+  assert.equal(
+    await git(sandbox.origin, ["log", "-1", "--format=%s", "codex/issue-7"]),
+    "feat: 实现工单",
+  );
+});
+
+test("非 publish 相失败仍 reset 到 startHead 并清残留", async () => {
+  const sandbox = await makeSandbox(CLAUDE_HAPPY, "exit 1");
+  await withEnv({ ...sandboxEnv(sandbox), AGENT_FIX_MAX_ROUNDS: "1" }, async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 1);
+  });
+  assert.equal(
+    await git(sandbox.repo, ["rev-parse", "HEAD"]),
+    await git(sandbox.repo, ["rev-parse", "origin/main"]),
+  );
+  assert.equal(
+    await git(sandbox.repo, ["ls-files", "--modified", "--others", "--exclude-standard"]),
+    "",
+  );
+  await assert.rejects(readFile(join(sandbox.worktrees, "issue-7.publish-pending"), "utf8"));
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls.includes("--add-label agent:blocked"));
+});
+
+test("publish-pending 标记与 HEAD 不符则忽略,全量重跑并清掉旧标记", async () => {
+  const sandbox = await makeSandbox(CLAUDE_HAPPY, MAKE_OK);
+  await writeFile(join(sandbox.worktrees, "issue-7.publish-pending"), `${"0".repeat(40)}\n`);
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const captured = await readFile(join(sandbox.dir, "claude-stdin"), "utf8");
+  assert.ok(captured.includes("Implement the issue"));
+  assert.equal(await git(sandbox.origin, ["rev-list", "--count", "main..codex/issue-7"]), "1");
+  await assert.rejects(readFile(join(sandbox.worktrees, "issue-7.publish-pending"), "utf8"));
 });
