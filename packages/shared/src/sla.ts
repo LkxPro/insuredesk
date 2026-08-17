@@ -2,27 +2,15 @@ import { z } from "zod";
 import { reminderRuleTypeSchema } from "./enums.ts";
 import { legacyComplaintLevelInputSchema } from "./ticket.ts";
 
-/**
- * SLAPolicy contracts: the 时效策略 catalog entity holds the first-response
- * red-line, the overdue duration, and a typed list of reminder rules. The
- * rules are stored as JSONB and validated with these schemas at every
- * read/write boundary, so the database column can never hold a shape the
- * apps don't understand.
- */
-
 export const followUpCheckpointRuleSchema = z.object({
   type: z.literal(reminderRuleTypeSchema.enum.follow_up_checkpoint),
-  /** Checkpoint measured from ticket createdAt (hours). */
   checkpointHours: z.number().int().positive(),
-  /** Cumulative comment count required by the checkpoint (not per-interval). */
   requiredCount: z.number().int().positive(),
-  /** How long before the checkpoint the ticket enters "my to-do" (minutes). */
   advanceMinutes: z.number().int().nonnegative(),
 });
 
 export const rollingFollowUpRuleSchema = z.object({
   type: z.literal(reminderRuleTypeSchema.enum.rolling_follow_up),
-  /** Max gap since the last comment before the ticket enters "my to-do" (hours). */
   intervalHours: z.number().int().positive(),
 });
 
@@ -36,14 +24,6 @@ export type FollowUpCheckpointRule = z.infer<typeof followUpCheckpointRuleSchema
 export type RollingFollowUpRule = z.infer<typeof rollingFollowUpRuleSchema>;
 export type ReminderRule = z.infer<typeof reminderRuleSchema>;
 
-/**
- * 管理员编辑器 payload. Stricter than the storage schema on purpose: the
- * read boundary tolerates advanceMinutes = 0, but saving one would create a
- * dead rule (the alert window [checkpoint − advance, checkpoint) is empty),
- * and an advance ≥ the checkpoint itself would open the window before the
- * ticket even exists — both are admin mistakes the form must reject, not
- * shapes to store.
- */
 export const slaPolicyEditableRuleSchema = reminderRuleSchema.superRefine((rule, ctx) => {
   if (rule.type !== "follow_up_checkpoint") {
     return;
@@ -63,18 +43,12 @@ export const slaPolicyEditableRuleSchema = reminderRuleSchema.superRefine((rule,
   }
 });
 
-// ---------------------------------------------------------------------------
-// 时效策略目录契约：实体类型 + CRUD input + sla.options 输出
-// ---------------------------------------------------------------------------
-
-/** 策略名：trim 后非空；全表唯一（含停用行）由服务端执法。 */
 export const slaPolicyNameSchema = z
   .string()
   .trim()
   .min(1, "策略名称不能为空")
   .max(100, "策略名称不能超过 100 字");
 
-/** 新建时效策略 (sla.create)：sortOrder 服务端追加到末尾，active 恒 true。 */
 export const slaPolicyCreateInputSchema = z.object({
   name: slaPolicyNameSchema,
   description: z
@@ -90,7 +64,7 @@ export const slaPolicyCreateInputSchema = z.object({
 });
 export type SlaPolicyCreateInput = z.output<typeof slaPolicyCreateInputSchema>;
 
-/** 按 id 分项更新 (sla.update)：缺席字段保持原值；description 传 null = 清空。 */
+/** description 传 null = 清空。 */
 export const slaPolicyUpdateInputSchema = z.object({
   id: z.string().min(1),
   complaintLevel: legacyComplaintLevelInputSchema,
@@ -102,7 +76,6 @@ export const slaPolicyUpdateInputSchema = z.object({
 });
 export type SlaPolicyUpdateInput = z.infer<typeof slaPolicyUpdateInputSchema>;
 
-/** 整组排序 (sla.sort)：清单须恰好覆盖全部策略（含停用行），顺序即新 sortOrder。 */
 export const slaPolicySortInputSchema = z.object({
   policyIds: z.array(z.string().min(1)).min(1),
 });
@@ -114,7 +87,6 @@ export const slaPolicySetActiveInputSchema = z.object({
 });
 export type SlaPolicySetActiveInput = z.infer<typeof slaPolicySetActiveInputSchema>;
 
-/** 时效策略实体（sla.list 行，含停用行）。 */
 export interface SlaPolicyEntity {
   id: string;
   name: string;
@@ -127,7 +99,6 @@ export interface SlaPolicyEntity {
   updatedAt: string;
 }
 
-/** sla.options 输出项：登录可用的录入下拉源，只含启用策略（按 sortOrder 升序）。 */
 export interface SlaPolicyOption {
   id: string;
   name: string;
@@ -141,10 +112,6 @@ export interface SlaPolicyDefaults {
   reminderRules: ReminderRule[];
 }
 
-/**
- * 出厂策略的播种默认值（此后归管理员维护）。顺序即出厂 sortOrder；dueAt
- * derives from overdueHours at ticket creation — never hardcoded in ticket logic.
- */
 export const DEFAULT_SLA_POLICIES: readonly (SlaPolicyDefaults & { name: string })[] = [
   {
     name: "一般投诉",
@@ -186,18 +153,10 @@ export const DEFAULT_SLA_POLICIES: readonly (SlaPolicyDefaults & { name: string 
   },
 ];
 
-/**
- * Human-readable 首响要求 stamped onto the ticket at creation, derived from the
- * selected level's SLA config.
- */
 export function formatFirstResponseRequirement(firstResponseMinutes: number): string {
   return `${firstResponseMinutes}分钟内完成首次响应`;
 }
 
-/**
- * Human-readable 跟进频次要求 stamped onto the ticket at creation, derived from
- * the selected level's reminder rules.
- */
 export function formatFollowUpFrequency(rules: readonly ReminderRule[]): string {
   return rules
     .map((rule) =>
