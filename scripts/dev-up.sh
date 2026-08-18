@@ -88,6 +88,40 @@ interrupted() {
   exit "$rc"
 }
 
+# 就绪探针只认 LISTEN，上轮 dev 的残留会被误当成就绪（strictPort 的新 vite
+# 随后撞 EADDRINUSE）。开跑前清场：只杀命令行或 cwd 落在本仓库的占用者，
+# 外来进程报错交给用户。
+foreign=0
+for p in "$web_port" "$api_port"; do
+  for pid in $(lsof -tiTCP:"$p" -sTCP:LISTEN 2>/dev/null); do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+    [ -n "$cmd$cwd" ] || continue
+    case "$cmd$cwd" in
+      *"$root"*)
+        echo "→ 清掉上轮 dev 残留：${cmd}（pid ${pid}，端口 ${p}）"
+        kill "$pid" 2>/dev/null || true
+        ;;
+      *)
+        echo "✗ 端口 ${p} 被本仓库外的进程占用：${cmd}（pid ${pid}），先停掉它" >&2
+        foreign=1
+        ;;
+    esac
+  done
+done
+[ "$foreign" -eq 0 ] || exit 1
+
+deadline=$((SECONDS + 10))
+while listening "$web_port" || listening "$api_port"; do
+  if [ "$SECONDS" -ge "$deadline" ]; then
+    for p in "$web_port" "$api_port"; do
+      lsof -tiTCP:"$p" -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+    done
+    break
+  fi
+  sleep 1
+done
+
 echo "→ pnpm dev（Ctrl-C 停止；db 容器保持运行，make down 停它）"
 pnpm dev &
 dev_pid=$!
