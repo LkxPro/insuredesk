@@ -166,7 +166,15 @@ export function ExternalTicketsPage() {
           <Button onClick={() => setSubmitOpen(true)}>新建工单</Button>
         </>
       )}
-      filters={({ query, searchDraft, setSearchDraft, submitSearch, setParam, setParams }) => (
+      filters={({
+        query,
+        searchDraft,
+        setSearchDraft,
+        submitSearch,
+        clearSearch,
+        setParam,
+        setParams,
+      }) => (
         <>
           <MultiSelectFilter
             label="状态"
@@ -190,6 +198,7 @@ export function ExternalTicketsPage() {
             draft={searchDraft}
             onDraftChange={setSearchDraft}
             onSubmit={submitSearch}
+            onClear={clearSearch}
             placeholder="工单号 / 保单号 / 工单原文"
           />
         </>
