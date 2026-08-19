@@ -15,7 +15,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
-import { AssigneePicker } from "./AssigneePicker";
+import { SearchableCombobox } from "./SearchableCombobox";
 
 /**
  * 分配 / 改派 / 批量分配 dialog. mode="single" drives ticket.assign,
@@ -145,13 +145,19 @@ export function AssignTicketDialog({
 
         <Field>
           <FieldLabel htmlFor="assignee">责任人</FieldLabel>
-          <AssigneePicker
+          <SearchableCombobox
             id="assignee"
             options={options.data ?? []}
             value={assigneeId}
             onChange={setAssigneeId}
-            currentAssigneeId={single?.assigneeId}
             disabled={options.isLoading}
+            autoFocus
+            placeholder="输入姓名、拼音或首字母搜索"
+            emptyText="无匹配的责任人"
+            disabledReason={(option) =>
+              // 改派场景置灰当前责任人——服务端会拒绝改派给同一人
+              option.id === single?.assigneeId ? "当前责任人" : null
+            }
           />
         </Field>
 

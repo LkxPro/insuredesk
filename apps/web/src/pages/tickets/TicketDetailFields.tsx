@@ -24,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { CatalogCombobox } from "./CatalogCombobox";
+import { SearchableCombobox } from "./SearchableCombobox";
 import {
   type CurrentCatalogOption,
   HAS_CONTACTED_OPTIONS,
@@ -257,7 +257,7 @@ function CatalogControl({
       control={form.control}
       name={name}
       render={({ field }) => (
-        <CatalogCombobox
+        <SearchableCombobox
           id={name}
           options={options}
           value={field.value || ""}

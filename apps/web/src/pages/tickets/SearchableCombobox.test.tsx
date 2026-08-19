@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
+import { type ComponentProps, useState } from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { CatalogCombobox } from "./CatalogCombobox";
+import { SearchableCombobox } from "./SearchableCombobox";
 
 // Base UI 的列表导航/定位用到 jsdom 没有的滚动与指针捕获 API
 beforeAll(() => {
@@ -20,11 +20,20 @@ const OPTIONS = [
   { id: "ts", name: "聚投诉平台" },
 ];
 
-function Harness({ initialValue = "" }: { initialValue?: string }) {
+function Harness({
+  initialValue = "",
+  ...props
+}: { initialValue?: string } & Partial<ComponentProps<typeof SearchableCombobox>>) {
   const [value, setValue] = useState(initialValue);
   return (
     <div data-testid="root">
-      <CatalogCombobox id="channel" options={OPTIONS} value={value} onChange={setValue} />
+      <SearchableCombobox
+        id="channel"
+        options={OPTIONS}
+        value={value}
+        onChange={setValue}
+        {...props}
+      />
       <output data-testid="value">{value}</output>
     </div>
   );
@@ -37,7 +46,7 @@ function openAndType(text: string) {
   return input;
 }
 
-describe("CatalogCombobox", () => {
+describe("SearchableCombobox", () => {
   it("中文子串过滤并高亮命中片段", () => {
     render(<Harness />);
     openAndType("投诉");
@@ -100,11 +109,37 @@ describe("CatalogCombobox", () => {
     expect(screen.getAllByRole("option")).toHaveLength(OPTIONS.length);
   });
 
-  it("弹层渲染在组件容器内（modal Dialog 里才可点可滚）", () => {
+  it("弹层渲染在组件容器内(modal Dialog 里才可点可滚)", () => {
     render(<Harness />);
     const root = screen.getByTestId("root");
     fireEvent.mouseDown(screen.getByRole("combobox"));
     const listbox = screen.getByRole("listbox");
     expect(root.contains(listbox)).toBe(true);
+  });
+
+  it("disabledReason 的选项带后缀且不可选", () => {
+    render(<Harness disabledReason={(option) => (option.id === "hm" ? "当前责任人" : null)} />);
+    openAndType("投诉");
+    const disabled = screen.getByRole("option", { name: /黑猫投诉/ });
+    expect(disabled).toHaveTextContent("黑猫投诉（当前责任人）");
+    expect(disabled).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(disabled);
+    expect(screen.getByTestId("value")).toHaveTextContent("");
+  });
+
+  it("空态文案可自定义", () => {
+    render(<Harness emptyText="无匹配的责任人" />);
+    openAndType("xyz");
+    expect(screen.getByText("无匹配的责任人")).toBeInTheDocument();
+  });
+
+  it("autoFocus:disabled 解除后聚焦输入框", () => {
+    const { rerender } = render(
+      <SearchableCombobox options={OPTIONS} value="" onChange={() => {}} disabled autoFocus />,
+    );
+    const input = screen.getByRole("combobox");
+    expect(input).not.toHaveFocus();
+    rerender(<SearchableCombobox options={OPTIONS} value="" onChange={() => {}} autoFocus />);
+    expect(input).toHaveFocus();
   });
 });

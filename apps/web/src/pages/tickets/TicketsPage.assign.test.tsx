@@ -194,8 +194,7 @@ function renderAt(path: string) {
 
 async function pickAssignee(name: string) {
   const trigger = await screen.findByRole("combobox", { name: "责任人" });
-  fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
-  fireEvent.click(trigger);
+  fireEvent.mouseDown(trigger);
   const option = await screen.findByRole("option", { name });
   fireEvent.click(option);
 }
@@ -250,7 +249,7 @@ describe("single assignment from the list", () => {
     await screen.findByRole("heading", { name: "分配工单" });
     const search = await screen.findByRole("combobox", { name: "责任人" });
     await waitFor(() => expect(search).not.toBeDisabled());
-    fireEvent.click(search);
+    fireEvent.mouseDown(search);
 
     fireEvent.change(search, { target: { value: "zkf" } });
 
@@ -258,6 +257,7 @@ describe("single assignment from the list", () => {
     expect(screen.queryByRole("option", { name: "王二客服" })).not.toBeInTheDocument();
     expect(hit.querySelector("mark")).toHaveTextContent("张客服");
 
+    fireEvent.keyDown(search, { key: "ArrowDown" });
     fireEvent.keyDown(search, { key: "Enter" });
     await waitFor(() => expect(search).toHaveValue("张客服"));
 
@@ -306,8 +306,7 @@ describe("single assignment from the list", () => {
     expect(await screen.findByRole("heading", { name: "改派工单" })).toBeInTheDocument();
     const trigger = await screen.findByRole("combobox", { name: "责任人" });
     await waitFor(() => expect(trigger).not.toBeDisabled());
-    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
-    fireEvent.click(trigger);
+    fireEvent.mouseDown(trigger);
 
     expect(await screen.findByRole("option", { name: "王二客服" })).not.toHaveAttribute(
       "aria-disabled",
