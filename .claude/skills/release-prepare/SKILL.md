@@ -34,6 +34,10 @@ description: 起草本版本 changelog 条目并完成发版准备（素材 → 
    `changelog/fixtures/screenshot/v2099.06.0/tickets-list.setup.ts`。
    mock 数据要贴合条目语境——截筛选器就先造出可筛出差异的多渠道工单，空页面
    截图没有信息量。
+   静态页面呈现不出的状态（如展开的下拉），另写同名 `.page.ts` 交互钩子，
+   默认导出 `async (page: Page) => Promise<void>`，截图器在 goto 之后、截图
+   之前把 Playwright 页面交给它；样例见
+   `changelog/v2026.08.5/tickets-combobox-search.page.ts`。
 5. `date` 是预计发布日，默认草稿生成当天；发布日变更时顺手改。
 
 ## 完成
