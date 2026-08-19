@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { isDevStackRunning, resolveBaseURL } from "./dev-stack.ts";
-import { selectScreenshotTargets, setupScriptFor } from "./screenshot.ts";
+import { pageScriptFor, selectScreenshotTargets, setupScriptFor } from "./screenshot.ts";
 
 const repoRoot = join(import.meta.dirname, "../..");
 const screenshotEntry = join(import.meta.dirname, "screenshot.ts");
@@ -57,6 +57,18 @@ test("setup 钩子按 screenshot 同名 .setup.ts 发现", () => {
     writeFileSync(join(dir, "a.setup.ts"), "");
     assert.equal(setupScriptFor(dir, "a.png"), join(dir, "a.setup.ts"));
     assert.equal(setupScriptFor(dir, "b.png"), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("page 钩子按 screenshot 同名 .page.ts 发现", () => {
+  const dir = join(tmpdir(), `screenshot-page-detect-${process.pid}`);
+  mkdirSync(dir, { recursive: true });
+  try {
+    writeFileSync(join(dir, "a.page.ts"), "");
+    assert.equal(pageScriptFor(dir, "a.png"), join(dir, "a.page.ts"));
+    assert.equal(pageScriptFor(dir, "b.png"), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

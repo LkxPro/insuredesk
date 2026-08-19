@@ -20,10 +20,16 @@ export interface ScreenshotTarget {
   screenshot: string;
   outputPath: string;
   setupScript: string | null;
+  pageScript: string | null;
 }
 
 export function setupScriptFor(outputDir: string, screenshot: string): string | null {
   const candidate = join(outputDir, `${screenshot.slice(0, -".png".length)}.setup.ts`);
+  return existsSync(candidate) ? candidate : null;
+}
+
+export function pageScriptFor(outputDir: string, screenshot: string): string | null {
+  const candidate = join(outputDir, `${screenshot.slice(0, -".png".length)}.page.ts`);
   return existsSync(candidate) ? candidate : null;
 }
 
@@ -39,6 +45,7 @@ export function selectScreenshotTargets(
       screenshot: entry.screenshot,
       outputPath: join(outputDir, entry.screenshot),
       setupScript: setupScriptFor(outputDir, entry.screenshot),
+      pageScript: pageScriptFor(outputDir, entry.screenshot),
     });
   }
   return targets;
@@ -149,6 +156,13 @@ export async function main(argv: string[]): Promise<number> {
       try {
         await page.goto(target.page, { waitUntil: "networkidle" });
         await hideSelfScreenshot(page, target.screenshot);
+        if (target.pageScript) {
+          console.log(`→ page ${relative(repoRoot, target.pageScript)}`);
+          const { default: prepare } = (await import(pathToFileURL(target.pageScript).href)) as {
+            default: (page: Page) => Promise<void>;
+          };
+          await prepare(page);
+        }
         await page.screenshot({ path: target.outputPath });
       } finally {
         await page.close();
