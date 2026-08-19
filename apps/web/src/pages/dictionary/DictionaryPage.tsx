@@ -5,8 +5,10 @@ import {
   ticketCategoryCreateInputSchema,
   userComplaintChannelCreateInputSchema,
 } from "@insuredesk/shared";
+import { useSearchParams } from "react-router";
 import { trpc } from "@/lib/trpc";
 import { CatalogAdmin, type CatalogAdminConfig } from "./CatalogAdmin";
+import { DictionaryPrototype } from "./prototype/DictionaryPrototype";
 
 /**
  * 字典管理: the catalog management page behind dictionary.manage. 反馈渠道,
@@ -125,7 +127,20 @@ const complaintReceiveChannelCatalog: CatalogAdminConfig = {
   },
 };
 
+const DICTIONARY_CATALOGS = [
+  channelCatalog,
+  ticketCategoryCatalog,
+  completionStatusCatalog,
+  userComplaintChannelCatalog,
+  complaintReceiveChannelCatalog,
+];
+
 export function DictionaryPage() {
+  const [searchParams] = useSearchParams();
+  const variant = searchParams.get("variant");
+  if (import.meta.env.DEV && variant) {
+    return <DictionaryPrototype variant={variant} catalogs={DICTIONARY_CATALOGS} />;
+  }
   return (
     <div className="flex flex-1 flex-col gap-6">
       <div className="flex flex-col gap-1">
