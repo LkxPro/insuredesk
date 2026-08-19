@@ -43,6 +43,7 @@ import {
   splitLocalDateTime,
 } from "@/lib/local-date-time";
 import { trpc } from "@/lib/trpc";
+import { CatalogCombobox } from "./CatalogCombobox";
 import { DuplicateFieldHint, useTicketDuplicates } from "./TicketDuplicates";
 
 /**
@@ -491,28 +492,13 @@ export function TicketFormFields({
               control={control}
               name="userComplaintChannelId"
               render={({ field }) => (
-                <Select
-                  value={field.value ? field.value : UNSET}
-                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
-                >
-                  <SelectTrigger
-                    id="userComplaintChannelId"
-                    className="w-full"
-                    aria-invalid={!!errors.userComplaintChannelId}
-                  >
-                    <SelectValue placeholder="请选择" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={UNSET}>未设置</SelectItem>
-                      {userComplaintChannelOptions.map((channel) => (
-                        <SelectItem key={channel.id} value={channel.id}>
-                          {channel.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <CatalogCombobox
+                  id="userComplaintChannelId"
+                  options={userComplaintChannelOptions}
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  invalid={!!errors.userComplaintChannelId}
+                />
               )}
             />
             <FieldError errors={[errors.userComplaintChannelId]} />
@@ -528,28 +514,13 @@ export function TicketFormFields({
               control={control}
               name="complaintReceiveChannelId"
               render={({ field }) => (
-                <Select
-                  value={field.value ? field.value : UNSET}
-                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
-                >
-                  <SelectTrigger
-                    id="complaintReceiveChannelId"
-                    className="w-full"
-                    aria-invalid={!!errors.complaintReceiveChannelId}
-                  >
-                    <SelectValue placeholder="请选择" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={UNSET}>未设置</SelectItem>
-                      {complaintReceiveChannelOptions.map((channel) => (
-                        <SelectItem key={channel.id} value={channel.id}>
-                          {channel.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <CatalogCombobox
+                  id="complaintReceiveChannelId"
+                  options={complaintReceiveChannelOptions}
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  invalid={!!errors.complaintReceiveChannelId}
+                />
               )}
             />
             <FieldError errors={[errors.complaintReceiveChannelId]} />
@@ -728,28 +699,13 @@ export function TicketFormFields({
               control={control}
               name="categoryId"
               render={({ field }) => (
-                <Select
-                  value={field.value ? field.value : UNSET}
-                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
-                >
-                  <SelectTrigger
-                    id="categoryId"
-                    className="w-full"
-                    aria-invalid={!!errors.categoryId}
-                  >
-                    <SelectValue placeholder="请选择" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={UNSET}>未设置</SelectItem>
-                      {selectableCategories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <CatalogCombobox
+                  id="categoryId"
+                  options={selectableCategories}
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  invalid={!!errors.categoryId}
+                />
               )}
             />
             <FieldError errors={[errors.categoryId]} />

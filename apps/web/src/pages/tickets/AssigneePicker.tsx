@@ -1,29 +1,12 @@
 import { CheckIcon, XIcon } from "lucide-react";
 import { pinyin } from "pinyin-pro";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
-import { type MatchRange, matchName, type NameMatch } from "@/lib/name-match";
+import { matchName, type NameMatch } from "@/lib/name-match";
 import { cn } from "@/lib/utils";
+import { MatchHighlight } from "./MatchHighlight";
 
 export type AssigneeOption = { id: string; name: string };
-
-function Highlighted({ name, ranges }: { name: string; ranges: MatchRange[] }) {
-  const parts: ReactNode[] = [];
-  let cursor = 0;
-  ranges.forEach(([start, end]) => {
-    if (start > cursor) {
-      parts.push(name.slice(cursor, start));
-    }
-    parts.push(
-      <mark key={start} className="rounded-[2px] bg-amber-200 text-inherit dark:bg-amber-400/40">
-        {name.slice(start, end)}
-      </mark>,
-    );
-    cursor = end;
-  });
-  parts.push(name.slice(cursor));
-  return <>{parts}</>;
-}
 
 export function AssigneePicker({
   id,
@@ -206,7 +189,7 @@ export function AssigneePicker({
                   )}
                 />
                 <span className="line-clamp-1">
-                  <Highlighted name={option.name} ranges={match.ranges} />
+                  <MatchHighlight name={option.name} ranges={match.ranges} />
                   {isCurrent && "（当前责任人）"}
                 </span>
               </button>
