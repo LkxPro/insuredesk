@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { CatalogCombobox } from "./CatalogCombobox";
 import {
   type CurrentCatalogOption,
   HAS_CONTACTED_OPTIONS,
@@ -222,29 +223,47 @@ function CatalogControl({
           : complaintReceiveChannelOptions.data;
   const options = withCurrentOption(data ?? [], current);
 
+  if (name === "channelId") {
+    return (
+      <Controller
+        control={form.control}
+        name={name}
+        render={({ field }) => (
+          <Select
+            value={field.value ? field.value : UNSET}
+            onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
+          >
+            <SelectTrigger id={name} className="w-full" aria-invalid={invalid}>
+              <SelectValue placeholder="请选择" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value={UNSET}>未设置</SelectItem>
+                {options.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        )}
+      />
+    );
+  }
+
   return (
     <Controller
       control={form.control}
       name={name}
       render={({ field }) => (
-        <Select
-          value={field.value ? field.value : UNSET}
-          onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
-        >
-          <SelectTrigger id={name} className="w-full" aria-invalid={invalid}>
-            <SelectValue placeholder="请选择" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value={UNSET}>未设置</SelectItem>
-              {options.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.name}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        <CatalogCombobox
+          id={name}
+          options={options}
+          value={field.value || ""}
+          onChange={field.onChange}
+          invalid={invalid}
+        />
       )}
     />
   );
