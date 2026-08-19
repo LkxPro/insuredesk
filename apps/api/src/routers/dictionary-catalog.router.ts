@@ -5,6 +5,7 @@ import {
   CatalogInUseError,
   CatalogNameConflictError,
   CatalogNotFoundError,
+  CatalogOrderMismatchError,
   CatalogPinnedError,
   type CatalogService,
 } from "../services/dictionary-catalog.service.ts";
@@ -15,7 +16,8 @@ function translateError(error: unknown): never {
   if (
     error instanceof CatalogNameConflictError ||
     error instanceof CatalogInUseError ||
-    error instanceof CatalogPinnedError
+    error instanceof CatalogPinnedError ||
+    error instanceof CatalogOrderMismatchError
   ) {
     throw new TRPCError({ code: "CONFLICT", message: error.message });
   }
@@ -56,6 +58,15 @@ export function createCatalogRouter(service: CatalogService, schemas: CatalogSch
       .mutation(async ({ input }) => {
         try {
           return await service.setActive(prisma, input.id, input.active);
+        } catch (error) {
+          translateError(error);
+        }
+      }),
+    reorder: manageDictionaryProcedure
+      .input(schemas.reorderInputSchema)
+      .mutation(async ({ input }) => {
+        try {
+          return await service.reorder(prisma, input.ids);
         } catch (error) {
           translateError(error);
         }

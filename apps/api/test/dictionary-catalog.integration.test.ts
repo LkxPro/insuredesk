@@ -11,7 +11,7 @@ import type { AuthenticatedUser } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
- * 字典目录 parameterized acceptance tests (issue #93). One canonical suite
+ * 字典目录 parameterized acceptance tests. One canonical suite
  * runs three catalog instances (channel, ticketCategory, completionStatus),
  * plus one smoke test per catalog. The suite covers the full lifecycle:
  * rename propagation, 停用/deletion guards, reference validation, concurrent
@@ -212,6 +212,38 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           ).rejects.toMatchObject({ code: "CONFLICT", message: cfg.labels.conflictMessage });
         });
       }
+
+      it("reorder renumbers the whole catalog by array order; stale id sets are refused", async () => {
+        const router = manager()[cfg.routerKey];
+        const before = await router.list();
+        const ids = before.map((row) => row.id);
+        const last = ids.at(-1);
+        if (!last) throw new Error("目录为空");
+        const moved = [last, ...ids.slice(0, -1)];
+
+        await router.reorder({ ids: moved });
+
+        const after = await router.list();
+        expect(after.map((row) => row.id)).toEqual(moved);
+        expect(after.map((row) => row.displayOrder)).toEqual(moved.map((_, i) => i + 1));
+
+        await expect(router.reorder({ ids: moved.slice(1) })).rejects.toMatchObject({
+          code: "CONFLICT",
+        });
+        await expect(
+          router.reorder({ ids: [...moved.slice(1), "not-a-member"] }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+
+        // 还原：后面的 smoke（如完结状态的迁移顺序断言）依赖初始行序。
+        await router.reorder({ ids });
+      });
+
+      it("create without displayOrder appends to the end of the catalog", async () => {
+        const router = manager()[cfg.routerKey];
+        const created = await router.create({ name: "追加顺序项" });
+        const list = await router.list();
+        expect(list.at(-1)?.id).toBe(created.id);
+      });
 
       it("停用 removes from options but keeps in filter feed, labelled by active", async () => {
         const router = manager()[cfg.routerKey];
