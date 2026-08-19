@@ -52,6 +52,13 @@ export class CatalogPinnedError extends Error {
   }
 }
 
+export class CatalogOrderMismatchError extends Error {
+  constructor({ noun }: CatalogLabels) {
+    super(`${noun}列表已变化，请刷新后重试`);
+    this.name = "CatalogOrderMismatchError";
+  }
+}
+
 /** 目录引用指向不存在或已停用的目录项（编辑保持原停用值除外）。 */
 export class CatalogUnavailableError extends Error {
   constructor({ refNoun }: CatalogLabels, reason: "missing" | "disabled") {
@@ -114,6 +121,9 @@ interface CatalogDelegate {
     data: { name?: string; displayOrder?: number; active?: boolean };
   }): Promise<CatalogRow>;
   delete(args: { where: { id: string } }): Promise<CatalogRow>;
+  aggregate(args: {
+    _max: { displayOrder: true };
+  }): Promise<{ _max: { displayOrder: number | null } }>;
 }
 
 export interface CatalogServiceConfig {
@@ -140,7 +150,7 @@ export interface CatalogDto {
 
 export interface CatalogWriteInput {
   name: string;
-  displayOrder: number;
+  displayOrder?: number;
 }
 
 export interface CatalogService {
@@ -150,6 +160,7 @@ export interface CatalogService {
   create(db: CatalogDb, input: CatalogWriteInput): Promise<CatalogDto>;
   update(db: CatalogDb, input: CatalogWriteInput & { id: string }): Promise<CatalogDto>;
   setActive(db: CatalogDb, id: string, active: boolean): Promise<CatalogDto>;
+  reorder(db: PrismaClient, ids: string[]): Promise<{ ids: string[] }>;
   delete(db: PrismaClient, id: string): Promise<{ id: string }>;
   resolveNewRef(db: CatalogDb, id: string): Promise<CatalogRow>;
   resolveNewRef(db: CatalogDb, id: string | null): Promise<CatalogRow | null>;
@@ -232,7 +243,11 @@ export function createCatalogService({
 
     async create(db, input) {
       try {
-        return toDto(await delegate(db).create({ data: input }));
+        const displayOrder =
+          input.displayOrder ??
+          ((await delegate(db).aggregate({ _max: { displayOrder: true } }))._max.displayOrder ??
+            0) + 1;
+        return toDto(await delegate(db).create({ data: { name: input.name, displayOrder } }));
       } catch (error) {
         translateWriteError(error);
       }
@@ -243,7 +258,10 @@ export function createCatalogService({
         return toDto(
           await delegate(db).update({
             where: { id: input.id },
-            data: { name: input.name, displayOrder: input.displayOrder },
+            data: {
+              name: input.name,
+              ...(input.displayOrder === undefined ? {} : { displayOrder: input.displayOrder }),
+            },
           }),
         );
       } catch (error) {
@@ -257,6 +275,20 @@ export function createCatalogService({
       } catch (error) {
         translateWriteError(error);
       }
+    },
+
+    async reorder(prisma, ids) {
+      return await prisma.$transaction(async (tx) => {
+        const rows = await delegate(tx).findMany({ orderBy: catalogOrderBy });
+        const current = new Set(rows.map((row) => row.id));
+        if (ids.length !== rows.length || ids.some((id) => !current.has(id))) {
+          throw new CatalogOrderMismatchError(labels);
+        }
+        for (const [index, id] of ids.entries()) {
+          await delegate(tx).update({ where: { id }, data: { displayOrder: index + 1 } });
+        }
+        return { ids };
+      });
     },
 
     /**
