@@ -132,6 +132,9 @@ importers:
       lucide-react:
         specifier: ^1.24.0
         version: 1.24.0(react@19.2.7)
+      pinyin-pro:
+        specifier: ^3.29.2
+        version: 3.29.2
       radix-ui:
         specifier: ^1.6.2
         version: 1.6.2(@types/react-dom@19.2.4(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -3058,6 +3061,9 @@ packages:
   pino@9.14.0:
     resolution: {integrity: sha512-8OEwKp5juEvb/MjpIc4hjqfgCNysrS94RIOMXYvpYCdm/jglrKEiAYmiumbmGhCvs+IcInsphYDFwqrjr7398w==}
     hasBin: true
+
+  pinyin-pro@3.29.2:
+    resolution: {integrity: sha512-L2AemHDHVFIgr207HFdjiU+4i8Hu15kcHX0Ab5iZCWH0NDmX404tyCQ06kglotGpqOLXNst2NK/A2K8qdC301Q==}
 
   pkg-types@2.3.1:
     resolution: {integrity: sha512-y+ichcgc2LrADuhLNAx8DFjVfgz91pRxfZdI3UDhxHvcVEZsenLO+7XaU5vOp0u/7V/wZ+plyuQxtrDlZJ+yeg==}
@@ -6506,6 +6512,8 @@ snapshots:
       safe-stable-stringify: 2.5.0
       sonic-boom: 4.2.1
       thread-stream: 3.2.0
+
+  pinyin-pro@3.29.2: {}
 
   pkg-types@2.3.1:
     dependencies:

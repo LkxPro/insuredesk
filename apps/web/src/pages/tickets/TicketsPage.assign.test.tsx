@@ -99,7 +99,6 @@ const ASSIGNEES = [
   { id: "u-wang", name: "王二客服", username: "cs2" },
 ];
 
-// Canned per-procedure payloads + a log of every decoded call.
 const canned = { items: [] as ListItem[], total: 0 };
 let calls: Array<{ path: string; input: unknown }>;
 
@@ -193,7 +192,6 @@ function renderAt(path: string) {
   );
 }
 
-/** Open the 责任人 dropdown and pick a user by name. */
 async function pickAssignee(name: string) {
   const trigger = await screen.findByRole("combobox", { name: "责任人" });
   fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
@@ -231,6 +229,47 @@ describe("single assignment from the list", () => {
     );
   });
 
+  it("打开时焦点落在责任人搜索框", async () => {
+    canned.items = [listItem()];
+    canned.total = 1;
+    renderAt("/tickets");
+    await screen.findByText("WO100001");
+
+    fireEvent.click(screen.getByRole("button", { name: "分配" }));
+    const search = await screen.findByRole("combobox", { name: "责任人" });
+    await waitFor(() => expect(search).toHaveFocus());
+  });
+
+  it("责任人支持拼音首字母搜索,命中字高亮,回车选中", async () => {
+    canned.items = [listItem()];
+    canned.total = 1;
+    renderAt("/tickets");
+    await screen.findByText("WO100001");
+
+    fireEvent.click(screen.getByRole("button", { name: "分配" }));
+    await screen.findByRole("heading", { name: "分配工单" });
+    const search = await screen.findByRole("combobox", { name: "责任人" });
+    await waitFor(() => expect(search).not.toBeDisabled());
+    fireEvent.click(search);
+
+    fireEvent.change(search, { target: { value: "zkf" } });
+
+    const hit = await screen.findByRole("option", { name: "张客服" });
+    expect(screen.queryByRole("option", { name: "王二客服" })).not.toBeInTheDocument();
+    expect(hit.querySelector("mark")).toHaveTextContent("张客服");
+
+    fireEvent.keyDown(search, { key: "Enter" });
+    await waitFor(() => expect(search).toHaveValue("张客服"));
+
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "ticket.assign")?.input).toEqual({
+        ticketId: "t1",
+        assigneeId: "u-zhang",
+      }),
+    );
+  });
+
   it("改派 shows the current assignee with the deadline non-extension hint", async () => {
     canned.items = [
       listItem({
@@ -250,7 +289,7 @@ describe("single assignment from the list", () => {
     expect(screen.getByText("当前责任人：").parentElement).toHaveTextContent("张客服");
   });
 
-  it("下拉渲染 assigneeOptions 返回的候选，仅当前责任人置灰不可选", async () => {
+  it("候选列表渲染 assigneeOptions 返回的用户，仅当前责任人置灰不可选", async () => {
     canned.items = [
       listItem({
         status: "assigned",
@@ -330,7 +369,6 @@ describe("批量分配 from the list", () => {
         assigneeId: "u-wang",
       }),
     );
-    // Selection is spent after a successful batch
     await waitFor(() => expect(screen.queryByText("已选 2 个工单")).not.toBeInTheDocument());
   });
 
@@ -374,7 +412,6 @@ describe("批量分配 from the list", () => {
     await screen.findByText("WO100001");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "选择本页全部工单" }));
-    // The completed row is skipped
     expect(screen.getByText("已选 2 个工单")).toBeInTheDocument();
   });
 });
