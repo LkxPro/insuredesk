@@ -1,0 +1,24 @@
+version: v2026.08.5
+date: 2026-08-20
+entries:
+  - category: 新增
+    user: 投诉渠道与接收渠道纳入字典管理
+    full: 用户投诉渠道、投诉信息接收渠道改为字典目录，在「字典管理」统一维护，支持新增、改名、停用与排序；存量工单与外部账号的渠道值自动映射到标准目录，建单、筛选与导入导出行为不变。
+    page: /dictionary
+  - category: 新增
+    user: 字典管理改版为卡片总览 + 抽屉管理，目录项支持排序
+    full: 字典管理首页改为卡片总览，点选卡片在抽屉中管理该目录的条目；目录项支持拖拽调整顺序，也可按名称预览排序效果，显式保存后才覆盖手动顺序。
+    page: /dictionary
+    screenshot: dictionary-drawer.png
+  - category: 新增
+    user: 责任人、工单渠道、客诉类别下拉支持拼音模糊搜索
+    full: 责任人选择与工单渠道、客诉类别下拉统一改为可搜索下拉，支持按中文或拼音模糊匹配并高亮命中片段，选项较多时更快定位。
+    page: /tickets/new
+    screenshot: tickets-combobox-search.png
+  - category: 改进
+    user: 工单列表搜索框新增「搜索」按钮
+    full: 工单与外部工单列表的关键字搜索框新增显式「搜索」按钮，清除按钮改为自绘图标。
+    page: /tickets
+  - category: 内部
+    user: 开发工具与代码库清理
+    full: make dev 复跑时自动回收上轮残留进程占用的端口；责任人选择组件并入通用搜索下拉，消除重复实现；删除根目录误提交的数据库迁移副本。
