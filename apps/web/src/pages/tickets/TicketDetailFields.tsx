@@ -56,8 +56,8 @@ export interface EditableTicket {
   internalOrderNumber: string | null;
   policyNumbers: string[];
   noPolicyNumber: boolean;
-  userComplaintChannel: string | null;
-  complaintReceiveChannel: string | null;
+  userComplaintChannel: CurrentCatalogOption | null;
+  complaintReceiveChannel: CurrentCatalogOption | null;
   customerName: string | null;
   phone: string | null;
   contactPhone: string | null;
@@ -88,8 +88,8 @@ export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
     internalOrderNumber: ticket?.internalOrderNumber ?? "",
     policyNumbers: joinPolicyNumbers(ticket?.policyNumbers ?? []),
     noPolicyNumber: ticket?.noPolicyNumber ?? false,
-    userComplaintChannel: ticket?.userComplaintChannel ?? "",
-    complaintReceiveChannel: ticket?.complaintReceiveChannel ?? "",
+    userComplaintChannelId: ticket?.userComplaintChannel?.id ?? "",
+    complaintReceiveChannelId: ticket?.complaintReceiveChannel?.id ?? "",
     customerName: ticket?.customerName ?? "",
     phone: ticket?.phone ?? "",
     contactPhone: ticket?.contactPhone ?? "",
@@ -116,6 +116,10 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
       return ticket.channel?.name ?? null;
     case "categoryId":
       return ticket.category?.name ?? null;
+    case "userComplaintChannelId":
+      return ticket.userComplaintChannel?.name ?? null;
+    case "complaintReceiveChannelId":
+      return ticket.complaintReceiveChannel?.name ?? null;
     case "slaPolicyId":
       return ticket.slaPolicy?.name ?? null;
     case "hasContacted":
@@ -138,8 +142,6 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
     case "brokerageEntity":
     case "paymentChannel":
     case "internalOrderNumber":
-    case "userComplaintChannel":
-    case "complaintReceiveChannel":
     case "customerName":
     case "phone":
     case "contactPhone":
@@ -194,7 +196,7 @@ function CatalogControl({
   invalid,
 }: {
   form: UseFormReturn<TicketFormValues>;
-  name: "channelId" | "categoryId";
+  name: "channelId" | "categoryId" | "userComplaintChannelId" | "complaintReceiveChannelId";
   current: CurrentCatalogOption | null;
   invalid: boolean;
 }) {
@@ -204,10 +206,21 @@ function CatalogControl({
   const categoryOptions = trpc.ticketCategory.options.useQuery(undefined, {
     enabled: name === "categoryId",
   });
-  const options = withCurrentOption(
-    (name === "channelId" ? channelOptions.data : categoryOptions.data) ?? [],
-    current,
-  );
+  const userComplaintChannelOptions = trpc.userComplaintChannel.options.useQuery(undefined, {
+    enabled: name === "userComplaintChannelId",
+  });
+  const complaintReceiveChannelOptions = trpc.complaintReceiveChannel.options.useQuery(undefined, {
+    enabled: name === "complaintReceiveChannelId",
+  });
+  const data =
+    name === "channelId"
+      ? channelOptions.data
+      : name === "categoryId"
+        ? categoryOptions.data
+        : name === "userComplaintChannelId"
+          ? userComplaintChannelOptions.data
+          : complaintReceiveChannelOptions.data;
+  const options = withCurrentOption(data ?? [], current);
 
   return (
     <Controller
@@ -272,6 +285,24 @@ function EditControl({
       return <CatalogControl form={form} name={name} current={ticket.channel} invalid={invalid} />;
     case "categoryId":
       return <CatalogControl form={form} name={name} current={ticket.category} invalid={invalid} />;
+    case "userComplaintChannelId":
+      return (
+        <CatalogControl
+          form={form}
+          name={name}
+          current={ticket.userComplaintChannel}
+          invalid={invalid}
+        />
+      );
+    case "complaintReceiveChannelId":
+      return (
+        <CatalogControl
+          form={form}
+          name={name}
+          current={ticket.complaintReceiveChannel}
+          invalid={invalid}
+        />
+      );
     case "nuclearBodyStatus":
       return (
         <EnumControl

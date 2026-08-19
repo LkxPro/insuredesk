@@ -24,10 +24,12 @@ import type { Clock } from "../clock.ts";
 import type { Prisma, PrismaClient, SlaPolicy } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
 import { channelCatalog } from "./channel.service.ts";
+import { complaintReceiveChannelCatalog } from "./complaint-receive-channel.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { displayStatusTicketWhere } from "./ticket-display-status.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
+import { userComplaintChannelCatalog } from "./user-complaint-channel.service.ts";
 
 /**
  * Ticket domain logic: manual creation and detail reads. Pure service
@@ -212,6 +214,8 @@ export async function createTicket(
     // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
     await ticketCategoryCatalog.resolveNewRef(tx, data.categoryId);
     await channelCatalog.resolveNewRef(tx, data.channelId);
+    await userComplaintChannelCatalog.resolveNewRef(tx, data.userComplaintChannelId);
+    await complaintReceiveChannelCatalog.resolveNewRef(tx, data.complaintReceiveChannelId);
 
     const ticket = await tx.ticket.create({
       data: {
@@ -448,6 +452,8 @@ const detailInclude = {
   // selectable (labelled 已停用) while other disabled options never appear
   category: { select: { id: true, name: true, active: true } },
   channel: { select: { id: true, name: true, active: true } },
+  userComplaintChannel: { select: { id: true, name: true, active: true } },
+  complaintReceiveChannel: { select: { id: true, name: true, active: true } },
   slaPolicy: { select: { id: true, name: true, active: true } },
   // 完结状态 is display-only on the detail page — the CURRENT name suffices
   completionStatus: { select: { name: true } },

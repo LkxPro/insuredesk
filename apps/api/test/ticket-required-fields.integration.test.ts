@@ -317,7 +317,7 @@ describe("role required ticket fields (Testcontainers)", () => {
             "channelId",
             "hasContacted",
             "contactTime",
-            "complaintReceiveChannel",
+            "complaintReceiveChannelId",
           ],
         },
       });
@@ -333,11 +333,11 @@ describe("role required ticket fields (Testcontainers)", () => {
       const result = await requiredUser().ticket.create({
         ...validInput(),
         contactTime: "2026-07-14T02:00:00.000Z",
-        complaintReceiveChannel: "邮箱接收",
+        complaintReceiveChannelId: harness.complaintReceiveChannelId("内部客服热线"),
       });
       const detail = await requiredUser().ticket.detail({ id: result.id });
       expect(detail.contactTime).toBe("2026-07-14T02:00:00.000Z");
-      expect(detail.complaintReceiveChannel).toBe("邮箱接收");
+      expect(detail.complaintReceiveChannel?.name).toBe("内部客服热线");
 
       await prisma.role.update({
         where: { id: roleWithRequired.id },

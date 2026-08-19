@@ -72,7 +72,7 @@ function detailPayload(status: string) {
     paymentChannel: "连连支付",
     internalOrderNumber: null,
     policyNumbers: ["P2026070900123"],
-    userComplaintChannel: "400热线",
+    userComplaintChannel: { id: "ucc-hotline", name: "保司400热线", active: true },
     complaintReceiveChannel: null,
     customerName: "王小明",
     phone: "13800000001",

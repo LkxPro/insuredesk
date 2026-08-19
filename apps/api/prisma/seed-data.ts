@@ -352,6 +352,8 @@ interface DemoTicketSpec {
   slaPolicyName?: string;
   categoryName?: string;
   channelName?: string;
+  userComplaintChannelName?: string;
+  complaintReceiveChannelName?: string;
   source?: "manual" | "feishu_form" | "community";
   creator?: keyof SeededUsersAndRoles["users"];
   assignee?: keyof SeededUsersAndRoles["users"];
@@ -410,8 +412,8 @@ function demoInput(
     internalOrderNumber: `DEMO-ORDER-${demoPolicyNumber.slice(-4)}`,
     policyNumbers: [demoPolicyNumber],
     noPolicyNumber: false,
-    userComplaintChannel: "400热线",
-    complaintReceiveChannel: null,
+    userComplaintChannelId: null,
+    complaintReceiveChannelId: null,
     customerName: "演示客户",
     phone: "13800000000",
     contactPhone: null,
@@ -712,8 +714,8 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "杨可欣",
       phone: "13810001011",
       customerRequest: "飞书表单转入：客户咨询保障责任和等待期。",
-      userComplaintChannel: "飞书表单",
     }),
+    userComplaintChannelName: "飞书表单",
     categoryName: "产品咨询",
   },
   {
@@ -727,8 +729,8 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "马梓涵",
       phone: "13810001012",
       customerRequest: "社区反馈：客户称回访时间不便，希望改约晚间联系。",
-      userComplaintChannel: "社区",
     }),
+    userComplaintChannelName: "社区",
     categoryName: "回访问题",
   },
 ];
@@ -878,6 +880,18 @@ export async function seedDemoTickets(
       policy.id,
     ]),
   );
+  const userComplaintChannelIdByName = new Map(
+    (await prisma.userComplaintChannel.findMany({ where: { active: true } })).map((channel) => [
+      channel.name,
+      channel.id,
+    ]),
+  );
+  const complaintReceiveChannelIdByName = new Map(
+    (await prisma.complaintReceiveChannel.findMany({ where: { active: true } })).map((channel) => [
+      channel.name,
+      channel.id,
+    ]),
+  );
 
   for (const spec of demoTicketSpecs) {
     const createdAt = hoursAgo(spec.createdHoursAgo, now);
@@ -887,6 +901,11 @@ export async function seedDemoTickets(
       categoryId: spec.categoryName ? (categoryIdByName.get(spec.categoryName) ?? null) : null,
       channelId: spec.channelName ? (channelIdByName.get(spec.channelName) ?? null) : null,
       slaPolicyId: slaPolicyIdByName.get(spec.slaPolicyName ?? "一般投诉") ?? null,
+      userComplaintChannelId:
+        userComplaintChannelIdByName.get(spec.userComplaintChannelName ?? "保司400热线") ?? null,
+      complaintReceiveChannelId: spec.complaintReceiveChannelName
+        ? (complaintReceiveChannelIdByName.get(spec.complaintReceiveChannelName) ?? null)
+        : null,
     };
     const ticket =
       spec.source === undefined || spec.source === "manual"

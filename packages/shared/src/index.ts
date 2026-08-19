@@ -1,6 +1,7 @@
 export * from "./auth.ts";
 export * from "./changelog.ts";
 export * from "./channel.ts";
+export * from "./complaint-receive-channel.ts";
 export * from "./completion-status.ts";
 export * from "./dashboard.ts";
 export * from "./dictionary-catalog.ts";
@@ -23,3 +24,4 @@ export * from "./ticket-status.ts";
 export * from "./time-range.ts";
 export * from "./todo.ts";
 export * from "./user.ts";
+export * from "./user-complaint-channel.ts";

@@ -30,7 +30,13 @@ export interface TicketEnumOption {
   readonly value: string | boolean;
 }
 
-export type TicketCatalogKind = "channel" | "category" | "completionStatus" | "slaPolicy";
+export type TicketCatalogKind =
+  | "channel"
+  | "category"
+  | "completionStatus"
+  | "slaPolicy"
+  | "userComplaintChannel"
+  | "complaintReceiveChannel";
 
 /** 填写说明里的目录名词（「下载模板时启用的◯◯目录」）。 */
 const CATALOG_NOUNS: Record<TicketCatalogKind, string> = {
@@ -38,6 +44,8 @@ const CATALOG_NOUNS: Record<TicketCatalogKind, string> = {
   category: "类别",
   completionStatus: "完结状态",
   slaPolicy: "时效策略",
+  userComplaintChannel: "用户投诉渠道",
+  complaintReceiveChannel: "投诉信息接收渠道",
 };
 
 /** 行的声明语法；`TicketFieldDescriptor` 是表里各行的精确类型。 */
@@ -115,18 +123,18 @@ export const TICKET_FIELD_DESCRIPTORS = [
   { type: "text", key: "internalOrderNumber", label: "内部订单号", maxLength: 200 },
   { type: "textList", key: "policyNumbers", label: "保单号", maxItemLength: 100, maxItems: 50 },
   {
-    type: "text",
-    key: "userComplaintChannel",
+    type: "catalog",
+    key: "userComplaintChannelId",
     label: "用户投诉渠道",
+    catalog: "userComplaintChannel",
     maxLength: 100,
-    importNoteSuffix: "如：监管引导件、网微投诉、黑猫投诉",
   },
   {
-    type: "text",
-    key: "complaintReceiveChannel",
+    type: "catalog",
+    key: "complaintReceiveChannelId",
     label: "投诉信息接收渠道",
+    catalog: "complaintReceiveChannel",
     maxLength: 100,
-    importNoteSuffix: "接受投诉信息的群名、邮箱",
   },
   { type: "text", key: "customerName", label: "客户姓名", maxLength: 100 },
   {

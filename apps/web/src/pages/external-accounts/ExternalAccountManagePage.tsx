@@ -30,8 +30,8 @@ export function prefillSummary(prefill: ExternalAccountRow["prefill"]): string {
     prefill.project,
     prefill.brokerageEntity,
     prefill.paymentChannel,
-    prefill.userComplaintChannel,
-    prefill.complaintReceiveChannel,
+    prefill.userComplaintChannelName,
+    prefill.complaintReceiveChannelName,
   ]
     .filter((value) => value)
     .join(" · ");

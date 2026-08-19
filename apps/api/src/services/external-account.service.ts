@@ -1,6 +1,7 @@
 import type {
   ExternalAccountCreateData,
   ExternalAccountListItem,
+  ExternalAccountPrefill,
   ExternalAccountSetActiveInput,
   ExternalAccountUpdateData,
 } from "@insuredesk/shared";
@@ -56,6 +57,22 @@ export class PrefillChannelNotFoundError extends Error {
   constructor() {
     super("所选反馈渠道不存在");
     this.name = "PrefillChannelNotFoundError";
+  }
+}
+
+/** 预填引用的用户投诉渠道 id 不存在（停用项保持引用合法，只校存在性）。 */
+export class PrefillUserComplaintChannelNotFoundError extends Error {
+  constructor() {
+    super("所选用户投诉渠道不存在");
+    this.name = "PrefillUserComplaintChannelNotFoundError";
+  }
+}
+
+/** 预填引用的投诉信息接收渠道 id 不存在（停用项保持引用合法，只校存在性）。 */
+export class PrefillComplaintReceiveChannelNotFoundError extends Error {
+  constructor() {
+    super("所选投诉信息接收渠道不存在");
+    this.name = "PrefillComplaintReceiveChannelNotFoundError";
   }
 }
 
@@ -128,6 +145,44 @@ async function resolvePrefillChannel(prisma: PrismaClient, channelId: string | n
   }
 }
 
+async function resolvePrefillUserComplaintChannel(prisma: PrismaClient, id: string | null) {
+  if (id === null) {
+    return;
+  }
+  const row = await prisma.userComplaintChannel.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!row) {
+    throw new PrefillUserComplaintChannelNotFoundError();
+  }
+}
+
+async function resolvePrefillComplaintReceiveChannel(prisma: PrismaClient, id: string | null) {
+  if (id === null) {
+    return;
+  }
+  const row = await prisma.complaintReceiveChannel.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!row) {
+    throw new PrefillComplaintReceiveChannelNotFoundError();
+  }
+}
+
+async function resolvePrefillRefs(
+  prisma: PrismaClient,
+  prefill: Pick<
+    ExternalAccountPrefill,
+    "channelId" | "userComplaintChannelId" | "complaintReceiveChannelId"
+  >,
+) {
+  await resolvePrefillChannel(prisma, prefill.channelId);
+  await resolvePrefillUserComplaintChannel(prisma, prefill.userComplaintChannelId);
+  await resolvePrefillComplaintReceiveChannel(prisma, prefill.complaintReceiveChannelId);
+}
+
 /** 外部账号的判定 where：角色库存权限数组命中外部权限点的非系统角色。 */
 const EXTERNAL_ACCOUNT_WHERE: Prisma.UserWhereInput = {
   role: { is: { system: false, permissions: { hasSome: [...EXTERNAL_ROLE_PERMISSIONS] } } },
@@ -135,6 +190,8 @@ const EXTERNAL_ACCOUNT_WHERE: Prisma.UserWhereInput = {
 
 const accountListInclude = {
   prefillChannel: { select: { name: true } },
+  prefillUserComplaintChannel: { select: { name: true } },
+  prefillComplaintReceiveChannel: { select: { name: true } },
   _count: { select: { createdTickets: true } },
 } as const;
 
@@ -154,8 +211,10 @@ function toListItem(row: AccountListRow): ExternalAccountListItem {
       project: row.prefillProject,
       brokerageEntity: row.prefillBrokerageEntity,
       paymentChannel: row.prefillPaymentChannel,
-      userComplaintChannel: row.prefillUserComplaintChannel,
-      complaintReceiveChannel: row.prefillComplaintReceiveChannel,
+      userComplaintChannelId: row.prefillUserComplaintChannelId,
+      userComplaintChannelName: row.prefillUserComplaintChannel?.name ?? null,
+      complaintReceiveChannelId: row.prefillComplaintReceiveChannelId,
+      complaintReceiveChannelName: row.prefillComplaintReceiveChannel?.name ?? null,
     },
     ticketCount: row._count.createdTickets,
   };
@@ -179,7 +238,11 @@ export async function createExternalAccount(
   input: ExternalAccountCreateData,
 ) {
   const { prisma } = deps;
-  await resolvePrefillChannel(prisma, input.prefill?.channelId ?? null);
+  await resolvePrefillRefs(prisma, {
+    channelId: input.prefill?.channelId ?? null,
+    userComplaintChannelId: input.prefill?.userComplaintChannelId ?? null,
+    complaintReceiveChannelId: input.prefill?.complaintReceiveChannelId ?? null,
+  });
   const role = await loadSoleExternalRole(prisma);
 
   const passwordHash = await hashPassword(input.password);
@@ -197,8 +260,8 @@ export async function createExternalAccount(
         prefillProject: input.prefill?.project ?? null,
         prefillBrokerageEntity: input.prefill?.brokerageEntity ?? null,
         prefillPaymentChannel: input.prefill?.paymentChannel ?? null,
-        prefillUserComplaintChannel: input.prefill?.userComplaintChannel ?? null,
-        prefillComplaintReceiveChannel: input.prefill?.complaintReceiveChannel ?? null,
+        prefillUserComplaintChannelId: input.prefill?.userComplaintChannelId ?? null,
+        prefillComplaintReceiveChannelId: input.prefill?.complaintReceiveChannelId ?? null,
       },
       select: { id: true, name: true },
     });
@@ -219,7 +282,7 @@ export async function updateExternalAccount(
   const { prisma } = deps;
   await loadExternalAccount(prisma, input.id);
   if (input.prefill !== undefined) {
-    await resolvePrefillChannel(prisma, input.prefill.channelId);
+    await resolvePrefillRefs(prisma, input.prefill);
   }
 
   const data: Prisma.UserUncheckedUpdateInput = {
@@ -235,8 +298,8 @@ export async function updateExternalAccount(
     data.prefillProject = input.prefill.project;
     data.prefillBrokerageEntity = input.prefill.brokerageEntity;
     data.prefillPaymentChannel = input.prefill.paymentChannel;
-    data.prefillUserComplaintChannel = input.prefill.userComplaintChannel;
-    data.prefillComplaintReceiveChannel = input.prefill.complaintReceiveChannel;
+    data.prefillUserComplaintChannelId = input.prefill.userComplaintChannelId;
+    data.prefillComplaintReceiveChannelId = input.prefill.complaintReceiveChannelId;
   }
 
   return prisma.$transaction(async (tx) => {

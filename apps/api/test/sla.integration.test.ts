@@ -78,7 +78,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["SLA2026071000001"],
-      userComplaintChannel: "400热线",
+      userComplaintChannelId: null,
       customerName: "王小明",
       phone: "13800000000",
       customerRequest: "对保费收取金额有异议，要求核实并回复",

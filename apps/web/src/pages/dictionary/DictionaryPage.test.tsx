@@ -102,6 +102,26 @@ const canned = {
       updatedAt: "2026-07-16T00:00:00.000Z",
     },
   ],
+  userComplaintChannels: [
+    {
+      id: "ucc-hotline",
+      name: "保司400热线",
+      active: true,
+      displayOrder: 1,
+      createdAt: "2026-08-19T00:00:00.000Z",
+      updatedAt: "2026-08-19T00:00:00.000Z",
+    },
+  ],
+  complaintReceiveChannels: [
+    {
+      id: "crc-wechat",
+      name: "（微信）凯森&骏伯客诉对接群",
+      active: true,
+      displayOrder: 1,
+      createdAt: "2026-08-19T00:00:00.000Z",
+      updatedAt: "2026-08-19T00:00:00.000Z",
+    },
+  ],
 };
 let calls: Array<{ path: string; input: unknown }>;
 let deleteError: string | null;
@@ -110,6 +130,8 @@ const lists: Record<string, unknown> = {
   "channel.list": canned.channels,
   "ticketCategory.list": canned.categories,
   "completionStatus.list": canned.completionStatuses,
+  "userComplaintChannel.list": canned.userComplaintChannels,
+  "complaintReceiveChannel.list": canned.complaintReceiveChannels,
 };
 
 function respond(path: string, input: unknown): unknown {
@@ -311,6 +333,22 @@ describe("per-catalog config smoke", () => {
       nameLabel: "状态名称",
       row: { id: "cs-normal", name: "正常完结" },
       refusal: "该完结状态已被 2 张工单使用，无法删除，可改为停用",
+    },
+    {
+      catalog: "用户投诉渠道",
+      ns: "userComplaintChannel",
+      addLabel: "新增用户投诉渠道",
+      nameLabel: "渠道名称",
+      row: { id: "ucc-hotline", name: "保司400热线" },
+      refusal: "该用户投诉渠道已被 2 张工单使用，无法删除，可改为停用",
+    },
+    {
+      catalog: "投诉信息接收渠道",
+      ns: "complaintReceiveChannel",
+      addLabel: "新增投诉信息接收渠道",
+      nameLabel: "渠道名称",
+      row: { id: "crc-wechat", name: "（微信）凯森&骏伯客诉对接群" },
+      refusal: "该投诉信息接收渠道已被 2 张工单使用，无法删除，可改为停用",
     },
   ])("$catalog wires every procedure to its own namespace", async (c) => {
     renderPage();

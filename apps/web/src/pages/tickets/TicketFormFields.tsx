@@ -347,6 +347,8 @@ export function TicketFormFields({
     trpc.channel.options.useQuery().data ?? [],
     currentChannel,
   );
+  const userComplaintChannelOptions = trpc.userComplaintChannel.options.useQuery().data ?? [];
+  const complaintReceiveChannelOptions = trpc.complaintReceiveChannel.options.useQuery().data ?? [];
 
   // 建单即时查重：命中提示贴身挂在保单号/手机号字段下（编辑面走 TicketDetailField 的 addon）
   const duplicates = useTicketDuplicates(form);
@@ -480,31 +482,77 @@ export function TicketFormFields({
             <FieldError errors={[errors.policyNumbers]} />
             <DuplicateFieldHint field="policyNumbers" duplicates={duplicates} />
           </Field>
-          <Field data-invalid={!!errors.userComplaintChannel}>
-            <FieldLabel htmlFor="userComplaintChannel">
-              {TICKET_FIELDS.userComplaintChannel.label}
-              {isRequired("userComplaintChannel") && <span className="text-destructive">*</span>}
+          <Field data-invalid={!!errors.userComplaintChannelId}>
+            <FieldLabel htmlFor="userComplaintChannelId">
+              {TICKET_FIELDS.userComplaintChannelId.label}
+              {isRequired("userComplaintChannelId") && <span className="text-destructive">*</span>}
             </FieldLabel>
-            <Input
-              id="userComplaintChannel"
-              placeholder="如：监管引导件、网微投诉、黑猫投诉"
-              aria-invalid={!!errors.userComplaintChannel}
-              {...register("userComplaintChannel")}
+            <Controller
+              control={control}
+              name="userComplaintChannelId"
+              render={({ field }) => (
+                <Select
+                  value={field.value ? field.value : UNSET}
+                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
+                >
+                  <SelectTrigger
+                    id="userComplaintChannelId"
+                    className="w-full"
+                    aria-invalid={!!errors.userComplaintChannelId}
+                  >
+                    <SelectValue placeholder="请选择" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={UNSET}>未设置</SelectItem>
+                      {userComplaintChannelOptions.map((channel) => (
+                        <SelectItem key={channel.id} value={channel.id}>
+                          {channel.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
             />
-            <FieldError errors={[errors.userComplaintChannel]} />
+            <FieldError errors={[errors.userComplaintChannelId]} />
           </Field>
-          <Field data-invalid={!!errors.complaintReceiveChannel}>
-            <FieldLabel htmlFor="complaintReceiveChannel">
-              {TICKET_FIELDS.complaintReceiveChannel.label}
-              {isRequired("complaintReceiveChannel") && <span className="text-destructive">*</span>}
+          <Field data-invalid={!!errors.complaintReceiveChannelId}>
+            <FieldLabel htmlFor="complaintReceiveChannelId">
+              {TICKET_FIELDS.complaintReceiveChannelId.label}
+              {isRequired("complaintReceiveChannelId") && (
+                <span className="text-destructive">*</span>
+              )}
             </FieldLabel>
-            <Input
-              id="complaintReceiveChannel"
-              placeholder="接受投诉信息的群名、邮箱"
-              aria-invalid={!!errors.complaintReceiveChannel}
-              {...register("complaintReceiveChannel")}
+            <Controller
+              control={control}
+              name="complaintReceiveChannelId"
+              render={({ field }) => (
+                <Select
+                  value={field.value ? field.value : UNSET}
+                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
+                >
+                  <SelectTrigger
+                    id="complaintReceiveChannelId"
+                    className="w-full"
+                    aria-invalid={!!errors.complaintReceiveChannelId}
+                  >
+                    <SelectValue placeholder="请选择" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={UNSET}>未设置</SelectItem>
+                      {complaintReceiveChannelOptions.map((channel) => (
+                        <SelectItem key={channel.id} value={channel.id}>
+                          {channel.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
             />
-            <FieldError errors={[errors.complaintReceiveChannel]} />
+            <FieldError errors={[errors.complaintReceiveChannelId]} />
           </Field>
         </div>
       </FieldSet>

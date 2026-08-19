@@ -144,6 +144,8 @@ export interface TicketImportCatalogs {
   categories: CatalogNameIndex;
   completionStatuses: CatalogNameIndex;
   slaPolicies: CatalogNameIndex;
+  userComplaintChannels: CatalogNameIndex;
+  complaintReceiveChannels: CatalogNameIndex;
 }
 
 /**
@@ -323,6 +325,8 @@ const CATALOG_INDEXES: Record<
   category: (catalogs) => catalogs.categories,
   completionStatus: (catalogs) => catalogs.completionStatuses,
   slaPolicy: (catalogs) => catalogs.slaPolicies,
+  userComplaintChannel: (catalogs) => catalogs.userComplaintChannels,
+  complaintReceiveChannel: (catalogs) => catalogs.complaintReceiveChannels,
 };
 
 function catalogColumn(
@@ -529,11 +533,20 @@ export async function importTickets(
 
   return prisma.$transaction(
     async (tx) => {
-      const [channels, categories, completionStatuses, slaPolicies] = await Promise.all([
+      const [
+        channels,
+        categories,
+        completionStatuses,
+        slaPolicies,
+        userComplaintChannels,
+        complaintReceiveChannels,
+      ] = await Promise.all([
         tx.channel.findMany(),
         tx.ticketCategory.findMany(),
         tx.completionStatus.findMany(),
         tx.slaPolicy.findMany(),
+        tx.userComplaintChannel.findMany(),
+        tx.complaintReceiveChannel.findMany(),
       ]);
       const { tickets, errors } = validateTicketImportRows(
         rows,
@@ -542,6 +555,8 @@ export async function importTickets(
           categories: buildCatalogNameIndex(categories),
           completionStatuses: buildCatalogNameIndex(completionStatuses),
           slaPolicies: buildCatalogNameIndex(slaPolicies),
+          userComplaintChannels: buildCatalogNameIndex(userComplaintChannels),
+          complaintReceiveChannels: buildCatalogNameIndex(complaintReceiveChannels),
         },
         input.timeZone,
       );
