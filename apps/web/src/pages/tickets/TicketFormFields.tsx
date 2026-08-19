@@ -43,7 +43,7 @@ import {
   splitLocalDateTime,
 } from "@/lib/local-date-time";
 import { trpc } from "@/lib/trpc";
-import { CatalogCombobox } from "./CatalogCombobox";
+import { SearchableCombobox } from "./SearchableCombobox";
 import { DuplicateFieldHint, useTicketDuplicates } from "./TicketDuplicates";
 
 /**
@@ -492,7 +492,7 @@ export function TicketFormFields({
               control={control}
               name="userComplaintChannelId"
               render={({ field }) => (
-                <CatalogCombobox
+                <SearchableCombobox
                   id="userComplaintChannelId"
                   options={userComplaintChannelOptions}
                   value={field.value || ""}
@@ -514,7 +514,7 @@ export function TicketFormFields({
               control={control}
               name="complaintReceiveChannelId"
               render={({ field }) => (
-                <CatalogCombobox
+                <SearchableCombobox
                   id="complaintReceiveChannelId"
                   options={complaintReceiveChannelOptions}
                   value={field.value || ""}
@@ -699,7 +699,7 @@ export function TicketFormFields({
               control={control}
               name="categoryId"
               render={({ field }) => (
-                <CatalogCombobox
+                <SearchableCombobox
                   id="categoryId"
                   options={selectableCategories}
                   value={field.value || ""}
