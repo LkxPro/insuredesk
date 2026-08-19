@@ -27,6 +27,12 @@ Object.defineProperty(globalThis, "ResizeObserver", {
   value: ResizeObserverStub,
 });
 
+// jsdom has no scrollIntoView; Radix Select 打开时会把选中项滚动进可视区。
+Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+  writable: true,
+  value: () => {},
+});
+
 // jsdom has no matchMedia; ThemeProvider queries it for the initial theme.
 Object.defineProperty(window, "matchMedia", {
   writable: true,

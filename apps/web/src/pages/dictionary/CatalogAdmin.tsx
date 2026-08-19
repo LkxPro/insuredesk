@@ -1,5 +1,14 @@
 import type { CatalogSchemas } from "@insuredesk/shared";
-import { AlertCircle, Ban, CircleCheck, GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowDownAZ,
+  Ban,
+  CircleCheck,
+  GripVertical,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +25,13 @@ import {
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -26,14 +42,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { type NameSortDir, sortByName } from "@/lib/name-sort";
 import { toast } from "@/lib/toast";
 
 /**
  * 字典目录管理面板, shared by the 渠道/类别/完结状态 catalogs: list with 已停用
  * 标注, create/rename dialog with schema error mapping, 停用/启用 toggle, the
- * delete dialog that surfaces the server's in-use refusal, and drag/keyboard
- * reorder. Each catalog is a `CatalogAdminConfig`: its tRPC hooks, wording, and
- * input schema — no behavior switches.
+ * delete dialog that surfaces the server's in-use refusal, drag/keyboard
+ * reorder, and a name-sort preview that only overwrites the manual order on
+ * explicit save. Each catalog is a `CatalogAdminConfig`: its tRPC hooks,
+ * wording, and input schema — no behavior switches.
  */
 
 interface CatalogRow {
@@ -50,10 +68,7 @@ interface MutationLike<Input> {
 }
 
 /**
- * The structural slice of a catalog's tRPC namespace the panel uses. Configs
- * pass the concrete `trpc.<catalog>` hooks so the wire stays typed end to end
- * — a config wired to the wrong namespace only compiles if the shapes match,
- * and the per-catalog smoke tests pin the namespace itself.
+ * The structural slice of a catalog's tRPC namespace the panel uses.
  */
 export interface CatalogAdminHooks {
   useList(): {
@@ -261,12 +276,15 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
   const [localRows, setLocalRows] = useState<CatalogRow[] | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [sortMode, setSortMode] = useState<NameSortDir | "manual">("manual");
 
   useEffect(() => {
     if (list.data) setLocalRows(null);
   }, [list.data]);
 
   const rows = localRows ?? list.data ?? [];
+  const preview = sortMode === "manual" ? null : sortByName(rows, sortMode);
+  const viewRows = preview ?? rows;
 
   const setActive = config.hooks.useSetActive({
     onSuccess: (row) => {
@@ -281,14 +299,25 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
     onSettled: () => invalidate(),
   });
 
+  function applyOrder(next: CatalogRow[]) {
+    setLocalRows(next);
+    reorder.mutate({ ids: next.map((row) => row.id) });
+  }
+
   function moveRow(from: number, to: number) {
     if (to < 0 || to >= rows.length || from === to) return;
     const next = [...rows];
     const moved = next.splice(from, 1)[0];
     if (!moved) return;
     next.splice(to, 0, moved);
-    setLocalRows(next);
-    reorder.mutate({ ids: next.map((row) => row.id) });
+    applyOrder(next);
+  }
+
+  function savePreview() {
+    if (!preview) return;
+    applyOrder(preview);
+    setSortMode("manual");
+    toast.success(`${config.noun}顺序已保存`);
   }
 
   function openCreate() {
@@ -302,11 +331,44 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
         <p className="text-xs text-muted-foreground">
           拖拽行首手柄调整顺序，顺序即表单下拉的呈现顺序。
         </p>
-        <Button onClick={openCreate}>
-          <Plus data-icon="inline-start" />
-          新增{config.noun}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select
+            value={sortMode}
+            onValueChange={(value) => setSortMode(value as NameSortDir | "manual")}
+          >
+            <SelectTrigger size="sm" className="w-44" aria-label="排序方式">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="manual">手动排序</SelectItem>
+              <SelectItem value="asc">名称 A→Z（拼音）</SelectItem>
+              <SelectItem value="desc">名称 Z→A（拼音）</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button onClick={openCreate}>
+            <Plus data-icon="inline-start" />
+            新增{config.noun}
+          </Button>
+        </div>
       </div>
+
+      {preview && (
+        <Alert>
+          <ArrowDownAZ />
+          <AlertTitle>按名称{sortMode === "asc" ? "升序" : "降序"}预览中</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>拖拽已锁定；保存后才会替换手动顺序。</span>
+            <span className="flex items-center gap-2">
+              <Button size="sm" onClick={savePreview} disabled={reorder.isPending}>
+                保存此顺序
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSortMode("manual")}>
+                取消
+              </Button>
+            </span>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {list.error ? (
         <Alert variant="destructive">
@@ -334,7 +396,7 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
                     </TableCell>
                   </TableRow>
                 ))
-              ) : rows.length === 0 ? (
+              ) : viewRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="p-0">
                     <Empty className="border-0">
@@ -346,19 +408,22 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((row, index) => (
+                viewRows.map((row, index) => (
                   <TableRow
                     key={row.id}
-                    draggable
+                    draggable={preview === null}
                     onDragStart={(event) => {
+                      if (preview !== null) return;
                       event.dataTransfer.effectAllowed = "move";
                       setDragIndex(index);
                     }}
                     onDragOver={(event) => {
+                      if (preview !== null) return;
                       event.preventDefault();
                       setOverIndex(index);
                     }}
                     onDrop={(event) => {
+                      if (preview !== null) return;
                       event.preventDefault();
                       if (dragIndex !== null) moveRow(dragIndex, index);
                       setDragIndex(null);
@@ -369,8 +434,11 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
                       setOverIndex(null);
                     }}
                     className={[
-                      dragIndex === index ? "opacity-40" : "",
-                      overIndex === index && dragIndex !== null && dragIndex !== index
+                      dragIndex === index && preview === null ? "opacity-40" : "",
+                      preview === null &&
+                      overIndex === index &&
+                      dragIndex !== null &&
+                      dragIndex !== index
                         ? "bg-accent"
                         : "",
                     ].join(" ")}
@@ -380,8 +448,10 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
                         variant="ghost"
                         size="icon-sm"
                         aria-label={`排序 ${row.name}，方向键上下移动`}
+                        disabled={preview !== null}
                         className="cursor-grab text-muted-foreground active:cursor-grabbing"
                         onKeyDown={(event) => {
+                          if (preview !== null) return;
                           if (event.key === "ArrowUp") {
                             event.preventDefault();
                             moveRow(index, index - 1);

@@ -13,7 +13,7 @@ import { ThemeProvider } from "../../components/ThemeProvider";
 /**
  * 字典管理 page: card overview of the five catalogs behind dictionary.manage —
  * each card opens a Sheet hosting the shared CatalogAdmin panel (增改/停启用/
- * 删除/拖拽排序). The behavior suite exercises the panel once (via 客诉类别);
+ * 删除/拖拽排序/按名称预览排序). The behavior suite exercises the panel once (via 客诉类别);
  * the per-catalog smoke pins each catalog's config to its own tRPC namespace
  * and wording. Same faked-fetch tRPC pipeline and useAuth-seam mock as the
  * sibling page tests; the reference-deletion refusal is a server invariant
@@ -353,6 +353,65 @@ describe("CatalogAdmin behavior (via 客诉类别)", () => {
         ids: ["cat-visit", "cat-claims"],
       }),
     );
+  });
+
+  function gripOrder(sheet: HTMLElement) {
+    return within(sheet)
+      .getAllByRole("button", { name: /^排序 / })
+      .map((grip) => grip.getAttribute("aria-label"));
+  }
+
+  it("按名称预览排序：预览不写库，保存才提交 reorder", async () => {
+    renderPage();
+    const sheet = await openSheet("客诉类别");
+    await within(sheet).findByText("理赔投诉");
+    expect(gripOrder(sheet)).toEqual([
+      "排序 理赔投诉，方向键上下移动",
+      "排序 回访问题，方向键上下移动",
+    ]);
+
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "排序方式" }));
+    fireEvent.click(await screen.findByRole("option", { name: "名称 A→Z（拼音）" }));
+
+    expect(await within(sheet).findByText("按名称升序预览中")).toBeInTheDocument();
+    expect(gripOrder(sheet)).toEqual([
+      "排序 回访问题，方向键上下移动",
+      "排序 理赔投诉，方向键上下移动",
+    ]);
+    for (const grip of within(sheet).getAllByRole("button", { name: /^排序 / })) {
+      expect(grip).toBeDisabled();
+    }
+    expect(calls.some((call) => call.path === "ticketCategory.reorder")).toBe(false);
+
+    fireEvent.click(within(sheet).getByRole("button", { name: "保存此顺序" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "ticketCategory.reorder")?.input).toEqual({
+        ids: ["cat-visit", "cat-claims"],
+      }),
+    );
+    await waitFor(() => expect(within(sheet).queryByText(/预览中/)).toBeNull());
+    for (const grip of within(sheet).getAllByRole("button", { name: /^排序 / })) {
+      expect(grip).toBeEnabled();
+    }
+  });
+
+  it("名称预览可取消：回到手动顺序且不写库", async () => {
+    renderPage();
+    const sheet = await openSheet("客诉类别");
+    await within(sheet).findByText("理赔投诉");
+
+    fireEvent.click(within(sheet).getByRole("combobox", { name: "排序方式" }));
+    fireEvent.click(await screen.findByRole("option", { name: "名称 A→Z（拼音）" }));
+    expect(await within(sheet).findByText("按名称升序预览中")).toBeInTheDocument();
+
+    fireEvent.click(within(sheet).getByRole("button", { name: "取消" }));
+
+    await waitFor(() => expect(within(sheet).queryByText(/预览中/)).toBeNull());
+    expect(gripOrder(sheet)).toEqual([
+      "排序 理赔投诉，方向键上下移动",
+      "排序 回访问题，方向键上下移动",
+    ]);
+    expect(calls.some((call) => call.path === "ticketCategory.reorder")).toBe(false);
   });
 
   it("surfaces the server's reference-count refusal on delete", async () => {
