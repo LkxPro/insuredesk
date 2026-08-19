@@ -1,7 +1,9 @@
 import {
   channelCreateInputSchema,
+  complaintReceiveChannelCreateInputSchema,
   completionStatusCreateInputSchema,
   ticketCategoryCreateInputSchema,
+  userComplaintChannelCreateInputSchema,
 } from "@insuredesk/shared";
 import { trpc } from "@/lib/trpc";
 import { CatalogAdmin, type CatalogAdminConfig } from "./CatalogAdmin";
@@ -79,6 +81,50 @@ const completionStatusCatalog: CatalogAdminConfig = {
   },
 };
 
+const userComplaintChannelCatalog: CatalogAdminConfig = {
+  idPrefix: "user-complaint-channel",
+  title: "用户投诉渠道",
+  noun: "用户投诉渠道",
+  nameNoun: "渠道",
+  subtitle: "客户发起侧的投诉途径；建单与编辑表单只列启用项，停用不影响存量工单的显示。",
+  emptyDescription: "新增一个渠道后即可在建单表单中选择。",
+  dialogDescription: "改名对存量工单全局生效；调整顺序即调整建单下拉的呈现顺序。",
+  createInputSchema: userComplaintChannelCreateInputSchema,
+  hooks: {
+    useList: () => trpc.userComplaintChannel.list.useQuery(),
+    useInvalidate: () => {
+      const utils = trpc.useUtils();
+      return () => void utils.userComplaintChannel.invalidate();
+    },
+    useCreate: (opts) => trpc.userComplaintChannel.create.useMutation(opts),
+    useUpdate: (opts) => trpc.userComplaintChannel.update.useMutation(opts),
+    useSetActive: (opts) => trpc.userComplaintChannel.setActive.useMutation(opts),
+    useDelete: (opts) => trpc.userComplaintChannel.delete.useMutation(opts),
+  },
+};
+
+const complaintReceiveChannelCatalog: CatalogAdminConfig = {
+  idPrefix: "complaint-receive-channel",
+  title: "投诉信息接收渠道",
+  noun: "投诉信息接收渠道",
+  nameNoun: "渠道",
+  subtitle: "我方收到投诉信息的途径；建单与编辑表单只列启用项，停用不影响存量工单的显示。",
+  emptyDescription: "新增一个渠道后即可在建单表单中选择。",
+  dialogDescription: "改名对存量工单全局生效；调整顺序即调整建单下拉的呈现顺序。",
+  createInputSchema: complaintReceiveChannelCreateInputSchema,
+  hooks: {
+    useList: () => trpc.complaintReceiveChannel.list.useQuery(),
+    useInvalidate: () => {
+      const utils = trpc.useUtils();
+      return () => void utils.complaintReceiveChannel.invalidate();
+    },
+    useCreate: (opts) => trpc.complaintReceiveChannel.create.useMutation(opts),
+    useUpdate: (opts) => trpc.complaintReceiveChannel.update.useMutation(opts),
+    useSetActive: (opts) => trpc.complaintReceiveChannel.setActive.useMutation(opts),
+    useDelete: (opts) => trpc.complaintReceiveChannel.delete.useMutation(opts),
+  },
+};
+
 export function DictionaryPage() {
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -91,6 +137,8 @@ export function DictionaryPage() {
       <CatalogAdmin config={channelCatalog} />
       <CatalogAdmin config={ticketCategoryCatalog} />
       <CatalogAdmin config={completionStatusCatalog} />
+      <CatalogAdmin config={userComplaintChannelCatalog} />
+      <CatalogAdmin config={complaintReceiveChannelCatalog} />
     </div>
   );
 }

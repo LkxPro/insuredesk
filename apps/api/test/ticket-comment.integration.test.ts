@@ -30,7 +30,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026070900654"],
-      userComplaintChannel: "400热线",
+      userComplaintChannelId: null,
       customerName: "钱跟进",
       phone: "13800000002",
       customerRequest: "对退保金额有异议，要求重新核算",

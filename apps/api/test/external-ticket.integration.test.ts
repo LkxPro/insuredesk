@@ -46,8 +46,10 @@ describe("external ticket API (Testcontainers)", () => {
         prefillProject: "融盛",
         prefillBrokerageEntity: "东方大地",
         prefillPaymentChannel: "连连",
-        prefillUserComplaintChannel: "400热线",
-        prefillComplaintReceiveChannel: "客服群",
+        prefillUserComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
+        prefillComplaintReceiveChannelId: harness.complaintReceiveChannelId(
+          "（微信）凯森&骏伯客诉对接群",
+        ),
       },
     });
 
@@ -89,8 +91,8 @@ describe("external ticket API (Testcontainers)", () => {
         project: "融盛",
         brokerageEntity: "东方大地",
         paymentChannel: "连连",
-        userComplaintChannel: "400热线",
-        complaintReceiveChannel: "客服群",
+        userComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
+        complaintReceiveChannelId: harness.complaintReceiveChannelId("（微信）凯森&骏伯客诉对接群"),
         status: "unassigned",
       });
       // 外部单的客户反馈随提交发生：反馈时间即创建时间
@@ -108,8 +110,8 @@ describe("external ticket API (Testcontainers)", () => {
         project: null,
         brokerageEntity: null,
         paymentChannel: null,
-        userComplaintChannel: null,
-        complaintReceiveChannel: null,
+        userComplaintChannelId: null,
+        complaintReceiveChannelId: null,
       });
     });
 
@@ -911,8 +913,8 @@ describe("external ticket API (Testcontainers)", () => {
         paymentChannel: null,
         internalOrderNumber: null,
         policyNumbers: [],
-        userComplaintChannel: null,
-        complaintReceiveChannel: null,
+        userComplaintChannelId: null,
+        complaintReceiveChannelId: null,
         customerName: null,
         phone: null,
         contactPhone: null,
@@ -986,8 +988,8 @@ describe("external ticket API (Testcontainers)", () => {
         paymentChannel: null,
         internalOrderNumber: null,
         policyNumbers: [],
-        userComplaintChannel: null,
-        complaintReceiveChannel: null,
+        userComplaintChannelId: null,
+        complaintReceiveChannelId: null,
         customerName: null,
         phone: null,
         contactPhone: null,

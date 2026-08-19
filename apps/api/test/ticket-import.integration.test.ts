@@ -185,7 +185,8 @@ describe("ticket import upload (Testcontainers)", () => {
           反馈渠道: channelName,
           "项目（保司）": "融盛",
           保单号: "P202607010001",
-          投诉信息接收渠道: "监管转办",
+          用户投诉渠道: "保司400热线",
+          投诉信息接收渠道: "内部客服热线",
           客户姓名: "张三",
           保司侧是否核身: "待核实",
           客户曾进线: "是",
@@ -217,7 +218,14 @@ describe("ticket import upload (Testcontainers)", () => {
     // 反馈时间 wall clock interpreted in Asia/Shanghai
     expect(leveled.feedbackTime?.toISOString()).toBe("2026-07-01T02:00:00.000Z");
     expect(leveled.contactTime?.toISOString()).toBe("2026-06-30T13:15:00.000Z");
-    expect(leveled.complaintReceiveChannel).toBe("监管转办");
+    const expectedReceiveChannel = await prisma.complaintReceiveChannel.findUniqueOrThrow({
+      where: { name: "内部客服热线" },
+    });
+    const expectedUserChannel = await prisma.userComplaintChannel.findUniqueOrThrow({
+      where: { name: "保司400热线" },
+    });
+    expect(leveled.complaintReceiveChannelId).toBe(expectedReceiveChannel.id);
+    expect(leveled.userComplaintChannelId).toBe(expectedUserChannel.id);
     expect(leveled.policyNumbers).toEqual(["P202607010001"]);
     expect(unleveled.policyNumbers).toEqual(["P202607010002"]);
     expect(leveled.nuclearBodyStatus).toBe("待核实");

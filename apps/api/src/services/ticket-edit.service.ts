@@ -11,6 +11,7 @@ import {
 import type { Prisma } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
 import { channelCatalog } from "./channel.service.ts";
+import { complaintReceiveChannelCatalog } from "./complaint-receive-channel.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
 import {
   findSlaPolicyById,
@@ -22,6 +23,7 @@ import {
 import { TicketNotFoundError } from "./ticket-assign.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
+import { userComplaintChannelCatalog } from "./user-complaint-channel.service.ts";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结
@@ -136,6 +138,8 @@ export async function editTicket(
         category: { select: { name: true } },
         channel: { select: { name: true } },
         slaPolicy: { select: { name: true } },
+        userComplaintChannel: { select: { name: true } },
+        complaintReceiveChannel: { select: { name: true } },
       },
     });
     if (!ticket) {
@@ -194,6 +198,21 @@ export async function editTicket(
         from: ticket.channel?.name ?? null,
         to: changedFields.includes("channelId")
           ? ((await channelCatalog.resolveNewRef(tx, next.channelId))?.name ?? null)
+          : null,
+      },
+      userComplaintChannelId: {
+        from: ticket.userComplaintChannel?.name ?? null,
+        to: changedFields.includes("userComplaintChannelId")
+          ? ((await userComplaintChannelCatalog.resolveNewRef(tx, next.userComplaintChannelId))
+              ?.name ?? null)
+          : null,
+      },
+      complaintReceiveChannelId: {
+        from: ticket.complaintReceiveChannel?.name ?? null,
+        to: changedFields.includes("complaintReceiveChannelId")
+          ? ((
+              await complaintReceiveChannelCatalog.resolveNewRef(tx, next.complaintReceiveChannelId)
+            )?.name ?? null)
           : null,
       },
     };

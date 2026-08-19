@@ -83,9 +83,10 @@ export const ticketCreateInputSchema = z.object({
     .boolean()
     .nullish()
     .transform((value) => value ?? false),
-  userComplaintChannel: optionalText(TICKET_TEXT_LIMITS.userComplaintChannel),
-  /** 我方收到投诉信息的途径（如监管转办、邮箱接收），区别于客户发起侧的用户投诉渠道。 */
-  complaintReceiveChannel: optionalText(TICKET_TEXT_LIMITS.complaintReceiveChannel),
+  /** 用户投诉渠道目录引用（客户发起侧）；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
+  userComplaintChannelId: optionalText(TICKET_FIELDS.userComplaintChannelId.maxLength),
+  /** 投诉信息接收渠道目录引用（我方收到投诉的途径）；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
+  complaintReceiveChannelId: optionalText(TICKET_FIELDS.complaintReceiveChannelId.maxLength),
   customerName: optionalText(TICKET_TEXT_LIMITS.customerName),
   phone: optionalText(TICKET_TEXT_LIMITS.phone),
   contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),

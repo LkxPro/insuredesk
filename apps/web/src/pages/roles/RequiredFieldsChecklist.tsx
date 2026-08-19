@@ -60,8 +60,8 @@ export function RequiredFieldsChecklist({
             "paymentChannel",
             "internalOrderNumber",
             "policyNumbers",
-            "userComplaintChannel",
-            "complaintReceiveChannel",
+            "userComplaintChannelId",
+            "complaintReceiveChannelId",
           ].map((field) => (
             <div key={field} className="flex items-start gap-2 text-sm">
               <Checkbox

@@ -46,7 +46,7 @@ describe("ticket export (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026070900123"],
-      userComplaintChannel: "400热线",
+      userComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
       customerName: "王小明",
       phone: "13800000000",
       customerRequest: "对保费收取金额有异议，要求核实并回复",
@@ -420,7 +420,7 @@ describe("ticket export (Testcontainers)", () => {
     it("进线时间/投诉信息接收渠道 columns sit in their detail-page positions, dates in the requested zone", async () => {
       await makeTicket({
         contactTime: "2026-07-08T02:00:00.000Z",
-        complaintReceiveChannel: "监管转办",
+        complaintReceiveChannelId: harness.complaintReceiveChannelId("内部客服热线"),
       });
 
       const session = await sessionFor("manager");
@@ -435,7 +435,8 @@ describe("ticket export (Testcontainers)", () => {
       expect(header.indexOf("联系ID")).toBe(header.indexOf("进线时间") + 1);
 
       const row = rows[1] ?? [];
-      expect(row[header.indexOf("投诉信息接收渠道")]).toBe("监管转办");
+      expect(row[header.indexOf("投诉信息接收渠道")]).toBe("内部客服热线");
+      expect(row[header.indexOf("用户投诉渠道")]).toBe("保司400热线");
       expect(row[header.indexOf("进线时间")]).toBe("2026-07-08 10:00"); // UTC+8
     });
   });

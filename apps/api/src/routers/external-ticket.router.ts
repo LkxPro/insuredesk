@@ -26,6 +26,8 @@ const catalogInclude = {
   category: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
+  userComplaintChannel: { select: { name: true } },
+  complaintReceiveChannel: { select: { name: true } },
 } as const;
 
 type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclude }>;
@@ -49,8 +51,8 @@ function serializeExternalTicket(ticket: TicketWithCatalogs) {
     paymentChannel: ticket.paymentChannel,
     internalOrderNumber: ticket.internalOrderNumber,
     policyNumbers: ticket.policyNumbers,
-    userComplaintChannel: ticket.userComplaintChannel,
-    complaintReceiveChannel: ticket.complaintReceiveChannel,
+    userComplaintChannel: ticket.userComplaintChannel?.name ?? null,
+    complaintReceiveChannel: ticket.complaintReceiveChannel?.name ?? null,
     customerName: ticket.customerName,
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,
@@ -91,8 +93,8 @@ async function loadExternalAccountConfig(userId: string) {
       prefillProject: true,
       prefillBrokerageEntity: true,
       prefillPaymentChannel: true,
-      prefillUserComplaintChannel: true,
-      prefillComplaintReceiveChannel: true,
+      prefillUserComplaintChannelId: true,
+      prefillComplaintReceiveChannelId: true,
     },
   });
   if (!account) {
@@ -127,8 +129,8 @@ export const externalTicketRouter = router({
             project: account.prefillProject,
             brokerageEntity: account.prefillBrokerageEntity,
             paymentChannel: account.prefillPaymentChannel,
-            userComplaintChannel: account.prefillUserComplaintChannel,
-            complaintReceiveChannel: account.prefillComplaintReceiveChannel,
+            userComplaintChannelId: account.prefillUserComplaintChannelId,
+            complaintReceiveChannelId: account.prefillComplaintReceiveChannelId,
             status: "unassigned",
             feedbackTime: now,
             createdAt: now,
