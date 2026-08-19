@@ -7,6 +7,8 @@ import {
 } from "@insuredesk/shared";
 import { Settings2 } from "lucide-react";
 import { useState } from "react";
+import { useSearchParams } from "react-router";
+import { PrototypeSwitcher } from "@/components/PrototypeSwitcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +21,7 @@ import {
 } from "@/components/ui/sheet";
 import { trpc } from "@/lib/trpc";
 import { CatalogAdmin, type CatalogAdminConfig } from "./CatalogAdmin";
+import { PROTOTYPE_VARIANTS, PrototypeCatalogAdmin } from "./sort-prototype/PrototypeCatalogAdmin";
 
 /**
  * 字典管理: the catalog management page behind dictionary.manage. 建单/编辑/完结
@@ -183,6 +186,8 @@ function CatalogCard({ config, onManage }: { config: CatalogAdminConfig; onManag
 
 export function DictionaryPage() {
   const [managing, setManaging] = useState<CatalogAdminConfig | null>(null);
+  const [searchParams] = useSearchParams();
+  const variant = searchParams.get("variant");
 
   return (
     <div className="flex flex-1 flex-col gap-6">
@@ -207,12 +212,18 @@ export function DictionaryPage() {
                 <SheetDescription>{managing.subtitle}</SheetDescription>
               </SheetHeader>
               <div className="px-4 pb-6">
-                <CatalogAdmin config={managing} />
+                {variant ? (
+                  <PrototypeCatalogAdmin config={managing} variant={variant} />
+                ) : (
+                  <CatalogAdmin config={managing} />
+                )}
               </div>
             </>
           )}
         </SheetContent>
       </Sheet>
+
+      <PrototypeSwitcher variants={PROTOTYPE_VARIANTS} />
     </div>
   );
 }
