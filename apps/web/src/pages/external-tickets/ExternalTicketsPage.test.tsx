@@ -63,13 +63,14 @@ function renderPage(path = "/external-tickets", trpc: Record<string, unknown> = 
 }
 
 describe("列表页", () => {
-  it("着陆为全宽表格：7 列表头就位，不拉详情不跳转", async () => {
+  it("着陆为全宽表格：8 列表头就位，不拉详情不跳转", async () => {
     renderPage();
 
     expect(await screen.findByText("WO100001")).toBeInTheDocument();
     for (const name of [
       "工单号",
       "反馈时间",
+      "用户反馈渠道",
       "保单号",
       "客户姓名",
       "状态",
@@ -89,6 +90,7 @@ describe("列表页", () => {
           ticket({
             customerName: "张三",
             policyNumbers: ["P123"],
+            userComplaintChannel: "保司400热线",
             latestLog: {
               action: "comment",
               remark: "已联系客户，等待回复",
@@ -103,6 +105,7 @@ describe("列表页", () => {
     const row = (await screen.findByText("WO100001")).closest("tr") as HTMLElement;
     expect(within(row).getByText("张三")).toBeInTheDocument();
     expect(within(row).getByText("P123")).toBeInTheDocument();
+    expect(within(row).getByText("保司400热线")).toBeInTheDocument();
     expect(within(row).getByText("已联系客户，等待回复")).toBeInTheDocument();
     expect(within(row).getByText("未完结")).toBeInTheDocument();
     expect(within(row).getByText("客服新发言")).toBeInTheDocument();
@@ -114,7 +117,9 @@ describe("列表页", () => {
     const row = (await screen.findByText("WO100001")).closest("tr") as HTMLElement;
     expect(within(row).queryByText("客服新发言")).not.toBeInTheDocument();
     const cells = within(row).getAllByRole("cell");
-    expect(cells[5]).toHaveTextContent("");
+    // 用户反馈渠道无值落横杠
+    expect(cells[2]).toHaveTextContent("—");
+    expect(cells[6]).toHaveTextContent("");
   });
 
   it("整行进详情态：全宽表换成窄列+详情，「返回列表」回到表格", async () => {

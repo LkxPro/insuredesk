@@ -26,6 +26,9 @@ export function migrateDeploy(databaseUrl: string): void {
     cwd: apiDir,
     env: { ...process.env, DATABASE_URL: databaseUrl },
     stdio: "pipe",
+    // Windows 上 pnpm 只有 .cmd：裸名 ENOENT，指名 .cmd 又被 Node 安全闸门
+    // EINVAL，只能 shell:true 走 cmd.exe 解析。
+    shell: process.platform === "win32",
   });
 }
 

@@ -29,7 +29,7 @@ import { downloadExternalTicketExport } from "./external-ticket-export";
 
 /**
  * 外部端 adapter：只声明槽位——解析器、externalTicket.list 查询（offset/limit
- * 由页码折算）、状态/创建时间/搜索三个筛选维度、七列固定序列（列序即服务端
+ * 由页码折算）、状态/创建时间/搜索三个筛选维度、八列固定序列（列序即服务端
  * 排定的「该说话的单」序，无列头排序）、导出与新建动作、提交对话框与详情
  * pane。三态骨架、URL 筛选态与翻单契约都在 ticket-surface 深模块，本文件
  * 不含编排 JSX，与内部工单页模块零共享。
@@ -114,6 +114,13 @@ const columns: ReadonlyArray<SurfaceColumn<ListItem, ExternalListQuery>> = [
     key: "feedbackTime",
     header: TICKET_FIELDS.feedbackTime.label,
     render: (ticket) => (ticket.feedbackTime ? formatDateTime(ticket.feedbackTime) : <Unknown />),
+  },
+  {
+    key: "userComplaintChannel",
+    // 外部侧别名：取值是内部「用户投诉渠道」字段（外部单创建时由账号预填盖章），
+    // 内部端仍叫「用户投诉渠道」——双名有意为之，见 CONTEXT.md 外部工单字段全量展示
+    header: "用户反馈渠道",
+    render: (ticket) => ticket.userComplaintChannel ?? <Unknown />,
   },
   {
     key: "policyNumbers",
