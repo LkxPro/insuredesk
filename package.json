@@ -18,9 +18,9 @@
     "db:migrate": "pnpm --filter @insuredesk/api run db:migrate"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.4",
+    "@biomejs/biome": "^2.5.8",
     "@insuredesk/shared": "workspace:*",
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.2.0",
     "playwright": "^1.62.1",
     "typescript": "^7.0.2",
     "yaml": "^2.9.0"
