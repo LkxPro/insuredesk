@@ -51,8 +51,8 @@ export interface EditableTicket {
   internalOrderNumber: string | null;
   policyNumbers: string[];
   noPolicyNumber: boolean;
-  userComplaintChannel: CurrentCatalogOption | null;
-  complaintReceiveChannel: CurrentCatalogOption | null;
+  userFeedbackChannel: CurrentCatalogOption | null;
+  feedbackReceiveChannel: CurrentCatalogOption | null;
   customerName: string | null;
   phone: string | null;
   contactPhone: string | null;
@@ -83,8 +83,8 @@ export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
     internalOrderNumber: ticket?.internalOrderNumber ?? "",
     policyNumbers: joinPolicyNumbers(ticket?.policyNumbers ?? []),
     noPolicyNumber: ticket?.noPolicyNumber ?? false,
-    userComplaintChannelId: ticket?.userComplaintChannel?.id ?? "",
-    complaintReceiveChannelId: ticket?.complaintReceiveChannel?.id ?? "",
+    userFeedbackChannelId: ticket?.userFeedbackChannel?.id ?? "",
+    feedbackReceiveChannelId: ticket?.feedbackReceiveChannel?.id ?? "",
     customerName: ticket?.customerName ?? "",
     phone: ticket?.phone ?? "",
     contactPhone: ticket?.contactPhone ?? "",
@@ -111,10 +111,10 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
       return ticket.channel?.name ?? null;
     case "categoryId":
       return ticket.category?.name ?? null;
-    case "userComplaintChannelId":
-      return ticket.userComplaintChannel?.name ?? null;
-    case "complaintReceiveChannelId":
-      return ticket.complaintReceiveChannel?.name ?? null;
+    case "userFeedbackChannelId":
+      return ticket.userFeedbackChannel?.name ?? null;
+    case "feedbackReceiveChannelId":
+      return ticket.feedbackReceiveChannel?.name ?? null;
     case "slaPolicyId":
       return ticket.slaPolicy?.name ?? null;
     case "hasContacted":
@@ -191,7 +191,7 @@ function CatalogControl({
   invalid,
 }: {
   form: UseFormReturn<TicketFormValues>;
-  name: "channelId" | "categoryId" | "userComplaintChannelId" | "complaintReceiveChannelId";
+  name: "channelId" | "categoryId" | "userFeedbackChannelId" | "feedbackReceiveChannelId";
   current: CurrentCatalogOption | null;
   invalid: boolean;
 }) {
@@ -201,20 +201,20 @@ function CatalogControl({
   const categoryOptions = trpc.ticketCategory.options.useQuery(undefined, {
     enabled: name === "categoryId",
   });
-  const userComplaintChannelOptions = trpc.userComplaintChannel.options.useQuery(undefined, {
-    enabled: name === "userComplaintChannelId",
+  const userFeedbackChannelOptions = trpc.userFeedbackChannel.options.useQuery(undefined, {
+    enabled: name === "userFeedbackChannelId",
   });
-  const complaintReceiveChannelOptions = trpc.complaintReceiveChannel.options.useQuery(undefined, {
-    enabled: name === "complaintReceiveChannelId",
+  const feedbackReceiveChannelOptions = trpc.feedbackReceiveChannel.options.useQuery(undefined, {
+    enabled: name === "feedbackReceiveChannelId",
   });
   const data =
     name === "channelId"
       ? channelOptions.data
       : name === "categoryId"
         ? categoryOptions.data
-        : name === "userComplaintChannelId"
-          ? userComplaintChannelOptions.data
-          : complaintReceiveChannelOptions.data;
+        : name === "userFeedbackChannelId"
+          ? userFeedbackChannelOptions.data
+          : feedbackReceiveChannelOptions.data;
   const options = withCurrentOption(data ?? [], current);
 
   if (name === "channelId") {
@@ -298,21 +298,21 @@ function EditControl({
       return <CatalogControl form={form} name={name} current={ticket.channel} invalid={invalid} />;
     case "categoryId":
       return <CatalogControl form={form} name={name} current={ticket.category} invalid={invalid} />;
-    case "userComplaintChannelId":
+    case "userFeedbackChannelId":
       return (
         <CatalogControl
           form={form}
           name={name}
-          current={ticket.userComplaintChannel}
+          current={ticket.userFeedbackChannel}
           invalid={invalid}
         />
       );
-    case "complaintReceiveChannelId":
+    case "feedbackReceiveChannelId":
       return (
         <CatalogControl
           form={form}
           name={name}
-          current={ticket.complaintReceiveChannel}
+          current={ticket.feedbackReceiveChannel}
           invalid={invalid}
         />
       );

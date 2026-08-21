@@ -62,7 +62,14 @@ api_url="${VITE_API_URL:-http://localhost:3000}"
 api_port="${api_url##*:}"
 web_port="${VITE_PORT:-5173}"
 
-listening() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+# Windows 没有 lsof，退到 netstat 查 LISTENING。
+listening() {
+  if command -v lsof > /dev/null 2>&1; then
+    lsof -nP -iTCP:"$1" -sTCP:LISTEN > /dev/null 2>&1
+  else
+    netstat -ano | grep LISTENING | grep -qE ":$1[[:space:]]"
+  fi
+}
 
 # 已退出未 wait 的 pnpm 是僵尸，kill -0 依然成功，必须靠 stat 甄别。
 dev_alive() {
@@ -76,7 +83,12 @@ stop_family() {
   # 兜底：pnpm 没把信号传下去时，按口清残留。
   for p in "$web_port" "$api_port"; do
     if listening "$p"; then
-      lsof -tiTCP:"$p" -sTCP:LISTEN | xargs kill 2>/dev/null || true
+      if command -v lsof > /dev/null 2>&1; then
+        lsof -tiTCP:"$p" -sTCP:LISTEN | xargs kill 2>/dev/null || true
+      else
+        netstat -ano | grep LISTENING | grep -E ":$p[[:space:]]" \
+          | awk '{print $NF}' | sort -u | xargs -r kill 2>/dev/null || true
+      fi
     fi
   done
 }

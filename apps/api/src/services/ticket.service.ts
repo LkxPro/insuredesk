@@ -24,12 +24,12 @@ import type { Clock } from "../clock.ts";
 import type { Prisma, PrismaClient, SlaPolicy } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
 import { channelCatalog } from "./channel.service.ts";
-import { complaintReceiveChannelCatalog } from "./complaint-receive-channel.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
+import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { displayStatusTicketWhere } from "./ticket-display-status.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
-import { userComplaintChannelCatalog } from "./user-complaint-channel.service.ts";
+import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 export interface TicketServiceDeps {
   prisma: PrismaClient;
@@ -205,8 +205,8 @@ export async function createTicket(
     // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
     await ticketCategoryCatalog.resolveNewRef(tx, data.categoryId);
     await channelCatalog.resolveNewRef(tx, data.channelId);
-    await userComplaintChannelCatalog.resolveNewRef(tx, data.userComplaintChannelId);
-    await complaintReceiveChannelCatalog.resolveNewRef(tx, data.complaintReceiveChannelId);
+    await userFeedbackChannelCatalog.resolveNewRef(tx, data.userFeedbackChannelId);
+    await feedbackReceiveChannelCatalog.resolveNewRef(tx, data.feedbackReceiveChannelId);
 
     const ticket = await tx.ticket.create({
       data: {
@@ -439,8 +439,8 @@ const detailInclude = {
   // selectable (labelled 已停用) while other disabled options never appear
   category: { select: { id: true, name: true, active: true } },
   channel: { select: { id: true, name: true, active: true } },
-  userComplaintChannel: { select: { id: true, name: true, active: true } },
-  complaintReceiveChannel: { select: { id: true, name: true, active: true } },
+  userFeedbackChannel: { select: { id: true, name: true, active: true } },
+  feedbackReceiveChannel: { select: { id: true, name: true, active: true } },
   slaPolicy: { select: { id: true, name: true, active: true } },
   // 完结状态 is display-only on the detail page — the CURRENT name suffices
   completionStatus: { select: { name: true } },
@@ -501,8 +501,8 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     internalOrderNumber: ticket.internalOrderNumber,
     policyNumbers: ticket.policyNumbers,
     noPolicyNumber: ticket.noPolicyNumber,
-    userComplaintChannel: ticket.userComplaintChannel,
-    complaintReceiveChannel: ticket.complaintReceiveChannel,
+    userFeedbackChannel: ticket.userFeedbackChannel,
+    feedbackReceiveChannel: ticket.feedbackReceiveChannel,
     customerName: ticket.customerName,
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,

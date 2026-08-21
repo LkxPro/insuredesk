@@ -71,7 +71,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026070900123"],
-      userComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
+      userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
       customerName: "王小明",
       phone: "13800000000",
       customerRequest: "对保费收取金额有异议，要求核实并回复",
@@ -102,7 +102,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       const created = await manager().ticket.create({
         ...baseInput(),
         contactTime: "2026-07-08T13:15:00.000Z",
-        complaintReceiveChannelId: harness.complaintReceiveChannelId("内部客服热线"),
+        feedbackReceiveChannelId: harness.feedbackReceiveChannelId("内部客服热线"),
       });
       expect(created.workOrderNumber).toMatch(/^WO\d{6,}$/);
 
@@ -117,7 +117,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(detail.priority).toBeNull();
       expect(detail.feedbackTime).toBe(baseInput().feedbackTime);
       expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");
-      expect(detail.complaintReceiveChannel?.name).toBe("内部客服热线");
+      expect(detail.feedbackReceiveChannel?.name).toBe("内部客服热线");
       expect("deletedAt" in detail).toBe(false);
 
       expect(detail.dueAt).not.toBeNull();

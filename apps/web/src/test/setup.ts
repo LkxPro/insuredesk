@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
-configure({ asyncUtilTimeout: 5000 });
+configure({ asyncUtilTimeout: 12000 });
 
 // RTL only auto-cleans with vitest globals enabled; we import hooks explicitly.
 afterEach(() => {

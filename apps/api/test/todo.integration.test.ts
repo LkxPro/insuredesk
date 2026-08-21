@@ -72,7 +72,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
     policyNumbers: ["P2026070900789"],
-    userComplaintChannelId: null,
+    userFeedbackChannelId: null,
     customerName: "赵待办",
     phone: "13800000003",
     customerRequest: "希望尽快跟进理赔",

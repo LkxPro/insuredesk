@@ -20,8 +20,8 @@ describe("complaint_channel_catalogs migration (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  it("user_complaint_channels = 映射表目标全集（15 项，全启用，声明序）", async () => {
-    const rows = await prisma.userComplaintChannel.findMany({
+  it("user_feedback_channels = 映射表目标全集（15 项，全启用，声明序）", async () => {
+    const rows = await prisma.userFeedbackChannel.findMany({
       orderBy: { displayOrder: "asc" },
     });
     expect(rows.map((row) => [row.name, row.active, row.displayOrder])).toEqual([
@@ -43,8 +43,8 @@ describe("complaint_channel_catalogs migration (Testcontainers)", () => {
     ]);
   });
 
-  it("complaint_receive_channels = 映射表目标全集（36 项，全启用，声明序）", async () => {
-    const rows = await prisma.complaintReceiveChannel.findMany({
+  it("feedback_receive_channels = 映射表目标全集（36 项，全启用，声明序）", async () => {
+    const rows = await prisma.feedbackReceiveChannel.findMany({
       orderBy: { displayOrder: "asc" },
     });
     expect(rows.map((row) => [row.name, row.active, row.displayOrder])).toEqual([
@@ -87,34 +87,38 @@ describe("complaint_channel_catalogs migration (Testcontainers)", () => {
     ]);
   });
 
-  it("tickets/users 的旧文本列已下线", async () => {
+  it("tickets/users 的旧文本列与改名前外键列均已下线", async () => {
     const columns = await prisma.$queryRaw<{ table_name: string; column_name: string }[]>`
       SELECT table_name, column_name FROM information_schema.columns
-      WHERE (table_name = 'tickets' AND column_name IN ('userComplaintChannel', 'complaintReceiveChannel'))
-         OR (table_name = 'users' AND column_name IN ('prefillUserComplaintChannel', 'prefillComplaintReceiveChannel'))
+      WHERE (table_name = 'tickets' AND column_name IN ('userComplaintChannel', 'complaintReceiveChannel', 'userComplaintChannelId', 'complaintReceiveChannelId'))
+         OR (table_name = 'users' AND column_name IN ('prefillUserComplaintChannel', 'prefillComplaintReceiveChannel', 'prefillUserComplaintChannelId', 'prefillComplaintReceiveChannelId'))
     `;
     expect(columns).toEqual([]);
   });
 
-  it("角色必填集键改写：旧 key → 目录引用 key", async () => {
+  it("角色必填集键改写：目录引用旧 key → 新 key", async () => {
     const legacy = await prisma.role.create({
       data: {
         name: "存量必填角色",
         permissions: [],
-        requiredTicketFields: ["customerName", "userComplaintChannel", "complaintReceiveChannel"],
+        requiredTicketFields: [
+          "customerName",
+          "userComplaintChannelId",
+          "complaintReceiveChannelId",
+        ],
       },
     });
 
     await prisma.$executeRaw`
       UPDATE "roles"
       SET "requiredTicketFields" = array_replace(
-          array_replace("requiredTicketFields", 'userComplaintChannel', 'userComplaintChannelId'),
-          'complaintReceiveChannel', 'complaintReceiveChannelId'
+          array_replace("requiredTicketFields", 'userComplaintChannelId', 'userFeedbackChannelId'),
+          'complaintReceiveChannelId', 'feedbackReceiveChannelId'
       )
     `;
 
     expect(
       (await prisma.role.findUniqueOrThrow({ where: { id: legacy.id } })).requiredTicketFields,
-    ).toEqual(["customerName", "userComplaintChannelId", "complaintReceiveChannelId"]);
+    ).toEqual(["customerName", "userFeedbackChannelId", "feedbackReceiveChannelId"]);
   });
 });

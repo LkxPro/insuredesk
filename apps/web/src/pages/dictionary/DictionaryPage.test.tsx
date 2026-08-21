@@ -92,9 +92,9 @@ const canned = {
       updatedAt: "2026-07-16T00:00:00.000Z",
     },
   ],
-  userComplaintChannels: [
+  userFeedbackChannels: [
     {
-      id: "ucc-hotline",
+      id: "ufc-hotline",
       name: "保司400热线",
       active: true,
       displayOrder: 1,
@@ -102,10 +102,10 @@ const canned = {
       updatedAt: "2026-08-19T00:00:00.000Z",
     },
   ],
-  complaintReceiveChannels: [
+  feedbackReceiveChannels: [
     {
-      id: "crc-wechat",
-      name: "（微信）凯森&骏伯客诉对接群",
+      id: "frc-wechat",
+      name: "（微信）凯森&骏伯反馈对接群",
       active: true,
       displayOrder: 1,
       createdAt: "2026-08-19T00:00:00.000Z",
@@ -120,8 +120,8 @@ const lists: Record<string, unknown> = {
   "channel.list": canned.channels,
   "ticketCategory.list": canned.categories,
   "completionStatus.list": canned.completionStatuses,
-  "userComplaintChannel.list": canned.userComplaintChannels,
-  "complaintReceiveChannel.list": canned.complaintReceiveChannels,
+  "userFeedbackChannel.list": canned.userFeedbackChannels,
+  "feedbackReceiveChannel.list": canned.feedbackReceiveChannels,
 };
 
 function respond(path: string, input: unknown): unknown {
@@ -446,20 +446,20 @@ describe("per-catalog config smoke", () => {
       refusal: "该完结状态已被 2 张工单使用，无法删除，可改为停用",
     },
     {
-      catalog: "用户投诉渠道",
-      ns: "userComplaintChannel",
-      addLabel: "新增用户投诉渠道",
+      catalog: "用户反馈渠道",
+      ns: "userFeedbackChannel",
+      addLabel: "新增用户反馈渠道",
       nameLabel: "渠道名称",
-      row: { id: "ucc-hotline", name: "保司400热线" },
-      refusal: "该用户投诉渠道已被 2 张工单使用，无法删除，可改为停用",
+      row: { id: "ufc-hotline", name: "保司400热线" },
+      refusal: "该用户反馈渠道已被 2 张工单使用，无法删除，可改为停用",
     },
     {
-      catalog: "投诉信息接收渠道",
-      ns: "complaintReceiveChannel",
-      addLabel: "新增投诉信息接收渠道",
+      catalog: "反馈信息接收渠道",
+      ns: "feedbackReceiveChannel",
+      addLabel: "新增反馈信息接收渠道",
       nameLabel: "渠道名称",
-      row: { id: "crc-wechat", name: "（微信）凯森&骏伯客诉对接群" },
-      refusal: "该投诉信息接收渠道已被 2 张工单使用，无法删除，可改为停用",
+      row: { id: "frc-wechat", name: "（微信）凯森&骏伯反馈对接群" },
+      refusal: "该反馈信息接收渠道已被 2 张工单使用，无法删除，可改为停用",
     },
   ])("$catalog wires every procedure to its own namespace", async (c) => {
     renderPage();

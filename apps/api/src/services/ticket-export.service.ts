@@ -36,8 +36,8 @@ const exportInclude = {
   channel: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
-  userComplaintChannel: { select: { name: true } },
-  complaintReceiveChannel: { select: { name: true } },
+  userFeedbackChannel: { select: { name: true } },
+  feedbackReceiveChannel: { select: { name: true } },
   // internalOnly 不过滤：内部导出照常包含
   processLogs: {
     where: { action: "comment" },
@@ -81,12 +81,12 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: ticketExportHeader("paymentChannel"), value: (t) => t.paymentChannel ?? "" },
   { header: ticketExportHeader("internalOrderNumber"), value: (t) => t.internalOrderNumber ?? "" },
   {
-    header: ticketExportHeader("userComplaintChannelId"),
-    value: (t) => t.userComplaintChannel?.name ?? "",
+    header: ticketExportHeader("userFeedbackChannelId"),
+    value: (t) => t.userFeedbackChannel?.name ?? "",
   },
   {
-    header: ticketExportHeader("complaintReceiveChannelId"),
-    value: (t) => t.complaintReceiveChannel?.name ?? "",
+    header: ticketExportHeader("feedbackReceiveChannelId"),
+    value: (t) => t.feedbackReceiveChannel?.name ?? "",
   },
   { header: ticketExportHeader("customerRequest"), value: (t) => t.customerRequest ?? "" },
   { header: ticketExportHeader("nuclearBodyStatus"), value: (t) => t.nuclearBodyStatus ?? "" },

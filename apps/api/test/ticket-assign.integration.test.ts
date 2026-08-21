@@ -29,7 +29,7 @@ describe("ticket assignment (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026070900321"],
-      userComplaintChannelId: null,
+      userFeedbackChannelId: null,
       customerName: "赵可分",
       phone: "13800000001",
       customerRequest: "对理赔进度有异议，要求尽快处理",

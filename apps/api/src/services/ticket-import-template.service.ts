@@ -8,10 +8,10 @@ import {
 import ExcelJS from "exceljs";
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import { channelCatalog } from "./channel.service.ts";
-import { complaintReceiveChannelCatalog } from "./complaint-receive-channel.service.ts";
 import { completionStatusCatalog } from "./completion-status.service.ts";
+import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
-import { userComplaintChannelCatalog } from "./user-complaint-channel.service.ts";
+import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 /**
  * 批量导入 template: a dynamically generated workbook, never a static asset —
@@ -35,8 +35,8 @@ type CatalogOptions = {
   categories: string[];
   completionStatuses: string[];
   slaPolicies: string[];
-  userComplaintChannels: string[];
-  complaintReceiveChannels: string[];
+  userFeedbackChannels: string[];
+  feedbackReceiveChannels: string[];
 };
 
 const CATALOG_OPTION_KEYS: Record<TicketCatalogKind, keyof CatalogOptions> = {
@@ -44,8 +44,8 @@ const CATALOG_OPTION_KEYS: Record<TicketCatalogKind, keyof CatalogOptions> = {
   category: "categories",
   completionStatus: "completionStatuses",
   slaPolicy: "slaPolicies",
-  userComplaintChannel: "userComplaintChannels",
-  complaintReceiveChannel: "complaintReceiveChannels",
+  userFeedbackChannel: "userFeedbackChannels",
+  feedbackReceiveChannel: "feedbackReceiveChannels",
 };
 
 type ImportColumn = {
@@ -97,8 +97,8 @@ export async function buildTicketImportTemplate(
     categories,
     completionStatuses,
     slaPolicies,
-    userComplaintChannels,
-    complaintReceiveChannels,
+    userFeedbackChannels,
+    feedbackReceiveChannels,
   ] = await Promise.all([
     channelCatalog.listOptions(prisma),
     ticketCategoryCatalog.listOptions(prisma),
@@ -108,16 +108,16 @@ export async function buildTicketImportTemplate(
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { name: true },
     }),
-    userComplaintChannelCatalog.listOptions(prisma),
-    complaintReceiveChannelCatalog.listOptions(prisma),
+    userFeedbackChannelCatalog.listOptions(prisma),
+    feedbackReceiveChannelCatalog.listOptions(prisma),
   ]);
   const catalogs: CatalogOptions = {
     channels: channels.map((channel) => channel.name),
     categories: categories.map((category) => category.name),
     completionStatuses: completionStatuses.map((status) => status.name),
     slaPolicies: slaPolicies.map((policy) => policy.name),
-    userComplaintChannels: userComplaintChannels.map((channel) => channel.name),
-    complaintReceiveChannels: complaintReceiveChannels.map((channel) => channel.name),
+    userFeedbackChannels: userFeedbackChannels.map((channel) => channel.name),
+    feedbackReceiveChannels: feedbackReceiveChannels.map((channel) => channel.name),
   };
 
   const workbook = new ExcelJS.Workbook();

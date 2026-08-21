@@ -81,6 +81,12 @@ function cellToRaw(cell: ExcelJS.Cell): ImportCellValue {
   return String(value).trim();
 }
 
+// 老列头兼容：改名前下载的存量模板仍按别名解析（外部约束，模板已散发）。
+const LEGACY_IMPORT_HEADER_ALIASES: Record<string, string> = {
+  用户投诉渠道: "用户反馈渠道",
+  投诉信息接收渠道: "反馈信息接收渠道",
+};
+
 export async function readTicketImportSheet(body: Buffer): Promise<TicketImportSheetRow[]> {
   const workbook = new ExcelJS.Workbook();
   try {
@@ -97,7 +103,11 @@ export async function readTicketImportSheet(body: Buffer): Promise<TicketImportS
   const headerCount = Math.max(TICKET_IMPORT_HEADERS.length, headerRow.cellCount);
   for (let column = 1; column <= headerCount; column += 1) {
     const expected = TICKET_IMPORT_HEADERS[column - 1] ?? "";
-    const actual = cellToRaw(headerRow.getCell(column));
+    const rawActual = cellToRaw(headerRow.getCell(column));
+    const actual =
+      typeof rawActual === "string"
+        ? (LEGACY_IMPORT_HEADER_ALIASES[rawActual] ?? rawActual)
+        : rawActual;
     if (actual !== expected) {
       throw fileError(
         `表头与模板不符（第 ${column} 列应为「${expected}」）：请重新下载模板并按其填写`,
@@ -134,8 +144,8 @@ export interface TicketImportCatalogs {
   categories: CatalogNameIndex;
   completionStatuses: CatalogNameIndex;
   slaPolicies: CatalogNameIndex;
-  userComplaintChannels: CatalogNameIndex;
-  complaintReceiveChannels: CatalogNameIndex;
+  userFeedbackChannels: CatalogNameIndex;
+  feedbackReceiveChannels: CatalogNameIndex;
 }
 
 /**
@@ -313,8 +323,8 @@ const CATALOG_INDEXES: Record<
   category: (catalogs) => catalogs.categories,
   completionStatus: (catalogs) => catalogs.completionStatuses,
   slaPolicy: (catalogs) => catalogs.slaPolicies,
-  userComplaintChannel: (catalogs) => catalogs.userComplaintChannels,
-  complaintReceiveChannel: (catalogs) => catalogs.complaintReceiveChannels,
+  userFeedbackChannel: (catalogs) => catalogs.userFeedbackChannels,
+  feedbackReceiveChannel: (catalogs) => catalogs.feedbackReceiveChannels,
 };
 
 function catalogColumn(
@@ -517,15 +527,15 @@ export async function importTickets(
         categories,
         completionStatuses,
         slaPolicies,
-        userComplaintChannels,
-        complaintReceiveChannels,
+        userFeedbackChannels,
+        feedbackReceiveChannels,
       ] = await Promise.all([
         tx.channel.findMany(),
         tx.ticketCategory.findMany(),
         tx.completionStatus.findMany(),
         tx.slaPolicy.findMany(),
-        tx.userComplaintChannel.findMany(),
-        tx.complaintReceiveChannel.findMany(),
+        tx.userFeedbackChannel.findMany(),
+        tx.feedbackReceiveChannel.findMany(),
       ]);
       const { tickets, errors } = validateTicketImportRows(
         rows,
@@ -534,8 +544,8 @@ export async function importTickets(
           categories: buildCatalogNameIndex(categories),
           completionStatuses: buildCatalogNameIndex(completionStatuses),
           slaPolicies: buildCatalogNameIndex(slaPolicies),
-          userComplaintChannels: buildCatalogNameIndex(userComplaintChannels),
-          complaintReceiveChannels: buildCatalogNameIndex(complaintReceiveChannels),
+          userFeedbackChannels: buildCatalogNameIndex(userFeedbackChannels),
+          feedbackReceiveChannels: buildCatalogNameIndex(feedbackReceiveChannels),
         },
         input.timeZone,
       );

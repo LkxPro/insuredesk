@@ -23,16 +23,16 @@ export type TicketCatalogKind =
   | "category"
   | "completionStatus"
   | "slaPolicy"
-  | "userComplaintChannel"
-  | "complaintReceiveChannel";
+  | "userFeedbackChannel"
+  | "feedbackReceiveChannel";
 
 const CATALOG_NOUNS: Record<TicketCatalogKind, string> = {
   channel: "渠道",
   category: "类别",
   completionStatus: "完结状态",
   slaPolicy: "时效策略",
-  userComplaintChannel: "用户投诉渠道",
-  complaintReceiveChannel: "投诉信息接收渠道",
+  userFeedbackChannel: "用户反馈渠道",
+  feedbackReceiveChannel: "反馈信息接收渠道",
 };
 
 type TicketFieldSpec = {
@@ -103,16 +103,16 @@ export const TICKET_FIELD_DESCRIPTORS = [
   { type: "textList", key: "policyNumbers", label: "保单号", maxItemLength: 100, maxItems: 50 },
   {
     type: "catalog",
-    key: "userComplaintChannelId",
-    label: "用户投诉渠道",
-    catalog: "userComplaintChannel",
+    key: "userFeedbackChannelId",
+    label: "用户反馈渠道",
+    catalog: "userFeedbackChannel",
     maxLength: 100,
   },
   {
     type: "catalog",
-    key: "complaintReceiveChannelId",
-    label: "投诉信息接收渠道",
-    catalog: "complaintReceiveChannel",
+    key: "feedbackReceiveChannelId",
+    label: "反馈信息接收渠道",
+    catalog: "feedbackReceiveChannel",
     maxLength: 100,
   },
   { type: "text", key: "customerName", label: "客户姓名", maxLength: 100 },

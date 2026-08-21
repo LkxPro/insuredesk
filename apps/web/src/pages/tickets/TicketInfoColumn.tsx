@@ -51,8 +51,8 @@ export function TicketInfoColumn({
         {field("paymentChannel")}
         {field("internalOrderNumber")}
         {field("policyNumbers")}
-        {field("userComplaintChannelId")}
-        {field("complaintReceiveChannelId")}
+        {field("userFeedbackChannelId")}
+        {field("feedbackReceiveChannelId")}
       </Section>
 
       <Section title="客户信息">

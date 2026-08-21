@@ -32,16 +32,16 @@ model User {
   prefillProject String?
   prefillBrokerageEntity String?
   prefillPaymentChannel String?
-  /// 预填：用户投诉渠道引用; null = 未配置. 被预填引用的目录项只能停用不能删除 —
+  /// 预填：用户反馈渠道引用; null = 未配置. 被预填引用的目录项只能停用不能删除 —
   /// Restrict is the DB backstop behind the service's refusal.
-  prefillUserComplaintChannelId String?
-  /// 预填：投诉信息接收渠道引用; null = 未配置. Referenced rows can only be 停用,
+  prefillUserFeedbackChannelId String?
+  /// 预填：反馈信息接收渠道引用; null = 未配置. Referenced rows can only be 停用,
   /// never deleted — Restrict is the DB backstop.
-  prefillComplaintReceiveChannelId String?
+  prefillFeedbackReceiveChannelId String?
 
-  prefillChannel                 Channel?                 @relation(fields: [prefillChannelId], references: [id], onDelete: Restrict)
-  prefillUserComplaintChannel    UserComplaintChannel?    @relation(fields: [prefillUserComplaintChannelId], references: [id], onDelete: Restrict)
-  prefillComplaintReceiveChannel ComplaintReceiveChannel? @relation(fields: [prefillComplaintReceiveChannelId], references: [id], onDelete: Restrict)
+  prefillChannel                Channel?                 @relation(fields: [prefillChannelId], references: [id], onDelete: Restrict)
+  prefillUserFeedbackChannel    UserFeedbackChannel?     @relation(fields: [prefillUserFeedbackChannelId], references: [id], onDelete: Restrict)
+  prefillFeedbackReceiveChannel FeedbackReceiveChannel?  @relation(fields: [prefillFeedbackReceiveChannelId], references: [id], onDelete: Restrict)
 
   assignedTickets Ticket[] @relation("TicketAssignee")
   createdTickets  Ticket[] @relation("TicketCreator")
@@ -52,8 +52,8 @@ model User {
 
   @@index([roleId])
   @@index([prefillChannelId])
-  @@index([prefillUserComplaintChannelId])
-  @@index([prefillComplaintReceiveChannelId])
+  @@index([prefillUserFeedbackChannelId])
+  @@index([prefillFeedbackReceiveChannelId])
   @@map("users")
 }
 
@@ -108,13 +108,13 @@ model Ticket {
   policyNumbers        String[] @default([])
   /// true = 明确没有保单号（区别于未填写的 []）; true 时 policyNumbers 必为 []
   noPolicyNumber       Boolean @default(false)
-  /// 用户投诉渠道目录引用（客户发起侧）; null = 未填写. Referenced rows can only
+  /// 用户反馈渠道目录引用（客户发起侧）; null = 未填写. Referenced rows can only
   /// be 停用, never deleted — Restrict is the DB backstop behind the service's refusal.
-  userComplaintChannelId String?
-  /// 投诉信息接收渠道目录引用（我方收到投诉的途径，区别于客户发起侧的用户投诉渠道）;
+  userFeedbackChannelId String?
+  /// 反馈信息接收渠道目录引用（我方收到反馈的途径，区别于客户发起侧的用户反馈渠道）;
   /// null = 未填写. Referenced rows can only be 停用, never deleted — Restrict is
   /// the DB backstop.
-  complaintReceiveChannelId String?
+  feedbackReceiveChannelId String?
 
   // all nullable: unfilled means unknown
   customerName      String?
@@ -179,8 +179,8 @@ model Ticket {
   channel          Channel?           @relation(fields: [channelId], references: [id], onDelete: Restrict)
   completionStatus CompletionStatus?  @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
   slaPolicy        SlaPolicy?         @relation(fields: [slaPolicyId], references: [id], onDelete: Restrict)
-  userComplaintChannel    UserComplaintChannel?    @relation(fields: [userComplaintChannelId], references: [id], onDelete: Restrict)
-  complaintReceiveChannel ComplaintReceiveChannel? @relation(fields: [complaintReceiveChannelId], references: [id], onDelete: Restrict)
+  userFeedbackChannel    UserFeedbackChannel?     @relation(fields: [userFeedbackChannelId], references: [id], onDelete: Restrict)
+  feedbackReceiveChannel FeedbackReceiveChannel?  @relation(fields: [feedbackReceiveChannelId], references: [id], onDelete: Restrict)
   importBatch      TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
   processLogs      ProcessLog[]
 
@@ -191,8 +191,8 @@ model Ticket {
   @@index([channelId])
   @@index([completionStatusId])
   @@index([slaPolicyId])
-  @@index([userComplaintChannelId])
-  @@index([complaintReceiveChannelId])
+  @@index([userFeedbackChannelId])
+  @@index([feedbackReceiveChannelId])
   @@index([status])
   @@index([createdAt])
   /// Computed-status predicates (pending_timeout/overdue) and 处理时限 sorting
@@ -326,10 +326,10 @@ model CompletionStatus {
   @@map("completion_statuses")
 }
 
-/// 管理员（dictionary.manage）维护的用户投诉渠道目录，生命周期语义与
+/// 管理员（dictionary.manage）维护的用户反馈渠道目录，生命周期语义与
 /// TicketCategory 一致。目录行由迁移插入（映射表目标全集），
 /// 无应用层种子 —— 迁移即目录真相源。
-model UserComplaintChannel {
+model UserFeedbackChannel {
   id           String   @id @default(cuid())
   name         String   @unique
   active       Boolean  @default(true)
@@ -340,13 +340,13 @@ model UserComplaintChannel {
   tickets         Ticket[]
   prefillingUsers User[]
 
-  @@map("user_complaint_channels")
+  @@map("user_feedback_channels")
 }
 
-/// 管理员（dictionary.manage）维护的投诉信息接收渠道目录，生命周期语义与
+/// 管理员（dictionary.manage）维护的反馈信息接收渠道目录，生命周期语义与
 /// TicketCategory 一致。目录行由迁移插入（映射表目标全集），
 /// 无应用层种子 —— 迁移即目录真相源。
-model ComplaintReceiveChannel {
+model FeedbackReceiveChannel {
   id           String   @id @default(cuid())
   name         String   @unique
   active       Boolean  @default(true)
@@ -357,7 +357,7 @@ model ComplaintReceiveChannel {
   tickets         Ticket[]
   prefillingUsers User[]
 
-  @@map("complaint_receive_channels")
+  @@map("feedback_receive_channels")
 }
 
 /// 管理员配置的班次定义。segments 保存零个或多个墙钟时段；空数组表示休息日。

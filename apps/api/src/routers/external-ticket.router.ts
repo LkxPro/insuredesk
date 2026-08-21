@@ -26,8 +26,8 @@ const catalogInclude = {
   category: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
-  userComplaintChannel: { select: { name: true } },
-  complaintReceiveChannel: { select: { name: true } },
+  userFeedbackChannel: { select: { name: true } },
+  feedbackReceiveChannel: { select: { name: true } },
 } as const;
 
 type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclude }>;
@@ -51,8 +51,8 @@ function serializeExternalTicket(ticket: TicketWithCatalogs) {
     paymentChannel: ticket.paymentChannel,
     internalOrderNumber: ticket.internalOrderNumber,
     policyNumbers: ticket.policyNumbers,
-    userComplaintChannel: ticket.userComplaintChannel?.name ?? null,
-    complaintReceiveChannel: ticket.complaintReceiveChannel?.name ?? null,
+    userFeedbackChannel: ticket.userFeedbackChannel?.name ?? null,
+    feedbackReceiveChannel: ticket.feedbackReceiveChannel?.name ?? null,
     customerName: ticket.customerName,
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,
@@ -93,8 +93,8 @@ async function loadExternalAccountConfig(userId: string) {
       prefillProject: true,
       prefillBrokerageEntity: true,
       prefillPaymentChannel: true,
-      prefillUserComplaintChannelId: true,
-      prefillComplaintReceiveChannelId: true,
+      prefillUserFeedbackChannelId: true,
+      prefillFeedbackReceiveChannelId: true,
     },
   });
   if (!account) {
@@ -129,8 +129,8 @@ export const externalTicketRouter = router({
             project: account.prefillProject,
             brokerageEntity: account.prefillBrokerageEntity,
             paymentChannel: account.prefillPaymentChannel,
-            userComplaintChannelId: account.prefillUserComplaintChannelId,
-            complaintReceiveChannelId: account.prefillComplaintReceiveChannelId,
+            userFeedbackChannelId: account.prefillUserFeedbackChannelId,
+            feedbackReceiveChannelId: account.prefillFeedbackReceiveChannelId,
             status: "unassigned",
             feedbackTime: now,
             createdAt: now,
