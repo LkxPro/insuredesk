@@ -1,9 +1,9 @@
+## Communication Language
 When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 
-# InsureDesk
+## Pull Request
 
-- Implement 阶段不限制注释输出，避免冗余 prompt 占用模型注意力
-- 提交 PR 前须清注释：仅保留「外部系统隐含契约/怪癖、业务 invariant/负空间约束、workaround 的直接原因」，禁止 JSDoc 复述代码、章节 banner、变更历史、未来计划、教程式/散文式论证，其余一律删除
+- 提交 PR 前必须清注释：仅保留「外部系统隐含契约/怪癖、业务 invariant/负空间约束、workaround 的直接原因」，禁止 JSDoc 复述代码、章节 banner、变更历史、未来计划、教程式/散文式论证，其余一律删除
 - 提交 PR 前顺手清掉改动文件里的遗留无用注释（逐步收紧仓库内无关注释存量）
 
 ## Agent skills
