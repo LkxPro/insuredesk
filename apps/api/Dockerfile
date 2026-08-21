@@ -1,9 +1,3 @@
-# Multi-stage build for the InsureDesk API. The API runs straight
-# from TypeScript source via Node's native type stripping (no compile step), so
-# the runtime stage carries source + production deps rather than a JS bundle.
-# It also serves the built web SPA (apps/web/dist) via @fastify/static.
-
-# ---- Base: shared toolchain + network setup (inherited by both stages) -----
 FROM node:24.19.0-alpine AS base
 
 # Optional registry/engine mirrors. Default to official sources (so GitHub CI
@@ -42,7 +36,6 @@ WORKDIR /app
 # URLs are rebuilt from this registry.
 RUN echo "registry=$NPM_REGISTRY" > /app/.npmrc
 
-# ---- Build stage: full install, Prisma client, and the web bundle ----------
 FROM base AS build
 
 # Manifests + lockfile first so the install layer caches across source edits.
@@ -65,18 +58,13 @@ COPY packages/shared ./packages/shared
 # a missing dir makes the glob silently empty, so this COPY is load-bearing.
 COPY changelog ./changelog
 
-# Release tag baked into both surfaces (web bundle + api env). Declared this
-# late so a tag change only re-runs the build/tail layers, never the installs.
 ARG APP_VERSION=dev
 RUN VITE_APP_VERSION=$APP_VERSION pnpm --filter @insuredesk/web run build
 
-# ---- Runtime stage: production deps + source + built SPA -------------------
 FROM base AS runtime
 
 ENV NODE_ENV=production
 
-# Production-only install for the API workspace and its deps.
-# Web is excluded — its bundle arrives prebuilt.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
@@ -86,14 +74,12 @@ COPY apps/api/prisma/schema.prisma ./apps/api/prisma/schema.prisma
 COPY apps/api/prisma.config.ts ./apps/api/
 RUN retry pnpm install --prod --frozen-lockfile --filter "@insuredesk/api..."
 
-# API + shared source, and the Prisma migrations.
 COPY apps/api/src ./apps/api/src
 COPY apps/api/prisma ./apps/api/prisma
 COPY apps/api/tsconfig.json apps/api/prisma.config.ts apps/api/docker-entrypoint.sh ./apps/api/
 COPY packages/shared/src ./packages/shared/src
 COPY packages/shared/tsconfig.json ./packages/shared/
 
-# The prebuilt SPA.
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 
 # Server config. HOST 0.0.0.0 so it's reachable inside the container network;

@@ -4,10 +4,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * 对着 migration.sql 原文跑（而非复刻一份 SQL），验证死字符串的摘除不挑角色，
- * 且不碰同数组里的其他点。
- */
 describe("drop external export permission migration (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;

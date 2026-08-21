@@ -9,11 +9,6 @@ import { appRouter } from "../src/routers/index.ts";
 import type { AuthenticatedUser } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * TicketCategory catalog smoke tests (issue #93). Full lifecycle coverage now lives
- * in dictionary-catalog.integration.test.ts; this suite only verifies
- * category-specific quirks: factory seed, basic CRUD, and deletion guard.
- */
 describe("TicketCategory catalog smoke (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let seeded: IntegrationHarness["seeded"];

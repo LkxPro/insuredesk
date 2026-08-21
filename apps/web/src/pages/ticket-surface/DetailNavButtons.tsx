@@ -2,7 +2,6 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DetailNavStep } from "./detail-navigation";
 
-/** prev/next 翻单按钮：与方向键消费同一份 step 解析，两个详情区共用。 */
 export function DetailNavButtons({
   prevStep,
   nextStep,

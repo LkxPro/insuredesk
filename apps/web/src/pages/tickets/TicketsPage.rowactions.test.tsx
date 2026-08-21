@@ -10,13 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * 行内快捷操作: hovering a list row surfaces small 分配/完结 buttons that jump
- * straight into AssignTicketDialog / ResolveTicketDialog — without opening
- * the detail dialog the row click leads to. Same faked-fetch tRPC pipeline
- * and useAuth-seam mock as the sibling ticket tests.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -82,7 +75,6 @@ function listItem(
   };
 }
 
-/** One row per status: only the two in-flight ones may be 完结'd. */
 const LIST_ITEMS = [
   listItem("t1", "WO100001", "unassigned", null),
   listItem("t2", "WO100002", "assigned", { id: "u-zhang", name: "张客服" }),
@@ -90,7 +82,6 @@ const LIST_ITEMS = [
   listItem("t4", "WO100004", "completed", { id: "u-zhang", name: "张客服" }),
 ];
 
-// A log of every decoded call.
 let calls: Array<{ path: string; input: unknown }>;
 
 function respond(path: string, input: unknown): unknown {
@@ -163,7 +154,6 @@ function renderList() {
   );
 }
 
-/** The table row containing the given 工单号. */
 function rowFor(workOrderNumber: string) {
   const row = screen
     .getAllByRole("row")
@@ -187,7 +177,6 @@ describe("完结 quick action", () => {
 
     expect(await screen.findByRole("heading", { name: "完结工单" })).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toHaveTextContent("工单 WO100002");
-    // Straight to the resolve dialog: no detail fetch, no detail content
     expect(calls.every((call) => call.path !== "ticket.detail")).toBe(true);
     expect(screen.queryByText("处理记录")).not.toBeInTheDocument();
   });

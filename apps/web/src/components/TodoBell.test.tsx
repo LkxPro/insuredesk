@@ -7,15 +7,6 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { TodoBell } from "@/components/TodoBell";
 import { trpc } from "@/lib/trpc";
 
-/**
- * 我的待办 indicator: red-dot count over the 轨 2 items carried by the
- * shared notification.list poll, a popover alert list with 黄/红 severity
- * chips, and click-through to the ticket detail. Same faked-fetch tRPC
- * pipeline as the NotificationBell tests. There are no read-state mutations to
- * exercise — a todo entry only leaves the list by its condition ceasing to
- * hold server-side.
- */
-
 type TodoAlert = {
   type:
     | "awaiting_first_response"
@@ -61,7 +52,6 @@ const canned = { todoItems: [] as TodoItem[] };
 
 function respond(path: string): unknown {
   if (path === "notification.list") {
-    // The one merged 30s poll payload: 轨 1 inbox + 轨 2 todo
     return {
       items: [],
       unreadCount: 0,
@@ -84,7 +74,6 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   );
 }
 
-/** The route a todo click should land on. */
 function TicketDetailProbe() {
   const { id } = useParams();
   return <div>工单详情页 {id}</div>;
@@ -166,7 +155,6 @@ describe("red-dot badge and list", () => {
     expect(screen.getByText("一般投诉")).toBeInTheDocument();
     expect(screen.getByText("特急投诉")).toBeInTheDocument();
 
-    // 黄转红 is a rendering concern here: severities arrive per alert
     const critical = screen.getByText("尚未首次跟进，已等待 3 小时").closest("[data-severity]");
     expect(critical).toHaveAttribute("data-severity", "critical");
     const warning = screen.getByText("24 小时检查点将至：已跟进 0/1 次").closest("[data-severity]");

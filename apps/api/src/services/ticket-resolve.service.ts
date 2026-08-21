@@ -11,8 +11,7 @@ import { TicketNotFoundError } from "./ticket-assign.service.ts";
 
 /**
  * Resolve domain logic: 完结工单 with a mandatory 完结状态目录 reference
- * (must exist and be 启用) and a 完结备注. Pure service layer — the router
- * maps the domain errors to transport codes.
+ * (must exist and be 启用) and a 完结备注.
  *
  * Invariants enforced here:
  * - only assigned / processing tickets can resolve; completed is a 终态 —
@@ -26,7 +25,6 @@ import { TicketNotFoundError } from "./ticket-assign.service.ts";
  * - dueAt / assignedAt / contactCount are never touched
  */
 
-/** Ticket visible but its state does not accept a resolve. */
 export class TicketNotResolvableError extends Error {
   constructor(message: string) {
     super(message);

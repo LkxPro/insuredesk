@@ -7,17 +7,6 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests against a real Postgres: 编辑工单 (any status,
- * 已完结 included; status untouchable; 改时效策略引用重算 dueAt off
- * createdAt + re-stamps the SLA requirement strings; one `edit` ProcessLog
- * per effective edit with the field diff in remark、改策略引用时 from/to 存
- * 策略名快照) and 软删除
- * (deletedAt tombstone; default list, detail and every lifecycle action
- * exclude it; ProcessLogs survive; no restore). Runs through
- * appRouter.createCaller — the same procedure pipeline (permission middleware
- * included) the HTTP adapter uses.
- */
 describe("ticket edit + soft delete (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -43,7 +32,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** Caller with the given user identity and an explicit permission set. */
   function callerWith(user: User, roleName: string, permissions: Permission[]) {
     return appRouter.createCaller({
       traceId: "edit-test",
@@ -63,7 +51,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     });
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return callerWith(user, role.name, effectivePermissions(role));
   }
@@ -92,18 +79,15 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       allowDuplicate: true,
     }) satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** Full edit payload for the ticket: the unchanged base fields + overrides. */
   function editInput(ticketId: string, overrides: Partial<TicketEditInput> = {}): TicketEditInput {
     return { ticketId, ...baseInput(), ...overrides };
   }
 
-  /** A fresh unassigned ticket, created through the real create procedure. */
   async function createTicket(overrides: Partial<TicketCreateInput> = {}) {
     const created = await manager().ticket.create({ ...baseInput(), ...overrides });
     return created.id;
   }
 
-  /** A fresh completed ticket assigned to cs1. */
   async function createCompletedTicket() {
     const ticketId = await createTicket();
     await manager().ticket.assign({ ticketId, assigneeId: seeded.users.cs1.id });
@@ -152,8 +136,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");
       expect(detail.complaintReceiveChannel?.name).toBe("内部客服热线");
 
-      // 留痕: exactly one edit entry on top of create, remark carries the
-      // per-field diff in 描述表行序（＝表单顺序）, from/to stay empty
       expect(detail.processLogs.map((log) => log.action)).toEqual(["create", "edit"]);
       const editLog = detail.processLogs.at(-1);
       expect(editLog).toMatchObject({
@@ -328,28 +310,22 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
   describe("改时效策略引用 = 改 SLA（重算 dueAt、切换要求、策略名快照留痕）", () => {
     it("特急→一般 on a 70h-old ticket: dueAt = createdAt + 48h, immediately overdue", async () => {
       const ticketId = await createTicket({ slaPolicyId: policyId("特急投诉") });
-      // 特急: no deadline at all
       expect((await manager().ticket.detail({ id: ticketId })).dueAt).toBeNull();
 
-      // Backdate the ticket well past 一般's 48h window
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
       await prisma.ticket.update({ where: { id: ticketId }, data: { createdAt } });
 
       await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("一般投诉") }));
 
       const detail = await manager().ticket.detail({ id: ticketId });
-      // The creation formula re-runs off the UNCHANGED createdAt
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 48 * HOUR_MS).toISOString());
-      // 录入已超 48h → the ticket flips overdue the moment the edit commits
       expect(detail.displayStatus).toBe("overdue");
-      // The requirement strings re-stamp from the NEW policy
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
       expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
       const editLog = detail.processLogs.at(-1);
       expect(editLog?.remark).toContain("时效策略: 特急投诉→一般投诉");
       expect(editLog).toMatchObject({ from: "特急投诉", to: "一般投诉" });
 
-      // The overdue 口径 (list filter side) picks it up with no extra writes
       const { items } = await manager().ticket.list({
         status: "overdue",
         search: detail.workOrderNumber,
@@ -359,7 +335,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
 
     it("一般→特急 clears the deadline: dueAt null, never overdue again", async () => {
       const ticketId = await createTicket();
-      // Already past the 一般 deadline: backdate creation AND the stamped dueAt
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
       await prisma.ticket.update({
         where: { id: ticketId },
@@ -386,7 +361,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.slaPolicyId).toBe(rushId);
-      // 锚定原始 createdAt：10h 前录入 + 72h → 仍有 62h
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 72 * HOUR_MS).toISOString());
       expect(detail.firstResponseRequirement).toBe("60分钟内完成首次响应");
       const editLog = detail.processLogs.at(-1);
@@ -420,7 +394,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         expect(detail.slaPolicyId).toBe(rushId);
         expect(detail.dueAt).toBe(before.dueAt);
 
-        // 新选停用策略：与缺行同错
         const otherId = await createTicket();
         await expect(
           manager().ticket.edit(editInput(otherId, { slaPolicyId: rushId })),
@@ -463,12 +436,10 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const result = await admin().ticket.delete({ ticketId });
       expect(result).toEqual({ id: ticketId, workOrderNumber });
 
-      // Tombstone, not a physical delete — row and its logs stay 可追溯
       const row = await prisma.ticket.findUnique({ where: { id: ticketId } });
       expect(row?.deletedAt).toBeInstanceOf(Date);
       expect(await prisma.processLog.count({ where: { ticketId } })).toBeGreaterThan(0);
 
-      // Default list and detail exclude it (一切默认读已过滤 deletedAt)
       const { items, total } = await admin().ticket.list({ search: workOrderNumber });
       expect(items).toEqual([]);
       expect(total).toBe(0);

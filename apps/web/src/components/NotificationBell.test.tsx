@@ -9,15 +9,6 @@ import { ToastHost } from "@/components/ToastHost";
 import { toastStore } from "@/lib/toast-store";
 import { trpc } from "@/lib/trpc";
 
-/**
- * Issue #25 收件箱 bell: unread-count badge, popover inbox, click-through to
- * the ticket detail with mark-read, toast only for notifications that ARRIVE
- * after the first poll, and 全部已读. Same faked-fetch tRPC pipeline as the
- * TicketsPage tests; polling refetches are driven via queryClient invalidation
- * instead of waiting out the 30s interval. 点击路由按账号侧分叉：外部账号
- * 落 /external-tickets/:id，内部落 /tickets/:id。
- */
-
 const auth = vi.hoisted(() => ({ isExternal: false }));
 
 vi.mock("@/contexts/AuthContext", () => ({
@@ -92,7 +83,6 @@ function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respon
   );
 }
 
-/** The route a notification click should land on. */
 function TicketDetailProbe() {
   const { id } = useParams();
   return <div>工单详情页 {id}</div>;
@@ -128,7 +118,6 @@ function renderBell() {
   return { ...view, queryClient };
 }
 
-/** Re-poll now: what the 30s refetchInterval does, without the 30s. */
 async function poll(queryClient: QueryClient) {
   await act(async () => {
     await queryClient.invalidateQueries();
@@ -221,8 +210,6 @@ describe("toast on arrival (来了弹 toast)", () => {
     const { queryClient } = renderBell();
 
     await screen.findByRole("button", { name: "通知（1 条未读）" });
-    // The pre-existing unread item lights the badge but must NOT toast
-    // (popover is closed, so its title could only appear via a toast).
     expect(screen.queryByText("新工单分配")).not.toBeInTheDocument();
 
     canned.items = [
@@ -240,7 +227,6 @@ describe("toast on arrival (来了弹 toast)", () => {
     expect(await screen.findByText("工单改派")).toBeInTheDocument();
     expect(screen.queryByText("新工单分配")).not.toBeInTheDocument();
 
-    // 点击轻提示本体 = 收件箱点击：标已读 + 跳详情
     fireEvent.click(screen.getByText("工单改派"));
     await waitFor(() =>
       expect(calls.find((call) => call.path === "notification.markRead")?.input).toEqual({
@@ -277,7 +263,6 @@ describe("toast on arrival (来了弹 toast)", () => {
     expect(await screen.findByText("你有 5 条新通知")).toBeInTheDocument();
     expect(screen.queryByText("新工单分配")).not.toBeInTheDocument();
 
-    // 点击汇总轻提示打开收件箱，而不是跳到五张工单之一
     fireEvent.click(screen.getByText("你有 5 条新通知"));
     expect(await screen.findAllByText("新工单分配")).toHaveLength(5);
   });
@@ -294,7 +279,6 @@ describe("全部已读", () => {
     await waitFor(() =>
       expect(calls.some((call) => call.path === "notification.markAllRead")).toBe(true),
     );
-    // onSuccess invalidation refetches the now-all-read inbox → badge gone
     expect(await screen.findByRole("button", { name: "通知" })).toBeInTheDocument();
   });
 });

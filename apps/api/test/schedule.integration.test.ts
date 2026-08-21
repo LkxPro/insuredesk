@@ -8,10 +8,6 @@ import { findOnDutyUserIds } from "../src/services/schedule.service.ts";
 import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Real Postgres exercises user/day uniqueness, shift JSON, RBAC, assignment
- * transactions, load aggregation, logs, and notification writes together.
- */
 describe("schedule workflow and schedule-based auto assignment (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let seededChannelId: string | null;

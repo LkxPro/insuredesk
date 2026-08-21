@@ -4,19 +4,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { auth, callsTo, renderApp, restFetch, toastSpies, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * 批量导入: the dialog's 下载模板 fetches GET /api/tickets/import-template
- * over the global fetch (restFetch), the upload posts multipart to the same
- * transport, and a server rejection surfaces as a toast.
- */
-
-/** 客服主管 plus the manually 勾选-ed ticket.import. */
 const IMPORTER = {
   name: "客服主管",
   permissions: [...TEST_ROLES.CS_MANAGER.permissions, "ticket.import"] as Permission[],
 };
 
-/** IMPORTER plus ticket.delete — the 撤销 button's permission gate. */
 const REVOKER = {
   name: "客服主管",
   permissions: [...IMPORTER.permissions, "ticket.delete"] as Permission[],
@@ -33,10 +25,8 @@ type BatchItem = {
   revokedByName: string | null;
 };
 
-/** Mutable per-test fixture behind ticket.importBatches. */
 const importBatches: { items: BatchItem[] } = { items: [] };
 
-/** Calls to ticket.revokeImportBatch, in order. */
 function revokeCalls() {
   return callsTo("ticket.revokeImportBatch");
 }
@@ -176,7 +166,6 @@ describe("上传导入", () => {
     expect(dialog).toHaveTextContent("「不存在的渠道」不存在");
     expect(dialog).toHaveTextContent("第 5 行");
     expect(dialog).toHaveTextContent("完全重复");
-    // 完结迁移两列的错误走同一逐行清单
     expect(dialog).toHaveTextContent("第 6 行");
     expect(dialog).toHaveTextContent("完结状态");
     expect(dialog).toHaveTextContent("「旧口径」已停用");
@@ -235,7 +224,6 @@ describe("导入历史", () => {
     expect(history).toHaveTextContent("可撤销");
     expect(history).toHaveTextContent("已锁定");
     expect(history).toHaveTextContent("已撤销");
-    // 已撤销批次显示撤销人与撤销时刻
     expect(history).toHaveTextContent(/由 管理员 于 .+ 撤销/);
   });
 

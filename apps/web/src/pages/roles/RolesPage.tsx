@@ -21,14 +21,7 @@ import { RoleDeleteDialog } from "./RoleDeleteDialog";
 import { RolePermissionsDialog } from "./RolePermissionsDialog";
 import { RoleRenameDialog } from "./RoleRenameDialog";
 
-/**
- * 角色权限: one flat role list configured against the 权限点清单. role.view
- * opens the page (route-guarded); each operation appears only with its own
- * point — role.create / role.edit / role.delete / role.edit_permission — and
- * the API re-checks regardless. 管理员 is the only system role: viewable but
- * never renamed, re-permissioned, or deleted.
- */
-
+/** 管理员 is the only system role: viewable but never renamed, re-permissioned, or deleted. */
 export type RoleRow = inferRouterOutputs<AppRouter>["role"]["list"][number];
 
 export function RolesPage() {

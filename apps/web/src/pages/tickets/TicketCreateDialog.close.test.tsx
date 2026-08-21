@@ -9,13 +9,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 
-/**
- * 关闭逻辑统一: 新建工单 closes on outside click / X / Esc like any
- * dialog, but a dirty form (anything beyond the prefilled feedbackTime
- * default) first asks 丢弃修改？ before discarding the draft. Same faked-fetch
- * client and useAuth-seam mock as the sibling create-dialog tests.
- */
-
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
     user: null,
@@ -44,7 +37,6 @@ function fakeFetch(): Promise<Response> {
   );
 }
 
-/** A parent that owns `open` so the test can observe closes. */
 function Harness() {
   const [open, setOpen] = useState(true);
   return (
@@ -154,7 +146,6 @@ describe("新建工单 关闭 with an edited form", () => {
     fireEvent.click(document.body);
 
     expect(await screen.findByText("丢弃修改？")).toBeInTheDocument();
-    // The form dialog is still there behind the ask, draft intact
     expect(screen.getByLabelText("客户姓名")).toHaveValue("王小明");
   });
 
@@ -169,7 +160,6 @@ describe("新建工单 关闭 with an edited form", () => {
     fireEvent.pointerDown(closeButton);
     fireEvent.click(closeButton);
 
-    // toast 正常关闭，但表单 dialog 不问也不关
     expect(screen.queryByText("导出失败")).not.toBeInTheDocument();
     expect(screen.queryByText("丢弃修改？")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "新建工单" })).toBeInTheDocument();

@@ -24,13 +24,10 @@ import { trpc } from "@/lib/trpc";
 import { SlaPolicyDialog } from "./SlaPolicyDialog";
 
 /**
- * sla.view opens the page (route-guarded);
- * every write entry — 新增/编辑/排序/停用/复活 — appears only with sla.edit,
- * and the API re-checks regardless. A save is the whole rollout: new tickets
- * stamp dueAt from the saved hours and the 待办 poll judges by the saved
- * rules, while existing tickets keep their dueAt. 停用不拆引用、不物理删除。
+ * A save is the whole rollout: new tickets stamp dueAt from the saved hours
+ * and the 待办 poll judges by the saved rules, while existing tickets keep
+ * their dueAt. 停用不拆引用、不物理删除。
  */
-
 export type SlaPolicyRow = inferRouterOutputs<AppRouter>["sla"]["list"][number];
 
 function describeRule(rule: ReminderRule): string {

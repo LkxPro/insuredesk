@@ -6,11 +6,7 @@ import {
 } from "@insuredesk/shared";
 import { Prisma, type PrismaClient, type Schedule } from "../generated/prisma/client.ts";
 
-/**
- * Schedule CRUD and the shared on-duty predicate used by automatic
- * assignment. Dates and times are wall-clock strings, so comparisons remain
- * independent of timezone conversion.
- */
+/** Dates and times are wall-clock strings, so comparisons remain independent of timezone conversion. */
 
 export class ScheduleNotFoundError extends Error {
   constructor() {

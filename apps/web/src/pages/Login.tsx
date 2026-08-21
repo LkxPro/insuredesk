@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 
-/** Where to go after login: back to the guarded page we bounced off, or home. */
 function fromPathname(location: Location): string {
   const state = location.state as { from?: Location } | null;
   return state?.from?.pathname ?? "/";
@@ -34,7 +33,6 @@ export function Login() {
     return <FullScreenLoading />;
   }
 
-  // Already logged in — nothing to do here.
   if (user) {
     return <Navigate to={fromPathname(location)} replace />;
   }

@@ -32,22 +32,6 @@ import { TicketListPagination } from "./TicketListPagination";
 import { type NarrowListItem, TicketNarrowList } from "./TicketNarrowList";
 import { useTicketListUrl } from "./useTicketListUrl";
 
-/**
- * 工单表面深模块：三态骨架（全宽表格 / 窄列+详情主从 / 处理态筛选折叠）、
- * URL 筛选态（查询串是唯一事实源，筛选变更回第 1 页）、翻单契约（切片内
- * 方向键 + 越界翻页）与可选 selection，只在这里维护一份。内外两个工单页
- * 各退为薄 adapter：basePath、查询 hook、列定义（含可选排序）、筛选维度、
- * 头部动作槽、对话框槽、详情 pane 全部由槽位注入——本模块不认识任何具体
- * 动作与权限点，接口上没有 capability 布尔 flag。
- *
- * 列表态全宽表格，行点击进入 basePath/:id 处理态：同一份列表数据压缩成左
- * 侧窄列，右侧是 adapter 注入的详情 pane；处理态下筛选器收起为一行摘要＋
- * 展开按钮（筛选值仍在 URL 里，切态不丢），分页与选中条退场。窄屏
- * (<1024px) 降级为详情覆盖窄列，桌面优先。筛选串随换单路径带走，深链与
- * 刷新都不丢上下文。
- */
-
-/** 深模块对查询形状的全部要求：分页必读，搜索/排序按槽位启用。 */
 export type SurfaceQuery = {
   page: number;
   pageSize: number;
@@ -56,7 +40,6 @@ export type SurfaceQuery = {
   sortOrder?: "asc" | "desc" | undefined;
 };
 
-/** useList 槽的返回切片：深模块只消费这五样。 */
 export type SurfaceListSlice<TItem> = {
   items: readonly TItem[];
   total: number;
@@ -65,7 +48,6 @@ export type SurfaceListSlice<TItem> = {
   error: { message: string } | null;
 };
 
-/** 注入槽位可用的上下文：URL 写入器、换单路径与 selection 状态。 */
 export type SurfaceCtx<TItem, TQuery extends SurfaceQuery> = {
   query: TQuery;
   searchDraft: string;
@@ -86,23 +68,18 @@ export type SurfaceCtx<TItem, TQuery extends SurfaceQuery> = {
 export type SurfaceColumn<TItem, TQuery extends SurfaceQuery> = {
   key: string;
   header: ReactNode;
-  /** 给了 sort 即渲染排序表头：首击取 initialOrder，再击翻转，写 sortBy/sortOrder 回 URL。 */
   sort?: { field: string; initialOrder: "asc" | "desc" };
   headClassName?: string;
   render: (item: TItem, ctx: SurfaceCtx<TItem, TQuery>) => ReactNode;
 };
 
-/** selection 能力：勾选列 + 列表态选中条；整槽不给即无 selection。 */
 export type SurfaceSelection<TItem, TQuery extends SurfaceQuery> = {
-  /** 行是否可选（如终态行不可选）。 */
   selectable: (item: TItem) => boolean;
   rowLabel: (item: TItem) => string;
   pageLabel: string;
-  /** 选中条内容（计数/动作/警告），selected 非空且列表态时渲染。 */
   bar: (selected: ReadonlyMap<string, TItem>, ctx: SurfaceCtx<TItem, TQuery>) => ReactNode;
 };
 
-/** 详情 pane 槽的入参：与翻单契约接好线的导航面与出口。 */
 export type SurfaceDetailProps = {
   ticketId: string;
   nav: DetailNav;
@@ -129,17 +106,13 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   dialogs,
   listGapClassName = "gap-6",
 }: {
-  /** 换单与关闭详情的路径前缀（如 /tickets）。 */
   basePath: string;
   parseQuery: (params: URLSearchParams) => TQuery;
   useList: (query: TQuery) => SurfaceListSlice<TItem>;
   title: string;
-  /** 副标题；处理态把这行纵向预算让给详情。 */
   subtitle: ReactNode;
   headerActions?: (ctx: SurfaceCtx<TItem, TQuery>) => ReactNode;
-  /** 筛选维度槽：处理态折叠时整体收起，筛选值仍在 URL 里。 */
   filters: (ctx: SurfaceCtx<TItem, TQuery>) => ReactNode;
-  /** 收起态摘要用的「有几个筛选条件在生效」。 */
   activeFilterCount: (query: TQuery) => number;
   columns: ReadonlyArray<SurfaceColumn<TItem, TQuery>>;
   emptyState: {
@@ -147,14 +120,11 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
     title: string;
     description: (query: TQuery) => ReactNode;
   };
-  /** 列表行 → 窄列行（时间槽语义由 adapter 定）。 */
   narrowItem: (item: TItem) => NarrowListItem;
   renderDetail: (props: SurfaceDetailProps) => ReactNode;
   selection?: SurfaceSelection<TItem, TQuery>;
-  /** 行高亮（如新建成功后），不给即无高亮。 */
   isRowHighlighted?: (item: TItem) => boolean;
   dialogs?: (ctx: SurfaceCtx<TItem, TQuery>) => ReactNode;
-  /** 列表态根节点的纵向间距；处理态恒为 gap-3。 */
   listGapClassName?: string;
 }) {
   const navigate = useNavigate();
@@ -162,7 +132,6 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   const { id: detailId } = useParams<{ id: string }>();
   const { query, searchDraft, setSearchDraft, submitSearch, clearSearch, setParam, setParams } =
     useTicketListUrl(parseQuery);
-  // 处理态的筛选器折叠：默认收起（屏幕预算给详情），展开后保持展开
   const [filtersOpen, setFiltersOpen] = useState(false);
   // selection: id → item，跨页存活（翻页替换 items 不丢选择）
   const [selected, setSelected] = useState<ReadonlyMap<string, TItem>>(new Map());
@@ -172,7 +141,6 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   const items = list.items;
   const total = list.total;
 
-  /** 换单路径：筛选串随车带走；处理态内 replace 让 Back 回到进入详情前那一步。 */
   const select = useCallback(
     (ticketId: string) => {
       navigate(`${basePath}/${ticketId}${location.search}`, { replace: detailOpen });
@@ -185,7 +153,6 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
     [basePath, location.search],
   );
 
-  // 详情的翻单面：当前页切片里的前后单（行序 = adapter 列表序）+ 页边界
   const nav = useMemo(
     () => detailNav(items, detailId, { page: query.page, pageSize: query.pageSize, total }),
     [items, detailId, query.page, query.pageSize, total],
@@ -310,7 +277,6 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
         <div className="flex items-center gap-2">{headerActions?.(ctx)}</div>
       </div>
 
-      {/* 处理态默认收起筛选器：URL 里的筛选值不变，只是不占屏 */}
       {detailOpen && !filtersOpen && (
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <span>
@@ -347,7 +313,6 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
           <AlertDescription>{list.error.message}</AlertDescription>
         </Alert>
       ) : detailOpen ? (
-        // 处理态：窄列 + 详情。窄屏 (<1024px) 无 lg → 详情占满，窄列让位
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(14rem,1fr)_minmax(0,3fr)]">
           <div className="hidden min-h-0 rounded-md border lg:flex lg:flex-col">
             <TicketNarrowList
@@ -483,7 +448,6 @@ const SurfaceRow = memo(function SurfaceRow<
     <TableRow
       data-highlighted={highlighted || undefined}
       className="group cursor-pointer data-[highlighted]:bg-primary/10 data-[highlighted]:hover:bg-primary/15"
-      // 筛选串随车带走，返回列表时上下文不丢
       onClick={() => navigate(path)}
     >
       {selection && (

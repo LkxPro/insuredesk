@@ -21,7 +21,6 @@ export interface TicketDuplicateDeps {
   clock: Clock;
 }
 
-/** 提交兜底查重命中；路由映射 409，重复列表由前端经 findDuplicates 重取。 */
 export class DuplicateTicketsFoundError extends Error {
   readonly count: number;
 
@@ -41,7 +40,6 @@ type CandidateRow = {
 /** 保单号只会是数字+字母；「无」「无保单信息」等占位值不参与查重，否则无保单客户互相误报。 */
 const MATCHABLE_POLICY_NUMBER = /^[0-9A-Za-z]+$/;
 
-/** 命中字段按输入侧命名：row 的哪个取值撞了 query 的哪个字段。 */
 function matchedFieldsOf(
   row: CandidateRow,
   query: TicketFindDuplicatesQuery,

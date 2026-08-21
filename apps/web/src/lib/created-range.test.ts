@@ -7,8 +7,8 @@ import {
 } from "./created-range";
 
 /**
- * 预设 → 绝对时刻的换算与回显反查。断言全部用本地时刻构造期望值（预设按浏览器
- * 时区算日界），所以测试不绑定运行环境的时区。
+ * 断言全部用本地时刻构造期望值（预设按浏览器时区算日界），所以测试不绑定
+ * 运行环境的时区。
  */
 
 function customRange(from: string, to: string) {
@@ -19,7 +19,6 @@ function customRange(from: string, to: string) {
   return range;
 }
 
-/** 本地日界 → ISO，作为期望值的唯一构造方式。 */
 function localStart(year: number, month: number, day: number): string {
   return new Date(year, month - 1, day, 0, 0, 0, 0).toISOString();
 }

@@ -12,15 +12,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * Issue #116 建单后留列表: creation success closes the dialog onto 工单管理 —
- * a toast carries the 工单号, the refreshed list shows the new row
- * highlighted, and the detail stays one row-click away. Same faked-fetch
- * tRPC pipeline and useAuth-seam mock as the sibling list tests; the fake
- * turns creation into list content so the invalidate → refetch path is
- * exercised for real.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -85,8 +76,6 @@ const CREATED_ROW = {
   dueAt: null,
 };
 
-// The fake keeps server state: creation prepends the new row, so the
-// post-create list refetch returns it like the real backend would.
 let created: boolean;
 let calls: Array<{ path: string; input: unknown }>;
 
@@ -169,17 +158,14 @@ describe("建单后留列表 (issue #116)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
 
-    // The dialog closes onto the list — no detail dialog opens
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument();
     });
     expect(screen.getByRole("heading", { name: "工单管理" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    // Toast carries the 工单号
     expect(await screen.findByText("工单 WO100099 已创建")).toBeInTheDocument();
 
-    // The invalidated list refetches and shows the new row, highlighted
     const newCell = await screen.findByText("WO100099");
     expect(newCell.closest("tr")).toHaveAttribute("data-highlighted");
     expect(screen.getByText("WO100001").closest("tr")).not.toHaveAttribute("data-highlighted");

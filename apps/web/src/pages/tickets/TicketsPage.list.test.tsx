@@ -3,12 +3,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { auth, callsTo, renderApp, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * List page: rows render from ticket.list with the computed display status,
- * URL filters reach the query input (deep-linkable like /tickets/new), and
- * search / sort / pagination re-query with the right input.
- */
-
 type ListItem = {
   id: string;
   workOrderNumber: string;
@@ -56,7 +50,6 @@ const SLA_OPTIONS = [
   { id: "pol-urgent", name: "特急投诉", description: "特急投诉：不设处理时限。" },
 ];
 
-// Per-test canned list payload behind ticket.list.
 const canned = { items: [] as ListItem[], total: 0 };
 
 function renderAt(path: string) {
@@ -86,7 +79,6 @@ function renderAt(path: string) {
   });
 }
 
-/** Every decoded ticket.list input, in call order. */
 function listInputs(): Array<Record<string, unknown>> {
   return callsTo("ticket.list").map((call) => call.input as Record<string, unknown>);
 }
@@ -117,7 +109,6 @@ describe("list rendering", () => {
     expect(await screen.findByText("WO100001")).toBeInTheDocument();
     expect(screen.getByText("WO100002")).toBeInTheDocument();
     expect(screen.getByText("王小明")).toBeInTheDocument();
-    // The overdue row shows the computed status, not the stored one
     expect(screen.getByText("已超时")).toBeInTheDocument();
     expect(screen.queryByText("已分配")).not.toBeInTheDocument();
   });
@@ -175,15 +166,12 @@ describe("保单号列: 首个 + N 徽标", () => {
     canned.total = 1;
     renderAt("/tickets");
 
-    // 列内只有首个保单号，其余不撑爆列宽
     expect(await screen.findByText("P-FIRST-001")).toBeInTheDocument();
     expect(screen.queryByText("P-SECOND-002")).not.toBeInTheDocument();
 
-    // 徽标计的是"还剩几个"，非总数
     const badge = screen.getByRole("button", { name: "还有 2 个保单号" });
     expect(badge).toHaveTextContent("+2");
 
-    // 点开 popover 见全部保单号（含首个）
     fireEvent.click(badge);
     const popover = await screen.findByRole("dialog");
     expect(within(popover).getByText("P-FIRST-001")).toBeInTheDocument();
@@ -198,7 +186,6 @@ describe("保单号列: 首个 + N 徽标", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "还有 1 个保单号" }));
     await screen.findByRole("dialog");
-    // 只应弹出 popover 一个 dialog；若冒泡到行 onClick，详情弹窗会是第二个
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 });
@@ -251,7 +238,6 @@ describe("URL-driven filters (deep-linkable)", () => {
     );
   });
 
-  // 三个目录的筛选器共用同一渲染惯用法 (active ? name : `${name}（已停用）`);
   // 停用项为何仍在筛选 feed 里、按停用 id 为何还能筛到存量工单, 是服务端规则。
   it.each([
     {
@@ -313,7 +299,6 @@ describe("归档工单默认隐藏（来源缺省）", () => {
       "community",
       "external_channel",
     ]);
-    // 来源触发器常驻显示缺省计数（4 = 排除归档单后的选中数）
     expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("4");
   });
 
@@ -345,7 +330,6 @@ describe("归档工单默认隐藏（来源缺省）", () => {
 });
 
 describe("多选交互与 URL 序列化", () => {
-  /** 勾选项后在最新一次 ticket.list 入参上断言。 */
   async function toggleOption(filterLabel: string, optionName: string) {
     fireEvent.click(screen.getByRole("button", { name: filterLabel }));
     fireEvent.click(await screen.findByRole("checkbox", { name: optionName }));
@@ -357,7 +341,6 @@ describe("多选交互与 URL 序列化", () => {
       expect(listInputs().some((input) => Array.isArray(input.status))).toBe(true),
     );
 
-    // 深链已带一项
     await toggleOption("状态", "已完结");
     await waitFor(() => expect(listInputs().at(-1)?.status).toEqual(["overdue", "completed"]));
     expect(screen.getByRole("button", { name: "状态" })).toHaveTextContent("2");

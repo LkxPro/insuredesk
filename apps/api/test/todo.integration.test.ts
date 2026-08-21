@@ -8,14 +8,6 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
-/**
- * Acceptance tests against a real Postgres: 轨 2 我的待办 computed at read
- * time from SLAPolicy rows — nothing stored, no background job. Every
- * boundary is probed with a fixed clock through the service (the router runs
- * the system clock), mirroring the ticket-list computed-status test setup.
- * Tickets are created/assigned/commented/resolved through the real procedures
- * so contactCount and comment timestamps arise exactly as in production.
- */
 describe("我的待办 read-time alerts (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -56,7 +48,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
 
   const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
 
-  /** The todo list as USER would see it if "now" were the given instant. */
   function todosAt(user: User, role: Role, instant: Date) {
     return listMyTodos({ prisma, clock: { now: () => instant } }, viewerFor(user, role));
   }
@@ -90,7 +81,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     allowDuplicate: true,
   } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** Create through the real procedure; return ids + the stamped createdAt. */
   async function createTicket(policyName = "一般投诉") {
     const created = await manager().ticket.create({
       ...baseInput,
@@ -107,7 +97,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     return new Date(base.getTime() + ms);
   }
 
-  /** The latest comment instant, as the rolling predicate reads it. */
   async function lastCommentAt(ticketId: string) {
     const log = await prisma.processLog.findFirstOrThrow({
       where: { ticketId, action: "comment" },
@@ -153,7 +142,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const ticket = await createTicket();
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: oldOwner.id });
 
-      // 23h30m: inside the 24h checkpoint window, 待首响 long past its red line
       const instant = plus(ticket.createdAt, 23 * HOUR + 30 * MINUTE);
       const before = await todosAt(oldOwner, seeded.roles.frontline, instant);
       expect(before.items.map((item) => item.ticketId)).toEqual([ticket.id]);
@@ -194,7 +182,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const ticket = await createTicket(); // 一般投诉: 红线 120 分钟
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
 
-      // 1 minute in: already in the todo — presence needs no threshold
       const fresh = await todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, MINUTE));
       expect(typesOf(fresh.items[0])).toEqual(["awaiting_first_response"]);
       expect(fresh.items[0]?.alerts[0]?.severity).toBe("warning");
@@ -207,7 +194,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       );
       expect(onTheLine.items[0]?.alerts[0]?.severity).toBe("warning");
 
-      // 1ms past: red — same single alert, only the severity moved
       const pastTheLine = await todosAt(
         owner,
         seeded.roles.frontline,
@@ -227,8 +213,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
         remark: "已电话联系客户",
       });
 
-      // 130min: past the red line, but the first follow-up exists — and no
-      // other predicate is active this early, so the ticket leaves the list
       expect(
         (await todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, 130 * MINUTE))).count,
       ).toBe(0);
@@ -245,8 +229,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
           (await todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, offsetMs))).items[0],
         );
 
-      // 待首响 keeps the item present throughout; the checkpoint alert
-      // joins exactly inside [23h, 24h) and never outside it
       expect(await checkpointTypesAt(23 * HOUR - 1)).toEqual(["awaiting_first_response"]);
       expect(await checkpointTypesAt(23 * HOUR)).toEqual([
         "awaiting_first_response",
@@ -268,13 +250,10 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
         remark: "首次跟进",
       });
 
-      // 24h checkpoint requires 1, met → inside its window nothing shows at all
       expect(
         (await todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, 23.5 * HOUR))).count,
       ).toBe(0);
 
-      // 48h checkpoint requires 2 cumulative — 1 comment is short, so the 45h
-      // window opens with the cumulative tally in the message
       const at45h = await todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, 45 * HOUR));
       expect(typesOf(at45h.items[0])).toEqual(["follow_up_checkpoint"]);
       expect(at45h.items[0]?.alerts[0]?.message).toBe("48 小时检查点将至：已跟进 1/2 次");
@@ -291,7 +270,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       });
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: second.id });
 
-      // second never commented, but the ticket-wide tally (1) carries over
       const inWindow = plus(ticket.createdAt, 23 * HOUR + 30 * MINUTE);
       const before = await todosAt(second, seeded.roles.frontline, inWindow);
       expect(typesOf(before.items[0])).toEqual(["follow_up_checkpoint"]);
@@ -333,7 +311,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       expect(typesOf(onTheDot.items[0])).toEqual(["rolling_follow_up"]);
       expect(onTheDot.items[0]?.alerts[0]?.severity).toBe("critical");
 
-      // no dueAt → however far time goes, never due_soon/overdue
       const muchLater = await todosAt(owner, seeded.roles.frontline, plus(commentAt, 1000 * HOUR));
       expect(typesOf(muchLater.items[0])).toEqual(["rolling_follow_up"]);
       expect(muchLater.items[0]?.dueAt).toBeNull();
@@ -392,16 +369,12 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const todosFor = (offsetMs: number) =>
         todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, offsetMs));
 
-      // 90min: past the NEW 60min red line (一般's 120min would still be yellow)
       expect((await todosFor(90 * MINUTE)).items[0]?.alerts[0]?.severity).toBe("critical");
 
-      // 30h: the 24h checkpoint window has passed — 0 < 2 comments, yet no
-      // alert: a missed checkpoint simply never matches again (无补发特判)
       expect(await todosFor(30 * HOUR).then((t) => typesOf(t.items[0]))).toEqual([
         "awaiting_first_response",
       ]);
 
-      // 45h30m: the new level's 48h checkpoint fires with ITS requiredCount
       const at45h30 = await todosFor(45 * HOUR + 30 * MINUTE);
       expect(typesOf(at45h30.items[0])).toEqual([
         "awaiting_first_response",
@@ -409,9 +382,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       ]);
       expect(at45h30.items[0]?.alerts[1]?.message).toBe("48 小时检查点将至：已跟进 0/4 次");
 
-      // 49h: past the OLD 48h deadline but the recomputed dueAt is 72h
       expect(await todosFor(49 * HOUR).then((t) => typesOf(t.items[0]))).not.toContain("overdue");
-      // strictly past 72h: overdue by the new deadline
       expect(await todosFor(72 * HOUR + 1).then((t) => typesOf(t.items[0]))).toContain("overdue");
     });
   });
@@ -427,7 +398,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const at = (offsetMs: number) =>
         todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, offsetMs));
 
-      // 基线：23.5h 在检查点窗口内
       expect(typesOf((await at(23.5 * HOUR)).items[0])).toEqual([
         "awaiting_first_response",
         "follow_up_checkpoint",
@@ -435,16 +405,13 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
 
       await prisma.slaPolicy.update({ where: { id: policy.id }, data: { active: false } });
       try {
-        // 同一时刻同一工单：检查点消失，待首响常驻——poll 不抛错
         const degraded = await at(23.5 * HOUR);
         expect(typesOf(degraded.items[0])).toEqual(["awaiting_first_response"]);
 
-        // 越过 120min 红线也不染红（策略行缺位 → 无红线口径）
         const pastRedLine = await at(3 * HOUR);
         expect(typesOf(pastRedLine.items[0])).toEqual(["awaiting_first_response"]);
         expect(pastRedLine.items[0]?.severity).toBe("warning");
 
-        // dueAt 派生的告警与策略行无关：47h 进 due_soon（不足 2h 严格），49h 进 overdue
         expect(typesOf((await at(47 * HOUR)).items[0])).toEqual([
           "awaiting_first_response",
           "due_soon",

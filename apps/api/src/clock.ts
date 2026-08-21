@@ -8,12 +8,10 @@ export interface Clock {
   now(): Date;
 }
 
-/** Production clock: the real system time. */
 export const systemClock: Clock = {
   now: () => new Date(),
 };
 
-/** Test clock pinned to a fixed instant. */
 export function fixedClock(at: Date): Clock {
   return { now: () => at };
 }

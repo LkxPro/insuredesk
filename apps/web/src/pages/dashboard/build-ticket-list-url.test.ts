@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildChannelTicketListUrl, buildTicketListUrl } from "./build-ticket-list-url";
 
-/**
- * 看板 → 列表 URL 构造：每张卡与每一渠道行点击后跳转列表，URL 携带与该卡/行
- * 精确等价的筛选条件。所有跳转都附带看板当前的 createdFrom/createdTo。
- */
-
 describe("buildTicketListUrl", () => {
   it("total card returns no status filter", () => {
     expect(buildTicketListUrl("total", {})).toBe("/tickets");

@@ -17,15 +17,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { SearchableCombobox } from "./SearchableCombobox";
 
-/**
- * 分配 / 改派 / 批量分配 dialog. mode="single" drives ticket.assign,
- * mode="batch" drives ticket.batchAssign — the caller gates each entry point
- * on the matching permission. The dialog only picks WHO — status, assignedAt
- * and the ProcessLog trail are derived server-side, and dueAt never changes;
- * for a reassignment the remaining time is shown so a supervisor sees what
- * the new assignee inherits.
- */
-
 export type AssignTarget = {
   id: string;
   workOrderNumber: string;
@@ -50,7 +41,6 @@ export function AssignTicketDialog({
   targets,
   onAssigned,
 }: {
-  /** Which mutation backs the dialog — matches the permission gating the entry point. */
   mode: "single" | "batch";
   open: boolean;
   onOpenChange: (open: boolean) => void;

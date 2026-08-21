@@ -9,12 +9,8 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
 /**
- * 外部留言 composer，钉在分栏详情右栏底部：补充信息或回答内部客服的追问。
  * 落成 external_note 处理记录，不动联系次数/首响 —— 外部留言不是我方的客户
  * 联系。调用方按未完结门控渲染；服务端同样拒绝已完结工单的留言。
- *
- * 无 Card 外壳：它是右栏的固定页脚，边框与内边距由容器给，自身保持紧凑，
- * 免得挤掉时间线的可视高度。
  */
 
 const NOTE_LIMIT = 2000;

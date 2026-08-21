@@ -13,20 +13,6 @@ import { buildServer } from "../src/server.ts";
 import { hashPassword } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Acceptance tests for the 批量导入 template download, over the real HTTP
- * surface like the export tests:
- *
- * - ticket.import guard: 401 unauthenticated, 403 without the permission —
- *   including factory roles, which are seeded once and never backfilled
- * - the sheet carries the 建单表单 columns plus the 完结状态/完结备注
- *   pair, Chinese headers in form order
- * - enum/catalog columns carry Excel data-validation dropdowns; 渠道/客诉
- *   类别/完结状态 options are the ACTIVE catalog rows at download time
- *   (停用后重新下载即消失)
- * - a 填写说明 sheet documents per-column rules, the 2000-row limit, and the
- *   完结 pair's 同填同空 rule
- */
 describe("ticket import template (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -69,7 +55,6 @@ describe("ticket import template (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** Log in over the real endpoint; returns the session cookie value. */
   async function sessionFor(username: string): Promise<string> {
     const res = await app.inject({
       method: "POST",
@@ -137,7 +122,6 @@ describe("ticket import template (Testcontainers)", () => {
 
       const headers = EXPECTED_HEADERS.map((_, index) => sheet?.getRow(1).getCell(index + 1).value);
       expect(headers).toEqual(EXPECTED_HEADERS);
-      // no extra columns ride along
       expect(sheet?.getRow(1).cellCount).toBe(EXPECTED_HEADERS.length);
     });
 
@@ -155,18 +139,15 @@ describe("ticket import template (Testcontainers)", () => {
       const combined = text.join("\n");
       expect(combined).toContain("yyyy-MM-dd HH:mm");
       expect(combined).toContain("2000");
-      // every column is documented
       for (const header of EXPECTED_HEADERS) {
         expect(combined).toContain(header);
       }
-      // 完结 pair: 同填同空 rule and the 导入即完结 semantics
       expect(combined).toContain("同时填写或同时留空");
       expect(combined).toContain("已完结");
     });
   });
 
   describe("枚举/目录列下拉", () => {
-    /** Column letter (1-indexed) for a header name on the 工单 sheet. */
     function columnOf(header: string): number {
       const index = EXPECTED_HEADERS.indexOf(header);
       expect(index, header).toBeGreaterThanOrEqual(0);
@@ -178,7 +159,6 @@ describe("ticket import template (Testcontainers)", () => {
       const sheet = workbook.getWorksheet("工单");
       const options = workbook.getWorksheet("选项");
       expect(options).toBeDefined();
-      // the option feed is bookkeeping, not part of the fill-in surface
       expect(options?.state).not.toBe("visible");
 
       const enumFields = TICKET_FIELD_DESCRIPTORS.filter(
@@ -230,8 +210,8 @@ describe("ticket import template (Testcontainers)", () => {
       };
 
       const firstOptions = collect(first);
-      expect(firstOptions).toContain("保司"); // seeded active channel
-      expect(firstOptions).toContain("已达成一致"); // 迁移种子的启用完结状态
+      expect(firstOptions).toContain("保司");
+      expect(firstOptions).toContain("已达成一致");
       expect(firstOptions).not.toContain(disabledChannel.name);
       expect(firstOptions).not.toContain(disabledCategory.name);
       expect(firstOptions).not.toContain(disabledCompletion.name);
@@ -246,7 +226,6 @@ describe("ticket import template (Testcontainers)", () => {
       expect(completionValidation?.type).toBe("list");
       expect(completionValidation?.allowBlank).toBe(true);
 
-      // 停用后重新下载即消失
       const victim = await prisma.channel.findFirstOrThrow({ where: { name: "支付" } });
       const completionVictim = await prisma.completionStatus.findFirstOrThrow({
         where: { name: "正常完结" },

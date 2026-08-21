@@ -16,5 +16,4 @@ export const createdRangeFields = {
 
 export const createdRangeSchema = z.object(createdRangeFields);
 
-/** 起止均可缺省：两者皆无 = 不按创建时间筛选。 */
 export type CreatedRangeQuery = z.infer<typeof createdRangeSchema>;

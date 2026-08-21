@@ -3,12 +3,6 @@ import { describe, expect, it } from "vitest";
 import { callsTo, renderApp, restFetch } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * 外部列表的日期筛选与导出：筛选值住 URL（深链/刷新不丢）、查询随车；
- * 导出按钮恒显，点击经全局 fetch 下载（restFetch），URL 带当前筛选、
- * 无翻页参数。
- */
-
 function ticket() {
   return {
     id: "t1",
@@ -50,7 +44,6 @@ function renderPage(path: string) {
   });
 }
 
-/** Open the Radix dropdown (pointerDown, jsdom-style) and pick a format. */
 async function pickExport(itemName: RegExp) {
   const trigger = await screen.findByRole("button", { name: /导出/ });
   fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
@@ -124,7 +117,6 @@ describe("导出", () => {
     expect(url.searchParams.get("search")).toBe("PX-1");
     expect(url.searchParams.get("createdFrom")).toBe(from);
     expect(url.searchParams.get("timeZone")).toBeTruthy();
-    // 导出覆盖筛选结果全集 — 翻页不随车
     expect(url.searchParams.get("page")).toBeNull();
   });
 

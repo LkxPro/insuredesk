@@ -57,8 +57,6 @@ function AppSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            {/* asChild <div>: brand row gets the menu-button collapse styling
-                without pretending to be an interactive button. */}
             <SidebarMenuButton size="lg" asChild>
               <div>
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">

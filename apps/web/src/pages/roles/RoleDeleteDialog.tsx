@@ -15,12 +15,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { RoleRow } from "./RolesPage";
 
-/**
- * 删除角色 (role.delete): explicit confirm — roles are configuration with no
- * undo. The 管理员 system role never reaches here (the button is hidden), and
- * the server refuses roles that still have holders; the in-dialog alert
- * surfaces that refusal.
- */
 export function RoleDeleteDialog({
   role,
   onOpenChange,

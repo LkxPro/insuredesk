@@ -8,16 +8,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { trpc } from "@/lib/trpc";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 
-/**
- * Issue #62 建单默认此刻: each open of 新建工单 rebuilds a fresh form with
- * feedbackTime prefilled to the open instant (打开时刻, minute precision).
- * Reopening refreshes the time and never restores a cancelled draft. The
- * dialog talks to trpc/react-router, so it renders inside a faked-fetch
- * client and a MemoryRouter — no network, no navigation asserted here.
- * useAuth-seam mock as the sibling ticket tests; a null user keeps
- * requiredTicketFields empty, so no field is marked required here.
- */
-
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
     user: null,
@@ -46,7 +36,6 @@ function fakeFetch(): Promise<Response> {
   );
 }
 
-/** A parent that owns `open` so the test can close and reopen the dialog. */
 function Harness() {
   const [open, setOpen] = useState(false);
   return (
@@ -97,7 +86,6 @@ describe("新建工单 打开即见当前时刻 (issue #62)", () => {
     fireEvent.click(screen.getByRole("button", { name: "打开" }));
     await screen.findByRole("heading", { name: "新建工单" });
 
-    // A value is present → the clear affordance shows and the date carries 此刻
     expect(screen.getByRole("button", { name: "清空时间" })).toBeInTheDocument();
     expect(screen.getByLabelText("反馈时间")).toHaveValue(dateValue(open));
   });
@@ -111,7 +99,6 @@ describe("新建工单 打开即见当前时刻 (issue #62)", () => {
     await screen.findByRole("heading", { name: "新建工单" });
     expect(screen.getByLabelText("反馈时间")).toHaveValue(dateValue(firstOpen));
 
-    // Dirty the form, then close without submitting (through the 丢弃修改？ ask)
     fireEvent.change(screen.getByLabelText("客户姓名"), { target: { value: "王小明" } });
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     fireEvent.click(await screen.findByRole("button", { name: "丢弃修改" }));
@@ -119,14 +106,12 @@ describe("新建工单 打开即见当前时刻 (issue #62)", () => {
       expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument();
     });
 
-    // Time moves on (a whole day, so distinct in any tz); reopening shows the NEW instant
     const secondOpen = new Date("2026-07-16T11:45:00.000Z");
     vi.setSystemTime(secondOpen);
     fireEvent.click(screen.getByRole("button", { name: "打开" }));
     await screen.findByRole("heading", { name: "新建工单" });
 
     expect(screen.getByLabelText("反馈时间")).toHaveValue(dateValue(secondOpen));
-    // The cancelled draft is gone
     expect(screen.getByLabelText("客户姓名")).toHaveValue("");
   });
 });

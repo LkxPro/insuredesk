@@ -2,11 +2,6 @@ import { TICKET_CREATE_FIELD_KEYS, TICKET_FIELDS, TICKET_TEXT_LIMITS } from "@in
 import { describe, expect, it } from "vitest";
 import { buildTicketFormSchema } from "./TicketFormFields";
 
-/**
- * 必填红字与输入框可见 label 逐字一致，文本限长与描述表同源。
- */
-
-/** A wholly untouched form: text/select fields "", datetime "", tri-state null. */
 const BLANK_FORM = {
   feedbackTime: "",
   contactTime: "",
@@ -75,7 +70,6 @@ describe("buildTicketFormSchema 保单号多值上限（描述表派生）", () 
     expect(schema.safeParse({ ...BLANK_FORM, policyNumbers: `${full} P-extra` }).success).toBe(
       false,
     );
-    // 重复值静默去重，不算超量
     expect(schema.safeParse({ ...BLANK_FORM, policyNumbers: `${full} P0 P1` }).success).toBe(true);
   });
 

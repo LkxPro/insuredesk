@@ -20,10 +20,6 @@ import { protectedProcedure, router } from "../trpc.ts";
 const deps = { prisma, clock: systemClock };
 
 export const notificationRouter = router({
-  /**
-   * The poll: latest 轨 1 notifications + unread count, and the 轨 2 todo
-   * list computed for this instant — one request per 30s tick.
-   */
   list: protectedProcedure
     .input(notificationListInputSchema.prefault({}))
     .query(async ({ ctx, input }) => {
@@ -42,7 +38,6 @@ export const notificationRouter = router({
       return { ok: true as const };
     }),
 
-  /** 全部已读. */
   markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
     await markAllNotificationsRead(deps, ctx.user);
     return { ok: true as const };

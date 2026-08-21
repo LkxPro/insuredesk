@@ -10,10 +10,6 @@ import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts
 import { appRouter } from "../src/routers/index.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * 角色建单必填字段集验证：按请求者角色强制必填集，缺失字段一次性报错，
- * 三态字段必须明确选择，编辑不受约束，外部来源不适用，清单外 key 防御性忽略。
- */
 describe("role required ticket fields (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;

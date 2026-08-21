@@ -2,7 +2,6 @@ import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-/** 草稿不写在 URL 里，提交（回车或点「搜索」）才落入；X 一键清空草稿并撤掉已提交的搜索。 */
 export function TicketListSearch({
   draft,
   onDraftChange,

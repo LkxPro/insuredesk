@@ -24,15 +24,8 @@ import {
 } from "../services/role.service.ts";
 import { requirePermission, router } from "../trpc.ts";
 
-/**
- * 角色管理 routes: thin wrappers — validation via the shared Zod schemas,
- * one permission point per operation (role.view / role.create / role.edit /
- * role.delete / role.edit_permission), business logic in role.service.
- */
-
 const deps = { prisma, clock: systemClock };
 
-/** Domain error → transport code, shared by every mutation below. */
 function toTRPCError(error: unknown): never {
   if (error instanceof DuplicateRoleNameError || error instanceof RoleInUseError) {
     throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
@@ -51,10 +44,8 @@ function toTRPCError(error: unknown): never {
 }
 
 export const roleRouter = router({
-  /** The 角色权限 page's one read: every role + permissions + holder count. */
   list: requirePermission("role.view").query(() => listRoles(deps)),
 
-  /** New role from the 权限点清单 checkboxes. */
   create: requirePermission("role.create")
     .input(roleCreateInputSchema)
     .mutation(({ input }) => createRole(deps, input).catch(toTRPCError)),
@@ -74,7 +65,6 @@ export const roleRouter = router({
     .input(roleUpdateRequiredFieldsInputSchema)
     .mutation(({ input }) => updateRoleRequiredFields(deps, input).catch(toTRPCError)),
 
-  /** Delete an unused role; 管理员 and held roles refuse. */
   delete: requirePermission("role.delete")
     .input(roleDeleteInputSchema)
     .mutation(({ input }) => deleteRole(deps, input).catch(toTRPCError)),

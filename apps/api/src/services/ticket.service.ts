@@ -31,18 +31,11 @@ import { displayStatusTicketWhere } from "./ticket-display-status.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
 import { userComplaintChannelCatalog } from "./user-complaint-channel.service.ts";
 
-/**
- * Ticket domain logic: manual creation and detail reads. Pure service
- * layer — no tRPC/HTTP types; the router maps domain errors to transport
- * codes.
- */
-
 export interface TicketServiceDeps {
   prisma: PrismaClient;
   clock: Clock;
 }
 
-/** 引用的策略行缺失或已停用 = 配置故障（与现状同错：路由映射 PRECONDITION_FAILED）。 */
 export class SlaPolicyNotConfiguredError extends Error {
   constructor(label: string) {
     super(`时效策略「${label}」缺少 SLA 策略配置或已停用`);
@@ -50,7 +43,6 @@ export class SlaPolicyNotConfiguredError extends Error {
   }
 }
 
-/** 角色建单必填字段校验失败：缺任一必填字段即拒绝，一次性报出全部缺失。 */
 export class RequiredFieldsMissingError extends Error {
   constructor(missingFields: string[]) {
     super(`以下字段为必填项：${missingFields.join("、")}`);
@@ -60,7 +52,6 @@ export class RequiredFieldsMissingError extends Error {
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** Wire ISO-8601 datetime string (null = 未填写) → Date for persistence. */
 export function toDateOrNull(value: string | null): Date | null {
   return value === null ? null : new Date(value);
 }
@@ -258,7 +249,6 @@ const listInclude = {
 
 type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
 
-/** The list's filter/sort subset — shared verbatim by the export. */
 type TicketListFilters = Pick<
   TicketListQuery,
   | "status"
@@ -365,7 +355,6 @@ export async function buildTicketListWhere(
   };
 }
 
-/** The list's ordering, shared with the export for row-for-row consistency. */
 export function buildTicketListOrderBy(
   query: TicketListFilters,
 ): Prisma.TicketOrderByWithRelationInput[] {
@@ -412,7 +401,6 @@ export async function listTickets(
   };
 }
 
-/** Re-narrow a nullable enum-like String column; null (未填写) passes through. */
 function parseNullable<T>(
   schema: { parse: (value: unknown) => T },
   value: string | null,
@@ -420,7 +408,6 @@ function parseNullable<T>(
   return value === null ? null : schema.parse(value);
 }
 
-/** Wire shape of one list row — the list's columns, nothing more. */
 function serializeTicketListItem(ticket: TicketListRow, now: Date) {
   const source = ticketSourceSchema.parse(ticket.source);
   const status = ticketStatusSchema.parse(ticket.status);

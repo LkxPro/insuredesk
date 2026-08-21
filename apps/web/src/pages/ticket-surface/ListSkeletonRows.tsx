@@ -1,7 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
 
-/** Layout-shaped placeholder rows while the list query is in flight. */
 export function ListSkeletonRows({ columnCount }: { columnCount: number }) {
   const cells = Array.from({ length: columnCount }, (_, index) => index);
   return (

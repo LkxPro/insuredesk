@@ -33,66 +33,36 @@ export const appRouter = router({
 
   auth: authRouter,
 
-  /**
-   * Demo routes - RBAC guard testing
-   */
   demo: demoRouter,
 
   ticket: ticketRouter,
 
-  /** 字典目录 - 客诉类别的增删改名/排序/停用，限 dictionary.manage */
   ticketCategory: ticketCategoryRouter,
 
-  /** 字典目录 - 反馈渠道，同上 */
   channel: channelRouter,
 
-  /** 字典目录 - 完结状态，同上 */
   completionStatus: completionStatusRouter,
 
-  /** 字典目录 - 用户投诉渠道（客户发起侧），同上 */
   userComplaintChannel: userComplaintChannelRouter,
 
-  /** 字典目录 - 投诉信息接收渠道（我方接收侧），同上 */
   complaintReceiveChannel: complaintReceiveChannelRouter,
 
-  /**
-   * The 30s poll — 轨 1 收件箱 + 轨 2 我的待办 in one request
-   */
   notification: notificationRouter,
 
-  /**
-   * 数据看板 - 9 指标卡 + 渠道统计 + 跟进人考核
-   */
   dashboard: dashboardRouter,
 
   schedule: scheduleRouter,
 
-  /** 管理员配置班次名称、颜色、多时段与显示顺序。 */
   shiftType: shiftTypeRouter,
 
-  /**
-   * 用户管理 - 新增/编辑/禁用启用/分配角色
-   */
   user: userRouter,
 
-  /**
-   * 角色管理 - 权限点清单配置，管理员（系统角色）全锁
-   */
   role: roleRouter,
 
-  /**
-   * 时效策略目录 - 目录 CRUD/排序/启停与首响/超时/提醒规则编辑，限管理员
-   */
   sla: slaRouter,
 
-  /**
-   * 外部账号管理 - 建号/编辑(含预填与白名单)/启停
-   */
   externalAccount: externalAccountRouter,
 
-  /**
-   * 外部工单 API - 提交/列表/详情，限外部用户
-   */
   externalTicket: externalTicketRouter,
 });
 

@@ -12,17 +12,8 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
-/**
- * 轨 1 收件箱 bell: polls notification.list every 30 seconds — unread-count
- * red badge, a top-center toast for each newly arrived notification
- * (click = mark read + jump to the ticket), and a popover inbox where
- * clicking an entry does the same.
- */
-
-/** Server list-item shape, inferred from the router — one contract, no drift. */
 type NotificationItem = inferRouterOutputs<AppRouter>["notification"]["list"]["items"][number];
 
-/** Beyond this many arrivals in one poll, collapse into a single summary toast. */
 const MAX_INDIVIDUAL_TOASTS = 3;
 
 /** 异步到达的通知比操作回执曝光更久；消失后仍有未读徽标兜底。 */
@@ -85,7 +76,6 @@ export function NotificationBell() {
       return;
     }
     for (const item of fresh) {
-      // 点击轻提示本体 = 收件箱点击：标已读 + 跳工单详情
       toast(item.title, {
         description: item.content,
         duration: ARRIVAL_TOAST_DURATION_MS,
@@ -143,7 +133,6 @@ export function NotificationBell() {
                   className="flex w-full flex-col gap-1 px-3 py-2.5 text-left hover:bg-accent"
                 >
                   <span className="flex items-center gap-2">
-                    {/* Unread dot */}
                     <span
                       aria-hidden="true"
                       className={cn(

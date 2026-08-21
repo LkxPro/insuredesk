@@ -12,10 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
-/**
- * 修改密码 self-service block. Hidden entirely for roles holding the
- * restrictive point (勾选=禁止, the API rejects those requests too).
- */
+/** user.forbid_change_own_password 勾选=禁止；API 侧同样拒绝。 */
 export function ChangePasswordCard() {
   const { hasPermission } = useAuth();
 

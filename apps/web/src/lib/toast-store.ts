@@ -1,18 +1,8 @@
-/**
- * 轻提示 store：顶部居中的胶囊队列（ToastHost 渲染）。
- * Framework-free so the imperative `toast` facade stays mockable in tests
- * without touching the rendered host. 条目 push 即启动各自计时，默认
- * DEFAULT_DURATION 毫秒后自动消失；duration: "sticky" 的条目常驻，只经
- * 关闭键或点击跳转离开。队列上限 MAX_ITEMS，超出丢最旧。
- */
-
 export type ToastKind = "success" | "error" | "warning" | "info";
 
 export type ToastOptions = {
   description?: string;
-  /** 点击通知本体触发（如跳转对应页面），触发后该条随之关闭。 */
   onClick?: () => void;
-  /** 自动消失毫秒数；"sticky" 常驻。 */
   duration?: number | "sticky";
 };
 

@@ -9,12 +9,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-/**
- * 丢弃修改？ confirmation, stacked over a form dialog whose close was
- * intercepted because the form is dirty. Only the explicit destructive
- * confirm discards; closing this dialog any other way (继续编辑, X, Esc,
- * outside click) returns to the still-open form with the draft intact.
- */
 export function DiscardChangesDialog({
   open,
   onOpenChange,

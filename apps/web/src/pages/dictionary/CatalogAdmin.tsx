@@ -45,15 +45,6 @@ import {
 import { type NameSortDir, sortByName } from "@/lib/name-sort";
 import { toast } from "@/lib/toast";
 
-/**
- * 字典目录管理面板, shared by the 渠道/类别/完结状态 catalogs: list with 已停用
- * 标注, create/rename dialog with schema error mapping, 停用/启用 toggle, the
- * delete dialog that surfaces the server's in-use refusal, drag/keyboard
- * reorder, and a name-sort preview that only overwrites the manual order on
- * explicit save. Each catalog is a `CatalogAdminConfig`: its tRPC hooks,
- * wording, and input schema — no behavior switches.
- */
-
 interface CatalogRow {
   id: string;
   name: string;
@@ -67,9 +58,6 @@ interface MutationLike<Input> {
   error: { message: string } | null;
 }
 
-/**
- * The structural slice of a catalog's tRPC namespace the panel uses.
- */
 export interface CatalogAdminHooks {
   useList(): {
     data: CatalogRow[] | undefined;
@@ -93,19 +81,12 @@ export interface CatalogAdminHooks {
 }
 
 export interface CatalogAdminConfig {
-  /** Dialog field DOM id prefix（channel → channel-name）. */
   idPrefix: string;
-  /** 目录标题（反馈渠道/客诉类别/完结状态）. */
   title: string;
-  /** 目录项名词，进按钮、弹窗标题与操作回执（渠道/类别/完结状态）. */
   noun: string;
-  /** 名称字段名词（渠道/类别/状态），与 shared schema 的报错措辞一致. */
   nameNoun: string;
-  /** 目录副标题：该目录被哪些表单消费、停用的语义. */
   subtitle: string;
-  /** 空表引导文案. */
   emptyDescription: string;
-  /** 新增/编辑弹窗说明：改名的生效面. */
   dialogDescription: string;
   createInputSchema: CatalogSchemas["createInputSchema"];
   hooks: CatalogAdminHooks;

@@ -4,12 +4,6 @@ import { auth, callsTo, renderApp, toastSpies, userWith } from "@/test/renderApp
 import { TEST_ROLES } from "@/test/roles";
 import { completionStatusOptions, detailPayload, listItem } from "./detail-pane-fixtures";
 
-/**
- * 从分栏详情发起的两个二级动作：完结与删除。两者都复用既有弹窗，分栏只负责按
- * 权限与状态决定按钮在不在（那部分在 TicketDetailPane.test.tsx），这里测弹窗
- * 里的必填与提交契约，以及删除后离开处理态。
- */
-
 // Radix Select 需要 jsdom 未实现的 pointer-capture / scroll API
 beforeAll(() => {
   Object.assign(window.HTMLElement.prototype, {
@@ -60,13 +54,11 @@ describe("完结", () => {
   it("完结状态与完结备注都填齐才能提交", async () => {
     const dialog = await openResolve();
 
-    // 两个必填都空 → 确认按钮不可点
     expect(within(dialog).getByRole("button", { name: "确认完结" })).toBeDisabled();
 
     fireEvent.change(within(dialog).getByLabelText("完结备注"), {
       target: { value: "已与客户达成一致" },
     });
-    // 只有备注仍不够
     expect(within(dialog).getByRole("button", { name: "确认完结" })).toBeDisabled();
 
     fireEvent.click(within(dialog).getByRole("combobox"));
@@ -96,9 +88,7 @@ describe("完结", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(toastSpies.success).toHaveBeenCalled();
-    // 状态/完结信息/时间线都在服务端变 → 回读
     await waitFor(() => expect(callsTo("ticket.detail").length).toBeGreaterThan(before));
-    // 没被弹到列表：完结后还能继续看这单
     expect(await findPane()).toBeInTheDocument();
   });
 
@@ -135,14 +125,12 @@ describe("删除", () => {
   it("只在二次确认后才发 ticket.delete，随后离开处理态回列表", async () => {
     const dialog = await openDelete();
 
-    // 弹窗开着但还没确认 → 不发请求
     expect(callsTo("ticket.delete")).toHaveLength(0);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "确认删除" }));
 
     await waitFor(() => expect(callsTo("ticket.delete")).toHaveLength(1));
     expect(callsTo("ticket.delete")[0]?.input).toMatchObject({ ticketId: "t1" });
-    // 单子没了，处理态无从停留
     await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
     expect(screen.queryByRole("region", { name: "工单详情" })).not.toBeInTheDocument();
   });

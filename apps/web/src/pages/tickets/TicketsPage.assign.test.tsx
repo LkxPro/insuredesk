@@ -10,12 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * Assignment flows: the dialog carries the "时限不顺延" hint on reassignment,
- * and confirming fires the right mutation with the right payload. Same
- * faked-fetch tRPC pipeline and useAuth-seam mock as TicketsPage.list.test.tsx.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -103,8 +97,7 @@ const canned = { items: [] as ListItem[], total: 0 };
 let calls: Array<{ path: string; input: unknown }>;
 
 function respond(path: string, input: unknown): unknown {
-  // The AppLayout bell polls notification.list in the same batch;
-  // an empty inbox keeps these tests focused on the assignment surfaces.
+  // The AppLayout bell polls notification.list in the same batch.
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }

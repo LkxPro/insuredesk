@@ -10,13 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * Issue #22 UI gating: the 新建工单 entry only exists for holders of
- * ticket.create, and /tickets/new itself bounces everyone else to /403 —
- * mirroring the API-side requirePermission("ticket.create") guard. Same
- * useAuth-seam mock as AppRoutes.test.tsx.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -48,8 +41,6 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
 }
 
 function renderAt(path: string) {
-  // Real providers with a client that never fires (nothing is mutated/queried
-  // in these tests) — just enough for pages using trpc hooks to mount.
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const trpcClient = trpc.createClient({
     links: [httpBatchLink({ url: "http://localhost/api/trpc" })],

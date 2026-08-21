@@ -17,13 +17,6 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isCompleteLocalDate, joinLocalDateTime, splitLocalDateTime } from "@/lib/local-date-time";
 
-/**
- * Calendar + explicit 24-hour minute input. Controlled around a LOCAL datetime string:
- * complete `YYYY-MM-DDTHH:mm`, date-only `YYYY-MM-DDT`, time-only `THH:mm`, or
- * `""` when unset. The form validates the pair and owns conversion to an
- * absolute instant.
- */
-
 const CALENDAR_START = new Date(1900, 0, 1);
 const CALENDAR_END = new Date(2100, 11, 31);
 const COMPLETE_SHORT_DATE = /^\d{2}-\d{2}-\d{2}$/;
@@ -49,14 +42,10 @@ export function DateTimePicker({
   timeAriaLabel = "时间",
   invalid = false,
 }: {
-  /** Base element id: the date input is `${id}-date`, the time input `${id}-time`. */
   id: string;
-  /** Complete or temporarily partial local datetime string; ""/undefined = unset. */
   value: string | undefined;
   onChange: (value: string) => void;
-  /** Accessible name for the button that opens the calendar. */
   datePickerAriaLabel?: string;
-  /** Accessible name for the native time input. */
   timeAriaLabel?: string;
   invalid?: boolean;
 }) {

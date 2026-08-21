@@ -9,15 +9,8 @@ import { hashPassword } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
- * Acceptance tests for 外部导出工单, driven over the real HTTP surface
- * (buildServer + app.inject with session cookies — the download is a REST
- * endpoint, not a tRPC procedure):
- *
- * - guard 顺序: 401 未登录 → 403 非外部账号（管理员也不能走外部口子）
- *   → 400 参数错误；导出对外部账号恒开，无权限位可关
- * - 数据范围恒为本人提交的单，筛选（状态/搜索含保单号/创建时间区间）与外部
- *   列表同口径；无翻页参数 = 筛选结果全集
- * - 两种格式 round-trip（CSV 按文本解析，XLSX 经 exceljs 重读）
+ * 导出口是 REST endpoint 而非 tRPC procedure,故走 buildServer + app.inject。
+ * 导出对外部账号恒开,无权限位可关。
  */
 describe("external ticket export (Testcontainers)", () => {
   let harness: IntegrationHarness;
@@ -79,7 +72,6 @@ describe("external ticket export (Testcontainers)", () => {
     await prisma.ticket.deleteMany();
   });
 
-  /** Log in over the real endpoint; returns the session cookie value. */
   async function sessionFor(username: string): Promise<string> {
     const res = await app.inject({
       method: "POST",
@@ -116,7 +108,6 @@ describe("external ticket export (Testcontainers)", () => {
   const submit = (text: string, row: Record<string, unknown> = {}) =>
     submitAs(externalUser, externalRole, text, row);
 
-  /** BOM-stripped CSV → rows (quoted-field-aware enough for our data). */
   function parseCsv(payload: string): string[][] {
     const text = payload.replace(/^\uFEFF/, "").replace(/\r\n$/, "");
     return text.split("\r\n").map((line) => {
@@ -184,7 +175,7 @@ describe("external ticket export (Testcontainers)", () => {
       );
 
       const rows = parseCsv(res.body);
-      expect(rows).toHaveLength(2); // header + 本人一单
+      expect(rows).toHaveLength(2);
       const nameColumn = (rows[0] ?? []).indexOf("客户姓名");
       expect(rows[1]?.[nameColumn]).toBe("本人客户");
       expect(res.body).not.toContain("他人客户");
@@ -245,7 +236,6 @@ describe("external ticket export (Testcontainers)", () => {
         phone: "13800000000",
         contactPhone: "13900000000",
         policyNumbers: ["PX-001"],
-        // 内部运营字段填了也不出列
         assigneeId: (await prisma.user.findUniqueOrThrow({ where: { username: "manager" } })).id,
         dueAt: new Date(),
       });
@@ -283,7 +273,7 @@ describe("external ticket export (Testcontainers)", () => {
       await workbook.xlsx.load(res.rawPayload as unknown as ArrayBuffer);
       const sheet = workbook.getWorksheet("工单");
       expect(sheet).toBeDefined();
-      expect(sheet?.rowCount).toBe(3); // header + 2 tickets
+      expect(sheet?.rowCount).toBe(3);
       expect(sheet?.getRow(1).getCell(1).value).toBe("保单号");
       const headerCells = (sheet?.getRow(1).values as Array<string | undefined>) ?? [];
       const nameColumn = headerCells.indexOf("客户姓名");

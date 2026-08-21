@@ -5,13 +5,6 @@ if (existsSync(".env")) {
   process.loadEnvFile(".env");
 }
 
-/**
- * Runs before `node --watch` on every `pnpm dev`: applies committed migrations
- * and regenerates the Prisma client. Required system catalogs are seeded on
- * every start; destructive demo fixtures still run only into an empty
- * database so a developer's in-progress tickets are never replaced.
- */
-
 // A fresh Postgres volume may still be finishing initdb after the container
 // reports healthy, so retry instead of failing the very first `make dev`.
 const MIGRATE_ATTEMPTS = 15;
