@@ -10,10 +10,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/lib/toast";
 
-/**
- * 导出当前筛选结果 — the server re-applies scope and filters. 按钮只管交互
- * 与导出中状态；URL 构造与下载由 onExport 决定（内外列表各有一份 builder）。
- */
 export function TicketExportButton({
   onExport,
 }: {

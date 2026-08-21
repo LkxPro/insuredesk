@@ -10,14 +10,10 @@ import { buildExternalTicketConditions } from "./external-ticket-query.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
- * 外部导出工单: the external viewer's *filtered list*, as a file. 与列表吃
- * 同一份 WHERE 构造器（buildExternalTicketConditions），数据范围恒为本人
- * 提交的单；无翻页参数，导出当前筛选结果全集。列集与外部详情同口径——
- * 保单号/客户/两个电话/工单原文 5 列，空值导空字符串（「—」只是页面展示
- * 层的兜底，进 Excel 会污染筛选）。只读：导出不写 ProcessLog。
+ * 列集与外部详情同口径；空值导空字符串（「—」只是页面展示层的兜底，进
+ * Excel 会污染筛选）。只读：导出不写 ProcessLog。
  */
 
-/** 列序与详情信息栏同向：身份（保单号/客户/电话）在前，长文本原文收尾。 */
 const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<Ticket>> = [
   { header: ticketExportHeader("policyNumbers"), value: (t) => joinPolicyNumbers(t.policyNumbers) },
   { header: ticketExportHeader("customerName"), value: (t) => t.customerName ?? "" },

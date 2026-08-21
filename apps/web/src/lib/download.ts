@@ -1,9 +1,3 @@
-/**
- * Fetch-and-save for the REST file endpoints (导出工单、导入模板). Session
- * cookies ride along automatically (same-origin). Throws with a displayable
- * message on any non-2xx, so the caller owns the toast.
- */
-
 /** Server rejections carry `{ error }` JSON; anything else gets a generic line. */
 async function extractError(response: Response): Promise<string> {
   try {

@@ -6,12 +6,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 
 /**
- * The 权限点清单 as grouped checkboxes — the single configuration surface
- * for 角色权限. Groups follow MANAGEMENT_PERMISSION_GROUPS (external permissions
- * filtered out); each entry shows the Chinese label plus the raw permission point.
  * Restrictive groups carry 勾选=禁止 semantics — the inverse of every other
- * checkbox — so they must stay visually marked. Renders read-only for the 管理员
- * system role and for viewers without role.edit_permission.
+ * checkbox — so they must stay visually marked.
  */
 export function PermissionChecklist({
   value,

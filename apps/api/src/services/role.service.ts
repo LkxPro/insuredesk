@@ -11,9 +11,6 @@ import { effectivePermissions } from "./auth.service.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
- * 角色管理 domain logic. Pure service layer — the router maps the domain
- * errors below to transport codes.
- *
  * 管理员 is the only system role and the only hard boundary: name, permissions
  * and deletion are all locked. Every other role — factory-seeded or hand-made
  * — is freely renamed, re-permissioned, and deleted; deletion is blocked only
@@ -56,7 +53,6 @@ export class ExternalPermissionForbiddenError extends Error {
   }
 }
 
-/** Deleting a role someone still holds would strand those accounts. */
 export class RoleInUseError extends Error {
   constructor(userCount: number) {
     super(`该角色下仍有 ${userCount} 个用户，请先为他们分配其他角色`);
@@ -103,7 +99,6 @@ export async function listRoles({ prisma }: TicketServiceDeps) {
     }));
 }
 
-/** New role from the 权限点清单 checkboxes; names are unique. */
 export async function createRole({ prisma }: TicketServiceDeps, input: RoleCreateData) {
   try {
     const created = await prisma.role.create({
@@ -119,7 +114,6 @@ export async function createRole({ prisma }: TicketServiceDeps, input: RoleCreat
   }
 }
 
-/** Rename a role (role.edit); 管理员 refuses. */
 export async function renameRole({ prisma }: TicketServiceDeps, input: RoleRenameInput) {
   await findMutableRole(prisma, input.id);
   try {
@@ -154,10 +148,7 @@ export async function updateRolePermissions(
   });
 }
 
-/**
- * 配置角色建单必填字段集 (role.edit_permission)；管理员拒绝。
- * 必填约束只在建单时生效，编辑不受影响；字段清单外的 key 被 Zod 提前拦截。
- */
+/** 必填约束只在建单时生效，编辑不受影响；字段清单外的 key 被 Zod 提前拦截。 */
 export async function updateRoleRequiredFields(
   { prisma }: TicketServiceDeps,
   input: RoleUpdateRequiredFieldsData,

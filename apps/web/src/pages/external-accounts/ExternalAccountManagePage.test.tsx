@@ -3,13 +3,6 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * 外部账号管理 page: the account table renders prefill/whitelist/status,
- * the create/edit dialogs carry the 6-prefill section plus the whitelist
- * multi-select, and disable goes through the confirm dialog while enable
- * fires directly. Data is faked at the tRPC fetch seam (renderApp).
- */
-
 // Radix Select drives its dropdown with pointer-capture and scroll APIs that
 // jsdom doesn't implement.
 beforeAll(() => {
@@ -73,7 +66,6 @@ describe("账号列表", () => {
 
     const row = (await screen.findByText("甲合作方")).closest("tr") as HTMLElement;
     expect(within(row).getByText("partner1")).toBeInTheDocument();
-    // 预填概览:已配置值按序拼接(渠道名 + 项目)
     expect(within(row).getByText("保司 · 融盛")).toBeInTheDocument();
     expect(within(row).getByText("3")).toBeInTheDocument();
     expect(within(row).getByText("启用")).toBeInTheDocument();

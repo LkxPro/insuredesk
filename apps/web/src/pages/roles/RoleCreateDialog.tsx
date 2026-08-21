@@ -19,11 +19,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { PermissionChecklist } from "./PermissionChecklist";
 
-/**
- * 新增角色 (role.create): a name plus the permission checklist. An empty
- * permission set is allowed — such a role simply sees nothing until
- * configured (the server treats permissions as data, not a minimum).
- */
 export function RoleCreateDialog({
   open,
   onOpenChange,

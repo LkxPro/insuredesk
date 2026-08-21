@@ -21,12 +21,7 @@ import { RequiredFieldsChecklist } from "./RequiredFieldsChecklist";
 import type { RoleRow } from "./RolesPage";
 
 /**
- * 权限配置 (role.edit_permission) — and the read-only 查看权限 view for the
- * 管理员 system role or viewers without the point. Saving replaces the full
- * set; every holder is re-judged on their next request (即时生效).
- *
- * 同时配置角色建单必填字段：权限点与必填集在同一对话框编辑，分两个 mutation 提交
- * （权限立即生效，必填集在下次建单时生效）。
+ * Saving replaces the full set; every holder is re-judged on their next request (即时生效).
  */
 export function RolePermissionsDialog({
   role,
@@ -34,7 +29,6 @@ export function RolePermissionsDialog({
   onOpenChange,
 }: {
   role: RoleRow | null;
-  /** Whether the viewer holds role.edit_permission — the system role stays read-only regardless. */
   editable: boolean;
   onOpenChange: (open: boolean) => void;
 }) {

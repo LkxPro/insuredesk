@@ -25,14 +25,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
-/**
- * 完结工单 dialog: the mandatory completion reason — a 完结状态目录 reference,
- * options from the catalog (启用项 only) — plus the 完结备注. The caller gates
- * the entry point on ticket.process and an in-flight status; completionTime,
- * the → completed transition and its ProcessLog pair are derived server-side
- * in ticket.resolve. completed is a 终态, hence the warning copy.
- */
-/** What the dialog needs to know about the ticket it is completing. */
 export type ResolveTarget = { id: string; workOrderNumber: string };
 
 export function ResolveTicketDialog({

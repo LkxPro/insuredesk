@@ -6,12 +6,6 @@ import {
 } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
 
-/**
- * Pure derivation helpers behind ticket creation and the detail read:
- * SLA-config → human-readable requirement strings, and the read-time
- * display status. No database needed.
- */
-
 describe("formatFirstResponseRequirement", () => {
   it("renders the level's red-line minutes", () => {
     expect(formatFirstResponseRequirement(120)).toBe("120分钟内完成首次响应");

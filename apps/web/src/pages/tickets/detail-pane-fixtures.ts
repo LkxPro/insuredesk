@@ -1,12 +1,5 @@
-/**
- * 分栏详情测试的共用替身数据：一份 serializeTicketDetail 线格式的详情载荷、一份
- * ticket.list 行载荷，以及三个目录选项 feed。四个分栏测试文件（只读呈现、编辑、
- * 跟进、分栏切换）共用同一份真源，字段增删只改这里。
- */
-
 export type DetailPayload = ReturnType<typeof detailPayload>;
 
-/** serializeTicketDetail 的线格式，默认在途（processing）且已分配。 */
 export function detailPayload(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",
@@ -70,7 +63,6 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** ticket.list 的行载荷 —— 窄列与全宽表读的是同一份。 */
 export function listItem(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",

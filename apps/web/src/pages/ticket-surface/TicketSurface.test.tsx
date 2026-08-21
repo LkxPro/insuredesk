@@ -14,16 +14,6 @@ import {
   TicketSurface,
 } from "./TicketSurface";
 
-/**
- * 深模块行为套件：三态骨架（全宽表格 / 窄列+详情 / 筛选折叠）、URL 筛选态
- * （深链还原、筛选变更回第 1 页、搜索草稿提交）、翻单契约（切片内方向键、
- * 边缘死停、越界翻页、prev/next 按钮）与可选 selection，全部经一个通用
- * adapter 注入验证——深模块不认识任何具体动作与权限点。
- *
- * useList 是同步假实现：按 query.page 从仓库存页切片，翻页与筛选的 URL 驱动
- * 在一个渲染周期内闭环，断言落在「假实现收到的查询入参」与 DOM 上。
- */
-
 type TestItem = {
   id: string;
   workOrderNumber: string;
@@ -86,7 +76,6 @@ const store = {
   loading: false,
 };
 
-/** 假 useList 收到的每份查询入参，按渲染顺序。 */
 const listInputs: TestQuery[] = [];
 
 function useTestList(query: TestQuery): SurfaceListSlice<TestItem> {
@@ -258,7 +247,6 @@ function locationText() {
   return screen.getByTestId("location").textContent;
 }
 
-/** 详情区，断言已稳定在给定标题上。 */
 async function findPaneShowing(title: string) {
   const pane = await screen.findByRole("region", { name: "工单详情" });
   await waitFor(() => expect(pane).toHaveTextContent(title));
@@ -535,7 +523,6 @@ describe("URL 筛选态", () => {
     renderSurface("/surface?status=processing&page=1");
     await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
 
-    // 先到第 2 页，再改筛选：页码回 1
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     await waitFor(() => expect(listInputs.at(-1)).toMatchObject({ page: 2 }));
     expect(locationText()).toContain("page=2");
@@ -566,7 +553,6 @@ describe("URL 筛选态", () => {
 
     const searchBox = screen.getByRole("searchbox");
     fireEvent.change(searchBox, { target: { value: "三丰" } });
-    // 草稿未提交：入参与 URL 不动
     expect(listInputs.at(-1)?.search).toBeUndefined();
 
     fireEvent.submit(searchBox.closest("form") as HTMLFormElement);
@@ -588,7 +574,6 @@ describe("URL 筛选态", () => {
     renderSurface("/surface");
     await waitFor(() => expect(listInputs.length).toBeGreaterThan(0));
 
-    // 框空时没有清除钮
     expect(screen.queryByRole("button", { name: "清除搜索" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "三丰" } });

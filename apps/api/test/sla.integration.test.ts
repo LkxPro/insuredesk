@@ -17,14 +17,6 @@ function factoryDefaults(name: string) {
   return defaults;
 }
 
-/**
- * Acceptance tests against a real Postgres: the SLA 策略 editor is
- * admin-only (sla.view / sla.edit), a saved policy takes effect immediately —
- * the next created ticket stamps dueAt from the new overdueHours and the next
- * 待办 evaluation judges by the new rules — while existing tickets keep their
- * dueAt (re-stamped only on a 时效策略引用 edit), and the shared
- * Zod contract rejects malformed rules at the API boundary.
- */
 describe("SLA 策略配置 (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -57,7 +49,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     };
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return appRouter.createCaller({
       traceId: "sla-test",
@@ -88,7 +79,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       allowDuplicate: true,
     }) satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** dueAt − createdAt of a detail read, in whole hours. */
   function dueOffsetHours(detail: { createdAt: string; dueAt: string | null }): number {
     expect(detail.dueAt).not.toBeNull();
     return (
@@ -100,7 +90,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     // 管理员动态持有全量权限点,两个点进 ALL_PERMISSIONS 即归管理员
     expect(ALL_PERMISSIONS).toContain("sla.view");
     expect(ALL_PERMISSIONS).toContain("sla.edit");
-    // 访问与编辑限管理员: no other factory role holds either
     for (const role of [seeded.roles.csManager, seeded.roles.frontline, seeded.roles.readOnly]) {
       expect(role.permissions).not.toContain("sla.view");
       expect(role.permissions).not.toContain("sla.edit");
@@ -170,11 +159,9 @@ describe("SLA 策略配置 (Testcontainers)", () => {
         reminderRules: factoryDefaults("一般投诉").reminderRules,
       });
 
-      // 存量工单 dueAt 不变 — dueAt 建单一次算定
       const existingAfter = await manager().ticket.detail({ id: existing.id });
       expect(existingAfter.dueAt).toBe(existingBefore.dueAt);
 
-      // 此后新建单按新 overdueHours 计算, and stamps the new 首响要求 text
       const created = await manager().ticket.create(baseInput());
       const detail = await manager().ticket.detail({ id: created.id });
       expect(dueOffsetHours(detail)).toBe(24);
@@ -249,7 +236,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
 
       const after = await listMyTodos({ prisma, clock }, viewer);
       const afterAlerts = after.items.find((item) => item.ticketId === created.id)?.alerts ?? [];
-      // Same ticket, same instant: the 2h rule now judges the 3h gap overdue
       expect(afterAlerts.some((alert) => alert.type === "rolling_follow_up")).toBe(true);
     });
   });
@@ -369,7 +355,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       await expect(
         admin().sla.create({ ...newPolicyInput, name: "已退役策略" }),
       ).rejects.toMatchObject({ code: "CONFLICT" });
-      // 复活后撞名判定不变
       await admin().sla.setActive({ id: retired.id, active: true });
     });
 
@@ -383,7 +368,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       const created = await admin().sla.create({ ...newPolicyInput, name: "银卡专线" });
       const renamed = await admin().sla.update({ id: created.id, name: "金卡专线" });
       expect(renamed.name).toBe("金卡专线");
-      // 缺席字段原样保留
       expect(renamed.firstResponseMinutes).toBe(30);
       expect(renamed.overdueHours).toBe(24);
       expect(renamed.description).toBe(newPolicyInput.description);
@@ -458,7 +442,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       const deactivated = await admin().sla.setActive({ id: victimId, active: false });
       expect(deactivated.active).toBe(false);
       expect((await frontline().sla.options()).map((option) => option.id)).not.toContain(victimId);
-      // 完整 list 仍含停用行
       expect((await admin().sla.list()).find((policy) => policy.id === victimId)?.active).toBe(
         false,
       );
@@ -501,11 +484,9 @@ describe("SLA 策略配置 (Testcontainers)", () => {
 
       const options = await observer().sla.options();
       const names = options.map((option) => option.name);
-      // 出厂四条按目录序打头，新建启用策略随其后；停用行不出现
       expect(names.slice(0, 4)).toEqual(FACTORY_POLICY_NAMES);
       expect(names).toContain("VIP专线");
       expect(names).not.toContain("待停用策略");
-      // 只载 id/name/description
       expect(Object.keys(options[0] ?? {}).sort()).toEqual(["description", "id", "name"]);
     });
   });

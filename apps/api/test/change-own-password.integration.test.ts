@@ -6,13 +6,6 @@ import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import { buildServer } from "../src/server.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * 自助改密 acceptance tests against a real Postgres, driven over app.inject —
- * the exact doors the browser uses. The interesting behaviors are all
- * session-layer: the changer's own session must survive while every other
- * session dies, and the restrictive point (勾选=禁止) must reject the request
- * while the 管理员 system-role expansion stays immune to it.
- */
 describe("auth.changeOwnPassword (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -42,24 +35,20 @@ describe("auth.changeOwnPassword (Testcontainers)", () => {
 
   const admin = () => harness.callerFor(seeded.users.admin, seeded.roles.admin);
 
-  /** POST /api/auth/login — the real credential door. */
   function login(username: string, password: string) {
     return app.inject({ method: "POST", url: "/api/auth/login", payload: { username, password } });
   }
 
-  /** Log in and return the session token, asserting the login succeeded. */
   async function loginToken(username: string, password: string): Promise<string> {
     const res = await login(username, password);
     expect(res.statusCode).toBe(200);
     return String(res.cookies.find((cookie) => cookie.name === "session")?.value);
   }
 
-  /** GET /trpc/auth.me riding the given session token. */
   function me(token: string) {
     return app.inject({ method: "GET", url: "/trpc/auth.me", cookies: { session: token } });
   }
 
-  /** POST /trpc/auth.changeOwnPassword riding the given session token. */
   function changePassword(token: string, payload: { oldPassword: string; newPassword: string }) {
     return app.inject({
       method: "POST",
@@ -70,7 +59,6 @@ describe("auth.changeOwnPassword (Testcontainers)", () => {
   }
 
   let userSeq = 0;
-  /** A fresh account created through the real user.create procedure. */
   async function makeUser(overrides: { roleId?: string } = {}) {
     userSeq += 1;
     const username = `pwd-member${userSeq}`;
@@ -97,13 +85,11 @@ describe("auth.changeOwnPassword (Testcontainers)", () => {
     });
     expect(res.statusCode).toBe(200);
 
-    // 当前会话保持,其他会话立即失效——行被删除而非仅被忽略
     expect((await me(current)).statusCode).toBe(200);
     expect((await me(other)).statusCode).toBe(401);
     const remaining = await prisma.session.findMany({ where: { userId: member.id } });
     expect(remaining.map((session) => session.token)).toEqual([current]);
 
-    // 旧凭据从下一次登录起失效,新凭据接管
     expect((await login(member.username, member.password)).statusCode).toBe(401);
     expect((await login(member.username, "rotated-pass-2")).statusCode).toBe(200);
   });

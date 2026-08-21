@@ -18,7 +18,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { RoleRow } from "./RolesPage";
 
-/** 重命名自定义角色 (role.edit) — permissions ride 配置权限 separately. */
 export function RoleRenameDialog({
   role,
   onOpenChange,

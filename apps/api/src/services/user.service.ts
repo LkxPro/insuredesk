@@ -11,9 +11,6 @@ import { hashPassword } from "./auth.service.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
- * 用户管理 domain logic. Pure service layer — the router maps the domain
- * errors below to transport codes.
- *
  * Accounts are never hard deleted: the `user.delete` point gates
  * 禁用/启用 (the `active` flag), so tickets, process logs, and rosters always
  * keep a live FK target. A disabled account is locked out on BOTH doors:
@@ -43,7 +40,6 @@ export class DuplicateEmailError extends Error {
   }
 }
 
-/** The role picker sent an id that no longer exists. */
 export class RoleOptionNotFoundError extends Error {
   constructor() {
     super("所选角色不存在");
@@ -51,7 +47,6 @@ export class RoleOptionNotFoundError extends Error {
   }
 }
 
-/** The target of a 用户管理 operation is an 外部账号 — 外部账号管理页 owns those. */
 export class InternalAccountOnlyError extends Error {
   constructor() {
     super("外部账号请在外部账号管理页管理");
@@ -59,7 +54,6 @@ export class InternalAccountOnlyError extends Error {
   }
 }
 
-/** 用户管理 only ever hands out 内部角色 — an 外部角色 needs an org to bind to. */
 export class InternalRoleOnlyError extends Error {
   constructor() {
     super("只能选择内部角色");
@@ -67,7 +61,6 @@ export class InternalRoleOnlyError extends Error {
   }
 }
 
-/** Disabling your own account would lock out the operator mid-session. */
 export class SelfDisableError extends Error {
   constructor() {
     super("不能禁用自己的账号");
@@ -75,7 +68,6 @@ export class SelfDisableError extends Error {
   }
 }
 
-/** The mutation would leave zero enabled admin users — the system's one hard invariant. */
 export class LastAdminError extends Error {
   constructor() {
     super("系统必须至少保留一名启用的管理员");
@@ -135,12 +127,8 @@ function throwOnDuplicateIdentity(error: unknown): never {
 }
 
 /**
- * Every 内部账号, active or not — the 用户管理 table shows disabled users so
- * they can be re-enabled. 外部账号 are out of scope entirely; 外部账号管理页 is
- * their only management surface. The fence is the role's STORED permission
- * array: 管理员 (system) expands to every positive point yet stays internal.
- * Role name joined live (a rename shows everywhere at once; roles are
- * configuration, not history).
+ * The fence is the role's STORED permission array: 管理员 (system) expands to
+ * every positive point yet stays internal.
  */
 export async function listUsers({ prisma }: TicketServiceDeps) {
   const rows = await prisma.user.findMany({
@@ -166,10 +154,6 @@ export async function listUsers({ prisma }: TicketServiceDeps) {
   }));
 }
 
-/**
- * Load the role a 用户管理 door is about to hand out, refusing 外部角色: an
- * external account is born on the org detail page and never through here.
- */
 async function loadInternalRole(prisma: TicketServiceDeps["prisma"], roleId: string) {
   const role = await loadRole(prisma, roleId);
   if (isExternalRole(role)) {
@@ -196,7 +180,6 @@ async function assertInternalAccount(prisma: TicketServiceDeps["prisma"], id: st
   }
 }
 
-/** New 内部账号, active from the start, password bcrypt-hashed here. */
 export async function createUser({ prisma }: TicketServiceDeps, input: UserCreateData) {
   await loadInternalRole(prisma, input.roleId);
 
@@ -337,10 +320,6 @@ export async function assignUserRole({ prisma }: TicketServiceDeps, input: UserA
   });
 }
 
-/**
- * Role picker options for the 用户管理 dialogs — 内部角色 only, id + name, with
- * the full permission matrix left behind role.view.
- */
 export async function listRoleOptions({ prisma }: TicketServiceDeps) {
   const roles = await prisma.role.findMany({
     select: { id: true, name: true, system: true, permissions: true },

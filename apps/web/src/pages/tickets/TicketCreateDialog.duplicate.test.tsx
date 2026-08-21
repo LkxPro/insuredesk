@@ -5,16 +5,8 @@ import { formatDateTime } from "@/lib/datetime";
 import { auth, callsTo, renderApp, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * 建单/编辑查重的 UI 验收：即时提示的触发口径（手机号满 11 位或失焦、保单号
- * 分隔符拆分）、命中提示挂在哪个字段下由服务端 matchedFields 决定、提示始终
- * 展开且行新标签打开；提交被 409 拦下后确认框复用同一列表，「仍要」带
- * allowDuplicate 重发，编辑场景排除工单自身。
- */
-
 const NOW = new Date("2026-08-14T09:30:00.000Z");
 
-/** findDuplicates 的一条命中，matchedFields 由 resolver 按入参拼。 */
 function dupRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "dup-1",
@@ -29,7 +21,6 @@ function dupRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** 命中字段跟随入参：哪个查重条件非空，matchedFields 就记哪个。 */
 function dupResolver(input: unknown) {
   const query = input as {
     policyNumbers?: string[];
@@ -48,7 +39,6 @@ function conflictError() {
   return Object.assign(new Error("发现 1 个可能重复的工单"), { trpcCode: "CONFLICT" });
 }
 
-/** 详情 wire shape：查重用例只关心 id/工单号/手机号三件套，其余全空。 */
 function detailPayload(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",
@@ -133,7 +123,6 @@ describe("建单即时查重提示", () => {
     const row = link.closest("li") as HTMLElement;
     expect(row).toHaveTextContent(formatDateTime(dupRow().activityAt));
     expect(row).not.toHaveTextContent(formatDateTime(dupRow().createdAt));
-    // 命中位置由 matchedFields 决定：保单号字段下没有提示
     expect(screen.queryByText(/个工单使用相同保单号/)).not.toBeInTheDocument();
   });
 
@@ -185,7 +174,6 @@ describe("建单提交 409 兜底", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
 
-    // 阻断确认框与即时提示共用同一行内容（工单号新标签链接）
     const confirmButton = await screen.findByRole("button", { name: "仍要创建" });
     const confirmDialog = confirmButton.closest('[role="dialog"]') as HTMLElement;
     expect(await within(confirmDialog).findByRole("link", { name: "WO100090" })).toHaveAttribute(
@@ -199,7 +187,6 @@ describe("建单提交 409 兜底", () => {
       phone: "13800001111",
       allowDuplicate: true,
     });
-    // 创建成功：弹窗收起到列表
     await waitFor(() =>
       expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument(),
     );
@@ -252,7 +239,6 @@ describe("编辑查重", () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     await screen.findByRole("button", { name: "保存修改" });
 
-    // 预填的 11 位手机号直接触发查重，入参排除工单自身
     await waitFor(() => expect(callsTo("ticket.findDuplicates").length).toBeGreaterThan(0));
     expect(callsTo("ticket.findDuplicates")[0]?.input).toMatchObject({
       phone: "13800000000",
@@ -316,7 +302,6 @@ describe("详情页重复工单条幅", () => {
       "_blank",
     );
     expect(within(pane).queryByRole("link", { name: "WO100092" })).not.toBeInTheDocument();
-    // 裸文本摘要：无「完结状态/最新记录」前缀（状态徽标已表达）
     expect(within(pane).getByText("已按原路退回保费，客户确认到账")).toBeInTheDocument();
     expect(within(pane).queryByText(/完结状态：/)).not.toBeInTheDocument();
     expect(within(pane).queryByText(/最新记录/)).not.toBeInTheDocument();

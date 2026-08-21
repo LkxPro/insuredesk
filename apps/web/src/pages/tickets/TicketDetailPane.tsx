@@ -38,24 +38,6 @@ import {
 } from "./TicketFormFields";
 import { TicketInfoColumn } from "./TicketInfoColumn";
 
-/**
- * 分栏详情区：头部操作、左栏工单信息、右栏时间线与钉底跟进框。/tickets/:id 的
- * 选中态就是这块，不是弹窗 —— 二级弹窗（分配/完结/删除/丢弃确认）叠在它之上，
- * 处理现场（左侧窄列 + 本区）始终在背景里。骨架（可聚焦 section、方向键翻单、
- * 头部行与 prev/next 按钮）由 DetailPaneShell 承载，本组件只留编辑状态机、
- * 头部操作槽与两栏正文。
- *
- * 编辑是整单模式：点「编辑」后左栏可编辑字段原位变控件，一次「保存修改」＝一条
- * edit 留痕（时效策略引用变更时服务端按新策略重算 dueAt 与跟进/首响要求）。取消与
- * 保存都回只读、不离开分栏。有未保存改动时三个出口——关闭详情、方向键/翻单按钮
- * 或点窄列切单、取消——都先过「丢弃修改？」。
- *
- * 右栏随模式自动切换：只读态显示时间线；编辑态下外部件（source=external_channel
- * 携带 submissionText）右栏自动切为工单原文对照（客服一边看原文一边补全左栏
- * 表单），非外部件编辑态右栏保持时间线。
- */
-
-/** 未保存改动被拦下时，确认后要继续做的事。 */
 type PendingExit =
   | { kind: "close" }
   | { kind: "switch"; ticketId: string }
@@ -82,7 +64,6 @@ export function TicketDetailPane({
   const [assignOpen, setAssignOpen] = useState(false);
   const [resolveOpen, setResolveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  /** 保存被 409 兜底拦下时的提交载荷；非空即显示查重确认框，「仍要保存」带 allowDuplicate 重发。 */
   const [duplicateConflict, setDuplicateConflict] = useState<{
     payload: TicketEditInput & { allowDuplicate?: boolean };
   } | null>(null);
@@ -95,7 +76,6 @@ export function TicketDetailPane({
     defaultValues: formDefaults(null),
   });
 
-  // 编辑态即时查重：排除工单自身，命中提示贴身挂在保单号/手机号控件下
   const duplicates = useTicketDuplicates(form, {
     excludeTicketId: ticketId,
     enabled: editing,
@@ -128,14 +108,12 @@ export function TicketDetailPane({
 
   const dirty = editing && form.formState.isDirty;
 
-  /** 编辑态入口：用当前详情预填，而不是空白建单表单。 */
   function startEditing() {
     if (!ticket) return;
     form.reset(formDefaults(ticket));
     setEditing(true);
   }
 
-  /** 出口统一入口：脏草稿先弹确认，干净则直接执行。 */
   function requestExit(exit: PendingExit) {
     if (dirty) {
       setPendingExit(exit);
@@ -156,7 +134,6 @@ export function TicketDetailPane({
     }
   }
 
-  /** 键盘与 prev/next 按钮同一入口：脏草稿先过「丢弃修改？」。 */
   function applyStep(step: DetailNavStep) {
     requestExit(
       step.kind === "switch"
@@ -208,7 +185,6 @@ export function TicketDetailPane({
                 </Button>
               </>
             )}
-            {/* 编辑态换成取消/保存，其余操作退场避免歧义 */}
             {!editing && (
               <>
                 {hasPermission("ticket.edit") && (

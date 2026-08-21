@@ -6,12 +6,6 @@ import { appRouter } from "../src/routers/index.ts";
 import { PasswordAuthProvider, SessionService } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * 外部账号管理 against a real Postgres: every operation answers to the single
- * external_account.manage point (no user.* needed, and user.* alone opens
- * nothing), and each door is fenced to 外部账号 so the point never reaches
- * internal accounts. 建号不选角色 — the sole 外部角色 is looked up server-side.
- */
 describe("外部账号管理 × external_account.manage (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -36,7 +30,6 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
 
   const callerWith = (permissions: Permission[]) =>
     harness.callerWith(seeded.users.manager, seeded.roles.csManager, permissions);
-  // 只持 external_account.manage,一个 user.* 点都没有 — the issue's core claim.
   const manager = () => callerWith(["external_account.manage"]);
 
   let seq = 0;
@@ -267,12 +260,10 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         }),
       );
 
-      // 不给 prefill → 原值不动
       await manager().externalAccount.update(updateArgs(created.id));
       let row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
       expect(row).toMatchObject({ prefillProject: "旧项目", prefillPaymentChannel: "旧支付" });
 
-      // 整块替换
       await manager().externalAccount.update(
         updateArgs(created.id, {
           prefill: { channelId, project: "新项目" },
@@ -285,7 +276,6 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         prefillPaymentChannel: null,
       });
 
-      // 空块 → 归一 null(未配置)
       await manager().externalAccount.update(updateArgs(created.id, { prefill: {} }));
       row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
       expect(row).toMatchObject({ prefillChannelId: null, prefillProject: null });
@@ -381,7 +371,6 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
 
       const sessions = new SessionService(prisma, 3600);
       const identity = await sessions.validateSession(await sessions.createSession(userId ?? ""));
-      // 权限与内外部判定走登录展开,而非测试自选的权限集 — 这正是"建号即可用"的验收点
       const asAccount = appRouter.createCaller({
         traceId: "external-account-test",
         user: identity,

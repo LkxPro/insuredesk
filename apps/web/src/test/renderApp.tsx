@@ -10,11 +10,6 @@ import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 
 /**
- * Shared page-test harness: auth seam mock, user factory, provider tree,
- * toast spies, and a faked tRPC fetch in one import. A test file declares
- * only the procedures it cares about via `renderApp({ path, role, trpc })`;
- * every other procedure gets an empty default (empty list, zero count).
- *
  * Import this module FIRST in the test file: its vi.mock calls register when
  * the module evaluates, and app modules imported later must see the mocks.
  */
@@ -26,7 +21,6 @@ const authState = vi.hoisted(() => ({
 
 // vitest refuses to export hoisted declarations, hence the alias indirection.
 
-/** Auth seam state: files set a default user in beforeEach, tests override per case. */
 export const auth = authState;
 
 // The ToastHost outlet lives in App.tsx, outside this render tree — spy on the
@@ -73,15 +67,12 @@ export function userWith(role: TestRole, isExternal = false): AuthUser {
   };
 }
 
-/** Every decoded tRPC call, in order. */
 export const calls: Array<{ path: string; input: unknown }> = [];
 
-/** Calls to one procedure, in order. */
 export function callsTo(path: string) {
   return calls.filter((call) => call.path === path);
 }
 
-/** path → canned data, or a resolver `(input) => data` for input-dependent replies. */
 export type TrpcOverrides = Record<string, unknown>;
 
 function defaultData(path: string): unknown {
@@ -123,7 +114,6 @@ function fakeTrpcFetch(overrides: TrpcOverrides) {
               : override;
         return { result: { data } };
       } catch (error) {
-        // 抛出的 Error 可带 trpcCode（如 "CONFLICT"）来指定错误码，缺省 BAD_REQUEST
         const trpcCode = (error as { trpcCode?: unknown }).trpcCode;
         return {
           error: {
@@ -154,7 +144,6 @@ export const restFetch = vi.fn();
 export function renderApp(options: {
   path: string;
   role?: TestRole;
-  /** true = 外部账号，与 auth.me 的语义一致。 */
   isExternal?: boolean;
   trpc?: TrpcOverrides;
 }) {

@@ -5,14 +5,6 @@ import { auth, callsTo, renderApp, type TestRole, toastSpies, userWith } from "@
 import { TEST_ROLES } from "@/test/roles";
 import { detailPayload, listItem } from "./detail-pane-fixtures";
 
-/**
- * 常驻跟进输入框（issue #164 的第二个高频动作）：时间线底部钉着输入框，写完
- * 提交一次 ticket.addComment，新记录由服务端回读进时间线 —— 不必先点「编辑」，
- * 也不弹窗。
- *
- * 门控与完结同一道：ticket.process + 工单在途。已完结工单只剩时间线，没有输入框。
- */
-
 function renderDetail(
   overrides: Record<string, unknown> = {},
   role: TestRole = TEST_ROLES.CS_MANAGER,
@@ -54,7 +46,6 @@ it("输入框常驻时间线底部，无需先进编辑态", async () => {
   })();
 
   expect(within(pane).getByLabelText("跟进备注")).toBeInTheDocument();
-  // 只读态就能写：编辑按钮还在原处，没被占用
   expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
 });
 
@@ -134,7 +125,6 @@ describe("下次联系时间与仅内部可见", () => {
     const pane = await findPane();
 
     fireEvent.change(within(pane).getByLabelText("跟进备注"), { target: { value: "已回电" } });
-    // 只填时分不填日期 → 不完整，草稿留在原地等补齐
     await userEvent.type(within(pane).getByLabelText("下次联系时间的时分"), "0930");
     fireEvent.click(screen.getByRole("button", { name: "提交跟进" }));
 
@@ -155,7 +145,6 @@ describe("下次联系时间与仅内部可见", () => {
 
     await waitFor(() => expect(commentInputs()).toHaveLength(1));
     expect(commentInputs()[0]?.internalOnly).toBe(true);
-    // 下一条默认回到对外可见，不继承上一条的选择
     await waitFor(() => expect(within(pane).getByLabelText("仅内部可见")).not.toBeChecked());
   });
 });
@@ -166,7 +155,6 @@ describe("门控", () => {
     const pane = await findPane();
 
     expect(within(pane).queryByLabelText("跟进备注")).not.toBeInTheDocument();
-    // 时间线本身还在，历史随时能翻
     expect(within(pane).getByRole("list")).toBeInTheDocument();
   });
 

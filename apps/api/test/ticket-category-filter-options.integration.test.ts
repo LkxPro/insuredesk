@@ -5,11 +5,6 @@ import { appRouter } from "../src/routers/index.ts";
 import type { AuthenticatedUser } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * ticketCategory.filterOptions acceptance tests. The procedure completes the
- * 渠道/完结状态 symmetry: the whole catalog rides along with the active flag
- * so filtering by a disabled category still reaches its 存量工单.
- */
 describe("TicketCategory filter options (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let seeded: IntegrationHarness["seeded"];

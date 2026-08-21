@@ -10,13 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * 修改密码 block on the profile page: fires auth.changeOwnPassword with the
- * old + new password, clears the form on success, surfaces server rejections,
- * and disappears entirely for roles holding the restrictive point. Same
- * faked-fetch tRPC pipeline and useAuth-seam mock as the users-page tests.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -48,7 +41,6 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
 }
 
 let calls: Array<{ path: string; input: unknown }>;
-/** When set, the named path answers with a tRPC error instead of data. */
 let serverError: { path: string; message: string; code: string; httpStatus: number } | null;
 
 function respond(path: string, _input: unknown): unknown {
@@ -133,7 +125,6 @@ describe("修改密码 block", () => {
         input: { oldPassword: "old-pass-1", newPassword: "new-pass-2" },
       }),
     );
-    // Success feedback: the form resets to empty
     await waitFor(() => expect(screen.getByLabelText("旧密码")).toHaveValue(""));
     expect(screen.getByLabelText("新密码")).toHaveValue("");
   });
@@ -168,10 +159,8 @@ describe("修改密码 block", () => {
     });
     renderProfilePage();
 
-    // The read-only profile card still renders...
     await screen.findByRole("heading", { name: "个人资料" });
     expect(screen.getByText("tester")).toBeInTheDocument();
-    // ...but the password block is gone
     expect(screen.queryByText("修改密码")).not.toBeInTheDocument();
   });
 });

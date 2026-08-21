@@ -3,12 +3,6 @@ import { describe, expect, it } from "vitest";
 import { TEST_ROLES } from "@/test/roles";
 import { NAV_ITEMS, visibleNavItems } from "./navigation";
 
-/**
- * Menu visibility per role persona — the page-permission matrix. Each menu
- * entry maps 1:1 to a page permission point; an entry only shows when the
- * role holds that permission.
- */
-
 function visiblePaths(permissions: readonly Permission[]): string[] {
   return visibleNavItems(permissions).map((item) => item.path);
 }

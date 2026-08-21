@@ -4,15 +4,6 @@ import { auth, renderApp, type TestRole, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 import { detailPayload, listItem } from "./detail-pane-fixtures";
 
-/**
- * 分栏详情的只读态：左栏渲染全部工单信息（含系统与 SLA 只读字段），右栏渲染
- * ProcessLog 时间线，头部四个操作按钮按权限与状态门控。
- *
- * 门控口径与服务端一致：编辑=ticket.edit（任何状态，含已完结）、分配/改派=
- * ticket.assign、完结=ticket.process 且工单在途、删除=ticket.delete。跟进输入
- * 框走 ticket.process + 在途，与完结同一道门。
- */
-
 function renderDetail(
   overrides: Record<string, unknown> = {},
   role: TestRole = TEST_ROLES.CS_MANAGER,
@@ -42,7 +33,6 @@ describe("左栏工单信息", () => {
     renderDetail();
     const pane = await findPane();
 
-    // 业务字段
     expect(within(pane).getByText("王小明")).toBeInTheDocument();
     expect(within(pane).getByText("13800000001")).toBeInTheDocument();
     expect(within(pane).getByText("P2026070900123")).toBeInTheDocument();
@@ -50,16 +40,13 @@ describe("左栏工单信息", () => {
     expect(within(pane).getByText("理赔投诉")).toBeInTheDocument();
     expect(within(pane).getByText("一般投诉")).toBeInTheDocument();
 
-    // 系统字段：来源与创建人（工单号只在头部，左栏不重复）
     expect(within(pane).getByText("手工录入")).toBeInTheDocument();
     expect(within(pane).getAllByText("测试用户").length).toBeGreaterThan(0);
     expect(within(pane).getByRole("heading", { name: "WO100001" })).toBeInTheDocument();
 
-    // SLA 派生字段：跟进频次与首响要求两态都只读
     expect(within(pane).getByText("24小时内累计跟进1次")).toBeInTheDocument();
     expect(within(pane).getByText("120分钟内完成首次响应")).toBeInTheDocument();
     expect(within(pane).getByText("联系次数")).toBeInTheDocument();
-    // 跟进记录的唯一展示面是右栏时间线
     expect(within(pane).queryByText("处理结果")).not.toBeInTheDocument();
   });
 
@@ -128,10 +115,8 @@ describe("右栏时间线", () => {
     const pane = await findPane();
     const timeline = within(pane).getByRole("list");
 
-    // 动作标签走 PROCESS_LOG_ACTION_LABELS；系统动作（创建）是合并的一行，不展示备注
     expect(within(timeline).getByText(/创建工单/)).toBeInTheDocument();
     expect(within(timeline).queryByText("客户来电反映理赔慢")).not.toBeInTheDocument();
-    // 沟通条目（跟进）是气泡：类型徽章 + 操作人 + 备注全文
     expect(within(timeline).getByText("跟进记录")).toBeInTheDocument();
     expect(within(timeline).getByText("已致电客户说明进度")).toBeInTheDocument();
     expect(within(timeline).getByText("李客服")).toBeInTheDocument();
@@ -151,7 +136,6 @@ describe("头部操作的权限门控", () => {
     await findPane();
 
     expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
-    // 已分配 → 改派而非分配
     expect(screen.getByRole("button", { name: "改派" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "完结工单" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "删除" })).not.toBeInTheDocument();
@@ -192,7 +176,6 @@ describe("头部操作的权限门控", () => {
 
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "改派" })).not.toBeInTheDocument();
-    // ticket.process 在手且在途 → 完结与跟进都在
     expect(screen.getByRole("button", { name: "完结工单" })).toBeInTheDocument();
     expect(screen.getByLabelText("跟进备注")).toBeInTheDocument();
   });

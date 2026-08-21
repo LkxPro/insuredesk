@@ -49,14 +49,11 @@ export interface DashboardAssigneeStats {
 }
 
 export interface DashboardStats {
-  /** "own" when the viewer lacks dashboard.view_all and sees only their tickets. */
   scope: "all" | "own";
   metrics: Record<DashboardMetricKey, number>;
-  /** 特急卡绑定的策略（sortOrder 最高的 active 行）；无 active 策略时为 null（卡片降级）。 */
   urgentPolicy: { id: string; name: string } | null;
   /** The whole catalog in display order, zero-filled; 未填写 tickets stay out. */
   channels: Array<{ channelId: string; name: string; count: number }>;
-  /** Top 10 by 完单数 (the leading 考核 dimension), 名下工单数 then id as tiebreaks. */
   assignees: DashboardAssigneeStats[];
 }
 

@@ -24,15 +24,10 @@ import { UserCreateDialog } from "./UserCreateDialog";
 import { UserEditDialog } from "./UserEditDialog";
 
 /**
- * 用户管理: every 内部账号 with its role and enabled/disabled state — 外部账号
- * are managed on the 外部账号管理 page and never appear here.
- * user.view opens the page (route-guarded); each operation button appears
- * only with its own permission point — user.create / user.edit / user.delete
- * (禁用/启用) / user.assign_role — and the API re-checks regardless. Disabled
- * accounts stay listed so they can be re-enabled; 启用 fires directly
- * (harmless), 禁用 confirms first (kicks the user's live sessions).
+ * 外部账号 are managed on the 外部账号管理 page and never appear here.
+ * Disabled accounts stay listed so they can be re-enabled; 启用 fires
+ * directly (harmless), 禁用 confirms first (kicks the user's live sessions).
  */
-
 export type UserRow = inferRouterOutputs<AppRouter>["user"]["list"][number];
 
 export function UsersPage() {

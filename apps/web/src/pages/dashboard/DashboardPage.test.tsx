@@ -10,15 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * 数据看板 page: the 8 metric cards, the channel table, the Top-10 考核表,
- * and the own-scope hint all render from dashboard.stats. The tRPC link gets
- * a faked `fetch` (same seam as TicketsPage.list.test.tsx), so the page runs
- * against the real procedure pipeline shape without a server. All 口径 are
- * server-side and covered by the API integration tests; here the payload is
- * canned and only the rendering is under test.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -91,7 +82,7 @@ function statsPayload(overrides: Partial<StatsPayload> = {}): StatsPayload {
         assigneeName: "张客服",
         totalCount: 20,
         completedCount: 15,
-        avgCompletionMs: 30.5 * 60 * 60 * 1000, // 1天6.5小时
+        avgCompletionMs: 30.5 * 60 * 60 * 1000,
         overdueCount: 5,
         overdueRate: 0.25,
       },
@@ -109,7 +100,6 @@ function statsPayload(overrides: Partial<StatsPayload> = {}): StatsPayload {
   };
 }
 
-// Per-test canned payload; a null response makes the procedure error instead.
 const canned = { stats: statsPayload() as StatsPayload | null };
 
 /** tRPC batched queries arrive as GET; answer each path in the batch. */
@@ -169,9 +159,9 @@ describe("指标卡", () => {
     }
     expect(screen.getByText("特急投诉")).toBeInTheDocument();
     expect(screen.getByText("最高档时效策略")).toBeInTheDocument();
-    expect(screen.getByText("42")).toBeInTheDocument(); // total
-    expect(screen.getByText("19")).toBeInTheDocument(); // completed
-    expect(screen.getByText("2")).toBeInTheDocument(); // overdue
+    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getByText("19")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
   });
 
   it("无 active 策略时特急卡降级：固定文案，不随策略名", async () => {
@@ -204,10 +194,9 @@ describe("跟进人考核表", () => {
     renderDashboard();
 
     expect(await screen.findByText("张客服")).toBeInTheDocument();
-    expect(screen.getByText("15")).toBeInTheDocument(); // 完单数
-    expect(screen.getByText("1天6.5小时")).toBeInTheDocument(); // avgCompletionMs formatted
-    expect(screen.getByText("25%")).toBeInTheDocument(); // overdueRate formatted
-    // No completions yet → duration placeholder, zero rate
+    expect(screen.getByText("15")).toBeInTheDocument();
+    expect(screen.getByText("1天6.5小时")).toBeInTheDocument();
+    expect(screen.getByText("25%")).toBeInTheDocument();
     expect(screen.getByText("李客服")).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
     expect(screen.getByText("0%")).toBeInTheDocument();

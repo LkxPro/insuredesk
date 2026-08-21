@@ -24,11 +24,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { UserRow } from "./UsersPage";
 
-/**
- * 分配角色 (user.assign_role): swap the user's role among 内部角色. Sessions
- * resolve permissions from the role per request, so the change takes effect on
- * the target's very next request — no re-login needed.
- */
 export function AssignRoleDialog({
   user,
   onOpenChange,

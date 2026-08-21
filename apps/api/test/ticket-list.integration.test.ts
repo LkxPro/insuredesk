@@ -7,15 +7,6 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests for the ticket list against a real Postgres: soft-delete
- * exclusion, filters (incl. the computed statuses resolved to SQL
- * predicates), search, sort, pagination, RBAC data scope, and the <1s load
- * target for 100 rows. Runs through appRouter.createCaller — the same
- * procedure pipeline the HTTP adapter uses. Computed-status *boundary* cases
- * use the service directly with a fixed clock; everything else goes through
- * the caller with the system clock.
- */
 describe("ticket list (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -40,7 +31,6 @@ describe("ticket list (Testcontainers)", () => {
     await prisma.ticket.deleteMany();
   });
 
-  /** Caller with the given user identity and an explicit permission set. */
   const callerWith = (user: User, permissions: Permission[]) =>
     harness.callerWith(user, seeded.roles.frontline, permissions);
 
@@ -69,10 +59,6 @@ describe("ticket list (Testcontainers)", () => {
       allowDuplicate: true,
     }) satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  /**
-   * Create a ticket through the real creation flow, then shape the row
-   * directly into the state under test (assignment, completion, soft delete).
-   */
   async function makeTicket(
     input: Partial<TicketCreateInput> = {},
     row: Prisma.TicketUncheckedUpdateInput = {},
@@ -111,7 +97,7 @@ describe("ticket list (Testcontainers)", () => {
       // Fresh 一般投诉 is 48h from due — no computed override
       expect(item?.displayStatus).toBe("unassigned");
       expect(item?.assigneeName).toBeNull();
-      expect(item && "deletedAt" in item).toBe(false); // soft-delete marker never leaves the API
+      expect(item && "deletedAt" in item).toBe(false);
     });
 
     it("默认排除软删工单 — soft-deleted rows appear in neither items nor total", async () => {
@@ -143,18 +129,17 @@ describe("ticket list (Testcontainers)", () => {
           dueAt: new Date(now + HOUR_MS),
         },
       );
-      const safe = await makeTicket({ customerName: "正常客户" }); // fresh 一般投诉: due in 48h
+      const safe = await makeTicket({ customerName: "正常客户" });
 
       const overdueResult = await manager().ticket.list({ status: "overdue" });
       expect(overdueResult.items.map((t) => t.id)).toEqual([overdue.id]);
       expect(overdueResult.items[0]?.displayStatus).toBe("overdue");
-      expect(overdueResult.items[0]?.status).toBe("processing"); // stored status untouched
+      expect(overdueResult.items[0]?.status).toBe("processing");
 
       const pendingResult = await manager().ticket.list({ status: "pending_timeout" });
       expect(pendingResult.items.map((t) => t.id)).toEqual([pending.id]);
       expect(pendingResult.items[0]?.displayStatus).toBe("pending_timeout");
 
-      // The DB rows never changed — only the display did
       const storedStatuses = await prisma.ticket.findMany({
         where: { id: { in: [overdue.id, pending.id, safe.id] } },
         select: { status: true },
@@ -315,7 +300,6 @@ describe("ticket list (Testcontainers)", () => {
       expect(viaId.items.map((t) => t.id)).toEqual([high.id]);
       expect(viaId.items[0]?.slaPolicyId).toBe(policyId("高级投诉"));
 
-      // 多选并集：两个策略的工单都命中
       const union = await manager().ticket.list({
         slaPolicyId: [policyId("高级投诉"), policyId("一般投诉")],
       });
@@ -393,7 +377,7 @@ describe("ticket list (Testcontainers)", () => {
         {},
         { status: "completed", completionTime: new Date(now - HOUR_MS / 2) },
       );
-      await makeTicket({}); // unassigned, due in 48h — selected by neither
+      await makeTicket({});
 
       const result = await manager().ticket.list({ status: ["overdue", "completed"] });
       expect(result.items.map((t) => t.id).sort()).toEqual([overdue.id, done.id].sort());
@@ -425,15 +409,12 @@ describe("ticket list (Testcontainers)", () => {
       const defaulted = await manager().ticket.list({});
       expect(defaulted.items.map((t) => t.id)).toEqual([active.id]);
 
-      // 显式筛选归档来源可见
       const explicit = await manager().ticket.list({ source: ["file_import"] });
       expect(explicit.items.map((t) => t.id)).toEqual([archived.id]);
 
-      // 空选 = 不过滤：归档单回落到可见
       const cleared = await manager().ticket.list({ source: [] });
       expect(cleared.items.map((t) => t.id).sort()).toEqual([active.id, archived.id].sort());
 
-      // 显式全选四种来源同样可见
       const all = await manager().ticket.list({ source: [...TICKET_SOURCES] });
       expect(all.total).toBe(2);
     });
@@ -445,7 +426,6 @@ describe("ticket list (Testcontainers)", () => {
       const disabledCat = await makeTicket({ categoryId: categoryId("回访问题") });
       await makeTicket({ categoryId: categoryId("其他") });
 
-      // 停用类别仍能筛出建单时已引用它的存量工单
       await prisma.ticketCategory.update({
         where: { id: categoryId("回访问题") },
         data: { active: false },
@@ -467,7 +447,7 @@ describe("ticket list (Testcontainers)", () => {
 
   describe("数据范围隔离", () => {
     it("without ticket.view_all the list is pinned to own tickets — the unassigned pool is invisible", async () => {
-      await makeTicket({ customerName: "无人认领" }); // unassigned pool
+      await makeTicket({ customerName: "无人认领" });
       const own = await makeTicket(
         { customerName: "小李的单" },
         {
@@ -489,7 +469,6 @@ describe("ticket list (Testcontainers)", () => {
       expect(frontlineResult.total).toBe(1);
       expect(frontlineResult.items.map((t) => t.id)).toEqual([own.id]);
 
-      // ticket.view_all (主管 and 只读观察) sees everything, unassigned pool included
       for (const caller of [manager(), observer()]) {
         const all = await caller.ticket.list({});
         expect(all.total).toBe(3);
@@ -526,17 +505,15 @@ describe("ticket list (Testcontainers)", () => {
         ticketId: handedOff.id,
         assigneeId: seeded.users.manager.id,
       });
-      await makeTicket({ customerName: "别人创建的" }); // manager-created, unassigned
+      await makeTicket({ customerName: "别人创建的" });
 
       const result = await creator().ticket.list({});
       expect(result.total).toBe(2);
       expect(result.items.map((t) => t.id).sort()).toEqual([unassignedOwn.id, handedOff.id].sort());
 
-      // 处理人列 tells the two apart — no dedicated UI flag needed
       const handedOffRow = result.items.find((t) => t.id === handedOff.id);
       expect(handedOffRow?.assigneeName).toBe(seeded.users.manager.name);
 
-      // A viewer who is neither creator nor assignee, without view_all, sees none of them
       const thirdParty = () => callerWith(seeded.users.observer, ["ticket.view"]);
       expect((await thirdParty().ticket.list({})).total).toBe(0);
     });
@@ -553,7 +530,6 @@ describe("ticket list (Testcontainers)", () => {
       const byName = await manager().ticket.list({ search: "三丰" });
       expect(byName.items.map((t) => t.id)).toEqual([zhang.id]);
 
-      // All three search fields match case-insensitively (names can be Latin)
       const alice = await makeTicket({ customerName: "Alice Wang", policyNumbers: ["PC-77003"] });
       const byLatinName = await manager().ticket.list({ search: "alice" });
       expect(byLatinName.items.map((t) => t.id)).toEqual([alice.id]);
@@ -655,14 +631,12 @@ describe("ticket list (Testcontainers)", () => {
       const multi = await makeTicket({ policyNumbers: ["PD-11001", "PE-22002"] });
       await makeTicket({ policyNumbers: [] });
 
-      // 第二个值的子串，及大小写不敏感
       expect((await manager().ticket.list({ search: "22002" })).items.map((t) => t.id)).toEqual([
         multi.id,
       ]);
       expect((await manager().ticket.list({ search: "pe-22" })).items.map((t) => t.id)).toEqual([
         multi.id,
       ]);
-      // 带空格的搜索词按展示口径（空格连接）跨值命中
       expect((await manager().ticket.list({ search: "11001 PE" })).items.map((t) => t.id)).toEqual([
         multi.id,
       ]);
@@ -670,7 +644,6 @@ describe("ticket list (Testcontainers)", () => {
   });
 
   describe("创建时间区间筛选 (左闭右闭绝对时刻)", () => {
-    /** 三张单分别落在区间前一毫秒、起始边界、结束边界与其后一毫秒。 */
     async function rangeFixture() {
       const from = new Date("2026-07-06T00:00:00.000Z");
       const to = new Date("2026-07-12T23:59:59.999Z");
@@ -801,7 +774,7 @@ describe("ticket list (Testcontainers)", () => {
       expect(page3.items).toHaveLength(1);
 
       const seen = [...page1.items, ...page2.items, ...page3.items].map((t) => t.id);
-      expect(new Set(seen).size).toBe(5); // no row skipped or repeated across pages
+      expect(new Set(seen).size).toBe(5);
     });
   });
 

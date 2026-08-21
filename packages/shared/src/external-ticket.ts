@@ -3,9 +3,6 @@ import { ticketStatusSchema } from "./enums.ts";
 import { ticketExportFormatSchema } from "./ticket.ts";
 import { createdRangeFields } from "./time-range.ts";
 
-/**
- * 外部工单提交输入：外部用户提交工单原文的唯一必填字段。
- */
 export const externalTicketSubmitInputSchema = z.object({
   submissionText: z
     .string()
@@ -16,10 +13,7 @@ export const externalTicketSubmitInputSchema = z.object({
 
 export type ExternalTicketSubmitInput = z.infer<typeof externalTicketSubmitInputSchema>;
 
-/**
- * 外部工单列表输入：支持按状态筛选、搜索、创建时间区间、分页。
- * 搜索域：工单号 / 工单原文 / 保单号。
- */
+/** 搜索域：工单号 / 工单原文 / 保单号。 */
 export const externalTicketListInputSchema = z.object({
   status: z.array(ticketStatusSchema).optional(),
   search: z.string().trim().optional(),
@@ -50,18 +44,12 @@ export const externalTicketExportInputSchema = externalTicketListInputSchema
 
 export type ExternalTicketExportQuery = z.output<typeof externalTicketExportInputSchema>;
 
-/**
- * 外部工单详情输入：仅需工单 ID。
- */
 export const externalTicketDetailInputSchema = z.object({
   ticketId: z.string().min(1),
 });
 
 export type ExternalTicketDetailInput = z.infer<typeof externalTicketDetailInputSchema>;
 
-/**
- * 外部留言输入：外部用户在工单里添加留言。
- */
 export const externalTicketAddNoteInputSchema = z.object({
   ticketId: z.string().min(1),
   content: z.string().trim().min(1, "留言内容不能为空").max(2000, "留言内容不能超过 2000 字符"),

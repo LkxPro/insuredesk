@@ -27,7 +27,6 @@ import { createdRangeFields } from "./time-range.ts";
  * "" or an assumed value. hasContacted unfilled means 未知, not false.
  */
 
-/** Optional free-text field: empty/whitespace form input becomes NULL, not "". */
 const optionalText = (max: number) =>
   z
     .string()
@@ -36,7 +35,6 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((value) => (value ? value : null));
 
-/** Optional enum select: "" (nothing chosen) and absence both become NULL. */
 const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
   schema
     .or(z.literal(""))
@@ -51,12 +49,6 @@ export const legacyComplaintLevelInputSchema = z
   .undefined({ error: "投诉等级文本轨已下线，请改用时效策略（slaPolicyId）" })
   .optional();
 
-/**
- * Optional multi-value text (保单号): items are trimmed, blanks dropped and
- * duplicates removed (case-sensitive) BEFORE the per-item length / count
- * limits apply — dedupe is silent, only genuine excess rejects. Absence and
- * [] both mean 未填写.
- */
 const optionalPolicyNumbers = z
   .array(z.string())
   .nullish()
@@ -109,9 +101,7 @@ export const ticketCreateInputSchema = z.object({
   priority: optionalEnum(prioritySchema),
 });
 
-/** Form-side shape (before transforms) — what react-hook-form holds. */
 export type TicketCreateInput = z.input<typeof ticketCreateInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type TicketCreateData = z.output<typeof ticketCreateInputSchema>;
 
 /**
@@ -126,9 +116,7 @@ export const ticketEditInputSchema = ticketCreateInputSchema.extend({
   ticketId: z.string().min(1),
 });
 
-/** Form-side shape (before transforms) — what the edit form holds. */
 export type TicketEditInput = z.input<typeof ticketEditInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type TicketEditData = z.output<typeof ticketEditInputSchema>;
 
 /** 查重命中字段（按输入侧字段命名）——命中位置决定提示挂在哪个输入框下。 */
@@ -150,11 +138,9 @@ export const ticketFindDuplicatesInputSchema = z.object({
     .transform((values) => normalizePolicyNumbers(values ?? [])),
   phone: optionalText(TICKET_TEXT_LIMITS.phone),
   contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
-  /** 编辑场景排除工单自身。 */
   excludeTicketId: z.string().min(1).optional(),
 });
 export type TicketFindDuplicatesInput = z.input<typeof ticketFindDuplicatesInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type TicketFindDuplicatesQuery = z.output<typeof ticketFindDuplicatesInputSchema>;
 
 /**
@@ -290,9 +276,7 @@ export const ticketAddCommentInputSchema = z.object({
   internalOnly: z.boolean().optional().default(false),
 });
 
-/** Form-side shape (before transforms) — what the follow-up form holds. */
 export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
 
 /**
@@ -308,7 +292,6 @@ export const ticketResolveInputSchema = z.object({
 });
 export type TicketResolveInput = z.infer<typeof ticketResolveInputSchema>;
 
-/** List sort keys: 创建时间 / 处理时限. */
 export const TICKET_SORT_FIELDS = ["createdAt", "dueAt"] as const;
 export const ticketSortFieldSchema = z.enum(TICKET_SORT_FIELDS);
 export type TicketSortField = (typeof TICKET_SORT_FIELDS)[number];
@@ -326,7 +309,6 @@ export type PolicyNumberStateFilter = (typeof POLICY_NUMBER_STATE_FILTERS)[numbe
  * a legacy single value (old `?source=manual` links) by wrapping it.
  */
 
-/** 多选筛选字段：数组为正，宽容接受旧链接的单值并包成单元素数组。 */
 const multiFilter = <T extends z.ZodTypeAny>(schema: T) =>
   z.array(schema).or(schema.transform((value): z.output<T>[] => [value]));
 
@@ -358,9 +340,7 @@ export const ticketListInputSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
 });
 
-/** Client-side shape (before defaults/transforms). */
 export type TicketListInput = z.input<typeof ticketListInputSchema>;
-/** Server-side shape (after defaults/transforms) — what the service receives. */
 export type TicketListQuery = z.output<typeof ticketListInputSchema>;
 
 export const TICKET_EXPORT_FORMATS = ["xlsx", "csv"] as const;
@@ -387,7 +367,5 @@ export const ticketExportInputSchema = ticketListInputSchema
       .optional(),
   });
 
-/** Client-side shape (before defaults/transforms). */
 export type TicketExportInput = z.input<typeof ticketExportInputSchema>;
-/** Server-side shape (after defaults/transforms) — what the service receives. */
 export type TicketExportQuery = z.output<typeof ticketExportInputSchema>;

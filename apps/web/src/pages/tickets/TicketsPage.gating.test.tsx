@@ -4,21 +4,11 @@ import { describe, expect, it } from "vitest";
 import { renderApp, type TestRole, type TrpcOverrides } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * 入口门控矩阵: every permission-gated entry point across /tickets and the
- * detail dialog — 持有→可见 / 缺失→不可见 — driven off renderApp's
- * hasPermission seam in one table. 行状态是门控的第二轴: 终态行不可分配不可
- * 选, 完结/跟进只在 in-flight (assigned/processing) 出现. 点进入口之后的交
- * 互流留在各入口自己的文件 (TicketsPage.* / TicketDetailDialog.*).
- */
-
-/** 客服主管 plus the manually 勾选-ed ticket.import. */
 const IMPORTER: TestRole = {
   name: "客服主管",
   permissions: [...TEST_ROLES.CS_MANAGER.permissions, "ticket.import"] as Permission[],
 };
 
-/** 分配-only: proves ticket.process alone gates 完结, and vice versa. */
 const ASSIGN_ONLY: TestRole = {
   name: "仅分配",
   permissions: ["ticket.view", "ticket.view_all", "ticket.assign"] as Permission[],
@@ -48,7 +38,6 @@ function listItem(
   };
 }
 
-/** One row per status: the row-state axis of the list-page gates. */
 const LIST_ITEMS = [
   listItem("t1", "WO100001", "unassigned", null),
   listItem("t2", "WO100002", "assigned", { id: "u-zhang", name: "张客服" }),
@@ -56,7 +45,6 @@ const LIST_ITEMS = [
   listItem("t4", "WO100004", "completed", { id: "u-zhang", name: "张客服" }),
 ];
 
-/** serializeTicketDetail wire shape; 未分配单没有责任人. */
 function detailPayload(status: string) {
   return {
     id: "t1",
@@ -113,7 +101,6 @@ function detailPayload(status: string) {
   };
 }
 
-/** The table row containing the given 工单号. */
 function rowFor(workOrderNumber: string) {
   const row = screen
     .getAllByRole("row")
@@ -122,23 +109,19 @@ function rowFor(workOrderNumber: string) {
   return row;
 }
 
-/** Page-level button probe; null when the entry is gated away. */
 function button(name: string | RegExp) {
   return () => screen.queryByRole("button", { name });
 }
 
-/** Row-scoped button probe. */
 function rowButton(workOrderNumber: string, name: string | RegExp) {
   return () => within(rowFor(workOrderNumber)).queryByRole("button", { name });
 }
 
 type GatingCase = {
   entry: string;
-  /** 所需权限 (文档列 — 行内断言只认 role 的权限集) */
   permission: string;
   role: TestRole;
   visible: boolean;
-  /** 可见但置灰 (终态行复选框) */
   disabled?: true;
   expectLabel: string;
   path: string;
@@ -161,7 +144,6 @@ function buildCase(spec: GatingSpec, surface: Pick<GatingCase, "path" | "trpc" |
   };
 }
 
-/** 列表页 (/tickets) 一行: 四状态行夹具, 等首行出现. */
 function onList(spec: GatingSpec): GatingCase {
   return buildCase(spec, {
     path: "/tickets",
@@ -172,7 +154,6 @@ function onList(spec: GatingSpec): GatingCase {
   });
 }
 
-/** 详情弹窗 (/tickets/t1) 一行: detail 夹具按状态生成, 等时间线出现. */
 function onDetail(status: string, spec: GatingSpec): GatingCase {
   return buildCase(spec, {
     path: "/tickets/t1",
@@ -182,7 +163,6 @@ function onDetail(status: string, spec: GatingSpec): GatingCase {
 }
 
 const CASES: GatingCase[] = [
-  // 导出 ← ticket.export
   onList({
     entry: "导出按钮",
     permission: "ticket.export",
@@ -198,7 +178,6 @@ const CASES: GatingCase[] = [
     query: button(/导出/),
   }),
 
-  // 导入 ← ticket.import (ticket.export 不构成充分条件)
   onList({
     entry: "导入按钮",
     permission: "ticket.import",
@@ -214,7 +193,6 @@ const CASES: GatingCase[] = [
     query: button(/导入/),
   }),
 
-  // 行内分配/改派 ← ticket.assign, 终态行无操作
   onList({
     entry: "行内分配按钮",
     permission: "ticket.assign",
@@ -244,7 +222,6 @@ const CASES: GatingCase[] = [
     query: rowButton("WO100001", "分配"),
   }),
 
-  // 批量选择 ← ticket.batch_assign, 终态行复选框置灰
   onList({
     entry: "全选复选框",
     permission: "ticket.batch_assign",
@@ -268,7 +245,6 @@ const CASES: GatingCase[] = [
     query: () => screen.queryByRole("checkbox"),
   }),
 
-  // 操作列 ← ticket.assign ‖ ticket.process 任一
   onList({
     entry: "操作列",
     permission: "ticket.assign | ticket.process",
@@ -291,7 +267,6 @@ const CASES: GatingCase[] = [
     query: () => screen.queryByText("操作"),
   }),
 
-  // 行内完结 ← ticket.process + in-flight 行
   onList({
     entry: "行内完结按钮",
     permission: "ticket.process",
@@ -349,7 +324,6 @@ const CASES: GatingCase[] = [
     query: button(/分配|改派/),
   }),
 
-  // 编辑 ← ticket.edit, 任意状态含已完结
   ...(["unassigned", "assigned", "processing", "completed"] as const).map((status) =>
     onDetail(status, {
       entry: "编辑按钮",
@@ -367,7 +341,6 @@ const CASES: GatingCase[] = [
     query: button("编辑"),
   }),
 
-  // 删除 ← ticket.delete
   onDetail("processing", {
     entry: "删除按钮",
     permission: "ticket.delete",
@@ -383,7 +356,6 @@ const CASES: GatingCase[] = [
     query: button("删除"),
   }),
 
-  // 完结工单 ← ticket.process + in-flight 单
   ...(["assigned", "processing"] as const).map((status) =>
     onDetail(status, {
       entry: "完结工单按钮",
@@ -410,7 +382,6 @@ const CASES: GatingCase[] = [
     }),
   ),
 
-  // 添加跟进卡片 ← ticket.process + in-flight 单
   onDetail("assigned", {
     entry: "添加跟进卡片",
     permission: "ticket.process",

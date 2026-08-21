@@ -14,14 +14,14 @@ import { createdRangeFields } from "./time-range.ts";
  */
 
 export const DASHBOARD_METRIC_KEYS = [
-  "total", // 工单总数
-  "unassigned", // 未分配数 (display status = unassigned)
-  "assigned", // 已分配数 (display status = assigned, 未进超时红区)
-  "processing", // 处理中数 (display status = processing, 未进超时红区)
-  "completed", // 已完结数 (display status = completed)
-  "pendingTimeout", // 待超时数 (display status = pending_timeout, 距时限不足 2 小时)
-  "overdue", // 已超时数 (display status = overdue, 在途已过时限)
-  "urgent", // 特急工单数 (slaPolicyId = sortOrder 最高的 active 时效策略)
+  "total",
+  "unassigned",
+  "assigned",
+  "processing",
+  "completed",
+  "pendingTimeout",
+  "overdue",
+  "urgent",
 ] as const;
 export type DashboardMetricKey = (typeof DASHBOARD_METRIC_KEYS)[number];
 
@@ -36,7 +36,6 @@ export const DASHBOARD_METRIC_LABELS: Record<DashboardMetricKey, string> = {
   urgent: "特急工单",
 };
 
-/** 跟进人考核表条目上限. */
 export const DASHBOARD_TOP_ASSIGNEE_LIMIT = 10;
 
 export const dashboardStatsInputSchema = z.object(createdRangeFields);

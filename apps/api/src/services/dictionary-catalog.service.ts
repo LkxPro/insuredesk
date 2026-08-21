@@ -10,11 +10,8 @@ import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
  */
 
 export interface CatalogLabels {
-  /** 目录名词：「X不存在」「该X已被…」 */
   noun: string;
-  /** 名称字段名词：「X名称已存在」 */
   nameNoun: string;
-  /** 引用全称：「所选X不存在/已停用」 */
   refNoun: string;
 }
 
@@ -79,7 +76,6 @@ export interface CatalogRow {
 /** Catalog rows keyed by NAME — 停用 kept so missing/disabled stay distinguishable. */
 export type CatalogNameIndex = ReadonlyMap<string, { id: string; active: boolean }>;
 
-/** 名字判定的三分支：存在且启用 / 查无此名 / 存在但停用。 */
 export type CatalogNameRef =
   | { status: "ok"; id: string }
   | { status: "missing" }
@@ -111,7 +107,6 @@ type CatalogDb = PrismaClient | Prisma.TransactionClient;
 
 type CatalogOrderBy = { displayOrder?: "asc"; name?: "asc" }[];
 
-/** The structural slice of a Prisma model delegate the catalog needs. */
 interface CatalogDelegate {
   findMany(args: { where?: { active: boolean }; orderBy: CatalogOrderBy }): Promise<CatalogRow[]>;
   findUnique(args: { where: { id: string } }): Promise<CatalogRow | null>;
@@ -127,7 +122,6 @@ interface CatalogDelegate {
 }
 
 export interface CatalogServiceConfig {
-  /** The catalog's model delegate off whichever client runs the call. */
   delegate: (db: CatalogDb) => CatalogDelegate;
   labels: CatalogLabels;
   /** Ticket references guarding deletion — soft-deleted tickets count too. */
@@ -216,13 +210,11 @@ export function createCatalogService({
   }
 
   return {
-    /** The full catalog for the management page — 停用 rows included. */
     async list(db) {
       const rows = await delegate(db).findMany({ orderBy: catalogOrderBy });
       return rows.map(toDto);
     },
 
-    /** The 建单/编辑/完结弹窗 dropdown feed: active rows only, in display order. */
     async listOptions(db) {
       const rows = await delegate(db).findMany({
         where: { active: true },

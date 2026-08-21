@@ -9,15 +9,6 @@ import { systemClock } from "../clock.ts";
 import { prisma } from "../db.ts";
 import { importTickets, TicketImportValidationError } from "../services/ticket-import.service.ts";
 
-/**
- * 批量导入 upload endpoint. REST multipart (a file is the payload, not JSON);
- * guard order mirrors 导出/模板下载: 401 unauthenticated, 403 without
- * ticket.import. All-or-nothing: 200 carries the imported count, 400 carries
- * the full 行号/列名/原因 list and NOTHING was written.
- *
- * The `timeZone` field names the IANA zone the file's wall-clock dates are
- * written in — symmetric with the export's timeZone query parameter.
- */
 export function registerTicketImportRoute(app: FastifyInstance) {
   app.register(multipart, {
     // 文件 ≤2MB、单文件 — oversize aborts the parse, which surfaces as

@@ -7,7 +7,6 @@ async function main() {
   try {
     env = parseEnv();
   } catch (error) {
-    // Env is invalid — fail fast and loud before anything else spins up.
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);
   }

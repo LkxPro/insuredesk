@@ -10,12 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * Issue #99: 漏填必填项时，红字里的字段名与该输入框可见 label 逐字一致。
- * 覆盖三种控件形态：文本输入（客户电话（投保人））、目录下拉（反馈渠道）、
- * 三态下拉（客户曾进线）。
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,

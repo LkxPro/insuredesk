@@ -47,9 +47,6 @@ import { SearchableCombobox } from "./SearchableCombobox";
 import { DuplicateFieldHint, useTicketDuplicates } from "./TicketDuplicates";
 
 /**
- * The 建单 form body: the field set of 新建工单. 详情弹窗的原地编辑不走这里 ——
- * 同一批字段在详情分区里由 TicketDetailFields 按原位渲染。
- *
  * Every field is optional: a fully blank form submits cleanly and unfilled
  * fields reach the server as null. No label says 选填 — optional is the rule,
  * not the exception. Validation is the shared ticketCreateInputSchema — the
@@ -96,7 +93,6 @@ function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFiel
     case "text":
       return z.string(message).trim().min(1, message).max(descriptor.maxLength);
     case "textList":
-      // 必填＝至少一个值；单项长度/数量上限与非必填形态同一套 refinement
       return z.string(message).trim().min(1, message).superRefine(refinePolicyNumbersText);
     case "enum":
       // 布尔取值的三态字段（客户曾进线）在表单里就是 boolean|null
@@ -106,7 +102,6 @@ function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFiel
     case "date":
       return localDateTimeFieldSchema(descriptor.label, true);
     case "catalog":
-      // catalog 在表单里是目录 id
       return z.string(message).min(1, message);
   }
 }
@@ -147,10 +142,6 @@ function localDateTimeFieldSchema(label: string, required: boolean) {
   });
 }
 
-/**
- * 表单以空格分隔字符串承载多值保单号（split 在提交映射里做，与日期字段的
- * localDateTimeToIso 同位）；上限校验即数组契约那一套，报错文案不另抄。
- */
 const refinePolicyNumbersText = (value: string, ctx: z.RefinementCtx) => {
   const error = policyNumbersError(splitPolicyNumbers(value));
   if (error) {
@@ -166,10 +157,6 @@ export const ticketFormSchema = ticketCreateInputSchema.extend({
 
 export type TicketFormValues = z.input<typeof ticketFormSchema>;
 
-/**
- * Form values → wire payload：日期字段本地时间转绝对时刻，保单号空格分隔
- * 文本 split 成数组。建单与详情编辑的提交映射共用这一处。
- */
 export function ticketFormValuesToInput(values: TicketFormValues): TicketCreateInput {
   return {
     ...values,
@@ -294,7 +281,6 @@ export function SlaPolicySelect({
   value: string;
   onChange: (value: string) => void;
   invalid?: boolean;
-  /** 编辑表单传入工单当前策略；建单不传。 */
   current?: CurrentCatalogOption | null;
 }) {
   const options = withCurrentOption(trpc.sla.options.useQuery().data ?? [], current);
@@ -324,9 +310,7 @@ export function TicketFormFields({
   currentChannel,
 }: {
   form: UseFormReturn<TicketFormValues>;
-  /** 编辑表单传入工单当前类别；停用值以“（已停用）”入列，保持原值合法。 */
   currentCategory?: CurrentCatalogOption | null;
-  /** 同 currentCategory，作用于反馈渠道。 */
   currentChannel?: CurrentCatalogOption | null;
 }) {
   const {

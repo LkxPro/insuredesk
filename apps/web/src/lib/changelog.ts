@@ -15,7 +15,6 @@ export interface ChangelogRelease {
   version: string;
   date: string;
   entries: VisibleChangelogEntry[];
-  /** 截图文件名 → 打包后的资源 URL */
   screenshots: Record<string, string>;
 }
 

@@ -3,11 +3,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * 建单/编辑查重的验收测试：保单号/手机号精确匹配语义、2×2 交叉、软删与自身
- * 排除、20 条上限、ticket.view 门禁，以及 create/edit 的 409 兜底与
- * allowDuplicate 放行。真实 Postgres，走 appRouter.createCaller 全管线。
- */
 describe("ticket 查重（Testcontainers）", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -75,7 +70,6 @@ describe("ticket 查重（Testcontainers）", () => {
     expect(trimmed).toHaveLength(1);
     expect(trimmed[0]).toMatchObject({ customerName: "手机精确", matchedFields: ["phone"] });
 
-    // 存量值含空格，查询值不带空格 ≠ 命中 —— 两侧都不归一化
     await expect(frontline().ticket.findDuplicates({ phone: "13833334444" })).resolves.toEqual([]);
   });
 
@@ -148,7 +142,6 @@ describe("ticket 查重（Testcontainers）", () => {
     for (const [index, id] of ids.entries()) {
       await prisma.ticket.update({ where: { id }, data: { createdAt: new Date(base + index) } });
     }
-    // 最老工单补一条跟进：其最新处理时间晚于所有新建单的创建时间
     await manager().ticket.assign({ ticketId: oldestId, assigneeId: seeded.users.manager.id });
     await manager().ticket.addComment({ ticketId: oldestId, remark: "老单新跟进" });
 
@@ -161,7 +154,6 @@ describe("ticket 查重（Testcontainers）", () => {
   });
 
   it("findDuplicates 由 ticket.view 把守：一线可查查重（含他人工单），空权限被拒", async () => {
-    // 上面的用例全是 frontline（无 ticket.view_all）查中 manager 创建的单——跨数据范围
     const noPerms = harness.callerWith(seeded.users.cs1, seeded.roles.frontline, []);
     const attempt = noPerms.ticket.findDuplicates({ phone: "13811112222" });
     await expect(attempt).rejects.toThrowError(TRPCError);
@@ -228,7 +220,6 @@ describe("ticket 查重（Testcontainers）", () => {
     });
     expect(unrelated.changedFields).toEqual(["customerName"]);
 
-    // 只改保单号、phone 不变：查重因保单号而触发，自身靠 excludeTicketId 豁免
     const solo = await manager().ticket.create({
       customerName: "编辑-独",
       phone: "13255556666",
@@ -277,7 +268,6 @@ describe("ticket 查重（Testcontainers）", () => {
     expect(byName("活动-未完结")).toMatchObject({ activityText: "已电话联系客户" });
     expect(byName("活动-完结")).toMatchObject({ activityText: "已按原路退回保费" });
     expect(byName("活动-无记录")).toMatchObject({ activityText: "暂无处理记录" });
-    // 无记录条目的 activityAt 退回其创建时间
     expect(byName("活动-无记录")?.activityAt).toBe(byName("活动-无记录")?.createdAt);
   });
 });
