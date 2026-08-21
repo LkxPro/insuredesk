@@ -9,8 +9,7 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
 import { TicketNotFoundError } from "./ticket-assign.service.ts";
 
 /**
- * Follow-up domain logic: 添加跟进备注 = one actual customer contact. Pure
- * service layer — the router maps the domain errors to transport codes.
+ * Follow-up domain logic: 添加跟进备注 = one actual customer contact.
  *
  * Invariants enforced here:
  * - contactCount / nextContactTime change ONLY through this action (单点维护):
@@ -26,7 +25,6 @@ import { TicketNotFoundError } from "./ticket-assign.service.ts";
  * - dueAt / assignedAt are never touched
  */
 
-/** Ticket visible but its state does not accept follow-ups. */
 export class TicketNotProcessableError extends Error {
   constructor(message: string) {
     super(message);

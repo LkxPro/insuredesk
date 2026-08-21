@@ -30,7 +30,6 @@ export interface TicketImportTemplateFile {
   body: Buffer;
 }
 
-/** The active-catalog names resolved once per download, fed to every dropdown. */
 type CatalogOptions = {
   channels: string[];
   categories: string[];
@@ -51,9 +50,7 @@ const CATALOG_OPTION_KEYS: Record<TicketCatalogKind, keyof CatalogOptions> = {
 
 type ImportColumn = {
   header: string;
-  /** 填写说明 sheet entry for this column. */
   note: string;
-  /** Dropdown feed; static lists inline, catalog lists resolved per download. */
   options?: (catalogs: CatalogOptions) => readonly string[];
 };
 

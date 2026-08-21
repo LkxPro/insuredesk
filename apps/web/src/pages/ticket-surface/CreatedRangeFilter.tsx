@@ -16,13 +16,6 @@ import {
   presetToCreatedRange,
 } from "@/lib/created-range";
 
-/**
- * 创建时间筛选：全部（默认）+ 五个预设 + 自定义起止日期。预设按浏览器时区换算
- * 成绝对时刻后才交给调用方，控件本身不知道 URL 或查询长什么样。
- *
- * 回显走反查（见 lib/created-range），所以选中态由传入区间算出、不另存一份
- * "当前选的是哪个预设"的 state——两份状态必然会分叉。
- */
 export function CreatedRangeFilter({
   range,
   onChange,
@@ -36,7 +29,6 @@ export function CreatedRangeFilter({
   const custom = hasRange && active === null;
   const [showCalendar, setShowCalendar] = useState(custom);
   const [draft, setDraft] = useState<DateRange | undefined>(() => toDateRange(range));
-  /** 已点下的起点：非空即"在等第二点"，等于把两次点击的状态机显式记账。 */
   const [pendingFrom, setPendingFrom] = useState<Date | null>(null);
 
   /**
@@ -136,7 +128,6 @@ export function CreatedRangeFilter({
   );
 }
 
-/** 当前区间 → 日历的选中态；日界回落到本地日期，与自定义输入同口径。 */
 function toDateRange(range: CreatedRangeQuery): DateRange | undefined {
   const { from, to } = createdRangeToLocalDates(range);
   if (!from && !to) {

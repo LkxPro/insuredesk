@@ -12,25 +12,12 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests for 导出工单, driven over the real HTTP surface
- * (buildServer + app.inject with session cookies — the download is a REST
- * endpoint, not a tRPC procedure):
- *
- * - ticket.export guard: 401 unauthenticated, 403 without the permission
- * - 按列表当前筛选条件导出: the file's rows equal ticket.list's rows for the
- *   same filters — soft-deletes excluded, data scope applied (个人档只能
- *   导出本人名下), computed 状态 at export time (导出时刻口径)
- * - both formats round-trip (CSV parsed as text, XLSX re-read via exceljs)
- * - 导出不产生 ProcessLog
- */
 describe("ticket export (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let app: FastifyInstance;
   let seeded: IntegrationHarness["seeded"];
   let channelIds: Map<string, string>;
-  /** ticket.export WITHOUT ticket.view_all — the 个人档 exporter. */
   let scopedExporter: User;
 
   beforeAll(async () => {
@@ -95,7 +82,6 @@ describe("ticket export (Testcontainers)", () => {
     await prisma.ticket.deleteMany();
   });
 
-  /** Log in over the real endpoint; returns the session cookie value. */
   async function sessionFor(username: string): Promise<string> {
     const res = await app.inject({
       method: "POST",
@@ -116,7 +102,6 @@ describe("ticket export (Testcontainers)", () => {
     });
   }
 
-  /** tRPC caller mirroring the list page — the consistency oracle. */
   function callerFor(user: User, role: Role) {
     return appRouter.createCaller({
       traceId: "ticket-export-test",
@@ -161,7 +146,6 @@ describe("ticket export (Testcontainers)", () => {
     return created;
   }
 
-  /** BOM-stripped CSV → array of rows (quoted-field-aware enough for our data). */
   function parseCsv(payload: string): string[][] {
     const text = payload.replace(/^\uFEFF/, "").replace(/\r\n$/, "");
     return text.split("\r\n").map((line) => {
@@ -326,7 +310,6 @@ describe("ticket export (Testcontainers)", () => {
       expect(header).not.toContain("投诉等级");
       expect(header).toContain("完结状态");
 
-      // Same rows, same order as the list — and nobody else's
       const exportedNumbers = rows.slice(1).map((cells) => cells[0]);
       expect(exportedNumbers).toEqual(listed.items.map((item) => item.workOrderNumber));
       expect(exportedNumbers).toContain(payment1.workOrderNumber);
@@ -393,9 +376,8 @@ describe("ticket export (Testcontainers)", () => {
       const statusColumn = rows[0]?.indexOf("状态") ?? -1;
       expect(rows[1]?.[statusColumn]).toBe("已超时");
 
-      // …and filtering by the computed status selects that same row
       const filtered = await exportRequest(session, { format: "csv", status: "overdue" });
-      expect(parseCsv(filtered.body)).toHaveLength(2); // header + the one row
+      expect(parseCsv(filtered.body)).toHaveLength(2);
     });
 
     it("formats date columns in the requested IANA zone", async () => {
@@ -409,7 +391,7 @@ describe("ticket export (Testcontainers)", () => {
 
       const rows = parseCsv(res.body);
       const createdColumn = rows[0]?.indexOf("创建时间") ?? -1;
-      expect(rows[1]?.[createdColumn]).toBe("2026-07-10 00:30"); // UTC+8
+      expect(rows[1]?.[createdColumn]).toBe("2026-07-10 00:30");
 
       // An invalid zone degrades to UTC instead of failing the download
       const fallback = await exportRequest(session, { format: "csv", timeZone: "Not/AZone" });
@@ -429,7 +411,6 @@ describe("ticket export (Testcontainers)", () => {
 
       const rows = parseCsv(res.body);
       const header = rows[0] ?? [];
-      // 反馈信息接收渠道 紧跟 用户反馈渠道；进线时间 位于 是否已联系｜联系ID 之间
       expect(header.indexOf("反馈信息接收渠道")).toBe(header.indexOf("用户反馈渠道") + 1);
       expect(header.indexOf("进线时间")).toBe(header.indexOf("是否已联系") + 1);
       expect(header.indexOf("联系ID")).toBe(header.indexOf("进线时间") + 1);
@@ -437,7 +418,7 @@ describe("ticket export (Testcontainers)", () => {
       const row = rows[1] ?? [];
       expect(row[header.indexOf("反馈信息接收渠道")]).toBe("内部客服热线");
       expect(row[header.indexOf("用户反馈渠道")]).toBe("保司400热线");
-      expect(row[header.indexOf("进线时间")]).toBe("2026-07-08 10:00"); // UTC+8
+      expect(row[header.indexOf("进线时间")]).toBe("2026-07-08 10:00");
     });
   });
 
@@ -502,7 +483,6 @@ describe("ticket export (Testcontainers)", () => {
       const rows = parseCsv(res.body);
       const followUpColumn = (rows[0] ?? []).indexOf("跟进记录");
       expect(followUpColumn).toBeGreaterThan(-1);
-      // UTC+8：06:00Z → 14:00, 次日 02:00Z → 10:00；升序后首次联系在前
       expect(rows[1]?.[followUpColumn]).toBe(
         `[2026-07-09 14:00] ${seeded.users.cs1.name}：首次联系，核对扣费明细\n` +
           `[2026-07-10 10:00] ${seeded.users.manager.name}：第二次联系，客户接受方案`,
@@ -512,7 +492,7 @@ describe("ticket export (Testcontainers)", () => {
 
   describe("数据范围", () => {
     it("个人档只能导出本人名下 — no ticket.view_all pins the export to own tickets", async () => {
-      await makeTicket({ customerName: "无人认领" }); // unassigned pool
+      await makeTicket({ customerName: "无人认领" });
       const own = await makeTicket(
         { customerName: "档内自己的单" },
         { status: "assigned", assigneeId: scopedExporter.id, assignedAt: new Date() },
@@ -527,7 +507,7 @@ describe("ticket export (Testcontainers)", () => {
       expect(res.statusCode).toBe(200);
 
       const rows = parseCsv(res.body);
-      expect(rows).toHaveLength(2); // header + own ticket only
+      expect(rows).toHaveLength(2);
       expect(rows[1]?.[0]).toBe(own.workOrderNumber);
       expect(res.body).not.toContain("无人认领");
       expect(res.body).not.toContain("主管的单");
@@ -598,10 +578,9 @@ describe("ticket export (Testcontainers)", () => {
       await workbook.xlsx.load(res.rawPayload as unknown as ArrayBuffer);
       const sheet = workbook.getWorksheet("工单");
       expect(sheet).toBeDefined();
-      expect(sheet?.rowCount).toBe(3); // header + 2 tickets
+      expect(sheet?.rowCount).toBe(3);
 
       expect(sheet?.getRow(1).getCell(1).value).toBe("工单号");
-      // createdAt desc: the later-created 普通客户 row comes first
       expect(sheet?.getRow(2).getCell(1).value).toBe(normal.workOrderNumber);
       expect(sheet?.getRow(3).getCell(1).value).toBe(urgent.workOrderNumber);
 
@@ -613,7 +592,7 @@ describe("ticket export (Testcontainers)", () => {
       expect(sheet?.getRow(3).getCell(policyColumn).value).toBe("特急投诉");
       expect(sheet?.getRow(2).getCell(policyColumn).value).toBe("一般投诉");
       const dueColumn = headerCells.indexOf("处理时限");
-      expect(sheet?.getRow(3).getCell(dueColumn).value ?? "").toBe(""); // 特急: no dueAt
+      expect(sheet?.getRow(3).getCell(dueColumn).value ?? "").toBe("");
     });
   });
 

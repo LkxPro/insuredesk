@@ -27,8 +27,7 @@ import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结
- * included. Pure service layer — the router maps the domain errors to
- * transport codes.
+ * included.
  *
  * Invariants enforced here:
  * - status is untouchable by construction: the input schema has no status
@@ -267,7 +266,6 @@ export async function editTicket(
         operatorId: actor.id,
         operatorName: actor.name,
         action: "edit",
-        // 改策略引用：from/to 存策略名字面快照（null = 未指定）
         from: slaChanged ? (ticket.slaPolicy?.name ?? null) : null,
         to: slaChanged ? (refPolicy?.name ?? null) : null,
         remark: remarkLines.join("；"),

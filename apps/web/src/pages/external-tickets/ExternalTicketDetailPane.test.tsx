@@ -3,13 +3,6 @@ import { describe, expect, it } from "vitest";
 import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * 详情区，镜像内部双栏：头部（返回列表+工单号+状态+翻单按钮）→ 左栏工单
- * 原文直出 + 固定字段（保单号/客户/两电话，空值 —），右栏处理记录时间线 +
- * 钉底留言框（已完结无）。↑/↓ 按列表顺序翻单。时间线内容筛选在服务端，这里
- * 验证字段渲染、留言流、翻单与返回出口。
- */
-
 function ticket(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",
@@ -64,7 +57,6 @@ function renderDetail(overrides: DetailOverrides = {}, extraTrpc: Record<string,
     isExternal: true,
     trpc: {
       "externalTicket.detail": detailPayload(overrides),
-      // 返回出口用例会回到无选中的列表：给列表一行可渲染的数据
       "externalTicket.list": {
         items: [
           { ...ticket(), latestLog: { action: "create", remark: "", at: ticket().createdAt } },
@@ -134,10 +126,8 @@ describe("处理记录时间线", () => {
     renderDetail({ processLogs: logs });
     await screen.findByText("处理记录");
 
-    // 系统动作（创建）是合并的一行：只留标签与操作人，备注不展示
     expect(screen.getByText(/创建工单/)).toBeInTheDocument();
     expect(screen.queryByText("工单创建")).not.toBeInTheDocument();
-    // 沟通条目（跟进/留言）是气泡：类型徽章 + 操作人 + 备注全文
     expect(screen.getByText("跟进记录")).toBeInTheDocument();
     expect(screen.getByText("已联系客户，正在核实")).toBeInTheDocument();
     expect(screen.getByText("客服小王")).toBeInTheDocument();
@@ -178,18 +168,15 @@ describe("左栏", () => {
     });
     const pane = await findPaneShowing("WO100001");
 
-    // 标签与内部详情同口径
     expect(within(pane).getByText("保单号")).toBeInTheDocument();
     expect(within(pane).getByText("P123 P456")).toBeInTheDocument();
     expect(within(pane).getByText("客户姓名")).toBeInTheDocument();
     expect(within(pane).getByText("张三")).toBeInTheDocument();
     expect(within(pane).getByText("客户电话（投保人）")).toBeInTheDocument();
     expect(within(pane).getByText("13800000000")).toBeInTheDocument();
-    // 空值整条仍在，落 —（fixture 的 contactPhone 未填）
     expect(within(pane).getByText("联系人电话（备用）").parentElement).toHaveTextContent("—");
     expect(within(pane).getByText("时效策略").parentElement).toHaveTextContent("—");
 
-    // 其余字段有值也不渲染（fixture 自带 渠道=微信 / 优先级=高 / 已联系=是）
     expect(within(pane).queryByText("微信")).not.toBeInTheDocument();
     expect(within(pane).queryByText("优先级")).not.toBeInTheDocument();
     expect(within(pane).queryByText("是否已联系")).not.toBeInTheDocument();
@@ -219,7 +206,7 @@ describe("外部留言", () => {
     const box = await screen.findByLabelText("留言内容");
 
     const submit = screen.getByRole("button", { name: "提交留言" });
-    expect(submit).toBeDisabled(); // 空留言不可提交
+    expect(submit).toBeDisabled();
 
     fireEvent.change(box, { target: { value: "保单号是 P123" } });
     fireEvent.click(submit);
@@ -287,7 +274,6 @@ describe("↑/↓ 翻单", () => {
     fireEvent.keyDown(screen.getByRole("region", { name: "工单详情" }), { key: "ArrowUp" });
     await findPaneShowing("WO100001");
 
-    // 首行 ↑：不翻页、不报错、不重拉
     fireEvent.keyDown(screen.getByRole("region", { name: "工单详情" }), { key: "ArrowUp" });
     expect(screen.getByRole("region", { name: "工单详情" })).toHaveTextContent("WO100001");
     expect(detailIds()).toEqual(["t1", "t2", "t1"]);
@@ -361,16 +347,13 @@ describe("跨页翻单 (issue #186)", () => {
     renderPagedAt("/external-tickets/t2?page=1");
     const pane = await findPaneShowing("WO100002");
 
-    // → 越界 = ↓：页 1 末行按 → 翻到页 2 第一条
     fireEvent.keyDown(pane, { key: "ArrowRight" });
     await findPaneShowing("WO100003");
 
-    // 末页末行：下一条按钮禁用；上一条按钮 = ← 越界翻回页 1 末行
     expect(screen.getByRole("button", { name: "下一条工单" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "上一条工单" }));
     await findPaneShowing("WO100002");
 
-    // 页 1 内：← = ↑ 切片内换单
     fireEvent.keyDown(screen.getByRole("region", { name: "工单详情" }), { key: "ArrowLeft" });
     await findPaneShowing("WO100001");
     expect(screen.getByRole("button", { name: "上一条工单" })).toBeDisabled();

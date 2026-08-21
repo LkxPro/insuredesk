@@ -26,17 +26,12 @@ import {
 import { requireAnyPermission, requirePermission, router } from "../trpc.ts";
 
 /**
- * 用户管理 routes: thin wrappers — validation via the shared Zod schemas,
- * one permission point per operation (user.view / user.create / user.edit /
- * user.delete / user.assign_role), business logic in user.service.
- *
  * Scope is 内部账号 only: 外部账号 answer to external_account.manage on the
  * 外部账号管理 page, and every door below refuses them as targets.
  */
 
 const deps = { prisma, clock: systemClock };
 
-/** Domain error → transport code, shared by every mutation below. */
 function toTRPCError(error: unknown): never {
   if (error instanceof DuplicateUsernameError || error instanceof DuplicateEmailError) {
     throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
@@ -62,7 +57,6 @@ export const userRouter = router({
   /** The 用户管理 table — every 内部账号 with its role, disabled ones included. */
   list: requirePermission("user.view").query(() => listUsers(deps)),
 
-  /** New account with an initial password and a role. */
   create: requirePermission("user.create")
     .input(userCreateInputSchema)
     .mutation(({ input }) => createUser(deps, input).catch(toTRPCError)),

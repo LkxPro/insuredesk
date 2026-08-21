@@ -26,7 +26,6 @@ export interface ExternalAccountServiceDeps {
   prisma: PrismaClient;
 }
 
-/** The target of an external-account operation is not an 外部账号. */
 export class ExternalAccountOnlyError extends Error {
   constructor() {
     super("该用户不是外部账号");
@@ -52,7 +51,6 @@ export class InvalidVisibleFieldError extends Error {
   }
 }
 
-/** 预填引用的渠道 id 不存在（停用渠道保持引用合法，只校存在性）。 */
 export class PrefillChannelNotFoundError extends Error {
   constructor() {
     super("所选反馈渠道不存在");
@@ -60,7 +58,6 @@ export class PrefillChannelNotFoundError extends Error {
   }
 }
 
-/** 预填引用的用户反馈渠道 id 不存在（停用项保持引用合法，只校存在性）。 */
 export class PrefillUserFeedbackChannelNotFoundError extends Error {
   constructor() {
     super("所选用户反馈渠道不存在");
@@ -68,7 +65,6 @@ export class PrefillUserFeedbackChannelNotFoundError extends Error {
   }
 }
 
-/** 预填引用的反馈信息接收渠道 id 不存在（停用项保持引用合法，只校存在性）。 */
 export class PrefillFeedbackReceiveChannelNotFoundError extends Error {
   constructor() {
     super("所选反馈信息接收渠道不存在");
@@ -183,7 +179,6 @@ async function resolvePrefillRefs(
   await resolvePrefillFeedbackReceiveChannel(prisma, prefill.feedbackReceiveChannelId);
 }
 
-/** 外部账号的判定 where：角色库存权限数组命中外部权限点的非系统角色。 */
 const EXTERNAL_ACCOUNT_WHERE: Prisma.UserWhereInput = {
   role: { is: { system: false, permissions: { hasSome: [...EXTERNAL_ROLE_PERMISSIONS] } } },
 };
@@ -220,7 +215,6 @@ function toListItem(row: AccountListRow): ExternalAccountListItem {
   };
 }
 
-/** 全部外部账号，启停皆列（禁用的可在此重新启用）。 */
 export async function listExternalAccounts(
   deps: ExternalAccountServiceDeps,
 ): Promise<ExternalAccountListItem[]> {
@@ -232,7 +226,6 @@ export async function listExternalAccounts(
   return rows.map(toListItem);
 }
 
-/** New 外部账号：active from the start, 唯一外部角色服务端挂载, password bcrypt-hashed here. */
 export async function createExternalAccount(
   deps: ExternalAccountServiceDeps,
   input: ExternalAccountCreateData,
@@ -271,10 +264,6 @@ export async function createExternalAccount(
   }
 }
 
-/**
- * Edit a 外部账号: basic info + 预填 + optional password reset
- * (kills the target's sessions in the same transaction, same as updateUser).
- */
 export async function updateExternalAccount(
   deps: ExternalAccountServiceDeps,
   input: ExternalAccountUpdateData,

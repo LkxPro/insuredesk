@@ -1,6 +1,5 @@
 import { CatalogPinnedError, createCatalogService } from "./dictionary-catalog.service.ts";
 
-/** 用户反馈渠道目录（客户发起侧）：lifecycle semantics in dictionary-catalog.service. */
 export const userFeedbackChannelCatalog = createCatalogService({
   delegate: (db) => db.userFeedbackChannel,
   labels: { noun: "用户反馈渠道", nameNoun: "渠道", refNoun: "用户反馈渠道" },

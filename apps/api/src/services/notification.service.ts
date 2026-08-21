@@ -11,7 +11,6 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
  * are 轨 2, computed at read time: nothing here ever polls or scans.
  */
 
-/** One duration component set, floored to whole minutes: "35 小时 20 分钟". */
 function formatDuration(totalMinutes: number) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -21,11 +20,6 @@ function formatDuration(totalMinutes: number) {
   return hours > 0 ? `${hours} 小时` : `${minutes} 分钟`;
 }
 
-/**
- * 改派 annotation (改派通知标注剩余时间): how long the NEW owner
- * has until dueAt as of the reassignment instant — or how far past it the
- * ticket already is. 特急 tickets have no deadline (dueAt null).
- */
 function formatRemainingTime(dueAt: Date | null, now: Date) {
   if (dueAt === null) {
     return "无处理时限";
@@ -39,10 +33,7 @@ function formatRemainingTime(dueAt: Date | null, now: Date) {
   return diffMinutes < 1 ? "已超时不足 1 分钟" : `已超时 ${formatDuration(diffMinutes)}`;
 }
 
-/**
- * Pure message builder for the `assigned` notification. operatorName is a
- * name snapshot at event time, immune to later renames.
- */
+/** operatorName is a name snapshot at event time, immune to later renames. */
 export function buildAssignedNotification(params: {
   workOrderNumber: string;
   operatorName: string;
@@ -62,11 +53,6 @@ export function buildAssignedNotification(params: {
   };
 }
 
-/**
- * THE single write path for `assigned` notifications. Runs inside the
- * caller's assignment transaction; `now` is the same instant stamped on the
- * assignment's fields and ProcessLog entries.
- */
 export async function writeAssignedNotification(
   tx: Prisma.TransactionClient,
   params: {
@@ -97,9 +83,6 @@ export async function writeAssignedNotification(
   });
 }
 
-/**
- * Pure message builder for the `external_submitted` notification.
- */
 export function buildExternalSubmittedNotification(params: {
   accountName: string;
   workOrderNumber: string;
@@ -110,9 +93,6 @@ export function buildExternalSubmittedNotification(params: {
   };
 }
 
-/**
- * Pure message builder for the `external_note` notification.
- */
 export function buildExternalNoteNotification(params: {
   userName: string;
   workOrderNumber: string;
@@ -123,10 +103,6 @@ export function buildExternalNoteNotification(params: {
   };
 }
 
-/**
- * Bulk write notifications to multiple users. Used for broadcasting events
- * like external submissions to all users with a specific permission.
- */
 export async function writeBulkNotifications(
   tx: Prisma.TransactionClient,
   params: {
@@ -156,7 +132,6 @@ export async function writeBulkNotifications(
   });
 }
 
-/** Pure message builder for the `external_reply` notification (内部跟进回执给外部提交者). */
 export function buildExternalReplyNotification(params: {
   operatorName: string;
   workOrderNumber: string;
@@ -168,7 +143,6 @@ export function buildExternalReplyNotification(params: {
   };
 }
 
-/** Pure message builder for the `external_resolved` notification. */
 export function buildExternalResolvedNotification(params: { workOrderNumber: string }) {
   return {
     type: "external_resolved",
@@ -259,7 +233,6 @@ export async function markNotificationRead(
   });
 }
 
-/** 全部已读: flip every unread notification of the viewer in one statement. */
 export async function markAllNotificationsRead(
   { prisma }: TicketServiceDeps,
   viewer: AuthenticatedUser,

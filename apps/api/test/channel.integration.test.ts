@@ -10,11 +10,6 @@ import { appRouter } from "../src/routers/index.ts";
 import type { AuthenticatedUser } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Channel catalog smoke tests (issue #93). Full lifecycle coverage now lives
- * in dictionary-catalog.integration.test.ts; this suite only verifies
- * channel-specific quirks: factory seed, basic CRUD, and deletion guard.
- */
 describe("Channel catalog smoke (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -66,7 +61,6 @@ describe("Channel catalog smoke (Testcontainers)", () => {
     const channels = await manager().channel.list();
     expect(channels.map((channel) => channel.name)).toEqual(["保司", "经纪", "支付", "监管"]);
 
-    // Operator deletes one and renames another; a startup re-seed must keep hands off.
     const victim = await prisma.channel.findUniqueOrThrow({ where: { name: "经纪" } });
     await manager().channel.delete({ id: victim.id });
     const renamed = await prisma.channel.findUniqueOrThrow({ where: { name: "支付" } });
@@ -163,7 +157,6 @@ describe("Channel catalog smoke (Testcontainers)", () => {
       code: "CONFLICT",
     });
 
-    // 解绑后即可物理删除
     await prisma.user.update({ where: { id: account.id }, data: { prefillChannelId: null } });
     await manager().channel.delete({ id: channel.id });
     expect(await prisma.channel.findUnique({ where: { id: channel.id } })).toBeNull();

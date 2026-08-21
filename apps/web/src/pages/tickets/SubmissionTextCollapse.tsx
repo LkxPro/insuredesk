@@ -2,10 +2,6 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
-/**
- * 只读态工单原文折叠块：默认收起，点开显示全文，避免大段原文挤占客户信息流。
- * 只在外部件（source=external_channel）且 submissionText 非空时渲染。
- */
 export function SubmissionTextCollapse({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
 

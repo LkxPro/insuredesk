@@ -7,14 +7,6 @@ import {
   validateTicketImportRows,
 } from "../src/services/ticket-import.service.ts";
 
-/**
- * DB-free tests for the 批量导入 parsing/validation seam: workbook → raw rows
- * (header contract, blank-row skipping, size gates) and raw rows → per-row
- * errors / creation payloads (手工建单契约 semantics, Chinese literals,
- * catalog names, wall-clock dates in the request's zone, in-file duplicates).
- */
-
-/** Row literal keyed by header — unnamed positional tuples would be unreadable. */
 type RowInput = Partial<Record<string, string | Date>>;
 
 /** First element, asserted present — noUncheckedIndexedAccess-friendly. */
@@ -98,7 +90,7 @@ describe("readTicketImportSheet", () => {
     const body = await buildWorkbook([
       { 客户姓名: "张三" },
       null,
-      { 客户姓名: "  " }, // whitespace-only counts as blank
+      { 客户姓名: "  " },
       { 客户姓名: "李四" },
     ]);
     const rows = await readTicketImportSheet(body);
@@ -167,7 +159,6 @@ describe("validateTicketImportRows", () => {
     expect(ticket.hasContacted).toBe(true);
     expect(ticket.contactTime).toBe("2026-06-30T13:15:00.000Z");
     expect(ticket.categoryId).toBe("cat-claims");
-    // 时效策略列按策略名匹配启用策略，payload 承载解析出的引用 id
     expect(ticket.slaPolicyId).toBe("sla-high");
     expect(ticket.priority).toBe("urgent");
   });

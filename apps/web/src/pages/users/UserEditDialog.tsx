@@ -21,11 +21,7 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { UserRow } from "./UsersPage";
 
-/**
- * 编辑用户 (user.edit): basic info + optional password reset. The role is
- * deliberately absent — changing it is 分配角色, a separate permission point
- * (user.assign_role).
- */
+/** Role is deliberately absent — changing it is 分配角色, a separate permission point (user.assign_role). */
 export function UserEditDialog({
   user,
   onOpenChange,

@@ -4,13 +4,6 @@ import { auth, renderApp, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 import { categoryOptions, channelOptions, detailPayload, listItem } from "./detail-pane-fixtures";
 
-/**
- * 工单原文对照测试：外部件（source=external_channel，携带 submissionText）在
- * 分栏详情中的原文呈现随模式切换 —— 只读态折叠块（左栏客户信息下方，默认收起），
- * 编辑态右栏自动从时间线切换为原文对照，退出编辑切回时间线；非外部件编辑态右栏
- * 保持时间线不动。覆盖 issue #166 的三个验收分支。
- */
-
 // Radix Select 用 jsdom 未实现的 pointer-capture / scroll API 驱动下拉
 beforeAll(() => {
   Object.assign(window.HTMLElement.prototype, {
@@ -83,23 +76,18 @@ describe("TicketDetailPane submission text", () => {
     renderAt("/tickets/t1");
     const pane = await findPane("WO100001");
 
-    // 只读态：右栏显示时间线
     expect(screen.getByRole("heading", { name: "处理记录" })).toBeInTheDocument();
 
-    // 左栏客户信息区域下方有折叠块
     const collapseButton = within(pane).getByRole("button", { name: /工单原文/ });
     expect(collapseButton).toBeInTheDocument();
 
-    // 默认收起，原文不可见
     expect(screen.queryByText(/客户通过外部渠道提交/)).not.toBeInTheDocument();
 
-    // 点开后显示全文
     fireEvent.click(collapseButton);
     await waitFor(() => {
       expect(screen.getByText(/客户通过外部渠道提交/)).toBeInTheDocument();
     });
 
-    // 再点击收起
     fireEvent.click(collapseButton);
     await waitFor(() => {
       expect(screen.queryByText(/客户通过外部渠道提交/)).not.toBeInTheDocument();
@@ -110,33 +98,25 @@ describe("TicketDetailPane submission text", () => {
     renderAt("/tickets/t2");
     const pane = await findPane("WO100002");
 
-    // 只读态：右栏是时间线
     expect(screen.getByRole("heading", { name: "处理记录" })).toBeInTheDocument();
 
-    // 点击编辑按钮
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     await waitFor(() => {
-      // 编辑态：右栏自动切换为原文对照
       expect(screen.getByRole("heading", { name: "工单原文" })).toBeInTheDocument();
       expect(screen.getByText(/外部渠道提交的大段工单原文/)).toBeInTheDocument();
     });
 
-    // 时间线不可见
     expect(screen.queryByRole("heading", { name: "处理记录" })).not.toBeInTheDocument();
 
-    // 左栏折叠块在编辑态不显示
     expect(within(pane).queryByRole("button", { name: /工单原文/ })).not.toBeInTheDocument();
 
-    // 取消编辑
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
 
     await waitFor(() => {
-      // 退出编辑：右栏恢复时间线
       expect(screen.getByRole("heading", { name: "处理记录" })).toBeInTheDocument();
     });
 
-    // 原文对照面板不可见
     expect(screen.queryByRole("heading", { name: "工单原文" })).not.toBeInTheDocument();
   });
 
@@ -144,23 +124,18 @@ describe("TicketDetailPane submission text", () => {
     renderAt("/tickets/t3");
     const pane = await findPane("WO100003");
 
-    // 只读态：右栏是时间线
     expect(screen.getByRole("heading", { name: "处理记录" })).toBeInTheDocument();
 
-    // 无折叠块（非外部件无原文）
     expect(within(pane).queryByRole("button", { name: /工单原文/ })).not.toBeInTheDocument();
 
-    // 点击编辑按钮
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
     });
 
-    // 编辑态：右栏保持时间线
     expect(screen.getByRole("heading", { name: "处理记录" })).toBeInTheDocument();
 
-    // 不显示原文对照
     expect(screen.queryByRole("heading", { name: "工单原文" })).not.toBeInTheDocument();
   });
 
@@ -168,17 +143,14 @@ describe("TicketDetailPane submission text", () => {
     renderAt("/tickets/t4");
     const pane = await findPane("WO100004");
 
-    // 无折叠块
     expect(within(pane).queryByRole("button", { name: /工单原文/ })).not.toBeInTheDocument();
 
-    // 点击编辑
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
     });
 
-    // 右栏保持时间线（无原文就不切换）
     expect(screen.getByRole("heading", { name: "处理记录" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "工单原文" })).not.toBeInTheDocument();
   });

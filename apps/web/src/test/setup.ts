@@ -2,11 +2,6 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
-// Under fork contention in the dev container, chained-async flows (mutation →
-// invalidate → refetch → toast) outrun waitFor/findBy's 1s default window and
-// flake. This governs those polls; vitest's testTimeout is a separate outer
-// bound and never reaches them. Passing assertions resolve as soon as the DOM
-// settles, so a wide value costs nothing except on genuine failures.
 configure({ asyncUtilTimeout: 12000 });
 
 // RTL only auto-cleans with vitest globals enabled; we import hooks explicitly.

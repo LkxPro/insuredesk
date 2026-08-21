@@ -3,12 +3,6 @@ import { describe, expect, it } from "vitest";
 import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * 外部端主页：/external-tickets 是全宽表格一级列表（着陆不自动选中、不跳转），
- * 整行点进 /external-tickets/:id 详情态——左侧窄列 + 右侧详情（两态结构与内部
- * /tickets 同）；新建工单是对话框，提交成功进新单详情。
- */
-
 function ticket(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",
@@ -177,7 +171,6 @@ describe("详情态（窄列 + 详情，同内部两态）", () => {
     expect(await within(narrow).findByText("张三")).toBeInTheDocument();
     expect(within(narrow).getByText("李四")).toBeInTheDocument();
     expect(within(narrow).queryByText("WO100001")).not.toBeInTheDocument();
-    // 反馈时间格式化出线；无反馈时间的行落 —
     expect(within(narrow).getByText(/2026-07-09/)).toBeInTheDocument();
     expect(within(narrow).getByText("—")).toBeInTheDocument();
 
@@ -239,13 +232,11 @@ describe("新建工单", () => {
     await waitFor(() => {
       expect(callsTo("externalTicket.submit")).toHaveLength(1);
     });
-    // 前后空白在提交前裁掉
     expect(callsTo("externalTicket.submit")[0]?.input).toEqual({
       submissionText: "客户要求退保",
     });
     expect(toastSpies.success).toHaveBeenCalledWith("工单 WO100009 已提交");
 
-    // 对话框关闭，进了新单详情（拉取 t9），列表因作废而重拉
     await waitFor(() => {
       expect(screen.queryByLabelText("工单原文")).not.toBeInTheDocument();
     });

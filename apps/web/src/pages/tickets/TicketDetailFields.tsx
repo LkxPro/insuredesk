@@ -36,16 +36,10 @@ import {
 } from "./TicketFormFields";
 
 /**
- * 详情/编辑双模式字段渲染器：同一个单元格按模式渲染——只读渲染值、编辑渲染
- * 控件，标签与栅格位置两态一致，原地编辑时字段不挪位。编辑态被用户改动过的
- * 字段在标签后带「已修改」高亮（调用方按 react-hook-form dirtyFields 传入），
- * 取消/保存后随模式退出消失。系统/SLA 字段不走这里，仍用详情弹窗的 Item。
- *
  * 目录下拉只列启用项；工单当前值若已停用，以「（已停用）」入列保持原值合法。
  * 校验与取值契约沿用建单的 ticketFormSchema —— 服务端解析的同一份 schema。
  */
 
-/** The editable slice of the detail payload the edit mode prefills from. */
 export interface EditableTicket {
   id: string;
   workOrderNumber: string;
@@ -411,10 +405,8 @@ export function TicketDetailField({
   ticket: EditableTicket;
   editing: boolean;
   form: UseFormReturn<TicketFormValues>;
-  /** 编辑态被用户改动过 → 标签后带「已修改」高亮。 */
   dirty: boolean;
   error?: string;
-  /** 编辑态控件下的附加块（查重命中提示）。 */
   addon?: ReactNode;
 }) {
   const descriptor = TICKET_FIELDS[name];

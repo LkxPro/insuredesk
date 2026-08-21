@@ -3,12 +3,10 @@ import { format as formatDate } from "date-fns";
 import { downloadFile } from "@/lib/download";
 
 /**
- * 外部导出 client: turns 「我的工单」当前筛选 into the
- * GET /api/external-tickets/export download. 翻页参数刻意丢（导出覆盖全部
- * 命中行）；浏览器 IANA 时区随车，文件日期列与列表本地时刻口径一致。
+ * 翻页参数刻意丢（导出覆盖全部命中行）；浏览器 IANA 时区随车，文件日期列
+ * 与列表本地时刻口径一致。
  */
 
-/** 页面 URL 查询态的子集——导出只关心筛选，不关心页码。 */
 export interface ExternalTicketExportFilters {
   status: readonly string[];
   search: string;

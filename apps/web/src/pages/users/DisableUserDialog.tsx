@@ -15,11 +15,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { UserRow } from "./UsersPage";
 
-/**
- * 禁用用户 confirmation (the user.delete permission point): disabling locks
- * the account out of login AND kills their live sessions — worth an explicit
- * confirm. 启用 is harmless and fires directly from the table.
- */
 export function DisableUserDialog({
   user,
   onOpenChange,

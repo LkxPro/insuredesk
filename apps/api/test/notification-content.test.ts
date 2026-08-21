@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAssignedNotification } from "../src/services/notification.service.ts";
 
-/**
- * Pure message builder behind the 轨 1 assigned notification: first
- * assignment vs 改派 wording, and the 改派 remaining-time annotation derived
- * from dueAt/now — including already-overdue and no-deadline (特急) tickets.
- * No database needed.
- */
-
 const now = new Date("2026-07-09T10:00:00Z");
 const base = {
   workOrderNumber: "WO100001",

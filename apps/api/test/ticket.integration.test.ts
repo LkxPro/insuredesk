@@ -7,13 +7,6 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests against a real Postgres: work-order sequence
- * (incl. concurrency), dueAt fixed from the SLA config at creation, the
- * `create` ProcessLog, the SLAPolicy seed, RBAC rejection, and the
- * data-scoped detail read. Runs through appRouter.createCaller — the same
- * procedure pipeline (permission middleware included) the HTTP adapter uses.
- */
 describe("ticket creation + detail (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -29,7 +22,6 @@ describe("ticket creation + detail (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** Caller with the given user identity and an explicit permission set. */
   function callerWith(user: User, roleName: string, permissions: Permission[]) {
     return appRouter.createCaller({
       traceId: "ticket-test",
@@ -49,7 +41,6 @@ describe("ticket creation + detail (Testcontainers)", () => {
     });
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return appRouter.createCaller({
       traceId: "ticket-test",
@@ -117,26 +108,23 @@ describe("ticket creation + detail (Testcontainers)", () => {
 
       const detail = await manager().ticket.detail({ id: created.id });
 
-      // Base state of a fresh manual ticket
       expect(detail.status).toBe("unassigned");
       expect(detail.displayStatus).toBe("unassigned");
       expect(detail.source).toBe("manual");
       expect(detail.assigneeId).toBeNull();
       expect(detail.contactCount).toBe(0);
       expect(detail).not.toHaveProperty("processingResult");
-      expect(detail.priority).toBeNull(); // free label defaults to empty
+      expect(detail.priority).toBeNull();
       expect(detail.feedbackTime).toBe(baseInput().feedbackTime);
       expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");
       expect(detail.feedbackReceiveChannel?.name).toBe("内部客服热线");
-      expect("deletedAt" in detail).toBe(false); // soft-delete marker never leaves the API
+      expect("deletedAt" in detail).toBe(false);
 
-      // dueAt fixed at creation from the SLA config: exactly createdAt + 48h
       expect(detail.dueAt).not.toBeNull();
       const dueMs = new Date(detail.dueAt as string).getTime();
       const createdMs = new Date(detail.createdAt).getTime();
       expect(dueMs - createdMs).toBe(48 * HOUR_MS);
 
-      // 跟进频次/首响要求 stamped from the level's SLA config, not hardcoded
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
       expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
 
@@ -146,12 +134,9 @@ describe("ticket creation + detail (Testcontainers)", () => {
       expect(detail.slaPolicyId).toBe(policy.id);
       expect(detail.slaPolicy).toEqual({ id: policy.id, name: policy.name, active: true });
 
-      // creatorId recorded for source=manual
       const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
       expect(row.creatorId).toBe(seeded.users.manager.id);
 
-      // The timeline root: one `create` ProcessLog with an operator-name
-      // snapshot, at the same instant as createdAt
       expect(detail.processLogs).toHaveLength(1);
       const log = detail.processLogs[0];
       expect(log?.action).toBe("create");
@@ -171,8 +156,8 @@ describe("ticket creation + detail (Testcontainers)", () => {
       });
       try {
         const detail = await manager().ticket.detail({ id: created.id });
-        expect(detail.createdBy).toBe("李主管（改名后）"); // derived at read time
-        expect(detail.processLogs[0]?.operatorName).toBe(originalName); // snapshot untouched
+        expect(detail.createdBy).toBe("李主管（改名后）");
+        expect(detail.processLogs[0]?.operatorName).toBe(originalName);
       } finally {
         await prisma.user.update({
           where: { id: seeded.users.manager.id },
@@ -216,7 +201,6 @@ describe("ticket creation + detail (Testcontainers)", () => {
         }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
-      // 上限按去重后计数：50 个不同值加上重复项照常放行
       const fifty = Array.from({ length: 50 }, (_, i) => `P-${i}`);
       const created = await manager().ticket.create({
         ...baseInput(),
@@ -264,7 +248,7 @@ describe("ticket creation + detail (Testcontainers)", () => {
       });
       const detail = await manager().ticket.detail({ id: created.id });
       expect(detail.dueAt).toBeNull();
-      expect(detail.displayStatus).toBe("unassigned"); // no dueAt → nothing to compute
+      expect(detail.displayStatus).toBe("unassigned");
       expect(detail.followUpFrequency).toContain("每12小时至少跟进1次");
     });
   });
@@ -319,18 +303,14 @@ describe("ticket creation + detail (Testcontainers)", () => {
         callerWith(seeded.users.cs1, "受限创建人", ["ticket.view", "ticket.create"]);
       const created = await creator().ticket.create(baseInput());
 
-      // Visible to the creator the moment it exists, before any assignment
       const fresh = await creator().ticket.detail({ id: created.id });
       expect(fresh.workOrderNumber).toBe(created.workOrderNumber);
       expect(fresh.assigneeId).toBeNull();
 
-      // Still visible after the ticket is assigned to someone else
       await manager().ticket.assign({ ticketId: created.id, assigneeId: seeded.users.manager.id });
       const handedOff = await creator().ticket.detail({ id: created.id });
       expect(handedOff.assigneeId).toBe(seeded.users.manager.id);
 
-      // A user who is neither creator nor assignee, without ticket.view_all,
-      // still gets NOT_FOUND — the scope covers assignee and creator only
       const thirdParty = () => callerWith(seeded.users.observer, "受限第三者", ["ticket.view"]);
       await expect(thirdParty().ticket.detail({ id: created.id })).rejects.toMatchObject({
         code: "NOT_FOUND",

@@ -6,17 +6,6 @@ import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import { buildServer } from "../src/server.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Endpoint-level auth tests: drive the real Fastify app (buildServer) over
- * app.inject against a Testcontainers Postgres, exactly the surface the web
- * frontend consumes.
- *
- * From the acceptance criteria (#2, #18):
- * - Password login → httpOnly session cookie; logout clears it
- * - `me` query returns identity + resolved permission-point set
- * - Guarded probe rejects the frontline user (admin vs 一线客服 differ)
- */
-
 describe("Auth HTTP endpoints (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -42,7 +31,6 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** POST /api/auth/login as the given demo user. */
   function login(username: string, password: string) {
     return app.inject({
       method: "POST",
@@ -51,7 +39,6 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
     });
   }
 
-  /** Extract the parsed `session` cookie from a response, if set. */
   function sessionCookie(res: { cookies: Array<Record<string, unknown>> }) {
     return res.cookies.find((cookie) => cookie.name === "session");
   }
@@ -66,7 +53,7 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
       expect(cookie).toBeDefined();
       expect(cookie?.httpOnly).toBe(true);
       expect(cookie?.path).toBe("/");
-      expect(String(cookie?.value).length).toBe(64); // 32 random bytes, hex
+      expect(String(cookie?.value).length).toBe(64);
 
       const body = res.json();
       expect(body.success).toBe(true);
@@ -84,11 +71,9 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
     });
 
     it("malformed request bodies → 400, never a crash", async () => {
-      // No body at all (req.body is undefined)
       const noBody = await app.inject({ method: "POST", url: "/api/auth/login" });
       expect(noBody.statusCode).toBe(400);
 
-      // Fields present but not strings
       const wrongTypes = await app.inject({
         method: "POST",
         url: "/api/auth/login",
@@ -96,7 +81,6 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
       });
       expect(wrongTypes.statusCode).toBe(400);
 
-      // Fields missing
       const missingFields = await app.inject({
         method: "POST",
         url: "/api/auth/login",
@@ -191,7 +175,6 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
     it("clears the cookie, deletes the session, and me stops working", async () => {
       const token = String(sessionCookie(await login("manager", DEMO_PASSWORD))?.value);
 
-      // Session works before logout
       const meBefore = await app.inject({
         method: "GET",
         url: "/trpc/auth.me",
@@ -207,11 +190,9 @@ describe("Auth HTTP endpoints (Testcontainers)", () => {
       expect(logout.statusCode).toBe(200);
       expect(sessionCookie(logout)?.value).toBe("");
 
-      // Session row is gone from the store...
       const session = await prisma.session.findUnique({ where: { token } });
       expect(session).toBeNull();
 
-      // ...so replaying the old cookie no longer authenticates
       const meAfter = await app.inject({
         method: "GET",
         url: "/trpc/auth.me",

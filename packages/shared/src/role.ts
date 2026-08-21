@@ -15,10 +15,6 @@ export const roleNameSchema = z
   .min(1, "请输入角色名称")
   .max(50, "角色名称最长 50 字符");
 
-/**
- * The 权限点清单 checkbox payload: every entry must be a known permission
- * point — unknown strings are rejected, duplicates collapsed.
- */
 export const rolePermissionsSchema = z
   .array(permissionSchema)
   .transform((values) => [...new Set(values)]);

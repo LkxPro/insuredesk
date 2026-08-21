@@ -33,20 +33,16 @@ import { buildChannelTicketListUrl, buildTicketListUrl } from "./build-ticket-li
 import { useCreatedRangeQueryParams } from "./useCreatedRangeQueryParams";
 
 /**
- * 数据看板: 8 metric cards, the channel distribution, and the Top-10
- * 跟进人考核表 — one query, one screen. All 口径 live server-side
- * (dashboard.service.ts); this page renders the payload as-is. Data scope
- * is server-enforced too: without dashboard.view_all the numbers cover only
- * the viewer's own tickets, and the header says so.
+ * 口径 live server-side (dashboard.service.ts); this page renders the payload
+ * as-is. Data scope is server-enforced too: without dashboard.view_all the
+ * numbers cover only the viewer's own tickets, and the header says so.
  */
 
-/** The two read-time overlay cards carry the alert palette. */
 const METRIC_TONES: Partial<Record<DashboardMetricKey, string>> = {
   pendingTimeout: "text-amber-600 dark:text-amber-500",
   overdue: "text-destructive",
 };
 
-/** 口径 fine print for the cards whose number needs reading rules. */
 const METRIC_HINTS: Partial<Record<DashboardMetricKey, string>> = {
   pendingTimeout: "距时限不足 2 小时",
   overdue: "在途已过时限，完结即移出",

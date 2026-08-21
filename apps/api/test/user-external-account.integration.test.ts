@@ -3,12 +3,6 @@ import { seedExternalUserRole } from "../prisma/seed-data.ts";
 import type { PrismaClient, Role } from "../src/generated/prisma/client.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * 用户管理 × 外部账号 against a real Postgres: 用户管理 is an 内部账号-only surface.
- * The list hides 外部账号, the role picker hides 外部角色, and all four write
- * doors refuse an 外部账号 as target or an 外部角色 as payload — an account's
- * 内外性质 is fixed at birth, so no door here crosses the line.
- */
 describe("用户管理 × 外部账号 (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -42,7 +36,6 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
     };
   }
 
-  /** An 外部账号 created through its own door — 外部账号管理. */
   async function createExternalAccount() {
     seq += 1;
     return admin().externalAccount.create({

@@ -9,16 +9,6 @@ import { TicketDetailField } from "./TicketDetailFields";
 import type { TicketFormValues } from "./TicketFormFields";
 import type { TicketDetail } from "./ticket-detail";
 
-/**
- * 分栏详情的左栏：整单的工单信息字段，只读态渲染值、编辑态原位变控件（由
- * TicketDetailField 双模式渲染）。系统字段（工单号/创建时间/来源/创建人）与
- * SLA 派生字段（处理时限/首响/跟进频次/联系次数…）两态都是只读文本——它们不
- * 是可编辑字段集的成员，编辑态也不长出控件。
- *
- * 只负责呈现字段。头部操作、编辑态的表单容器与保存/取消都在 TicketDetailPane。
- * 栅格原语（Section/Item）与外部详情左栏共用 DetailGrid.tsx。
- */
-
 export function TicketInfoColumn({
   ticket,
   editing,
@@ -28,7 +18,6 @@ export function TicketInfoColumn({
   ticket: TicketDetail;
   editing: boolean;
   form: UseFormReturn<TicketFormValues>;
-  /** 编辑态查重命中提示，仅保单号/手机号三个字段会拿到内容。 */
   fieldAddon?: (name: TicketCreateFieldKey) => ReactNode;
 }) {
   const { dirtyFields, errors } = form.formState;

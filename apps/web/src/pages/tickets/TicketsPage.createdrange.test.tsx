@@ -5,9 +5,7 @@ import { auth, callsTo, renderApp, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
 /**
- * 创建时间筛选：预设换算后的绝对时刻进入 ticket.list 入参与 URL，回显按区间反查，
- * 脏参数降级到「全部」而不拖累其余筛选。时钟固定在 2026-07-15（周三），预设边界
- * 才有唯一期望值。
+ * 时钟固定在 2026-07-15（周三），预设边界才有唯一期望值。
  */
 
 const NOW = new Date(2026, 6, 15, 10, 30, 0, 0);
@@ -25,15 +23,14 @@ function trigger() {
   return screen.getByRole("button", { name: /^创建时间筛选：/ });
 }
 
-/** 打开创建时间弹层并点一个选项。 */
 async function pickOption(name: string) {
   fireEvent.click(trigger());
   fireEvent.click(await screen.findByRole("button", { name }));
 }
 
 /**
- * 点日历上的某一天。弹层内容每次 re-render 都换新节点，句柄必须即时取——
- * 上一次 findBy 拿到的按钮此刻已脱离文档，点它不会触发 onSelect。
+ * 弹层内容每次 re-render 都换新节点，句柄必须即时取——上一次 findBy 拿到的
+ * 按钮此刻已脱离文档，点它不会触发 onSelect。
  */
 async function clickDay(name: RegExp) {
   await screen.findByRole("button", { name });

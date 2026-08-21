@@ -1,19 +1,8 @@
 import { NUCLEAR_BODY_STATUSES, PRIORITIES, PRIORITY_LABELS } from "./enums.ts";
 
 /**
- * 工单字段描述表：20 个建单字段 + 完结迁移对两个导入专属列的唯一声明处。
- * 每行声明
- * key、标准名（＝表单用词）、类型与取值约束（长度上限/枚举取值/日期格式/
- * 目录引用）、导入填写说明的素材，以及显式的 per-surface override 槽位。
- * 加字段＝在表里加一行：字段 key 清单、文本长度上限、导入解析列与导入
- * 模板列都从这里派生。
- *
- * override 槽位只登记与标准名不同的表面用词，缺省＝该表面直接用标准名：
- * - exportHeader：导出列头是对外契约（下游可能按列头取数），保持现状；
- *   与标准名统一需另立 ticket 并通知使用方
- * - processLogLabel：编辑留痕的句中短名（如「客户电话」）
- * - detailLabel：详情页展示名（解释后缀，如「联系人电话（备用）」）
- * - listLabel：列表页列头与筛选的短名（如「渠道」）
+ * exportHeader：导出列头是对外契约（下游可能按列头取数），保持现状；与标准名
+ * 统一需另立 ticket 并通知使用方。
  */
 
 export interface TicketFieldOverrides {
@@ -24,7 +13,6 @@ export interface TicketFieldOverrides {
 }
 
 export interface TicketEnumOption {
-  /** 表单/模板里的中文字面量。 */
   readonly label: string;
   /** 落库取值；核身存中文字面量本身，优先级存英文码，曾进线存布尔。 */
   readonly value: string | boolean;
@@ -38,7 +26,6 @@ export type TicketCatalogKind =
   | "userFeedbackChannel"
   | "feedbackReceiveChannel";
 
-/** 填写说明里的目录名词（「下载模板时启用的◯◯目录」）。 */
 const CATALOG_NOUNS: Record<TicketCatalogKind, string> = {
   channel: "渠道",
   category: "类别",
@@ -48,41 +35,33 @@ const CATALOG_NOUNS: Record<TicketCatalogKind, string> = {
   feedbackReceiveChannel: "反馈信息接收渠道",
 };
 
-/** 行的声明语法；`TicketFieldDescriptor` 是表里各行的精确类型。 */
 type TicketFieldSpec = {
   readonly key: string;
   readonly label: string;
   readonly overrides?: TicketFieldOverrides;
-  /** 仅存在于批量导入（完结迁移对），不属于建单表单字段。 */
   readonly importOnly?: true;
 } & (
   | {
       readonly type: "text";
       readonly maxLength: number;
-      /** 拼在「文本，最长 N 字」之后的填写说明补充（示例或跨列规则）。 */
       readonly importNoteSuffix?: string;
     }
   | {
       /** 多值自由文本；各表面以空格分隔字符串形态承载数组值。 */
       readonly type: "textList";
-      /** 单个取值的长度上限。 */
       readonly maxItemLength: number;
-      /** 单张工单的取值数量上限。 */
       readonly maxItems: number;
     }
   | { readonly type: "date" }
   | {
       readonly type: "enum";
       readonly options: readonly TicketEnumOption[];
-      /** 填写说明「留空=」后的含义（未填写/未知/未定级…）。 */
       readonly emptyMeaning: string;
     }
   | {
       readonly type: "catalog";
       readonly catalog: TicketCatalogKind;
-      /** 目录引用 id 的长度上限。 */
       readonly maxLength: number;
-      /** 覆盖填写说明默认尾注「留空=未填写」（完结对的同填同空规则）。 */
       readonly importNoteTail?: string;
     }
 );
@@ -223,7 +202,6 @@ export const TICKET_FIELD_DESCRIPTORS = [
 
 export type TicketFieldDescriptor = (typeof TICKET_FIELD_DESCRIPTORS)[number];
 
-/** 按 key 取行；`TICKET_FIELDS.channelId.maxLength` 这类访问是精确类型。 */
 export const TICKET_FIELDS = Object.fromEntries(
   TICKET_FIELD_DESCRIPTORS.map((descriptor) => [descriptor.key, descriptor]),
 ) as { [D in TicketFieldDescriptor as D["key"]]: D };
@@ -254,10 +232,6 @@ function isCreateTextField(
   return descriptor.type === "text" && isCreateField(descriptor);
 }
 
-/**
- * 建单自由文本字段的长度上限，建单/编辑 schema 与批量导入逐行校验共用 ——
- * 导入的每列长度检查引用这里，不另抄一份。
- */
 export const TICKET_TEXT_LIMITS = Object.fromEntries(
   TICKET_FIELD_DESCRIPTORS.filter(isCreateTextField).map((descriptor) => [
     descriptor.key,
@@ -265,10 +239,8 @@ export const TICKET_TEXT_LIMITS = Object.fromEntries(
   ]),
 ) as Record<TicketCreateTextFieldDescriptor["key"], number>;
 
-/** 完结备注长度上限；完结弹窗与批量导入的完结备注列共用这一个数。 */
 export const TICKET_COMPLETION_REMARK_LIMIT = TICKET_FIELDS.completionRemark.maxLength;
 
-/** 导入表头契约（列序＝表序）＝各行标准名；模板生成与上传解析共用。 */
 export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS.map(
   (descriptor) => descriptor.label,
 );
@@ -280,7 +252,6 @@ export const TICKET_IMPORT_HEADERS: readonly string[] = TICKET_FIELD_DESCRIPTORS
  * join 出的文本总能无损 split 回同一数组。
  */
 
-/** trim 每项、去空、去重（大小写敏感），保留首次出现的顺序。 */
 export function normalizePolicyNumbers(values: readonly string[]): string[] {
   const seen = new Set<string>();
   for (const raw of values) {
@@ -296,7 +267,6 @@ export function splitPolicyNumbers(text: string): string[] {
   return normalizePolicyNumbers(text.split(/[^0-9A-Za-z]+/));
 }
 
-/** []（未填写）join 为空串，展示层沿用现有未填写样式。 */
 export function joinPolicyNumbers(values: readonly string[]): string {
   return values.join(" ");
 }
@@ -307,10 +277,6 @@ export function applyNoPolicyNumber<T extends { noPolicyNumber: boolean; policyN
   return data.noPolicyNumber ? { ...data, policyNumbers: [] } : data;
 }
 
-/**
- * 清洗后的保单号数组违反上限时的拒绝原因；null = 合法。表单、API 契约与
- * 导入逐行校验共用同一份文案。
- */
 export function policyNumbersError(values: readonly string[]): string | null {
   const { maxItemLength, maxItems } = TICKET_FIELDS.policyNumbers;
   const tooLong = values.find((value) => value.length > maxItemLength);
@@ -341,7 +307,6 @@ export function ticketProcessLogLabel(key: TicketFieldKey): string {
   return surfaceLabel(TICKET_FIELDS[key], "processLogLabel");
 }
 
-/** 该字段在导入模板「填写说明」里的取值规则，按类型从声明派生。 */
 export function ticketImportFieldNote(descriptor: TicketFieldDescriptor): string {
   switch (descriptor.type) {
     case "text": {

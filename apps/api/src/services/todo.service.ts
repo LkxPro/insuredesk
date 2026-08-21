@@ -40,7 +40,6 @@ interface TodoAlert {
   message: string;
 }
 
-/** One duration component set, floored to whole minutes: "35 小时 20 分钟". */
 function formatDuration(ms: number) {
   const totalMinutes = Math.floor(ms / MINUTE_MS);
   if (totalMinutes < 1) {
@@ -54,18 +53,12 @@ function formatDuration(ms: number) {
   return hours > 0 ? `${hours} 小时` : `${minutes} 分钟`;
 }
 
-/**
- * The viewer's 我的待办: every open ticket of theirs carrying at least one
- * active time alert, worst first. `count` (tickets, not alerts) feeds the
- * red-dot badge.
- */
+/** `count` (tickets, not alerts) feeds the red-dot badge. */
 export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: AuthenticatedUser) {
   const now = clock.now();
 
   const [tickets, policyRows] = await Promise.all([
     prisma.ticket.findMany({
-      // assigneeId pinned to the viewer + not-completed IS the todo universe
-      // (see module doc); soft-deleted tickets alert nobody.
       where: { deletedAt: null, assigneeId: viewer.id, status: { not: TicketStatus.Completed } },
       select: {
         id: true,
@@ -79,7 +72,6 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
         contactCount: true,
       },
     }),
-    // 停用策略退出读时判定：其工单走缺行降级路径（不抛错）
     prisma.slaPolicy.findMany({ where: { active: true } }),
   ]);
 
@@ -143,8 +135,6 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
         alerts.push(...evaluateRule(rule, ticket, lastCommentAt.get(ticket.id) ?? null, now));
       }
 
-      // due_soon / overdue wear the shared display-status derivation as
-      // alerts — the one place the time predicates live.
       const displayStatus = deriveDisplayStatus(
         ticketStatusSchema.parse(ticket.status),
         ticket.dueAt,

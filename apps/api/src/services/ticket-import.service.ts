@@ -27,7 +27,6 @@ import { resolveTimeZone } from "./time-zone.ts";
  * fixes the original file and re-uploads instead of diffing what landed.
  */
 
-/** Carrier for the 行号/列名/原因 list; the route serializes it as the 400 body. */
 export class TicketImportValidationError extends Error {
   readonly rowErrors: TicketImportRowError[];
 
@@ -42,7 +41,6 @@ function fileError(message: string): TicketImportValidationError {
   return new TicketImportValidationError([{ row: null, column: null, message }]);
 }
 
-/** A cell is either its trimmed text or a native Excel date. */
 type ImportCellValue = string | Date;
 
 export interface TicketImportSheetRow {
@@ -83,15 +81,12 @@ function cellToRaw(cell: ExcelJS.Cell): ImportCellValue {
   return String(value).trim();
 }
 
+// 老列头兼容：改名前下载的存量模板仍按别名解析（外部约束，模板已散发）。
 const LEGACY_IMPORT_HEADER_ALIASES: Record<string, string> = {
   "用户投诉渠道": "用户反馈渠道",
   "投诉信息接收渠道": "反馈信息接收渠道",
 };
 
-/**
- * Load the 工单 sheet and gate the file shape: template headers verbatim,
- * blank rows skipped, ≥1 and ≤TICKET_IMPORT_ROW_LIMIT data rows.
- */
 export async function readTicketImportSheet(body: Buffer): Promise<TicketImportSheetRow[]> {
   const workbook = new ExcelJS.Workbook();
   try {
@@ -140,10 +135,6 @@ export async function readTicketImportSheet(body: Buffer): Promise<TicketImportS
   return rows;
 }
 
-// ---------------------------------------------------------------------------
-// Per-row validation — same semantics as the manual creation contract
-// ---------------------------------------------------------------------------
-
 /** Catalog name indexes (the file carries names, not ids); the module owns the missing/disabled 判定. */
 export interface TicketImportCatalogs {
   channels: CatalogNameIndex;
@@ -166,7 +157,6 @@ export type TicketImportRowData = TicketCreateData & {
 
 type WallClock = { year: number; month: number; day: number; hour: number; minute: number };
 
-/** The zone's UTC offset (ms) at the given timestamp, via Intl — no tz library. */
 function zoneOffsetMs(timestamp: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -208,7 +198,6 @@ export function wallClockToInstant(wall: WallClock, timeZone: string): Date {
 // 一律拒绝，避免静默丢弃秒数等歧义。
 const WALL_CLOCK_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
 
-/** "yyyy-MM-dd HH:mm" (or a native date cell's UTC fields) → wall clock; null = unparseable. */
 function toWallClock(raw: ImportCellValue): WallClock | null {
   if (raw instanceof Date) {
     return {
@@ -361,10 +350,6 @@ function catalogColumn(
   };
 }
 
-/**
- * Wall-clock date column （反馈时间/进线时间）: blank → null, a native date cell
- * or exact "yyyy-MM-dd HH:mm" text → the instant in the upload's zone.
- */
 function wallClockColumn(
   descriptor: Extract<TicketFieldDescriptor, { type: "date" }>,
 ): ImportColumnSpec {
@@ -497,13 +482,8 @@ export function validateTicketImportRows(
   return { tickets, errors };
 }
 
-// ---------------------------------------------------------------------------
-// Transactional creation — same construction as manual creation
-// ---------------------------------------------------------------------------
-
 export interface TicketImportInput {
   body: Buffer;
-  /** Uploaded filename, kept on the batch for human recognition. */
   filename: string;
   /** IANA zone the file's wall-clock dates are written in (symmetric with export). */
   timeZone?: string;

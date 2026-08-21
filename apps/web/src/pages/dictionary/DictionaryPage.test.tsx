@@ -10,17 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * 字典管理 page: card overview of the five catalogs behind dictionary.manage —
- * each card opens a Sheet hosting the shared CatalogAdmin panel (增改/停启用/
- * 删除/拖拽排序/按名称预览排序). The behavior suite exercises the panel once (via 客诉类别);
- * the per-catalog smoke pins each catalog's config to its own tRPC namespace
- * and wording. Same faked-fetch tRPC pipeline and useAuth-seam mock as the
- * sibling page tests; the reference-deletion refusal is a server invariant
- * covered by the API integration tests — here the page just surfaces the
- * CONFLICT message.
- */
-
 const auth = vi.hoisted(() => ({ user: null as AuthUser | null, isLoading: false }));
 
 vi.mock("@/contexts/AuthContext", () => ({

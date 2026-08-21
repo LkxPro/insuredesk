@@ -20,12 +20,6 @@ import {
 import { trpc } from "@/lib/trpc";
 import { CatalogAdmin, type CatalogAdminConfig } from "./CatalogAdmin";
 
-/**
- * 字典管理: the catalog management page behind dictionary.manage. 建单/编辑/完结
- * dropdowns, ticket detail, and exports read the catalogs live, so every change
- * here shows through immediately.
- */
-
 const channelCatalog: CatalogAdminConfig = {
   idPrefix: "channel",
   title: "反馈渠道",

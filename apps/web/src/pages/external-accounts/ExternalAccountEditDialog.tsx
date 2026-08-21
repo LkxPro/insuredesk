@@ -36,10 +36,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { ExternalAccountRow } from "./ExternalAccountManagePage";
 
-/**
- * 新建/编辑共用一份表单形状（与 TicketFormFields 同一处理）：表单类型恒定，
- * 密码规则按模式挂在对象级 refinement 上（新建必填，编辑留空 = 不改密）。
- */
 const accountFormSchema = z.object({
   username: usernameSchema,
   password: z.string(),
@@ -77,10 +73,8 @@ const EMPTY_PREFILL: NonNullable<ExternalAccountFormValues["prefill"]> = {
   feedbackReceiveChannelId: "",
 };
 
-/** 预填文本项的字段 key 与表单注册路径。 */
 const PREFILL_TEXT_KEYS = ["project", "brokerageEntity", "paymentChannel"] as const;
 
-/** 预填目录项的字段 key 与「不预填」文案。 */
 const PREFILL_CATALOG_KEYS = [
   { key: "channelId", unsetLabel: "不预填渠道" },
   { key: "userFeedbackChannelId", unsetLabel: "不预填用户反馈渠道" },
@@ -144,8 +138,8 @@ function PrefillCatalogSelect({
 }
 
 /**
- * 6 预填字段，create/update 两个表单共用。目录下拉只列启用项;
- * 当前引用的停用项随表单初值补进选项（保持原值可存, 不能新选其他停用项）。
+ * 目录下拉只列启用项; 当前引用的停用项随表单初值补进选项（保持原值可存,
+ * 不能新选其他停用项）。
  */
 function PrefillFields({
   form,

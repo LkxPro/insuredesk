@@ -1,7 +1,6 @@
 import type { z } from "zod";
 import { createCatalogSchemas } from "./dictionary-catalog.ts";
 
-/** 反馈信息接收渠道目录 contracts；共同形状与措辞见 dictionary-catalog. */
 export const feedbackReceiveChannelCatalogSchemas = createCatalogSchemas("渠道");
 
 export const feedbackReceiveChannelCreateInputSchema =

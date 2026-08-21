@@ -11,7 +11,6 @@ import {
 } from "../services/dictionary-catalog.service.ts";
 import { protectedProcedure, requirePermission, router } from "../trpc.ts";
 
-/** 目录 domain errors → transport codes; anything else rethrows as-is. */
 function translateError(error: unknown): never {
   if (
     error instanceof CatalogNameConflictError ||

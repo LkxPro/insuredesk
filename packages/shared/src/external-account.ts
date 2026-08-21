@@ -16,7 +16,6 @@ import {
  * 工单字段，对提交输入隐形。文本上限抄对应工单字段。
  */
 
-/** 预填文本字段：trim、上限抄工单字段、空串归一为 null（= 未配置）。 */
 function prefillTextField(key: "project" | "brokerageEntity" | "paymentChannel") {
   const descriptor = TICKET_FIELDS[key];
   return z
@@ -27,7 +26,7 @@ function prefillTextField(key: "project" | "brokerageEntity" | "paymentChannel")
     .transform((value) => (value ? value : null));
 }
 
-/** 预填目录引用：空串/缺省归一为 null；停用项保持引用且照常盖章。 */
+/** 停用项保持引用且照常盖章。 */
 function prefillCatalogField() {
   return z
     .string()
@@ -41,9 +40,7 @@ export const externalAccountPrefillSchema = z.object({
   project: prefillTextField("project"),
   brokerageEntity: prefillTextField("brokerageEntity"),
   paymentChannel: prefillTextField("paymentChannel"),
-  /** 用户反馈渠道引用（客户发起侧）。 */
   userFeedbackChannelId: prefillCatalogField(),
-  /** 反馈信息接收渠道引用（我方接收侧）。 */
   feedbackReceiveChannelId: prefillCatalogField(),
 });
 export type ExternalAccountPrefillInput = z.input<typeof externalAccountPrefillSchema>;

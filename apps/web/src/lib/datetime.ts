@@ -1,6 +1,5 @@
 import { format } from "date-fns";
 
-/** ISO instant → "2026-07-09 14:30"; null-safe for optional fields. */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) {
     return "—";
@@ -12,10 +11,6 @@ const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
-/**
- * Duration → "2天3.5小时" / "3.5小时" / "12分钟"; null-safe for "no data yet".
- * Two units at most — a 考核表 cell needs magnitude, not precision.
- */
 export function formatDurationMs(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) {
     return "—";

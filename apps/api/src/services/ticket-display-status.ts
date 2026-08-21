@@ -23,7 +23,6 @@ import type { Prisma } from "../generated/prisma/client.ts";
  * with serialization, so filtering and display can never disagree mid-query.
  */
 
-/** 已超时（实时运营视角）：在途且已过 dueAt；完结即移出. */
 export function overdueTicketWhere(now: Date): Prisma.TicketWhereInput {
   return {
     status: { not: TicketStatus.Completed },
@@ -31,7 +30,6 @@ export function overdueTicketWhere(now: Date): Prisma.TicketWhereInput {
   };
 }
 
-/** 待超时：在途且距 dueAt 不足 2 小时（含恰在 dueAt 的瞬间）. */
 export function pendingTimeoutTicketWhere(now: Date): Prisma.TicketWhereInput {
   return {
     status: { not: TicketStatus.Completed },
@@ -64,7 +62,6 @@ export function displayStatusTicketWhere(
   }
 }
 
-/** First instant whose dueAt is close enough to compute pending_timeout. */
 function pendingTimeoutHorizon(now: Date): Date {
   return new Date(now.getTime() + PENDING_TIMEOUT_WINDOW_MS);
 }

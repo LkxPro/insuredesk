@@ -58,7 +58,6 @@ function toTRPCError(error: unknown): never {
 }
 
 export const externalAccountRouter = router({
-  /** The manage page's account table — the edit dialog rides the same row. */
   list: requirePermission("external_account.manage").query(() => listExternalAccounts(deps)),
 
   /** New 外部账号: basic info + 6 预填 + 白名单; 唯一外部角色服务端挂载。 */

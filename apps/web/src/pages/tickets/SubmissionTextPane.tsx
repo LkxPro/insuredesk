@@ -1,8 +1,3 @@
-/**
- * 编辑态工单原文对照面板：右栏自动从时间线切换为原文（大段可滚动），客服一边
- * 看右栏原文一边补全左栏表单。只在外部件（source=external_channel）且
- * submissionText 非空时渲染。
- */
 export function SubmissionTextPane({ text }: { text: string }) {
   return (
     <div className="flex flex-col xl:min-h-0">

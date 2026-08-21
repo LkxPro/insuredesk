@@ -10,14 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * 角色权限 page: one flat role table where only the 管理员 (system) row is
- * locked — no rename/delete, checklist read-only — while every other role
- * offers the full edit surface, and the create/permissions dialogs fire their
- * mutations with the ticked permission points. Same faked-fetch tRPC pipeline
- * and useAuth-seam mock as the users-page tests.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -149,13 +141,11 @@ describe("the role table", () => {
     renderRolesPage();
 
     await screen.findByText("质检专员");
-    // No 预设/自定义 classification — the only marker is the system badge
     expect(screen.queryByText("类型")).not.toBeInTheDocument();
     expect(screen.queryByText("预设")).not.toBeInTheDocument();
     expect(screen.queryByText("自定义")).not.toBeInTheDocument();
     expect(screen.getByText("系统")).toBeInTheDocument();
 
-    // Only the non-system row offers 重命名/删除; the 管理员 row is view-only
     expect(screen.getAllByRole("button", { name: "重命名" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "删除" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "查看权限" })).toHaveLength(1);
@@ -187,7 +177,6 @@ describe("the role table", () => {
     expect(box).toBeChecked();
     expect(box).toBeDisabled();
 
-    // 管理员全量展开只含正向权限
     const forbid = within(dialog).getByRole("checkbox", { name: /禁止修改自己的密码/ });
     expect(forbid).not.toBeChecked();
   });
@@ -299,7 +288,6 @@ describe("configuring roles", () => {
     fireEvent.click(screen.getByRole("button", { name: "配置权限" }));
     const dialog = await screen.findByRole("dialog");
 
-    // External permissions should not be in the checklist
     expect(within(dialog).queryByText(/提交外部工单/)).not.toBeInTheDocument();
     expect(within(dialog).queryByText(/添加外部留言/)).not.toBeInTheDocument();
     expect(within(dialog).queryByText(/ticket.create_external/)).not.toBeInTheDocument();

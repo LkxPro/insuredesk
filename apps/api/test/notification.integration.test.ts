@@ -4,14 +4,6 @@ import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts
 import { appRouter } from "../src/routers/index.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Issue #25 acceptance tests against a real Postgres: assignment writes the
- * 轨 1 `assigned` notification to the NEW assignee inside the same transaction
- * (single and batch through the one shared path), 改派 annotates the remaining
- * time, and the inbox read/mark-read flows are pinned to the viewer. Runs
- * through appRouter.createCaller — the same procedure pipeline the HTTP
- * adapter uses.
- */
 describe("assigned notifications (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -77,7 +69,6 @@ describe("assigned notifications (Testcontainers)", () => {
     allowDuplicate: true,
   } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** A fresh unassigned ticket, created through the real create procedure. */
   async function createTicket(policyName = "一般投诉") {
     return manager().ticket.create({ ...baseInput, slaPolicyId: harness.slaPolicyId(policyName) });
   }
@@ -103,7 +94,6 @@ describe("assigned notifications (Testcontainers)", () => {
         createdAt: expect.any(String),
       });
 
-      // Same instant as the assignment itself: one shared `now` per action
       const detail = await manager().ticket.detail({ id: created.id });
       expect(inbox.items[0]?.createdAt).toBe(detail.assignedAt);
     });
@@ -127,7 +117,7 @@ describe("assigned notifications (Testcontainers)", () => {
       );
 
       const oldInbox = await callerFor(oldOwner, seeded.roles.frontline).notification.list();
-      expect(oldInbox.items).toHaveLength(1); // still only the original 分配
+      expect(oldInbox.items).toHaveLength(1);
       expect(oldInbox.items[0]?.title).toBe("新工单分配");
     });
 
@@ -158,7 +148,6 @@ describe("assigned notifications (Testcontainers)", () => {
       });
 
       const inbox = await callerFor(recipient, seeded.roles.frontline).notification.list();
-      // 1 from the setup assign + 2 from the batch; the no-op skip wrote nothing
       expect(inbox.items).toHaveLength(3);
       expect(inbox.items.map((item) => item.workOrderNumber).sort()).toEqual(
         [fresh1.workOrderNumber, fresh2.workOrderNumber, alreadyTheirs.workOrderNumber].sort(),
@@ -195,9 +184,8 @@ describe("assigned notifications (Testcontainers)", () => {
       const inbox = await callerFor(recipient, seeded.roles.frontline).notification.list({
         limit: 2,
       });
-      expect(inbox.items).toHaveLength(2); // capped by limit…
-      expect(inbox.unreadCount).toBe(3); // …but the badge counts everything unread
-      // Newest first: the last-assigned ticket leads
+      expect(inbox.items).toHaveLength(2);
+      expect(inbox.unreadCount).toBe(3);
       expect(inbox.items[0]?.workOrderNumber).toBe(tickets[2]?.workOrderNumber);
       expect(inbox.items[1]?.workOrderNumber).toBe(tickets[1]?.workOrderNumber);
     });
@@ -231,7 +219,7 @@ describe("assigned notifications (Testcontainers)", () => {
       }
 
       await caller.notification.markRead({ id: target.id });
-      await caller.notification.markRead({ id: target.id }); // idempotent
+      await caller.notification.markRead({ id: target.id });
 
       const after = await caller.notification.list();
       expect(after.unreadCount).toBe(1);

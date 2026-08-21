@@ -4,10 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-/**
- * 列表筛选多选组件：触发器常驻显示维度名 + 已选计数徽标，弹层内逐项勾选，
- * 顶部提供全选/清空快捷操作。空选 = 全部（不过滤），触发器不挂徽标。
- */
 export function MultiSelectFilter({
   label,
   values,

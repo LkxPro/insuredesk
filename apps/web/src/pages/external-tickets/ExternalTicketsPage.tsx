@@ -27,14 +27,6 @@ import { ExternalTicketDetailPane } from "./ExternalTicketDetailPane";
 import { ExternalTicketSubmitDialog } from "./ExternalTicketSubmitDialog";
 import { downloadExternalTicketExport } from "./external-ticket-export";
 
-/**
- * 外部端 adapter：只声明槽位——解析器、externalTicket.list 查询（offset/limit
- * 由页码折算）、状态/创建时间/搜索三个筛选维度、八列固定序列（列序即服务端
- * 排定的「该说话的单」序，无列头排序）、导出与新建动作、提交对话框与详情
- * pane。三态骨架、URL 筛选态与翻单契约都在 ticket-surface 深模块，本文件
- * 不含编排 JSX，与内部工单页模块零共享。
- */
-
 type ListItem = inferRouterOutputs<AppRouter>["externalTicket"]["list"]["items"][number];
 
 type ExternalListQuery = {
@@ -48,7 +40,6 @@ type ExternalListQuery = {
 
 const PAGE_SIZE = 20;
 
-/** URL → 查询参数；单个参数畸形只退回它自己的缺省，不连坐其他筛选。 */
 function parseQuery(params: URLSearchParams): ExternalListQuery {
   const rawStatus = params.get("status")?.split(",").filter(Boolean) ?? [];
   const status = rawStatus.filter((value): value is TicketStatus =>
@@ -64,7 +55,6 @@ function parseQuery(params: URLSearchParams): ExternalListQuery {
   };
 }
 
-/** 创建时间边界必须是合法 ISO 时刻，否则该边界按未筛选处理。 */
 function salvageDateTime(raw: string | null) {
   return raw !== null && externalTicketListInputSchema.shape.createdFrom.safeParse(raw).success
     ? raw
@@ -138,7 +128,6 @@ const columns: ReadonlyArray<SurfaceColumn<ListItem, ExternalListQuery>> = [
   {
     key: "latestLog",
     header: "客服最近跟进记录",
-    // 无人跟进（create 日志 remark 为空）时留空，不占 — 占位
     render: (ticket) =>
       ticket.latestLog?.remark ? (
         <span className="block max-w-72 truncate" title={ticket.latestLog.remark}>

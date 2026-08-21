@@ -10,12 +10,6 @@ import { type AuthenticatedUser, effectivePermissions } from "../src/services/au
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
- * 用户与角色管理 acceptance tests against a real Postgres: 用户管理 (create /
- * edit / 禁用-启用 / 分配角色), 角色管理 (roles against the 权限点清单, the
- * 管理员-only system-role lock), and the session-layer guarantees — a disabled
- * user can neither log in again nor ride an existing session, and
- * role/permission changes bind from the very next request.
- *
  * Two surfaces on purpose: RBAC 逐项校验 runs through createCaller with
  * surgically-chosen permission sets (impossible to arrange via real roles
  * without drowning in setup), while login/session-lifecycle cases drive the
@@ -65,7 +59,6 @@ describe("user + role management (Testcontainers)", () => {
     };
   }
 
-  /** Caller with the given user identity and an explicit permission set. */
   function callerWith(user: User, roleName: string, permissions: Permission[]) {
     return appRouter.createCaller({
       traceId: "user-role-test",
@@ -77,7 +70,6 @@ describe("user + role management (Testcontainers)", () => {
   const admin = () =>
     callerWith(seeded.users.admin, "管理员", effectivePermissions(seeded.roles.admin));
 
-  /** POST /api/auth/login — the real credential door. */
   function login(username: string, password: string) {
     return app.inject({ method: "POST", url: "/api/auth/login", payload: { username, password } });
   }
@@ -86,14 +78,12 @@ describe("user + role management (Testcontainers)", () => {
     return res.cookies.find((cookie) => cookie.name === "session");
   }
 
-  /** Log in and return the session token, asserting the login succeeded. */
   async function loginToken(username: string, password: string): Promise<string> {
     const res = await login(username, password);
     expect(res.statusCode).toBe(200);
     return String(sessionCookie(res)?.value);
   }
 
-  /** GET /trpc/auth.me riding the given session token. */
   function me(token: string) {
     return app.inject({ method: "GET", url: "/trpc/auth.me", cookies: { session: token } });
   }
@@ -103,7 +93,6 @@ describe("user + role management (Testcontainers)", () => {
   }
 
   let userSeq = 0;
-  /** A fresh account created through the real user.create procedure. */
   async function makeUser(overrides: { roleId?: string; password?: string } = {}) {
     userSeq += 1;
     const username = `member${userSeq}`;
@@ -142,7 +131,6 @@ describe("user + role management (Testcontainers)", () => {
       });
 
       expect((await login("newbie", "secret-123")).statusCode).toBe(200);
-      // The stored credential is a hash, never the plaintext
       const row = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
       expect(row.passwordHash).not.toContain("secret-123");
     });
@@ -150,7 +138,7 @@ describe("user + role management (Testcontainers)", () => {
     it("rejects duplicate username/email and unknown roles", async () => {
       await expect(
         admin().user.create({
-          username: "admin", // seeded
+          username: "admin",
           password: "secret-123",
           name: "重名",
           email: null,
@@ -164,7 +152,7 @@ describe("user + role management (Testcontainers)", () => {
           username: "email-clash",
           password: "secret-123",
           name: "撞邮箱",
-          email: "admin@insuredesk.local", // seeded admin's email
+          email: "admin@insuredesk.local",
           team: null,
           roleId: seeded.roles.frontline.id,
         }),
@@ -200,7 +188,6 @@ describe("user + role management (Testcontainers)", () => {
         email: "renamed@insuredesk.local",
         team: "客服二组",
       });
-      // No password in the payload → the original still logs in
       expect((await login(member.username, member.password)).statusCode).toBe(200);
 
       await admin().user.update({
@@ -232,10 +219,8 @@ describe("user + role management (Testcontainers)", () => {
       const listed = (await admin().user.list()).find((user) => user.id === member.id);
       expect(listed).toMatchObject({ username: renamed, name: "改登录名" });
 
-      // 会话按 userId 关联:改名不踢在线会话
       expect((await me(token)).statusCode).toBe(200);
 
-      // 旧名从下一次登录起失效,新名接管
       expect((await login(member.username, member.password)).statusCode).toBe(401);
       expect((await login(renamed, member.password)).statusCode).toBe(200);
     });
@@ -246,7 +231,7 @@ describe("user + role management (Testcontainers)", () => {
       await expect(
         admin().user.update({
           id: member.id,
-          username: "admin", // seeded
+          username: "admin",
           name: member.name,
           email: null,
           team: null,
@@ -266,7 +251,6 @@ describe("user + role management (Testcontainers)", () => {
         await loginToken(member.username, member.password),
       ];
 
-      // 仅改基础字段:两个会话都继续有效
       await admin().user.update({
         id: member.id,
         username: member.username,
@@ -279,7 +263,6 @@ describe("user + role management (Testcontainers)", () => {
         expect((await me(token)).statusCode).toBe(200);
       }
 
-      // 重置密码:全部会话立即失效,行被删除而非仅被忽略
       await admin().user.update({
         id: member.id,
         username: member.username,
@@ -293,7 +276,6 @@ describe("user + role management (Testcontainers)", () => {
       }
       expect(await prisma.session.count({ where: { userId: member.id } })).toBe(0);
 
-      // 新凭据重新登录不受影响
       expect((await login(member.username, "rotated-789")).statusCode).toBe(200);
     });
 
@@ -325,11 +307,8 @@ describe("user + role management (Testcontainers)", () => {
 
       await admin().user.setActive({ id: member.id, active: false });
 
-      // New login refused outright
       expect((await login(member.username, member.password)).statusCode).toBe(401);
-      // The pre-existing session is rejected on its very next request
       expect((await me(token)).statusCode).toBe(401);
-      // ...and its rows are gone, not merely ignored
       expect(await prisma.session.count({ where: { userId: member.id } })).toBe(0);
 
       await admin().user.setActive({ id: member.id, active: true });
@@ -400,7 +379,6 @@ describe("user + role management (Testcontainers)", () => {
         requiredTicketFields: [],
       });
 
-      // 管理员 is the one and only system role; the factory roles are ordinary
       const list = await admin().role.list();
       expect(list.filter((role) => role.system).map((role) => role.name)).toEqual(["管理员"]);
       expect(list.map((role) => role.name)).toEqual(
@@ -470,7 +448,6 @@ describe("user + role management (Testcontainers)", () => {
       const list = await admin().role.list();
       expect(list.find((role) => role.id === externalRole.id)).toBeUndefined();
 
-      // Clean up
       await prisma.role.delete({ where: { id: externalRole.id } });
     });
 
@@ -490,7 +467,6 @@ describe("user + role management (Testcontainers)", () => {
         message: expect.stringContaining("外部权限点"),
       });
 
-      // Verify unchanged
       const row = await prisma.role.findUniqueOrThrow({ where: { id: normalRole.id } });
       expect(row.permissions).toEqual(["ticket.view"]);
 
@@ -531,12 +507,10 @@ describe("user + role management (Testcontainers)", () => {
         message: expect.stringContaining("外部角色"),
       });
 
-      // Verify untouched
       const row = await prisma.role.findUniqueOrThrow({ where: { id: externalRole.id } });
       expect(row.name).toBe("外部用户");
       expect(row.permissions).toEqual(["ticket.create_external", "ticket.process_external"]);
 
-      // Clean up directly via Prisma
       await prisma.role.delete({ where: { id: externalRole.id } });
     });
 
@@ -556,14 +530,12 @@ describe("user + role management (Testcontainers)", () => {
         },
       });
 
-      // External permissions still validate through requirePermission
       const caller = callerWith(externalUser, "外部用户", [
         "ticket.create_external",
         "ticket.process_external",
       ]);
       expect(caller).toBeDefined();
 
-      // Clean up
       await prisma.user.delete({ where: { id: externalUser.id } });
       await prisma.role.delete({ where: { id: externalRole.id } });
     });
@@ -583,7 +555,6 @@ describe("user + role management (Testcontainers)", () => {
         admin().role.updatePermissions({ id: role.id, permissions: [] }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
-      // Untouched by the attempts above
       const row = await prisma.role.findUniqueOrThrow({ where: { name: "管理员" } });
       expect(row.permissions).toEqual(seeded.roles.admin.permissions);
     });
@@ -633,7 +604,7 @@ describe("user + role management (Testcontainers)", () => {
       route: string;
       permission: Permission;
       run: (caller: ReturnType<typeof callerWith>) => Promise<unknown>;
-      passedGuardCode: string | null; // null = succeeds outright
+      passedGuardCode: string | null;
     }> = [
       {
         route: "user.list",
@@ -761,7 +732,6 @@ describe("user + role management (Testcontainers)", () => {
       const identity = (await me(token)).json().result.data;
       expect([...identity.permissions].sort()).toEqual([...POSITIVE_PERMISSIONS].sort());
 
-      // 后端守卫与前端菜单同源(auth.me),这里再验一次真实守卫端点
       const guarded = await query("shiftType.list", token);
       expect(guarded.statusCode).toBe(200);
     });
@@ -778,7 +748,6 @@ describe("user + role management (Testcontainers)", () => {
   });
 
   describe("最后管理员不变量 (acceptance: 始终至少一个启用状态的管理员用户)", () => {
-    /** A non-admin operator holding exactly the points these mutations need. */
     const operator = () =>
       callerWith(seeded.users.manager, "运维操作员", ["user.delete", "user.assign_role"]);
 
@@ -790,7 +759,6 @@ describe("user + role management (Testcontainers)", () => {
         message: "系统必须至少保留一名启用的管理员",
       });
 
-      // 拒绝即回滚:账号仍处于启用状态
       const row = await prisma.user.findUniqueOrThrow({ where: { id: seeded.users.admin.id } });
       expect(row.active).toBe(true);
     });
@@ -811,13 +779,11 @@ describe("user + role management (Testcontainers)", () => {
     it("存在第二个启用管理员时,禁用/改派正常放行;禁用状态的管理员不计数", async () => {
       const backup = await makeUser({ roleId: seeded.roles.admin.id });
 
-      // 第二个管理员被禁用时不顶数,原管理员仍是"最后一个"
       await operator().user.setActive({ id: backup.id, active: false });
       await expect(
         operator().user.setActive({ id: seeded.users.admin.id, active: false }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
-      // 启用后放行
       await operator().user.setActive({ id: backup.id, active: true });
       const disabled = await operator().user.setActive({
         id: seeded.users.admin.id,
@@ -825,7 +791,6 @@ describe("user + role management (Testcontainers)", () => {
       });
       expect(disabled.active).toBe(false);
 
-      // 此刻 backup 是最后一个启用管理员,双向保护立即换防
       await expect(
         operator().user.setActive({ id: backup.id, active: false }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
@@ -833,13 +798,11 @@ describe("user + role management (Testcontainers)", () => {
         admin().user.assignRole({ id: backup.id, roleId: seeded.roles.frontline.id }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
-      // 改派禁用中的管理员不减少启用管理员数,不受不变量约束
       await admin().user.assignRole({
         id: seeded.users.admin.id,
         roleId: seeded.roles.frontline.id,
       });
 
-      // 恢复现场:原管理员归位,backup 退回普通角色
       await admin().user.assignRole({ id: seeded.users.admin.id, roleId: seeded.roles.admin.id });
       await operator().user.setActive({ id: seeded.users.admin.id, active: true });
       await admin().user.assignRole({ id: backup.id, roleId: seeded.roles.frontline.id });
@@ -860,7 +823,6 @@ describe("user + role management (Testcontainers)", () => {
       });
       expect(enabledAdmins).toBe(1);
 
-      // 恢复现场
       await prisma.user.update({ where: { id: seeded.users.admin.id }, data: { active: true } });
       await prisma.user.update({
         where: { id: backup.id },

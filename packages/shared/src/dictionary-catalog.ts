@@ -6,7 +6,6 @@ import { z } from "zod";
  * historical names, so the wire and every frontend import stay unchanged.
  */
 
-/** `nameNoun` is the short noun in name-field messages（渠道/类别/状态）. */
 export function createCatalogSchemas(nameNoun: string) {
   const fields = {
     name: z

@@ -32,7 +32,6 @@ export function ExternalTicketSubmitDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 提交成功：调用方负责把新单选进右栏（外部方立刻看到它落地）。 */
   onSubmitted: (ticket: { id: string; workOrderNumber: string }) => void;
 }) {
   const utils = trpc.useUtils();

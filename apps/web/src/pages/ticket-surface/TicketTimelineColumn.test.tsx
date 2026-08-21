@@ -35,7 +35,6 @@ describe("沟通气泡", () => {
     const outgoingLi = screen.getByText("跟进记录").closest("li");
     expect(incomingLi).not.toBeNull();
     expect(outgoingLi).not.toBeNull();
-    // 对方在左（无 justify-end）且有头像（姓名首字）；我方在右、无头像
     expect(incomingLi?.className).not.toContain("justify-end");
     expect(incomingLi).toHaveTextContent("王");
     expect(incomingLi).toHaveTextContent("理赔款何时到？");
@@ -92,7 +91,6 @@ describe("完结里程碑", () => {
       />,
     );
 
-    // 状态值在标题行；无独立的完结状态字段行
     expect(screen.getByText(/已协商解决/)).toBeInTheDocument();
     expect(screen.queryByText("完结状态：")).not.toBeInTheDocument();
     expect(screen.getByText(/客户认可赔付方案/)).toBeInTheDocument();
@@ -119,7 +117,6 @@ describe("完结里程碑", () => {
       />,
     );
 
-    // status_change 不渲染，它的备注文案不出现
     expect(screen.queryByText("确认完结")).not.toBeInTheDocument();
     expect(screen.getByText(/客户已认可/)).toBeInTheDocument();
   });

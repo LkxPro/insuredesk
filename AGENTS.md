@@ -1,17 +1,10 @@
+## Communication Language
 When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 
-# InsureDesk
+## Pull Request
 
-## 注释规范
-
-注释只用来陈述代码本身无法表达的外部约束（外部系统的隐含契约、workaround 的直接原因）。禁止以下注释：
-
-- 引用出处："根据 docs/xxx"、"参考 ADR 0007 实现"、"按照 issue #43 的要求"
-- 叙述变更历史："以前是…现在改为…"、"原来这里用的是…"——那是 git log 的职责
-- Do not repeat what the code is already saying
-- 解释或论证已经写下的代码："为什么要这么做"、"为什么不能换一种写法"、"这样写的好处"都算。代码即结论，不需要再解释——解释性注释是阅读噪音，也稀释模型注意力
-
-清理注释的时候，发现违反上述注释规范的的冗余注释时顺手删除。
+- 提交 PR 前必须清注释：仅保留「外部系统隐含契约/怪癖、业务 invariant/负空间约束、workaround 的直接原因」，禁止 JSDoc 复述代码、章节 banner、变更历史、未来计划、教程式/散文式论证，其余一律删除
+- 提交 PR 前顺手清掉改动文件里的遗留无用注释（逐步收紧仓库内无关注释存量）
 
 ## Agent skills
 

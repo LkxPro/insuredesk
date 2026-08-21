@@ -4,15 +4,6 @@ import { bootstrapSystemData } from "../prisma/seed-data.ts";
 import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Production bootstrap (runs on every container start) against a real
- * Postgres. First initialization (empty roles table) creates 管理员 + the
- * three factory roles, the default SLA policies, the four default shift
- * definitions, and one admin account.
- * Re-runs must leave roles exactly as the operator configured them — edited
- * permissions stay edited, deleted factory roles stay deleted — and must
- * never touch an existing user's credentials.
- */
 describe("bootstrapSystemData (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -38,7 +29,6 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     expect(roles.map((role) => role.name).sort()).toEqual(
       ["一线客服", "只读观察", "外部用户", "客服主管", "管理员"].sort(),
     );
-    // 管理员 is the one and only system role
     expect(roles.filter((role) => role.system).map((role) => role.name)).toEqual(["管理员"]);
 
     const policies = await prisma.slaPolicy.findMany({
@@ -90,7 +80,6 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     expect(categories[0]).toMatchObject({ name: "监管投诉-引导性", displayOrder: 1, active: true });
     expect(categories[16]).toMatchObject({ name: "其他", displayOrder: 17, active: true });
 
-    // 四渠道播种
     const channels = await prisma.channel.findMany({
       orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
       select: { name: true, active: true, displayOrder: true },
@@ -118,7 +107,6 @@ describe("bootstrapSystemData (Testcontainers)", () => {
       data: { name: "运营主管", permissions: ["ticket.view"] },
     });
     await prisma.role.delete({ where: { name: "只读观察" } });
-    // 策略同样归管理员维护：改名/停用不被种子回写
     await prisma.slaPolicy.update({
       where: { name: "一般投诉" },
       data: { name: "常规件", active: false },
@@ -200,7 +188,6 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     });
     expect(admin?.role.name).toBe("管理员");
     expect(admin?.role.system).toBe(true);
-    // Recreating the admin still repairs nothing else: roles stay as edited
     expect((await prisma.role.findMany()).map((role) => role.name).sort()).toEqual([
       "一线客服",
       "外部用户",

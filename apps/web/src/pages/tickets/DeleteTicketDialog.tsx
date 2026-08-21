@@ -15,13 +15,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
-/**
- * 删除工单 double-confirmation: ticket.delete is a dangerous operation —
- * the entry-point button only opens this dialog, and only the explicit
- * destructive confirm fires the mutation. The delete is soft (deletedAt
- * server-side) but this phase has no restore, so the copy treats it as
- * irreversible. Success leaves the now-invisible detail page for the list.
- */
 export function DeleteTicketDialog({
   open,
   onOpenChange,

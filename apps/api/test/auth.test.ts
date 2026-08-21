@@ -14,15 +14,6 @@ import {
 } from "../src/services/data-scope.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Integration tests for authentication and RBAC using Testcontainers.
- * Tests the full auth flow with a real Postgres database.
- *
- * From acceptance criteria:
- * - RBAC guard + data-scope helper covered by Testcontainers tests
- * - Demo: admin vs 一线客服 me differ; guarded probe rejects the frontline user
- */
-
 describe("Authentication and RBAC (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -74,7 +65,6 @@ describe("Authentication and RBAC (Testcontainers)", () => {
     });
 
     it("rejects inactive users", async () => {
-      // Create inactive user
       const role = await prisma.role.findFirst({ where: { name: "一线客服" } });
       expectPresent(role);
       const passwordHash = await hashPassword("password123");
@@ -101,16 +91,13 @@ describe("Authentication and RBAC (Testcontainers)", () => {
 
   describe("Session Management", () => {
     it("creates and validates sessions", async () => {
-      // Get a user
       const user = await prisma.user.findUnique({ where: { username: "admin" } });
       expectPresent(user);
 
-      // Create session
       const token = await sessionService.createSession(user.id);
       expect(token).toBeTruthy();
-      expect(token.length).toBe(64); // 32 bytes hex = 64 chars
+      expect(token.length).toBe(64);
 
-      // Validate session
       const authenticatedUser = await sessionService.validateSession(token);
       expectPresent(authenticatedUser);
       expect(authenticatedUser.username).toBe("admin");
@@ -122,14 +109,11 @@ describe("Authentication and RBAC (Testcontainers)", () => {
       const user = await prisma.user.findUnique({ where: { username: "admin" } });
       expectPresent(user);
 
-      // Create session with very short expiry
       const shortSessionService = new SessionService(prisma, 1);
       const token = await shortSessionService.createSession(user.id);
 
-      // Wait for expiry
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      // Should be invalid
       const authenticatedUser = await sessionService.validateSession(token);
       expect(authenticatedUser).toBeNull();
     });
@@ -139,14 +123,11 @@ describe("Authentication and RBAC (Testcontainers)", () => {
       expectPresent(user);
       const token = await sessionService.createSession(user.id);
 
-      // Validate it works
       let authenticatedUser = await sessionService.validateSession(token);
       expectPresent(authenticatedUser);
 
-      // Delete session
       await sessionService.deleteSession(token);
 
-      // Should be invalid now
       authenticatedUser = await sessionService.validateSession(token);
       expect(authenticatedUser).toBeNull();
     });
@@ -188,34 +169,28 @@ describe("Authentication and RBAC (Testcontainers)", () => {
       expect(user.role.permissions).toContain("ticket.view");
       expect(user.role.permissions).toContain("ticket.process");
 
-      // Should NOT have these permissions
       expect(user.role.permissions).not.toContain("ticket.view_all");
       expect(user.role.permissions).not.toContain("ticket.assign");
       expect(user.role.permissions).not.toContain("user.create");
     });
 
     it("hasPermission helper works correctly", async () => {
-      // Get admin session
       const admin = await prisma.user.findUnique({ where: { username: "admin" } });
       expectPresent(admin);
       const adminToken = await sessionService.createSession(admin.id);
       const adminUser = await sessionService.validateSession(adminToken);
       expectPresent(adminUser);
 
-      // Get frontline CS session
       const cs = await prisma.user.findUnique({ where: { username: "cs1" } });
       expectPresent(cs);
       const csToken = await sessionService.createSession(cs.id);
       const csUser = await sessionService.validateSession(csToken);
       expectPresent(csUser);
 
-      // Admin should have ticket.assign
       expect(hasPermission(adminUser, "ticket.assign")).toBe(true);
 
-      // Frontline CS should NOT have ticket.assign
       expect(hasPermission(csUser, "ticket.assign")).toBe(false);
 
-      // Both should have ticket.view
       expect(hasPermission(adminUser, "ticket.view")).toBe(true);
       expect(hasPermission(csUser, "ticket.view")).toBe(true);
     });
@@ -231,7 +206,6 @@ describe("Authentication and RBAC (Testcontainers)", () => {
 
       const scope = applyTicketDataScope(adminUser);
 
-      // Admin should have no restrictions (empty filter)
       expect(scope).toEqual({});
     });
 
@@ -250,7 +224,6 @@ describe("Authentication and RBAC (Testcontainers)", () => {
     it("ticket data scope: unauthenticated user sees nothing", async () => {
       const scope = applyTicketDataScope(null);
 
-      // Should return impossible filter
       expect(scope).toHaveProperty("id");
       expect(scope.id).toHaveProperty("equals", "__impossible__");
     });

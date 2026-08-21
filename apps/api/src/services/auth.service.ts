@@ -3,22 +3,14 @@ import { isExternalRole, type Permission, POSITIVE_PERMISSIONS } from "@insurede
 import * as bcrypt from "bcryptjs";
 import type { PrismaClient } from "../generated/prisma/client.ts";
 
-/**
- * bcrypt cost factor for all password hashing (seeding and future user
- * management). Single knob so a cost bump is one edit, not a hunt.
- */
 export const BCRYPT_ROUNDS = 10;
 
-/**
- * Hash a plaintext password with the service-wide bcrypt cost factor.
- */
 export function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, BCRYPT_ROUNDS);
 }
 
 /**
- * The permission set a role actually grants. 系统角色不受权限配置约束:
- * 不读库中数组,恒为当前代码的全量正向权限点,新增权限点无需迁移即生效。
+ * 系统角色不受权限配置约束: 不读库中数组,恒为当前代码的全量正向权限点,新增权限点无需迁移即生效。
  * 限制类权限(勾选=禁止)必须排除,否则 admin 会被自动禁止对应操作。
  * 判定与展示必须同走这里,不得直接读 role.permissions。
  */
@@ -36,7 +28,6 @@ export class IncorrectOldPasswordError extends Error {
   }
 }
 
-/** No stored credential (e.g. a future SSO-only account) — nothing to rotate. */
 export class NoPasswordAccountError extends Error {
   constructor() {
     super("该账号未设置密码，无法修改密码");
@@ -81,23 +72,10 @@ export async function changeOwnPassword(
   ]);
 }
 
-/**
- * Pluggable authentication abstraction. Current implementation supports password
- * login; future Feishu SSO will add a second implementation that calls the same
- * session-establishment path.
- */
 export interface AuthProvider {
-  /**
-   * Authenticate a user and return their userId, or null if authentication fails.
-   * @returns userId on success, null on failure
-   */
   authenticate(credentials: unknown): Promise<string | null>;
 }
 
-/**
- * Password-based authentication provider (current implementation).
- * Verifies username + password against the User table.
- */
 export class PasswordAuthProvider implements AuthProvider {
   private readonly prisma: PrismaClient;
 
@@ -161,10 +139,6 @@ export function toSessionToken(raw: string): SessionToken {
   return raw as SessionToken;
 }
 
-/**
- * Session management service. Handles session creation, validation, and cleanup.
- * Sessions are stored in Postgres (not Redis) this phase.
- */
 export class SessionService {
   private readonly prisma: PrismaClient;
   private readonly sessionMaxAgeSeconds: number;
@@ -174,10 +148,6 @@ export class SessionService {
     this.sessionMaxAgeSeconds = sessionMaxAgeSeconds;
   }
 
-  /**
-   * Create a new session for the given userId.
-   * @returns session token (to be stored in httpOnly cookie)
-   */
   async createSession(userId: string): Promise<SessionToken> {
     const token = toSessionToken(randomBytes(32).toString("hex"));
     const expiresAt = new Date(Date.now() + this.sessionMaxAgeSeconds * 1000);
@@ -193,10 +163,6 @@ export class SessionService {
     return token;
   }
 
-  /**
-   * Validate a session token and return the authenticated user with their role
-   * and resolved permission set, or null if invalid/expired.
-   */
   async validateSession(token: SessionToken): Promise<AuthenticatedUser | null> {
     const session = await this.prisma.session.findUnique({
       where: { token },
@@ -226,18 +192,10 @@ export class SessionService {
     };
   }
 
-  /**
-   * Delete a session (logout).
-   */
   async deleteSession(token: SessionToken): Promise<void> {
-    await this.prisma.session.delete({ where: { token } }).catch(() => {
-      // Ignore if session doesn't exist
-    });
+    await this.prisma.session.delete({ where: { token } }).catch(() => {});
   }
 
-  /**
-   * Clean up expired sessions (to be called periodically in production).
-   */
   async cleanupExpiredSessions(): Promise<number> {
     const result = await this.prisma.session.deleteMany({
       where: { expiresAt: { lt: new Date() } },
@@ -246,9 +204,6 @@ export class SessionService {
   }
 }
 
-/**
- * Authenticated user information with resolved permissions.
- */
 export interface AuthenticatedUser {
   id: string;
   username: string;

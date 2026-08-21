@@ -10,13 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * The fake server below is stateful —
- * create/update/sort/setActive mutate the same rows sla.list serves — so a
- * mutation's effect must round-trip through a refetch (or the sort response
- * itself) before the assertion runs.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,

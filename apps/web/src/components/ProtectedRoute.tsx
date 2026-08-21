@@ -4,11 +4,6 @@ import { Navigate, useLocation } from "react-router";
 import { FullScreenLoading } from "@/components/FullScreenLoading";
 import { useAuth } from "@/contexts/AuthContext";
 
-/**
- * Route guard: renders children only for authenticated users (optionally also
- * requiring a permission point). Unauthenticated visitors are redirected to
- * /login, remembering where they came from so login can send them back.
- */
 export function ProtectedRoute({
   children,
   requiredPermission,

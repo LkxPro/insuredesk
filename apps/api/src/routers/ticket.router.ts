@@ -51,16 +51,8 @@ import {
 import { resolveTicket, TicketNotResolvableError } from "../services/ticket-resolve.service.ts";
 import { requireAnyPermission, requirePermission, router } from "../trpc.ts";
 
-/**
- * Ticket routes: manual creation, the detail page read, the filterable list,
- * assignment (manual and batch), follow-ups, resolution,
- * editing, and soft deletion. Thin wrappers — validation via the shared Zod
- * schemas, RBAC via requirePermission, business logic in the ticket services.
- */
-
 const deps = { prisma, clock: systemClock };
 
-/** Assignment domain errors → transport codes; anything else rethrows as-is. */
 function mapAssignmentError(error: unknown): never {
   if (error instanceof TicketNotFoundError) {
     throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
@@ -83,11 +75,7 @@ function mapDuplicateError(error: unknown): never {
 }
 
 export const ticketRouter = router({
-  /**
-   * Create a manually-entered ticket. Guarded by ticket.create — users
-   * without it are rejected here regardless of what the UI shows.
-   * allowDuplicate 是前端确认「仍要创建」后的放行标记。
-   */
+  /** allowDuplicate 是前端确认「仍要创建」后的放行标记。 */
   create: requirePermission("ticket.create")
     .input(ticketCreateInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
@@ -145,10 +133,6 @@ export const ticketRouter = router({
       return detail;
     }),
 
-  /**
-   * Assign or reassign one ticket. Guarded by ticket.assign —
-   * the UI hides its entry points without it, and the API rejects regardless.
-   */
   assign: requirePermission("ticket.assign")
     .input(ticketAssignInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -159,10 +143,6 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 添加跟进备注. Guarded by ticket.process; the data scope inside
-   * keeps a frontline CS on their own tickets.
-   */
   addComment: requirePermission("ticket.process")
     .input(ticketAddCommentInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -240,10 +220,6 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 删除工单: soft delete — dangerous, double-confirmed in the UI,
-   * guarded by ticket.delete. No restore this phase.
-   */
   delete: requirePermission("ticket.delete")
     .input(ticketDeleteInputSchema)
     .mutation(async ({ ctx, input }) => {
