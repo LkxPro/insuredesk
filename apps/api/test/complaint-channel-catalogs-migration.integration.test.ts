@@ -101,7 +101,11 @@ describe("complaint_channel_catalogs migration (Testcontainers)", () => {
       data: {
         name: "存量必填角色",
         permissions: [],
-        requiredTicketFields: ["customerName", "userComplaintChannelId", "complaintReceiveChannelId"],
+        requiredTicketFields: [
+          "customerName",
+          "userComplaintChannelId",
+          "complaintReceiveChannelId",
+        ],
       },
     });
 

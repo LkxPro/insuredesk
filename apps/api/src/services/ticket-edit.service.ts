@@ -209,9 +209,8 @@ export async function editTicket(
       feedbackReceiveChannelId: {
         from: ticket.feedbackReceiveChannel?.name ?? null,
         to: changedFields.includes("feedbackReceiveChannelId")
-          ? ((
-              await feedbackReceiveChannelCatalog.resolveNewRef(tx, next.feedbackReceiveChannelId)
-            )?.name ?? null)
+          ? ((await feedbackReceiveChannelCatalog.resolveNewRef(tx, next.feedbackReceiveChannelId))
+              ?.name ?? null)
           : null,
       },
     };

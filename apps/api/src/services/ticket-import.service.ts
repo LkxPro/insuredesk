@@ -83,8 +83,8 @@ function cellToRaw(cell: ExcelJS.Cell): ImportCellValue {
 
 // 老列头兼容：改名前下载的存量模板仍按别名解析（外部约束，模板已散发）。
 const LEGACY_IMPORT_HEADER_ALIASES: Record<string, string> = {
-  "用户投诉渠道": "用户反馈渠道",
-  "投诉信息接收渠道": "反馈信息接收渠道",
+  用户投诉渠道: "用户反馈渠道",
+  投诉信息接收渠道: "反馈信息接收渠道",
 };
 
 export async function readTicketImportSheet(body: Buffer): Promise<TicketImportSheetRow[]> {
@@ -104,7 +104,10 @@ export async function readTicketImportSheet(body: Buffer): Promise<TicketImportS
   for (let column = 1; column <= headerCount; column += 1) {
     const expected = TICKET_IMPORT_HEADERS[column - 1] ?? "";
     const rawActual = cellToRaw(headerRow.getCell(column));
-    const actual = typeof rawActual === "string" ? (LEGACY_IMPORT_HEADER_ALIASES[rawActual] ?? rawActual) : rawActual;
+    const actual =
+      typeof rawActual === "string"
+        ? (LEGACY_IMPORT_HEADER_ALIASES[rawActual] ?? rawActual)
+        : rawActual;
     if (actual !== expected) {
       throw fileError(
         `表头与模板不符（第 ${column} 列应为「${expected}」）：请重新下载模板并按其填写`,
