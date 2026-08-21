@@ -185,8 +185,8 @@ describe("ticket import upload (Testcontainers)", () => {
           反馈渠道: channelName,
           "项目（保司）": "融盛",
           保单号: "P202607010001",
-          用户投诉渠道: "保司400热线",
-          投诉信息接收渠道: "内部客服热线",
+          用户反馈渠道: "保司400热线",
+          反馈信息接收渠道: "内部客服热线",
           客户姓名: "张三",
           保司侧是否核身: "待核实",
           客户曾进线: "是",
@@ -218,14 +218,14 @@ describe("ticket import upload (Testcontainers)", () => {
     // 反馈时间 wall clock interpreted in Asia/Shanghai
     expect(leveled.feedbackTime?.toISOString()).toBe("2026-07-01T02:00:00.000Z");
     expect(leveled.contactTime?.toISOString()).toBe("2026-06-30T13:15:00.000Z");
-    const expectedReceiveChannel = await prisma.complaintReceiveChannel.findUniqueOrThrow({
+    const expectedReceiveChannel = await prisma.feedbackReceiveChannel.findUniqueOrThrow({
       where: { name: "内部客服热线" },
     });
-    const expectedUserChannel = await prisma.userComplaintChannel.findUniqueOrThrow({
+    const expectedUserChannel = await prisma.userFeedbackChannel.findUniqueOrThrow({
       where: { name: "保司400热线" },
     });
-    expect(leveled.complaintReceiveChannelId).toBe(expectedReceiveChannel.id);
-    expect(leveled.userComplaintChannelId).toBe(expectedUserChannel.id);
+    expect(leveled.feedbackReceiveChannelId).toBe(expectedReceiveChannel.id);
+    expect(leveled.userFeedbackChannelId).toBe(expectedUserChannel.id);
     expect(leveled.policyNumbers).toEqual(["P202607010001"]);
     expect(unleveled.policyNumbers).toEqual(["P202607010002"]);
     expect(leveled.nuclearBodyStatus).toBe("待核实");
@@ -548,7 +548,7 @@ describe("ticket import upload (Testcontainers)", () => {
         { 客户姓名: "重复行", 保单号: "P1" }, // row 8
         { 客户姓名: "重复行", 保单号: "P1" }, // row 9: duplicate of 8
         { 进线时间: "昨天上午" }, // row 10
-        { 投诉信息接收渠道: "长".repeat(101) }, // row 11
+        { 反馈信息接收渠道: "长".repeat(101) }, // row 11
       ]),
     );
     expect(res.statusCode).toBe(400);
@@ -566,7 +566,7 @@ describe("ticket import upload (Testcontainers)", () => {
         expect.objectContaining({ row: 7, column: "客户姓名" }),
         expect.objectContaining({ row: 9, column: null }),
         expect.objectContaining({ row: 10, column: "进线时间" }),
-        expect.objectContaining({ row: 11, column: "投诉信息接收渠道" }),
+        expect.objectContaining({ row: 11, column: "反馈信息接收渠道" }),
       ]),
     );
 
@@ -586,16 +586,16 @@ describe("ticket import upload (Testcontainers)", () => {
 
     // 缺列的旧模板文件整批拒收并指认第一处不符列，提示重新下载而非静默兼容
     const legacyHeaders = HEADERS.filter(
-      (header) => header !== "投诉信息接收渠道" && header !== "进线时间",
+      (header) => header !== "反馈信息接收渠道" && header !== "进线时间",
     );
     const legacy = await uploadRequest(
       session,
       await buildFile([{ 客户姓名: "x" }], legacyHeaders),
     );
     expect(legacy.statusCode).toBe(400);
-    const mismatchColumn = HEADERS.indexOf("投诉信息接收渠道") + 1;
+    const mismatchColumn = HEADERS.indexOf("反馈信息接收渠道") + 1;
     expect(legacy.json().rowErrors[0].message).toContain(
-      `第 ${mismatchColumn} 列应为「投诉信息接收渠道」`,
+      `第 ${mismatchColumn} 列应为「反馈信息接收渠道」`,
     );
     expect(legacy.json().rowErrors[0].message).toContain("请重新下载模板");
 
@@ -616,6 +616,38 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(oversizedRes.json().rowErrors).toEqual([]);
 
     expect(await prisma.ticket.count()).toBe(0);
+  });
+
+  it("老列头（用户投诉渠道/投诉信息接收渠道）按别名兼容，照常导入", async () => {
+    const session = await sessionFor("importer");
+    // 列位不变、仅两个渠道列头换成旧名：别名映射后应通过表头校验
+    const legacyHeaders = HEADERS.map((header) =>
+      header === "用户反馈渠道"
+        ? "用户投诉渠道"
+        : header === "反馈信息接收渠道"
+          ? "投诉信息接收渠道"
+          : header,
+    );
+    // buildFile 以 HEADERS 顺序铺数据行，行对象的键仍用新列名
+    const res = await uploadRequest(
+      session,
+      await buildFile(
+        [{ 用户反馈渠道: "保司400热线", 反馈信息接收渠道: "内部客服热线" }],
+        legacyHeaders,
+      ),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ imported: 1 });
+
+    const ticket = await prisma.ticket.findFirstOrThrow();
+    const expectedUserChannel = await prisma.userFeedbackChannel.findUniqueOrThrow({
+      where: { name: "保司400热线" },
+    });
+    const expectedReceiveChannel = await prisma.feedbackReceiveChannel.findUniqueOrThrow({
+      where: { name: "内部客服热线" },
+    });
+    expect(ticket.userFeedbackChannelId).toBe(expectedUserChannel.id);
+    expect(ticket.feedbackReceiveChannelId).toBe(expectedReceiveChannel.id);
   });
 
   it("imports the full 2000-row limit in one transaction", async () => {

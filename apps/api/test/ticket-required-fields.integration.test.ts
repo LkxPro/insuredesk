@@ -307,7 +307,7 @@ describe("role required ticket fields (Testcontainers)", () => {
       });
     });
 
-    it("enforces 进线时间/投诉信息接收渠道 when configured required", async () => {
+    it("enforces 进线时间/反馈信息接收渠道 when configured required", async () => {
       await prisma.role.update({
         where: { id: roleWithRequired.id },
         data: {
@@ -317,7 +317,7 @@ describe("role required ticket fields (Testcontainers)", () => {
             "channelId",
             "hasContacted",
             "contactTime",
-            "complaintReceiveChannelId",
+            "feedbackReceiveChannelId",
           ],
         },
       });
@@ -328,16 +328,16 @@ describe("role required ticket fields (Testcontainers)", () => {
       expect(error).toBeInstanceOf(TRPCError);
       expect((error as TRPCError).message).toContain("以下字段为必填项");
       expect((error as TRPCError).message).toContain("进线时间");
-      expect((error as TRPCError).message).toContain("投诉信息接收渠道");
+      expect((error as TRPCError).message).toContain("反馈信息接收渠道");
 
       const result = await requiredUser().ticket.create({
         ...validInput(),
         contactTime: "2026-07-14T02:00:00.000Z",
-        complaintReceiveChannelId: harness.complaintReceiveChannelId("内部客服热线"),
+        feedbackReceiveChannelId: harness.feedbackReceiveChannelId("内部客服热线"),
       });
       const detail = await requiredUser().ticket.detail({ id: result.id });
       expect(detail.contactTime).toBe("2026-07-14T02:00:00.000Z");
-      expect(detail.complaintReceiveChannel?.name).toBe("内部客服热线");
+      expect(detail.feedbackReceiveChannel?.name).toBe("内部客服热线");
 
       await prisma.role.update({
         where: { id: roleWithRequired.id },

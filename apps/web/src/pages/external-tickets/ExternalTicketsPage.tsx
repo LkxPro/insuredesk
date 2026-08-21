@@ -116,11 +116,9 @@ const columns: ReadonlyArray<SurfaceColumn<ListItem, ExternalListQuery>> = [
     render: (ticket) => (ticket.feedbackTime ? formatDateTime(ticket.feedbackTime) : <Unknown />),
   },
   {
-    key: "userComplaintChannel",
-    // 外部侧别名：取值是内部「用户投诉渠道」字段（外部单创建时由账号预填盖章），
-    // 内部端仍叫「用户投诉渠道」——双名有意为之，见 CONTEXT.md 外部工单字段全量展示
-    header: "用户反馈渠道",
-    render: (ticket) => ticket.userComplaintChannel ?? <Unknown />,
+    key: "userFeedbackChannel",
+    header: TICKET_FIELDS.userFeedbackChannelId.label,
+    render: (ticket) => ticket.userFeedbackChannel ?? <Unknown />,
   },
   {
     key: "policyNumbers",

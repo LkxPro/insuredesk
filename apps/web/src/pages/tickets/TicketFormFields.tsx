@@ -348,8 +348,8 @@ export function TicketFormFields({
     trpc.channel.options.useQuery().data ?? [],
     currentChannel,
   );
-  const userComplaintChannelOptions = trpc.userComplaintChannel.options.useQuery().data ?? [];
-  const complaintReceiveChannelOptions = trpc.complaintReceiveChannel.options.useQuery().data ?? [];
+  const userFeedbackChannelOptions = trpc.userFeedbackChannel.options.useQuery().data ?? [];
+  const feedbackReceiveChannelOptions = trpc.feedbackReceiveChannel.options.useQuery().data ?? [];
 
   // 建单即时查重：命中提示贴身挂在保单号/手机号字段下（编辑面走 TicketDetailField 的 addon）
   const duplicates = useTicketDuplicates(form);
@@ -483,47 +483,47 @@ export function TicketFormFields({
             <FieldError errors={[errors.policyNumbers]} />
             <DuplicateFieldHint field="policyNumbers" duplicates={duplicates} />
           </Field>
-          <Field data-invalid={!!errors.userComplaintChannelId}>
-            <FieldLabel htmlFor="userComplaintChannelId">
-              {TICKET_FIELDS.userComplaintChannelId.label}
-              {isRequired("userComplaintChannelId") && <span className="text-destructive">*</span>}
+          <Field data-invalid={!!errors.userFeedbackChannelId}>
+            <FieldLabel htmlFor="userFeedbackChannelId">
+              {TICKET_FIELDS.userFeedbackChannelId.label}
+              {isRequired("userFeedbackChannelId") && <span className="text-destructive">*</span>}
             </FieldLabel>
             <Controller
               control={control}
-              name="userComplaintChannelId"
+              name="userFeedbackChannelId"
               render={({ field }) => (
                 <SearchableCombobox
-                  id="userComplaintChannelId"
-                  options={userComplaintChannelOptions}
+                  id="userFeedbackChannelId"
+                  options={userFeedbackChannelOptions}
                   value={field.value || ""}
                   onChange={field.onChange}
-                  invalid={!!errors.userComplaintChannelId}
+                  invalid={!!errors.userFeedbackChannelId}
                 />
               )}
             />
-            <FieldError errors={[errors.userComplaintChannelId]} />
+            <FieldError errors={[errors.userFeedbackChannelId]} />
           </Field>
-          <Field data-invalid={!!errors.complaintReceiveChannelId}>
-            <FieldLabel htmlFor="complaintReceiveChannelId">
-              {TICKET_FIELDS.complaintReceiveChannelId.label}
-              {isRequired("complaintReceiveChannelId") && (
+          <Field data-invalid={!!errors.feedbackReceiveChannelId}>
+            <FieldLabel htmlFor="feedbackReceiveChannelId">
+              {TICKET_FIELDS.feedbackReceiveChannelId.label}
+              {isRequired("feedbackReceiveChannelId") && (
                 <span className="text-destructive">*</span>
               )}
             </FieldLabel>
             <Controller
               control={control}
-              name="complaintReceiveChannelId"
+              name="feedbackReceiveChannelId"
               render={({ field }) => (
                 <SearchableCombobox
-                  id="complaintReceiveChannelId"
-                  options={complaintReceiveChannelOptions}
+                  id="feedbackReceiveChannelId"
+                  options={feedbackReceiveChannelOptions}
                   value={field.value || ""}
                   onChange={field.onChange}
-                  invalid={!!errors.complaintReceiveChannelId}
+                  invalid={!!errors.feedbackReceiveChannelId}
                 />
               )}
             />
-            <FieldError errors={[errors.complaintReceiveChannelId]} />
+            <FieldError errors={[errors.feedbackReceiveChannelId]} />
           </Field>
         </div>
       </FieldSet>

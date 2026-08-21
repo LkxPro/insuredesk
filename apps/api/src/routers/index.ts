@@ -2,12 +2,12 @@ import { healthStatusSchema } from "@insuredesk/shared";
 import { publicProcedure, router } from "../trpc.ts";
 import { authRouter } from "./auth.router.ts";
 import { channelRouter } from "./channel.router.ts";
-import { complaintReceiveChannelRouter } from "./complaint-receive-channel.router.ts";
 import { completionStatusRouter } from "./completion-status.router.ts";
 import { dashboardRouter } from "./dashboard.router.ts";
 import { demoRouter } from "./demo.router.ts";
 import { externalAccountRouter } from "./external-account.router.ts";
 import { externalTicketRouter } from "./external-ticket.router.ts";
+import { feedbackReceiveChannelRouter } from "./feedback-receive-channel.router.ts";
 import { notificationRouter } from "./notification.router.ts";
 import { roleRouter } from "./role.router.ts";
 import { scheduleRouter } from "./schedule.router.ts";
@@ -16,7 +16,7 @@ import { slaRouter } from "./sla.router.ts";
 import { ticketRouter } from "./ticket.router.ts";
 import { ticketCategoryRouter } from "./ticket-category.router.ts";
 import { userRouter } from "./user.router.ts";
-import { userComplaintChannelRouter } from "./user-complaint-channel.router.ts";
+import { userFeedbackChannelRouter } from "./user-feedback-channel.router.ts";
 
 export const appRouter = router({
   /**
@@ -49,11 +49,11 @@ export const appRouter = router({
   /** 字典目录 - 完结状态，同上 */
   completionStatus: completionStatusRouter,
 
-  /** 字典目录 - 用户投诉渠道（客户发起侧），同上 */
-  userComplaintChannel: userComplaintChannelRouter,
+  /** 字典目录 - 用户反馈渠道（客户发起侧），同上 */
+  userFeedbackChannel: userFeedbackChannelRouter,
 
-  /** 字典目录 - 投诉信息接收渠道（我方接收侧），同上 */
-  complaintReceiveChannel: complaintReceiveChannelRouter,
+  /** 字典目录 - 反馈信息接收渠道（我方接收侧），同上 */
+  feedbackReceiveChannel: feedbackReceiveChannelRouter,
 
   /**
    * The 30s poll — 轨 1 收件箱 + 轨 2 我的待办 in one request

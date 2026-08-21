@@ -70,11 +70,11 @@ describe("ticket import template columns", () => {
     expect(columnOf("completionStatusId").note).toBe(
       `从下拉选择（下载模板时启用的完结状态目录）；${TICKET_FIELDS.completionStatusId.importNoteTail}`,
     );
-    expect(columnOf("userComplaintChannelId").note).toBe(
-      "从下拉选择（下载模板时启用的用户投诉渠道目录）；留空=未填写",
+    expect(columnOf("userFeedbackChannelId").note).toBe(
+      "从下拉选择（下载模板时启用的用户反馈渠道目录）；留空=未填写",
     );
-    expect(columnOf("complaintReceiveChannelId").note).toBe(
-      "从下拉选择（下载模板时启用的投诉信息接收渠道目录）；留空=未填写",
+    expect(columnOf("feedbackReceiveChannelId").note).toBe(
+      "从下拉选择（下载模板时启用的反馈信息接收渠道目录）；留空=未填写",
     );
   });
 
@@ -91,8 +91,8 @@ describe("ticket import template columns", () => {
     categories: ["类别乙"],
     completionStatuses: ["完结丙"],
     slaPolicies: ["策略丁"],
-    userComplaintChannels: ["投诉渠道戊"],
-    complaintReceiveChannels: ["接收渠道己"],
+    userFeedbackChannels: ["投诉渠道戊"],
+    feedbackReceiveChannels: ["接收渠道己"],
   };
 
   const CATALOG_DROPDOWNS: Record<TicketCatalogKind, readonly string[]> = {
@@ -100,8 +100,8 @@ describe("ticket import template columns", () => {
     category: catalogFixture.categories,
     completionStatus: catalogFixture.completionStatuses,
     slaPolicy: catalogFixture.slaPolicies,
-    userComplaintChannel: catalogFixture.userComplaintChannels,
-    complaintReceiveChannel: catalogFixture.complaintReceiveChannels,
+    userFeedbackChannel: catalogFixture.userFeedbackChannels,
+    feedbackReceiveChannel: catalogFixture.feedbackReceiveChannels,
   };
 
   it("下拉来源：枚举列取自己的选项 label，目录列接各自目录，其余列无下拉", () => {

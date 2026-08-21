@@ -1,9 +1,9 @@
 import {
   channelCreateInputSchema,
-  complaintReceiveChannelCreateInputSchema,
   completionStatusCreateInputSchema,
+  feedbackReceiveChannelCreateInputSchema,
   ticketCategoryCreateInputSchema,
-  userComplaintChannelCreateInputSchema,
+  userFeedbackChannelCreateInputSchema,
 } from "@insuredesk/shared";
 import { Settings2 } from "lucide-react";
 import { useState } from "react";
@@ -95,49 +95,49 @@ const completionStatusCatalog: CatalogAdminConfig = {
   },
 };
 
-const userComplaintChannelCatalog: CatalogAdminConfig = {
-  idPrefix: "user-complaint-channel",
-  title: "用户投诉渠道",
-  noun: "用户投诉渠道",
+const userFeedbackChannelCatalog: CatalogAdminConfig = {
+  idPrefix: "user-feedback-channel",
+  title: "用户反馈渠道",
+  noun: "用户反馈渠道",
   nameNoun: "渠道",
-  subtitle: "客户发起侧的投诉途径；建单与编辑表单只列启用项，停用不影响存量工单的显示。",
+  subtitle: "客户发起侧的反馈途径；建单与编辑表单只列启用项，停用不影响存量工单的显示。",
   emptyDescription: "新增一个渠道后即可在建单表单中选择。",
   dialogDescription: "改名对存量工单全局生效。",
-  createInputSchema: userComplaintChannelCreateInputSchema,
+  createInputSchema: userFeedbackChannelCreateInputSchema,
   hooks: {
-    useList: () => trpc.userComplaintChannel.list.useQuery(),
+    useList: () => trpc.userFeedbackChannel.list.useQuery(),
     useInvalidate: () => {
       const utils = trpc.useUtils();
-      return () => void utils.userComplaintChannel.invalidate();
+      return () => void utils.userFeedbackChannel.invalidate();
     },
-    useCreate: (opts) => trpc.userComplaintChannel.create.useMutation(opts),
-    useUpdate: (opts) => trpc.userComplaintChannel.update.useMutation(opts),
-    useSetActive: (opts) => trpc.userComplaintChannel.setActive.useMutation(opts),
-    useReorder: (opts) => trpc.userComplaintChannel.reorder.useMutation(opts),
-    useDelete: (opts) => trpc.userComplaintChannel.delete.useMutation(opts),
+    useCreate: (opts) => trpc.userFeedbackChannel.create.useMutation(opts),
+    useUpdate: (opts) => trpc.userFeedbackChannel.update.useMutation(opts),
+    useSetActive: (opts) => trpc.userFeedbackChannel.setActive.useMutation(opts),
+    useReorder: (opts) => trpc.userFeedbackChannel.reorder.useMutation(opts),
+    useDelete: (opts) => trpc.userFeedbackChannel.delete.useMutation(opts),
   },
 };
 
-const complaintReceiveChannelCatalog: CatalogAdminConfig = {
-  idPrefix: "complaint-receive-channel",
-  title: "投诉信息接收渠道",
-  noun: "投诉信息接收渠道",
+const feedbackReceiveChannelCatalog: CatalogAdminConfig = {
+  idPrefix: "feedback-receive-channel",
+  title: "反馈信息接收渠道",
+  noun: "反馈信息接收渠道",
   nameNoun: "渠道",
-  subtitle: "我方收到投诉信息的途径；建单与编辑表单只列启用项，停用不影响存量工单的显示。",
+  subtitle: "我方收到反馈信息的途径；建单与编辑表单只列启用项，停用不影响存量工单的显示。",
   emptyDescription: "新增一个渠道后即可在建单表单中选择。",
   dialogDescription: "改名对存量工单全局生效。",
-  createInputSchema: complaintReceiveChannelCreateInputSchema,
+  createInputSchema: feedbackReceiveChannelCreateInputSchema,
   hooks: {
-    useList: () => trpc.complaintReceiveChannel.list.useQuery(),
+    useList: () => trpc.feedbackReceiveChannel.list.useQuery(),
     useInvalidate: () => {
       const utils = trpc.useUtils();
-      return () => void utils.complaintReceiveChannel.invalidate();
+      return () => void utils.feedbackReceiveChannel.invalidate();
     },
-    useCreate: (opts) => trpc.complaintReceiveChannel.create.useMutation(opts),
-    useUpdate: (opts) => trpc.complaintReceiveChannel.update.useMutation(opts),
-    useSetActive: (opts) => trpc.complaintReceiveChannel.setActive.useMutation(opts),
-    useReorder: (opts) => trpc.complaintReceiveChannel.reorder.useMutation(opts),
-    useDelete: (opts) => trpc.complaintReceiveChannel.delete.useMutation(opts),
+    useCreate: (opts) => trpc.feedbackReceiveChannel.create.useMutation(opts),
+    useUpdate: (opts) => trpc.feedbackReceiveChannel.update.useMutation(opts),
+    useSetActive: (opts) => trpc.feedbackReceiveChannel.setActive.useMutation(opts),
+    useReorder: (opts) => trpc.feedbackReceiveChannel.reorder.useMutation(opts),
+    useDelete: (opts) => trpc.feedbackReceiveChannel.delete.useMutation(opts),
   },
 };
 
@@ -145,8 +145,8 @@ const DICTIONARY_CATALOGS = [
   channelCatalog,
   ticketCategoryCatalog,
   completionStatusCatalog,
-  userComplaintChannelCatalog,
-  complaintReceiveChannelCatalog,
+  userFeedbackChannelCatalog,
+  feedbackReceiveChannelCatalog,
 ];
 
 function CatalogCard({ config, onManage }: { config: CatalogAdminConfig; onManage: () => void }) {

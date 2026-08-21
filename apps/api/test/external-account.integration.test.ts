@@ -136,8 +136,8 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
             project: "融盛",
             brokerageEntity: "东方大地",
             paymentChannel: "连连",
-            userComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
-            complaintReceiveChannelId: harness.complaintReceiveChannelId(
+            userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
+            feedbackReceiveChannelId: harness.feedbackReceiveChannelId(
               "（微信）凯森&骏伯客诉对接群",
             ),
           },
@@ -152,8 +152,8 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         prefillProject: "融盛",
         prefillBrokerageEntity: "东方大地",
         prefillPaymentChannel: "连连",
-        prefillUserComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
-        prefillComplaintReceiveChannelId: harness.complaintReceiveChannelId(
+        prefillUserFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
+        prefillFeedbackReceiveChannelId: harness.feedbackReceiveChannelId(
           "（微信）凯森&骏伯客诉对接群",
         ),
       });
@@ -174,8 +174,8 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         prefillProject: null,
         prefillBrokerageEntity: null,
         prefillPaymentChannel: null,
-        prefillUserComplaintChannelId: null,
-        prefillComplaintReceiveChannelId: null,
+        prefillUserFeedbackChannelId: null,
+        prefillFeedbackReceiveChannelId: null,
       });
     });
 

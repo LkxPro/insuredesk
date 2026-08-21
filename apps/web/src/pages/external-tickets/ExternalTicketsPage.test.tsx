@@ -24,8 +24,8 @@ function ticket(overrides: Record<string, unknown> = {}) {
     project: null,
     brokerageEntity: null,
     paymentChannel: null,
-    userComplaintChannel: null,
-    complaintReceiveChannel: null,
+    userFeedbackChannel: null,
+    feedbackReceiveChannel: null,
     nuclearBodyStatus: null,
     customerRequest: null,
     hasContacted: null,
@@ -90,7 +90,7 @@ describe("列表页", () => {
           ticket({
             customerName: "张三",
             policyNumbers: ["P123"],
-            userComplaintChannel: "保司400热线",
+            userFeedbackChannel: "保司400热线",
             latestLog: {
               action: "comment",
               remark: "已联系客户，等待回复",

@@ -41,10 +41,10 @@ export const externalAccountPrefillSchema = z.object({
   project: prefillTextField("project"),
   brokerageEntity: prefillTextField("brokerageEntity"),
   paymentChannel: prefillTextField("paymentChannel"),
-  /** 用户投诉渠道引用（客户发起侧）。 */
-  userComplaintChannelId: prefillCatalogField(),
-  /** 投诉信息接收渠道引用（我方接收侧）。 */
-  complaintReceiveChannelId: prefillCatalogField(),
+  /** 用户反馈渠道引用（客户发起侧）。 */
+  userFeedbackChannelId: prefillCatalogField(),
+  /** 反馈信息接收渠道引用（我方接收侧）。 */
+  feedbackReceiveChannelId: prefillCatalogField(),
 });
 export type ExternalAccountPrefillInput = z.input<typeof externalAccountPrefillSchema>;
 export type ExternalAccountPrefill = z.output<typeof externalAccountPrefillSchema>;
@@ -91,8 +91,8 @@ export interface ExternalAccountListItem {
   createdAt: string;
   prefill: ExternalAccountPrefill & {
     channelName: string | null;
-    userComplaintChannelName: string | null;
-    complaintReceiveChannelName: string | null;
+    userFeedbackChannelName: string | null;
+    feedbackReceiveChannelName: string | null;
   };
   /** 该账号提交的工单数（含软删）。 */
   ticketCount: number;

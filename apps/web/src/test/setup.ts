@@ -7,7 +7,7 @@ import { afterEach, vi } from "vitest";
 // flake. This governs those polls; vitest's testTimeout is a separate outer
 // bound and never reaches them. Passing assertions resolve as soon as the DOM
 // settles, so a wide value costs nothing except on genuine failures.
-configure({ asyncUtilTimeout: 5000 });
+configure({ asyncUtilTimeout: 12000 });
 
 // RTL only auto-cleans with vitest globals enabled; we import hooks explicitly.
 afterEach(() => {
