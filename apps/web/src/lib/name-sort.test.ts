@@ -15,6 +15,10 @@ describe("compareByName", () => {
   it("拼音相同回退到字符本身比较", () => {
     expect(compareByName("保司", "保司")).toBe(0);
   });
+
+  it("姓氏多音字按姓氏读音排序:曾(zeng)排在陈(chen)后", () => {
+    expect(compareByName("曾三", "陈三")).toBeGreaterThan(0);
+  });
 });
 
 describe("sortByName", () => {

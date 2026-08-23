@@ -18,6 +18,7 @@ const OPTIONS = [
   { id: "rd", name: "12378热线" },
   { id: "jg", name: "监管转办" },
   { id: "ts", name: "聚投诉平台" },
+  { id: "cq", name: "重庆专线" },
 ];
 
 function Harness({
@@ -71,6 +72,15 @@ describe("SearchableCombobox", () => {
     const items = screen.getAllByRole("option");
     expect(items).toHaveLength(1);
     expect(items[0]).toHaveTextContent("监管转办");
+  });
+
+  it("多音字按任一读音过滤并高亮", () => {
+    render(<Harness />);
+    openAndType("zhongqing");
+    const items = screen.getAllByRole("option");
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent("重庆专线");
+    expect(items[0]?.querySelector("mark")).toHaveTextContent("重庆");
   });
 
   it("点击选项后回填并提交 id", () => {
