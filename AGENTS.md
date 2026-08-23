@@ -3,7 +3,8 @@ When reporting information to me, be extremely concise and sacrifice grammar for
 
 ## Pull Request
 
-- 提交 PR 前必须清注释：仅保留「外部系统隐含契约/怪癖、业务 invariant/负空间约束、workaround 的直接原因」，禁止 JSDoc 复述代码、章节 banner、变更历史、未来计划、教程式/散文式论证，其余一律删除
+- 提交 PR 前必须清注释：仅保留「外部系统隐含契约/怪癖、业务 invariant/负空间约束、workaround 的直接原因」，禁止 JSDoc 复述代码、章节 banner、变更历史、未来计划、教程式/散文式论证，其余一律删除。库的显性类型签名或文档已表达的信息不算隐含契约；含举例的注释一律删除
+- 注释审计必须独立成 pass，不得由作者自查：以新鲜上下文逐 diff 行追问「属于白名单哪一类」，答不上来即删
 - 提交 PR 前顺手清掉改动文件里的遗留无用注释（逐步收紧仓库内无关注释存量）
 
 ## Agent skills
