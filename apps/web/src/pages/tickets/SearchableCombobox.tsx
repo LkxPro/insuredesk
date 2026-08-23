@@ -1,5 +1,4 @@
-import { pinyin } from "pinyin-pro";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Combobox,
   ComboboxContent,
@@ -55,22 +54,9 @@ export function SearchableCombobox({
     }
   }, [autoFocus, disabled]);
 
-  // mode "surname": 姓氏多音字按姓氏读法
-  const pyById = useMemo(
-    () =>
-      new Map(
-        options.map((option) => [
-          option.id,
-          pinyin(option.name, { toneType: "none", type: "array", mode: "surname" }),
-        ]),
-      ),
-    [options],
-  );
-
   const filter = useCallback(
-    (option: SearchableComboboxOption, q: string) =>
-      matchName(option.name, pyById.get(option.id) ?? [], q) !== null,
-    [pyById],
+    (option: SearchableComboboxOption, q: string) => matchName(option.name, q) !== null,
+    [],
   );
 
   const selected = options.find((option) => option.id === value) ?? null;
@@ -110,10 +96,7 @@ export function SearchableCombobox({
                   <span className="line-clamp-1">
                     <MatchHighlight
                       name={option.name}
-                      ranges={
-                        matchName(option.name, pyById.get(option.id) ?? [], highlightQuery)
-                          ?.ranges ?? []
-                      }
+                      ranges={matchName(option.name, highlightQuery)?.ranges ?? []}
                     />
                     {reason !== null && `（${reason}）`}
                   </span>

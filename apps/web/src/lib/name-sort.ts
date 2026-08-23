@@ -3,7 +3,7 @@ import { pinyin } from "pinyin-pro";
 export type NameSortDir = "asc" | "desc";
 
 function pinyinKey(name: string): string {
-  return pinyin(name, { toneType: "none", type: "array" }).join(" ");
+  return pinyin(name, { toneType: "none", type: "array", mode: "surname" }).join(" ");
 }
 
 export function compareByName(a: string, b: string): number {
