@@ -3,7 +3,6 @@ import { match } from "pinyin-pro";
 export type MatchRange = [number, number];
 export type NameMatch = { ranges: MatchRange[] };
 
-// pinyin-pro match 返回命中字的下标列表(允许跳字,如 [0,1,4,5]),合并成连续区间供高亮
 function indicesToRanges(indices: number[]): MatchRange[] {
   const ranges: MatchRange[] = [];
   for (const index of indices) {
