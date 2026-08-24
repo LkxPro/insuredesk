@@ -1,0 +1,275 @@
+openapi: 3.1.0
+info:
+  title: 退费异常工单对接 API
+  version: 1.0.0
+  description: |
+    骏伯保险平台 ⇄ 客服工单系统（InsureDesk）退费异常工单对接契约。
+
+    **两个方向：**
+    - **推送（paths）**：平台 → 工单系统。退费失败时推送异常数据生成线下处理工单。
+    - **回调（webhooks）**：工单系统 → 平台。工单完结后回传处理结果，报文 AES 加密，见 `webhooks.workOrderCallback`。
+
+    **通用约定：**
+    - 金额一律为 string decimal（如 `"100.00"`），禁止 number 序列化，避免浮点误差。
+    - 时间格式 `YYYY-MM-DD HH:mm:ss`，口径 Asia/Shanghai，不带时区偏移。
+    - 业务错误一律 HTTP 200 + 报文 `code` 区分；HTTP 401 仅表示认证失败。
+    - 错误码三分：`0000` 成功（含幂等重复请求）；`9998` 参数/认证/解密类失败，**不要重试**，修正报文后再发；`9999` 系统/业务处理失败，可稍后重试。
+    - `workOrderType` 为展示文本，工单系统**不做枚举校验**，平台新增类型不会被拒收；当前约定值：`卡异常-退费失败` / `其它异常-退费失败`。
+    - 凭证按环境分发：推送 token 与回调 AES secret 由工单系统按 dev/prod 环境分别配置下发，不出现在任何文档与代码库中。
+servers:
+  - url: https://workorder.example.com
+    description: 工单系统生产环境（以实际部署为准）
+paths:
+  /api/integrations/jb-insurance/work-orders:
+    post:
+      summary: 推送退费异常工单
+      description: |
+        退费失败时推送，生成线下处理工单。
+
+        **幂等**：`endorNo` 为全链路幂等键。重复推送同一 `endorNo` 返回 `0000` 与首次建单的 `workOrderNumber`，不重复建单；回调时该键原样回传。
+
+        推送落库的字段在工单上只读；客服仅可填写补偿金。实退金额（`actualAmount`）回调时按 `expectedAmount` 原样回传。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkOrderPush'
+            example:
+              sysOrderId: '20260818163304040016053'
+              endorNo: '20260818163304040016053_NO1_1787044393123'
+              workOrderType: 卡异常-退费失败
+              expectedAmount: '100.00'
+              refundCreateTime: '2026-08-18 16:40:00'
+              refundTrade:
+                - tradeNo: '1'
+                  payNo: PAY20260818001
+                  expectedAmount: '100.00'
+              holderName: 张三
+              holderPhone: 13888888888
+              companyName: 泰康在线
+              productId: P10001
+              productName: 泰康百万医疗险
+              policyNo: P20260818000123
+              failureReason: 银行卡状态异常，退款被退回
+      responses:
+        '200':
+          description: 业务响应（成功与失败均返回 200，以 code 区分）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushEnvelope'
+              examples:
+                success:
+                  summary: 成功（含幂等重复推送）
+                  value:
+                    success: true
+                    code: '0000'
+                    message: ''
+                    data:
+                      workOrderNumber: WO100001
+                invalid:
+                  summary: 参数校验失败（不要重试）
+                  value:
+                    success: false
+                    code: '9998'
+                    message: 参数校验失败: endorNo 不能为空
+                    data: null
+                retryable:
+                  summary: 系统处理失败（可稍后重试）
+                  value:
+                    success: false
+                    code: '9999'
+                    message: 系统繁忙
+                    data: null
+        '401':
+          description: 认证失败（token 缺失或错误）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushEnvelope'
+              example:
+                success: false
+                code: '9998'
+                message: 认证失败
+                data: null
+webhooks:
+  workOrderCallback:
+    post:
+      summary: 工单处理结果回调
+      description: |
+        工单完结后由工单系统发起，POST 至平台提供的回调地址。
+
+        **加密**：外层报文 `body` 为密文（小写 Hex），解密后为回调明文 JSON。
+        - 算法 `AES/CBC/PKCS5Padding`
+        - 密钥：对 secret 做 MD5（32 位小写 Hex），取该 Hex **字符串**前 16 字节（ASCII）作 AES-128 密钥
+        - 固定 IV：`8765432112345678`（ASCII）
+        - 明文编码 UTF-8；`channel` 固定 `WORK-ORDER`
+
+        **重试语义**（平台响应决定工单系统行为）：
+        - `code=0000, data=true`：已处理（含幂等重复回调），不再发送
+        - `code=9999, data=false`：业务处理失败，工单系统稍后重试（退避 5m → 30m → 2h，24h 封顶转人工）
+        - `code=0000, data=false`：视同 9999（可重试）
+        - `code=9998`：解密/参数类失败，**不会重试**，转人工排查
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallbackEnvelope'
+            example:
+              channel: WORK-ORDER
+              body: a1b2c3d4e5f6
+      responses:
+        '200':
+          description: 平台处理结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallbackResult'
+              examples:
+                ok:
+                  summary: 已处理（含幂等重复）
+                  value: { success: true, code: '0000', message: '', data: true }
+                retry:
+                  summary: 业务失败，请稍后重试
+                  value: { success: false, code: '9999', message: '处理异常: xxx', data: false }
+                fatal:
+                  summary: 解密/参数失败，不会重试
+                  value: { success: false, code: '9998', message: 工单回调解密异常, data: false }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: 平台推送专用 token，按环境分发
+  schemas:
+    RefundTrade:
+      type: object
+      required: [tradeNo, payNo, expectedAmount]
+      properties:
+        tradeNo:
+          type: string
+          description: 交易编号（期数）
+        payNo:
+          type: string
+          description: 支付流水号
+        expectedAmount:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: 该期预期退款金额（元）
+    WorkOrderPush:
+      type: object
+      required: [sysOrderId, endorNo, workOrderType, expectedAmount, refundCreateTime, refundTrade]
+      properties:
+        sysOrderId:
+          type: string
+          description: 系统订单号
+        endorNo:
+          type: string
+          description: 退费申请号，全链路幂等键，回调原样回传
+        workOrderType:
+          type: string
+          description: 工单类型展示文本（不做枚举校验）
+        expectedAmount:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: 预期退款总金额（元）
+        refundCreateTime:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$'
+          description: 退费创建时间（Asia/Shanghai）
+        refundTrade:
+          type: array
+          items:
+            $ref: '#/components/schemas/RefundTrade'
+          minItems: 1
+          maxItems: 50
+        holderName:
+          type: string
+          description: 投保人姓名（须为未脱敏可用联系信息）
+        holderPhone:
+          type: string
+          description: 投保人手机号码（须为未脱敏可用联系信息）
+        companyName:
+          type: string
+          description: 保司名称
+        productId:
+          type: string
+        productName:
+          type: string
+        policyNo:
+          type: string
+          description: 保单号
+        failureReason:
+          type: string
+          description: 失败原因
+    CallbackPlaintext:
+      type: object
+      required: [sysOrderId, endorNo, actualAmount, workOrderNumber]
+      properties:
+        sysOrderId:
+          type: string
+        endorNo:
+          type: string
+          description: 推送时的幂等键，原样回传
+        actualAmount:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: 实际退款金额（元），按推送的 expectedAmount 原样回传
+        workOrderNumber:
+          type: string
+          description: 工单号（WO 开头）
+        compensationAmount:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: 补偿金额（诚意金，元），无补偿则不携带该字段
+        remark:
+          type: string
+          description: 完结备注
+        operator:
+          type: string
+          description: 处理人（工单系统用户名）
+    CallbackEnvelope:
+      type: object
+      required: [channel, body]
+      properties:
+        channel:
+          type: string
+          const: WORK-ORDER
+        body:
+          type: string
+          description: AES 加密后的小写 Hex 密文，明文为 CallbackPlaintext
+    PushEnvelope:
+      type: object
+      required: [success, code, message, data]
+      properties:
+        success:
+          type: boolean
+        code:
+          type: string
+          enum: ['0000', '9998', '9999']
+        message:
+          type: string
+        data:
+          type: object
+          nullable: true
+          properties:
+            workOrderNumber:
+              type: string
+    CallbackResult:
+      type: object
+      required: [success, code, message, data]
+      properties:
+        success:
+          type: boolean
+        code:
+          type: string
+          enum: ['0000', '9998', '9999']
+        message:
+          type: string
+        data:
+          type: boolean
+          description: true=已处理（含幂等重复）；false=失败，按 code 决定是否重试
