@@ -28,6 +28,7 @@ import {
 import { DirLock, pidFileAlive } from "./lock.ts";
 import { callGit } from "./net.ts";
 import { scrubSessionEnv } from "./session-env.ts";
+import { baseBranchOf, ensureSpecBranch, finalizeSpecs } from "./spec.ts";
 import { daemonShouldKill, evaluateHealth, readStatus } from "./status.ts";
 
 const FAST_PROBE = { attempts: 2, timeoutSeconds: 15 };
@@ -380,6 +381,16 @@ export async function dispatchTick(root: string): Promise<void> {
         log(`skip #${issue}: eligibility changed before claim`);
         continue;
       }
+      const base = baseBranchOf((await issueView(issue)).body);
+      if (base !== "main") {
+        try {
+          await ensureSpecBranch(root, base);
+        } catch (error) {
+          await releaseClaim(root, worktrees, issue).catch(() => {});
+          log(`skip #${issue}: cannot ensure ${base}: ${error}`);
+          continue;
+        }
+      }
       const worktree = join(worktrees, `issue-${issue}`);
       const branch = `codex/issue-${issue}`;
       const exists = await readdir(worktrees).catch(() => [] as string[]);
@@ -394,7 +405,7 @@ export async function dispatchTick(root: string): Promise<void> {
           .catch(() => false);
         const args = branchExists
           ? ["worktree", "add", worktree, branch]
-          : ["worktree", "add", "-b", branch, worktree, "origin/main"];
+          : ["worktree", "add", "-b", branch, worktree, `origin/${base}`];
         try {
           await git(root, args);
         } catch {
@@ -419,6 +430,7 @@ export async function dispatchTick(root: string): Promise<void> {
       await writeFile(join(worktrees, `issue-${issue}.pid`), `${pid}\n`);
       out(`started #${issue} in ${worktree}`);
     }
+    await finalizeSpecs(root);
   } finally {
     await lock.release();
   }
