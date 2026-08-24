@@ -23,15 +23,17 @@
 flowchart LR
   G["本地 Claude/Codex：Grill Me 对话"] --> C["人确认设计"]
   C --> S["too-spec：发布 agent:spec 父 Issue（可选）"]
-  S --> T["too-tickets：发布完整 child tickets + 原生 DAG"]
+  S --> T["too-tickets：建 agent/spec-<n> 集成分支 + 发布 child tickets + 原生 DAG"]
   C -->|parentless| T
   T --> F["daemon 领取无 blocker、无冲突 frontier"]
   F --> W["隔离 worktree：Claude 实现 + 独立复审 + make check（失败自修 ≤3 轮）"]
   W --> P["controller commit（message 由 worker 生成）/ push / PR"]
   P --> CI["GitHub CI"]
-  CI -->|通过| M["自动 squash merge，Issue 关闭，下游解锁"]
+  CI -->|通过| M["自动 squash merge 进 base 分支，Issue 关闭，下游解锁"]
   CI -->|失败| R["agent:repair 回队，带失败日志修复（≤3 次）"]
   R --> W
+  M -->|spec 子票| SP["全部子票关闭后 daemon 收尾：合并 main 进 spec 分支，开 final PR → main"]
+  SP --> H["人工 review 并合并 final PR，父 spec 随之关闭"]
 ```
 
 人负责：
@@ -39,6 +41,7 @@ flowchart LR
 1. 在本地对话中回答 Grill Me 的单个设计问题。
 2. 明确确认已达成共同理解。
 3. 调用 `too-tickets`（大改动先 `too-spec` 再带 parent 调用；小任务 parent 传 0）。
+4. spec 的 final PR 开后人工 review 并自行合并（唯一的人工合并门）。
 
 自动完成：
 
@@ -49,6 +52,7 @@ flowchart LR
 - 无依赖 frontier 的并行领取
 - worktree、分支、实现、复审、测试、commit、PR
 - CI 失败回队、成功自动合并、下游解锁
+- spec 集成分支的创建与收尾（合并 main、开 final PR）
 
 ## 2. 前置条件
 
@@ -131,7 +135,7 @@ export AGENT_FENCE_ATTEMPTS=3                # fence 推送（lease 拒/抖动�
 - 分支必须更新后才能合并（团队若启用此策略）
 - 不要求人工 review；agent 已有独立 review pass，目标是不新增人工门
 
-不要让 ruleset 阻止本地 controller 创建 `codex/issue-*` 分支，或更新内部 lease refs：
+不要让 ruleset 阻止本地 controller 创建 `codex/issue-*`、`agent/spec-*` 分支，或更新内部 lease refs：
 
 - `agent-claims/issue-*`
 - `agent-slots/*`
@@ -242,11 +246,12 @@ sh scripts/agent/publish-tickets.sh <parent-number|0> <tickets.json>
 
 Publisher 在任何 child 入队前验证完整 DAG、环、未知依赖及并行冲突，然后：
 
-1. 创建 child Issue；有 parent 时挂 sub-issue link 并在 parent 评论区留恢复 marker，parentless 时恢复真相是 child 正文 `agent-plan:0:<key>` marker（key 需带区域前缀避免跨 plan 撞名）。
-2. 渲染 Goal、Scope、Acceptance criteria、Declared touch-set、Logical locks、Dependencies、Test plan。
-3. 把逻辑 `dependsOn` 转为真实 `#number` 和 GitHub native dependency edges。
-4. 添加 `agent:task`、`ready-for-agent`、`agent:queued`。
-5. 输出 `{ticket-key: issue-number}` 映射。
+1. parent > 0 时从 `origin/main` 创建 `agent/spec-<parent>` 集成分支（重发/并发下已存在则复用），失败即中止整次发布。
+2. 创建 child Issue；有 parent 时挂 sub-issue link 并在 parent 评论区留恢复 marker，parentless 时恢复真相是 child 正文 `agent-plan:0:<key>` marker（key 需带区域前缀避免跨 plan 撞名）。
+3. 渲染 Goal、Scope、Acceptance criteria、Declared touch-set、Logical locks、Dependencies、Test plan。
+4. 把逻辑 `dependsOn` 转为真实 `#number` 和 GitHub native dependency edges。
+5. 添加 `agent:task`、`ready-for-agent`、`agent:queued`。
+6. 输出 `{ticket-key: issue-number}` 映射。
 
 无需人再补字段、加 label 或批准。daemon 下一轮自动领取无 blocker frontier。
 
@@ -299,7 +304,7 @@ make agent-loop-dispatch
 
 Daemon 只取 dependency-free frontier。每个 worker 使用：
 
-- 分支 `codex/issue-<n>`
+- 分支 `codex/issue-<n>`，从 base 切出：spec 子票是 `origin/agent/spec-<parent>`（不存在则由 dispatcher 就地补建），parentless 票是 `origin/main`；PR base 同源
 - worktree `.worktrees/issue-<n>`
 - 远端 claim `agent-claims/issue-<n>`
 - 全局 slot `agent-slots/<slot>`
@@ -324,9 +329,11 @@ claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`）时 worker 先经 
 
 `Agent merge` 等 required checks 通过后 squash merge；merge 事件再由 `close-linked-issues` 兜底关闭 PR body 里 `Closes #<issue>` 引用的 child（auto-merge 异步执行时 GitHub 原生关键字关单不可靠）。下游 native blocker 随即解除，daemon 自动领取下一层。
 
+Spec 收尾（仅 spec 子票；parentless 票随自身 PR 合入 main 即结束）：daemon 每 tick 检查 open 的 `agent:spec` 父 Issue——无 open 子票、无 base 为 `agent/spec-<parent>` 的在途 PR、spec 分支领先 main、且无 head 为 spec 分支的 open PR 时执行收尾。收尾在临时 detached worktree 里把 `origin/main` 合并进 spec 分支（不碰人工 checkout；冲突则父 Issue 打 `agent:blocked` + 评论，人工解冲突推送后摘掉 blocked 即续），推送后开 final PR `Spec: <标题> (#<parent>)` → `main`，body 含 `Closes #<parent>` 与子票清单，**不加 automerge，CI 失败也不进 repair 循环**——这是 spec 唯一的人工门。人工 review 后自行合并（建议 merge commit 保留子票历史），父 spec 随关键字关闭。final PR 已开期间若有补发子票并入，daemon 只刷新 body 子票清单，不再重复合并 main；子票 PR 已合并但 Issue 未关会在父 Issue 报一次异常（完成检测因此卡住时看父 Issue 评论）。spec 分支合并后不自动删除；重开父 Issue 补发票复用同一分支（旧 tip 已是 main 祖先，diff 自洽），收尾时的 main 同步照常生效。
+
 CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued` + `ready-for-agent`（frontier 要求后两者），并在 Issue 评论计 `agent-attempts` marker；超过 `AGENT_REPAIR_MAX_ATTEMPTS`（默认 3）次转 `agent:blocked` 叫人。Repair worker尝试下载最近 failed Actions log，复用同一 worktree/branch/PR 修复；下载失败时用本地复现和现有 Issue 内容继续。
 
-Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队（评论 `agent-requeue` marker 计数，上限 `AGENT_REQUEUE_MAX`，默认 2），超上限或行为类失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。非 publish 相的失败把工作树 reset 回 startHead 并清残留；publish 相 commit 落地后的进程级失败（push/PR 创建故障）保留该 commit 与 `.agent-commit-message`，并落 `issue-<n>.publish-pending` 标记（内容为 commit sha）——重排队再领取时 worker 核对标记 sha 与 HEAD 一致、分支领先 origin/main 且无 open PR，即跳过 implementation/review/check/sweep 与 add/commit，直接从 fence→push→PR 续跑（不重复 commit，message 复用 `.agent-commit-message`，缺失仍用兜底）；标记缺失、不符或已有 open PR 则忽略标记全量重跑。daemon 的 running 恢复（stale/孤儿/过期 claim 回收重排队）共用同一 `agent-requeue` 预算，耗尽同样转 blocked，坏票不会无限复活。claim 心跳只在证实丢租约（远端 sha 失配）时计 miss，传输层故障不计——网络风暴不会杀掉健康 worker，发布窗口由 fence CAS 兜底防双重发布。
+Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队（评论 `agent-requeue` marker 计数，上限 `AGENT_REQUEUE_MAX`，默认 2），超上限或行为类失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。非 publish 相的失败把工作树 reset 回 startHead 并清残留；publish 相 commit 落地后的进程级失败（push/PR 创建故障）保留该 commit 与 `.agent-commit-message`，并落 `issue-<n>.publish-pending` 标记（内容为 commit sha）——重排队再领取时 worker 核对标记 sha 与 HEAD 一致、分支领先 base ref（spec 子票为 `origin/agent/spec-<parent>`，否则 `origin/main`）且无 open PR，即跳过 implementation/review/check/sweep 与 add/commit，直接从 fence→push→PR 续跑（不重复 commit，message 复用 `.agent-commit-message`，缺失仍用兜底）；标记缺失、不符或已有 open PR 则忽略标记全量重跑。daemon 的 running 恢复（stale/孤儿/过期 claim 回收重排队）共用同一 `agent-requeue` 预算，耗尽同样转 blocked，坏票不会无限复活。claim 心跳只在证实丢租约（远端 sha 失配）时计 miss，传输层故障不计——网络风暴不会杀掉健康 worker，发布窗口由 fence CAS 兜底防双重发布。
 
 进程级失败判定前有两层就地吸收：executor 的 `error_during_execution`/CLI 崩溃按 `AGENT_EXECUTOR_ATTEMPTS` 在同 run 内退避重试；所有 gh/git 网络调用经 `scripts/agent/net.ts` 统一入口，传输层错误（connection reset、TLS、5xx 等）按 `AGENT_NET_CALL_*` 超时重试，确定性错误（lease 拒绝、4xx）立即回吐。daemon 单个 dispatch tick 失败不退出，下个 interval 继续。
 
@@ -429,6 +436,7 @@ export AGENT_CLAIM_STALE_SECONDS=300
 | --- | --- |
 | Grill Me | 本地 Claude/Codex 中逐题确认设计的交互会话 |
 | Spec | 人确认后发布的 `agent:spec` 父 Issue |
+| Spec branch | spec 的集成分支 `agent/spec-<parent>`；子票 PR 的 base，收尾时经 final PR 进 main |
 | Ticket contract | executor 所需的七段可验证 Issue 正文 |
 | DAG | child tickets 的有向无环依赖图 |
 | Frontier | 所有 blocker 已关闭、当前可并行领取的票 |
@@ -451,6 +459,7 @@ export AGENT_CLAIM_STALE_SECONDS=300
 | `scripts/agent/plan.mjs` | 结构化 ticket schema、DAG 与冲突验证 |
 | `scripts/agent/main.ts` | CLI 入口:bootstrap/transition/queue/dispatch/daemon/status/worker/reconcile-ci |
 | `scripts/agent/dispatch.ts` | transition、frontier 编排、claim 编排、daemon tick、CI reconciliation |
+| `scripts/agent/spec.ts` | plan marker → base 解析、spec 分支补建、spec 收尾（合并 main、开 final PR、异常上报） |
 | `scripts/agent/worker.ts` | worktree 内实现、review、验证与 controller 发布 |
 | `scripts/agent/claim.ts` | commit-tree + atomic lease 的分布式 claim/heartbeat/fence |
 | `scripts/agent/executor.ts` | claude stream-json 会话执行器：implementation+fix 复用长存会话，崩溃 `--resume` 续跑，事件落盘 + status 聚合 |

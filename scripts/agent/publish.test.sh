@@ -143,6 +143,14 @@ case "$*" in
   'repo view --json nameWithOwner --jq .nameWithOwner') printf '%s\n' 'LkxPro/insuredesk' ;;
   'issue view 100 --json state,labels,comments')
     printf '%s\n' '{"state":"OPEN","labels":[{"name":"agent:spec"}],"comments":[]}' ;;
+  'api repos/LkxPro/insuredesk/git/ref/heads/main --jq .object.sha') printf 'deadbeef\n' ;;
+  'api --method POST repos/LkxPro/insuredesk/git/refs -F ref=refs/heads/agent/spec-100 -F sha=deadbeef')
+    if [ -f "$PUBLISH_CAPTURE/branch-created" ]; then echo 'reference already exists' >&2; exit 1; fi
+    : >"$PUBLISH_CAPTURE/branch-created"
+    printf '%s\n' "$*" >>"$PUBLISH_CAPTURE/branch" ;;
+  'api repos/LkxPro/insuredesk/git/ref/heads/agent/spec-100 --jq .object.sha')
+    [ -f "$PUBLISH_CAPTURE/branch-created" ] || { echo 'no such ref' >&2; exit 1; }
+    printf 'deadbeef\n' ;;
   'api repos/LkxPro/insuredesk/issues?state=all&labels=agent%3Atask&per_page=100 --paginate')
     jq -n \
       --rawfile first "$PUBLISH_CAPTURE/body-101.md" \
@@ -180,6 +188,8 @@ PUBLISH_CAPTURE="$tmp/state" AGENT_PUBLISH_GIT_DIR="$tmp/lock-repo" AGENT_LOOP_G
 
 jq -e '.first == 101 and .second == 102' "$tmp/map.json" >/dev/null
 jq -e '.labels == ["agent:task"]' "$tmp/state/create-101.json" >/dev/null
+grep -Fqx 'api --method POST repos/LkxPro/insuredesk/git/refs -F ref=refs/heads/agent/spec-100 -F sha=deadbeef' \
+  "$tmp/state/branch"
 grep -Fq 'Part of #100.' "$tmp/state/body-101.md"
 for heading in Goal Scope 'Declared touch-set' 'Logical locks' 'Acceptance criteria' Dependencies 'Test plan'; do
   grep -Fq "## $heading" "$tmp/state/body-101.md"
@@ -193,6 +203,7 @@ PUBLISH_CAPTURE="$tmp/state" AGENT_PUBLISH_GIT_DIR="$tmp/lock-repo" AGENT_LOOP_G
   sh "$script_dir/publish-tickets.sh" 100 "$tmp/plan.json" >"$tmp/map-rerun.json"
 jq -e '.first == 101 and .second == 102' "$tmp/map-rerun.json" >/dev/null
 [ "$(cat "$tmp/state/count")" = 102 ]
+[ "$(wc -l <"$tmp/state/branch" | tr -d ' ')" = 1 ]
 
 cat >"$tmp/plan-solo.json" <<'EOF'
 {
