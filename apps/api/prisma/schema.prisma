@@ -335,6 +335,9 @@ model TicketRefundDetail {
   productName      String?
   policyNo         String?
   failureReason    String?
+  /// 推送实收字段清单（合同字段名）——实收字段此后一律只读；缺省的可选字段
+  /// 不在清单内，客服可后补
+  pushedFields     String[] @default([])
   /// 补偿金（诚意金）; null = 无补偿。客服可编辑，完结后随回调载荷快照锁定
   compensationAmount String?
   createdAt        DateTime @default(now()) @db.Timestamptz
