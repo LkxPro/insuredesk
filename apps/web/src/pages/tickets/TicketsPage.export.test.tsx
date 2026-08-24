@@ -54,7 +54,9 @@ describe("按列表当前筛选条件导出", () => {
 
     await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
     const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
-    expect(url.searchParams.get("source")).toBe("feishu_form,manual,community,external_channel");
+    expect(url.searchParams.get("source")).toBe(
+      "feishu_form,manual,community,external_channel,jb-insurance",
+    );
   });
 
   it("创建时间区间随导出下传（导出口径 = 列表口径）", async () => {

@@ -15,6 +15,7 @@ import { shiftTypeRouter } from "./shift-type.router.ts";
 import { slaRouter } from "./sla.router.ts";
 import { ticketRouter } from "./ticket.router.ts";
 import { ticketCategoryRouter } from "./ticket-category.router.ts";
+import { ticketKindRouter } from "./ticket-kind.router.ts";
 import { userRouter } from "./user.router.ts";
 import { userFeedbackChannelRouter } from "./user-feedback-channel.router.ts";
 
@@ -38,6 +39,8 @@ export const appRouter = router({
   ticket: ticketRouter,
 
   ticketCategory: ticketCategoryRouter,
+
+  ticketKind: ticketKindRouter,
 
   channel: channelRouter,
 

@@ -3,6 +3,7 @@ import {
   completionStatusCreateInputSchema,
   feedbackReceiveChannelCreateInputSchema,
   ticketCategoryCreateInputSchema,
+  ticketKindCreateInputSchema,
   userFeedbackChannelCreateInputSchema,
 } from "@insuredesk/shared";
 import { Settings2 } from "lucide-react";
@@ -135,12 +136,35 @@ const feedbackReceiveChannelCatalog: CatalogAdminConfig = {
   },
 };
 
+const ticketKindCatalog: CatalogAdminConfig = {
+  idPrefix: "ticket-kind",
+  title: "工单种类",
+  noun: "种类",
+  nameNoun: "种类",
+  subtitle: "工单的业务种类；绑定系统行为的种类行只能停用，不提供删除入口。",
+  emptyDescription: "新增一个种类后即可使用。",
+  dialogDescription: "改名对存量工单全局生效。",
+  createInputSchema: ticketKindCreateInputSchema,
+  hooks: {
+    useList: () => trpc.ticketKind.list.useQuery(),
+    useInvalidate: () => {
+      const utils = trpc.useUtils();
+      return () => void utils.ticketKind.invalidate();
+    },
+    useCreate: (opts) => trpc.ticketKind.create.useMutation(opts),
+    useUpdate: (opts) => trpc.ticketKind.update.useMutation(opts),
+    useSetActive: (opts) => trpc.ticketKind.setActive.useMutation(opts),
+    useReorder: (opts) => trpc.ticketKind.reorder.useMutation(opts),
+  },
+};
+
 const DICTIONARY_CATALOGS = [
   channelCatalog,
   ticketCategoryCatalog,
   completionStatusCatalog,
   userFeedbackChannelCatalog,
   feedbackReceiveChannelCatalog,
+  ticketKindCatalog,
 ];
 
 function CatalogCard({ config, onManage }: { config: CatalogAdminConfig; onManage: () => void }) {

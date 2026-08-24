@@ -148,7 +148,10 @@ describe("optional business fields (Testcontainers)", () => {
     it("a later 时效策略 edit computes SLA off the ORIGINAL createdAt", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
-      await prisma.ticket.update({ where: { id: created.id }, data: { createdAt } });
+      await prisma.ticket.update({
+        where: { id: created.id },
+        data: { createdAt, slaAnchorAt: createdAt },
+      });
 
       await manager().ticket.edit(
         blankEditInput(created.id, { slaPolicyId: harness.slaPolicyId("一般投诉") }),

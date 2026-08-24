@@ -77,7 +77,8 @@ export interface CatalogAdminHooks {
     onError: (error: { message: string }) => void;
     onSettled: () => void;
   }): MutationLike<{ ids: string[] }>;
-  useDelete(opts: { onSuccess: () => void }): MutationLike<{ id: string }>;
+  /** 缺省 = 该目录不提供删除入口（只允许停用）。 */
+  useDelete?(opts: { onSuccess: () => void }): MutationLike<{ id: string }>;
 }
 
 export interface CatalogAdminConfig {
@@ -195,15 +196,17 @@ function CatalogDialog({
 
 function DeleteCatalogDialog({
   config,
+  useDelete,
   row,
   onOpenChange,
 }: {
   config: CatalogAdminConfig;
+  useDelete: NonNullable<CatalogAdminHooks["useDelete"]>;
   row: CatalogRow | null;
   onOpenChange: (open: boolean) => void;
 }) {
   const invalidate = config.hooks.useInvalidate();
-  const remove = config.hooks.useDelete({
+  const remove = useDelete({
     onSuccess: () => {
       toast.success(`${config.noun}已删除`);
       invalidate();
@@ -253,6 +256,7 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<CatalogRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CatalogRow | null>(null);
+  const useDelete = config.hooks.useDelete;
 
   const [localRows, setLocalRows] = useState<CatalogRow[] | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -476,14 +480,16 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
                         >
                           {row.active ? <Ban /> : <CircleCheck />}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`删除 ${row.name}`}
-                          onClick={() => setDeleteTarget(row)}
-                        >
-                          <Trash2 />
-                        </Button>
+                        {useDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`删除 ${row.name}`}
+                            onClick={() => setDeleteTarget(row)}
+                          >
+                            <Trash2 />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -503,13 +509,16 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
           if (!open) setEditTarget(null);
         }}
       />
-      <DeleteCatalogDialog
-        config={config}
-        row={deleteTarget}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-      />
+      {useDelete && (
+        <DeleteCatalogDialog
+          config={config}
+          useDelete={useDelete}
+          row={deleteTarget}
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }

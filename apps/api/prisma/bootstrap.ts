@@ -21,7 +21,8 @@ async function main() {
       ? "✓ Factory roles created (first initialization)"
       : "✓ Roles already initialized — left untouched",
   );
-  console.log("✓ SLA policies: 4 (created if missing)");
+  console.log("✓ Ticket kinds: 2 (inserted if missing)");
+  console.log("✓ SLA policies: 4 complaint + 1 refund default (created if missing)");
   console.log("✓ Shift types: 4 (created if missing)");
   console.log("✓ Ticket categories: 17 (first initialization only)");
   console.log("✓ Channels: 4 (first initialization only)");

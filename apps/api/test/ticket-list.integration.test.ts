@@ -11,6 +11,7 @@ describe("ticket list (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let seeded: IntegrationHarness["seeded"];
+  let complaintKindId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
@@ -19,6 +20,8 @@ describe("ticket list (Testcontainers)", () => {
     });
     prisma = harness.prisma;
     seeded = harness.seeded;
+    complaintKindId = (await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } }))
+      .id;
   }, 180_000);
 
   afterAll(async () => {
@@ -418,6 +421,17 @@ describe("ticket list (Testcontainers)", () => {
       const all = await manager().ticket.list({ source: [...TICKET_SOURCES] });
       expect(all.total).toBe(2);
     });
+
+    it("jb-insurance 进默认来源筛选：推送单默认可见、可按来源单独筛出", async () => {
+      const pushed = await makeTicket({}, { source: "jb-insurance" });
+      await makeTicket();
+
+      const defaulted = await manager().ticket.list({});
+      expect(defaulted.items.map((t) => t.id)).toContain(pushed.id);
+
+      const explicit = await manager().ticket.list({ source: ["jb-insurance"] });
+      expect(explicit.items.map((t) => t.id)).toEqual([pushed.id]);
+    });
   });
 
   describe("category filter", () => {
@@ -785,6 +799,8 @@ describe("ticket list (Testcontainers)", () => {
         data: Array.from({ length: 120 }, (_, i) => ({
           feedbackTime: new Date(now - i * 60_000),
           source: "manual",
+          kindId: complaintKindId,
+          slaAnchorAt: new Date(now - i * 60_000),
           channelId: channelId("保司"),
           project: "融盛",
           brokerageEntity: "东方大地",

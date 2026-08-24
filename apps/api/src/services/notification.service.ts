@@ -132,6 +132,39 @@ export async function writeBulkNotifications(
   });
 }
 
+/**
+ * 空集（无启用管理员）= 环境损坏，静默不落行 —— 告警不应阻塞触发它的业务事务。
+ */
+export async function writeOpsAlertNotifications(
+  tx: Prisma.TransactionClient,
+  params: {
+    title: string;
+    content: string;
+    ticketId?: string | null;
+    workOrderNumber?: string | null;
+    now: Date;
+  },
+) {
+  const admins = await tx.user.findMany({
+    where: { active: true, role: { system: true } },
+    select: { id: true },
+  });
+  if (admins.length === 0) {
+    return;
+  }
+  await tx.appNotification.createMany({
+    data: admins.map((admin) => ({
+      type: "ops_alert",
+      title: params.title,
+      content: params.content,
+      ticketId: params.ticketId ?? null,
+      workOrderNumber: params.workOrderNumber ?? null,
+      targetUserId: admin.id,
+      createdAt: params.now,
+    })),
+  });
+}
+
 export function buildExternalReplyNotification(params: {
   operatorName: string;
   workOrderNumber: string;

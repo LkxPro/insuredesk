@@ -18,6 +18,9 @@ export const envSchema = z.object({
   // server-side config knob. The literal "dev" marks an un-injected build —
   // seeing it in production means the injection pipeline broke.
   APP_VERSION: z.string().min(1).default("dev"),
+  JB_INSURANCE_PUSH_TOKEN: z.string().optional(),
+  JB_INSURANCE_CALLBACK_URL: z.string().url().optional(),
+  JB_INSURANCE_CALLBACK_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
