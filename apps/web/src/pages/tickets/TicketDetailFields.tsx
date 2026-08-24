@@ -63,6 +63,7 @@ export interface EditableTicket {
   contactId: string | null;
   category: CurrentCatalogOption | null;
   slaPolicy: CurrentCatalogOption | null;
+  kindKey: string;
   priority: Priority | null;
 }
 
@@ -337,6 +338,7 @@ function EditControl({
               onChange={field.onChange}
               invalid={invalid}
               current={ticket.slaPolicy}
+              kindKey={ticket.kindKey}
             />
           )}
         />

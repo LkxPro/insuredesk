@@ -310,8 +310,7 @@ export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]
 
 /**
  * 独立于 seedSlaPolicies 的 count==0 守卫：存量环境已有四条投诉策略时也能补插；
- * update 留空 = 管理员改名不回写。sortOrder 钉 0 —— dashboard 特急卡绑定
- * active 中 sortOrder 最大者，不得反超出厂四条的 1..4。
+ * update 留空 = 管理员改名不回写。
  */
 export async function seedRefundDefaultSlaPolicy(prisma: PrismaClient): Promise<SlaPolicy> {
   const kindId = await requireTicketKindId(prisma, TicketKindKey.RefundException);
@@ -816,7 +815,8 @@ async function createExternalTicket(
   input: TicketCreateData,
   createdAt: Date,
 ): Promise<Ticket> {
-  const slaStamp = await computeSlaStamp(prisma, input.slaPolicyId, createdAt);
+  const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
+  const slaStamp = await computeSlaStamp(prisma, input.slaPolicyId, createdAt, kindId);
 
   const ticket = await prisma.ticket.create({
     data: {
@@ -824,7 +824,7 @@ async function createExternalTicket(
       feedbackTime: input.feedbackTime === null ? null : new Date(input.feedbackTime),
       createdAt,
       slaAnchorAt: createdAt,
-      kindId: await requireTicketKindId(prisma, TicketKindKey.Complaint),
+      kindId,
       source: spec.source ?? "manual",
       creatorId: null,
       ...slaStamp,

@@ -8,6 +8,7 @@ import {
   TICKET_FIELDS,
   type TicketCreateFieldKey,
   type TicketCreateInput,
+  TicketKindKey,
   ticketCreateInputSchema,
 } from "@insuredesk/shared";
 import { CheckIcon } from "lucide-react";
@@ -276,14 +277,16 @@ export function SlaPolicySelect({
   onChange,
   invalid,
   current,
+  kindKey,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   invalid?: boolean;
   current?: CurrentCatalogOption | null;
+  kindKey: string;
 }) {
-  const options = withCurrentOption(trpc.sla.options.useQuery().data ?? [], current);
+  const options = withCurrentOption(trpc.sla.options.useQuery({ kindKey }).data ?? [], current);
   return (
     <Select
       value={value ? value : UNSET}
@@ -708,6 +711,7 @@ export function TicketFormFields({
                   value={field.value ?? ""}
                   onChange={field.onChange}
                   invalid={!!errors.slaPolicyId}
+                  kindKey={TicketKindKey.Complaint}
                 />
               )}
             />

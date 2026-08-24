@@ -3,6 +3,7 @@ import {
   type DashboardMetricKey,
   type DashboardStatsInput,
   DEFAULT_TICKET_SOURCE_FILTER,
+  TicketKindKey,
   TicketStatus,
 } from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client.ts";
@@ -10,6 +11,7 @@ import type { AuthenticatedUser } from "./auth.service.ts";
 import { applyDashboardDataScope } from "./data-scope.service.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 import { displayStatusTicketWhere } from "./ticket-display-status.ts";
+import { requireTicketKindId } from "./ticket-kind.service.ts";
 
 /**
  * 数据看板 aggregation: the 8 metric cards, the channel distribution, and
@@ -28,8 +30,9 @@ import { displayStatusTicketWhere } from "./ticket-display-status.ts";
  * - 考核 超时单数 = 历史追责视角: ever overdue — in-flight past dueAt OR
  *   completed late (completionTime > dueAt)
  *
- * 特急卡绑定 sortOrder 最高的 active 时效策略（无 active 策略时安全降级为
- * 0/null）；无处理时限的策略永不在两个超时口径计数。
+ * 特急卡绑定投诉组内 sortOrder 最高的 active 时效策略（无 active 策略时安全降级为
+ * 0/null）——其他种类组（退费异常）的策略即便 sortOrder 更大也不参与；无处理时限的
+ * 策略永不在两个超时口径计数。
  */
 
 export interface DashboardAssigneeStats {
@@ -85,8 +88,9 @@ export async function getDashboardStats(
   });
   const anyAssignee: Prisma.TicketWhereInput = { assigneeId: { not: null } };
 
+  const complaintKindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
   const urgentPolicy = await prisma.slaPolicy.findFirst({
-    where: { active: true },
+    where: { active: true, kindId: complaintKindId },
     orderBy: [{ sortOrder: "desc" }, { id: "asc" }],
     select: { id: true, name: true },
   });

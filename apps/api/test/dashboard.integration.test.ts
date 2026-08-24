@@ -15,6 +15,7 @@ describe("dashboard stats (Testcontainers)", () => {
   let channelRows: { id: string; name: string }[];
   let channelIds: Map<string, string>;
   let complaintKindId: string;
+  let refundKindId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
@@ -41,6 +42,9 @@ describe("dashboard stats (Testcontainers)", () => {
     channelIds = new Map(channelRows.map((channel) => [channel.name, channel.id]));
     complaintKindId = (await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } }))
       .id;
+    refundKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
+    ).id;
   }, 180_000);
 
   afterAll(async () => {
@@ -359,6 +363,91 @@ describe("dashboard stats (Testcontainers)", () => {
         expect(stats.metrics.total).toBe(0);
       } finally {
         await prisma.slaPolicy.updateMany({ data: { active: true } });
+      }
+    });
+
+    it("退费组策略不参与绑定——即便 sortOrder 全表最大；退费单也不计入 urgent", async () => {
+      const refundPolicy = await prisma.slaPolicy.create({
+        data: {
+          name: "退费专属策略",
+          firstResponseMinutes: 120,
+          overdueHours: 48,
+          reminderRules: [],
+          kindId: refundKindId,
+          sortOrder: 999,
+        },
+      });
+      try {
+        await makeTicket(
+          { customerName: "退费单" },
+          { kindId: refundKindId, slaPolicyId: refundPolicy.id },
+        );
+        await makeTicket({
+          customerName: "特急",
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+        });
+
+        const stats = await statsAt(new Date());
+        expect(stats.urgentPolicy).toEqual({
+          id: harness.slaPolicyId("特急投诉"),
+          name: "特急投诉",
+        });
+        expect(stats.metrics.urgent).toBe(1);
+      } finally {
+        await prisma.ticket.deleteMany({ where: { slaPolicyId: refundPolicy.id } });
+        await prisma.slaPolicy.delete({ where: { id: refundPolicy.id } });
+      }
+    });
+  });
+
+  describe("考核口径：退费单超时单数按 slaAnchorAt 判定", () => {
+    it("平台推送延迟计入超时（completionTime > 锚定 dueAt），平均完结时长仍 completionTime − createdAt", async () => {
+      const now = new Date();
+      const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
+      const cs1 = seeded.users.cs1.id;
+      const refundPolicy = await prisma.slaPolicy.create({
+        data: {
+          name: "退费考核策略",
+          firstResponseMinutes: 120,
+          overdueHours: 48,
+          reminderRules: [],
+          kindId: refundKindId,
+        },
+      });
+      try {
+        await makeTicket(
+          { customerName: "退费超时完结" },
+          {
+            kindId: refundKindId,
+            slaPolicyId: refundPolicy.id,
+            status: "completed",
+            assigneeId: cs1,
+            createdAt: at(-36),
+            slaAnchorAt: at(-49),
+            dueAt: at(-1),
+            completionTime: at(0),
+          },
+        );
+        await makeTicket(
+          { customerName: "投诉按时完结" },
+          {
+            status: "completed",
+            assigneeId: cs1,
+            createdAt: at(-36),
+            slaAnchorAt: at(-36),
+            dueAt: at(12),
+            completionTime: at(0),
+          },
+        );
+
+        const stats = await statsAt(now);
+        const row = stats.assignees.find((entry) => entry.assigneeId === cs1);
+        expect(row?.overdueCount).toBe(1);
+        expect(row?.completedCount).toBe(2);
+        expect(row?.avgCompletionMs).toBe(36 * HOUR_MS);
+      } finally {
+        await prisma.ticket.deleteMany({ where: { slaPolicyId: refundPolicy.id } });
+        await prisma.slaPolicy.delete({ where: { id: refundPolicy.id } });
       }
     });
   });

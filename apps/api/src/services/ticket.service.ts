@@ -45,6 +45,14 @@ export class SlaPolicyNotConfiguredError extends Error {
   }
 }
 
+export class SlaPolicyKindMismatchError extends SlaPolicyNotConfiguredError {
+  constructor(name: string) {
+    super(name);
+    this.name = "SlaPolicyKindMismatchError";
+    this.message = `时效策略「${name}」不属于该工单的种类组`;
+  }
+}
+
 export class RequiredFieldsMissingError extends Error {
   constructor(missingFields: string[]) {
     super(`以下字段为必填项：${missingFields.join("、")}`);
@@ -89,10 +97,14 @@ export async function findSlaPolicyById(
 export async function resolveSlaPolicy(
   db: Pick<PrismaClient, "slaPolicy">,
   slaPolicyId: string | null,
+  expectedKindId: string,
 ): Promise<SlaPolicy | null> {
   const policy = await findSlaPolicyById(db, slaPolicyId);
   if (policy !== null && !policy.active) {
     throw new SlaPolicyNotConfiguredError(policy.name);
+  }
+  if (policy !== null && policy.kindId !== expectedKindId) {
+    throw new SlaPolicyKindMismatchError(policy.name);
   }
   return policy;
 }
@@ -131,8 +143,9 @@ export async function computeSlaStamp(
   db: Pick<PrismaClient, "slaPolicy">,
   slaPolicyId: string | null,
   slaAnchorAt: Date,
+  expectedKindId: string,
 ) {
-  return stampFromPolicy(await resolveSlaPolicy(db, slaPolicyId), slaAnchorAt);
+  return stampFromPolicy(await resolveSlaPolicy(db, slaPolicyId, expectedKindId), slaAnchorAt);
 }
 
 /**
@@ -192,7 +205,7 @@ export async function createTicket(
 
   const now = clock.now();
   const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
-  const slaStamp = await computeSlaStamp(prisma, data.slaPolicyId, now);
+  const slaStamp = await computeSlaStamp(prisma, data.slaPolicyId, now, kindId);
 
   return prisma.$transaction(async (tx) => {
     // 提交兜底查重：与插入同事务，命中即整体回滚；批量导入不经此路，天然豁免
@@ -448,6 +461,7 @@ const detailInclude = {
   userFeedbackChannel: { select: { id: true, name: true, active: true } },
   feedbackReceiveChannel: { select: { id: true, name: true, active: true } },
   slaPolicy: { select: { id: true, name: true, active: true } },
+  kind: { select: { key: true } },
   // 完结状态 is display-only on the detail page — the CURRENT name suffices
   completionStatus: { select: { name: true } },
   processLogs: { orderBy: [{ at: "asc" }, { id: "asc" }] },
@@ -521,6 +535,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     category: ticket.category,
     slaPolicyId: ticket.slaPolicyId,
     slaPolicy: ticket.slaPolicy,
+    kindKey: ticket.kind.key,
     priority,
     followUpFrequency: ticket.followUpFrequency,
     firstResponseRequirement: ticket.firstResponseRequirement,

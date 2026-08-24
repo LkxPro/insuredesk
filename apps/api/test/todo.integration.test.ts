@@ -283,6 +283,34 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     });
   });
 
+  describe("slaAnchorAt 计时锚（首响/检查点按锚点起算）", () => {
+    it("锚早于录入 12h：首响红线与 24h 检查点按锚点判定，不按录入时刻", async () => {
+      const owner = await createAssignee();
+      const ticket = await createTicket(); // 一般投诉: 红线 120min; {24h,1次,提前60min}
+      await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
+      // 退费口径：slaAnchorAt = 平台 refundCreateTime，可早于录入 12h
+      const anchor = plus(ticket.createdAt, -12 * HOUR);
+      await prisma.ticket.update({ where: { id: ticket.id }, data: { slaAnchorAt: anchor } });
+
+      const oneHourIn = await todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, HOUR));
+      const firstResponse = oneHourIn.items[0]?.alerts[0];
+      expect(firstResponse?.type).toBe("awaiting_first_response");
+      expect(firstResponse?.severity).toBe("critical");
+      expect(firstResponse?.message).toBe("尚未首次跟进，已等待 13 小时");
+
+      const elevenHalf = await todosAt(
+        owner,
+        seeded.roles.frontline,
+        plus(ticket.createdAt, 11.5 * HOUR),
+      );
+      expect(typesOf(elevenHalf.items[0])).toEqual([
+        "awaiting_first_response",
+        "follow_up_checkpoint",
+      ]);
+      expect(elevenHalf.items[0]?.alerts[1]?.message).toBe("24 小时检查点将至：已跟进 0/1 次");
+    });
+  });
+
   describe("rolling_follow_up (特急滚动欠跟进)", () => {
     it("尚无 comment 时不滚动——常驻的待首响已覆盖", async () => {
       const owner = await createAssignee();

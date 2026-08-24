@@ -432,6 +432,35 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.followUpFrequency).toBe(before.followUpFrequency);
       expect(detail.firstResponseRequirement).toBe(before.firstResponseRequirement);
     });
+
+    it("重盖章锚定 slaAnchorAt 而非 createdAt（锚早于录入 12h 的退费口径）", async () => {
+      const ticketId = await createTicket();
+      const { createdAt: createdAtIso } = await manager().ticket.detail({ id: ticketId });
+      const anchor = new Date(new Date(createdAtIso).getTime() - 12 * HOUR_MS);
+      await prisma.ticket.update({ where: { id: ticketId }, data: { slaAnchorAt: anchor } });
+
+      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("加急投诉") }));
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.dueAt).toBe(new Date(anchor.getTime() + 72 * HOUR_MS).toISOString());
+    });
+
+    it("已完结工单改策略引用：只换引用，dueAt 与要求文本冻结不改写", async () => {
+      const ticketId = await createCompletedTicket();
+      const before = await manager().ticket.detail({ id: ticketId });
+      expect(before.dueAt).not.toBeNull();
+
+      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("加急投诉") }));
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.slaPolicyId).toBe(policyId("加急投诉"));
+      expect(detail.dueAt).toBe(before.dueAt);
+      expect(detail.followUpFrequency).toBe(before.followUpFrequency);
+      expect(detail.firstResponseRequirement).toBe(before.firstResponseRequirement);
+      const editLog = detail.processLogs.at(-1);
+      expect(editLog?.action).toBe("edit");
+      expect(editLog).toMatchObject({ from: "一般投诉", to: "加急投诉" });
+    });
   });
 
   describe("软删除", () => {

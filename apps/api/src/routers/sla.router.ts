@@ -1,5 +1,6 @@
 import {
   slaPolicyCreateInputSchema,
+  slaPolicyOptionsInputSchema,
   slaPolicySetActiveInputSchema,
   slaPolicySortInputSchema,
   slaPolicyUpdateInputSchema,
@@ -11,6 +12,7 @@ import {
   createSlaPolicy,
   listSlaPolicies,
   listSlaPolicyOptions,
+  SlaPolicyKindNotFoundError,
   SlaPolicyNameConflictError,
   SlaPolicyNotFoundError,
   SlaPolicySortMismatchError,
@@ -29,7 +31,7 @@ function mapSlaError(error: unknown): never {
   if (error instanceof SlaPolicyNameConflictError) {
     throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
-  if (error instanceof SlaPolicySortMismatchError) {
+  if (error instanceof SlaPolicySortMismatchError || error instanceof SlaPolicyKindNotFoundError) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
   throw error;
@@ -38,7 +40,13 @@ function mapSlaError(error: unknown): never {
 export const slaRouter = router({
   list: requirePermission("sla.view").query(() => listSlaPolicies(deps)),
 
-  options: protectedProcedure.query(() => listSlaPolicyOptions(deps)),
+  options: protectedProcedure.input(slaPolicyOptionsInputSchema).query(async ({ input }) => {
+    try {
+      return await listSlaPolicyOptions(deps, input?.kindKey);
+    } catch (error) {
+      mapSlaError(error);
+    }
+  }),
 
   create: requirePermission("sla.edit")
     .input(slaPolicyCreateInputSchema)

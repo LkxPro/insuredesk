@@ -3,12 +3,22 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
+
+// Radix Select 用 jsdom 未实现的 pointer-capture / scroll API 驱动下拉
+beforeAll(() => {
+  Object.assign(window.HTMLElement.prototype, {
+    scrollIntoView: () => {},
+    hasPointerCapture: () => false,
+    setPointerCapture: () => {},
+    releasePointerCapture: () => {},
+  });
+});
 
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
@@ -40,6 +50,11 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
   };
 }
 
+const KINDS = [
+  { id: "kind-complaint", name: "投诉" },
+  { id: "kind-refund", name: "退费异常" },
+];
+
 interface PolicyRow {
   id: string;
   name: string;
@@ -49,6 +64,8 @@ interface PolicyRow {
   firstResponseMinutes: number;
   overdueHours: number | null;
   reminderRules: ReminderRule[];
+  kindId: string;
+  kindName: string;
   updatedAt: string;
 }
 
@@ -61,6 +78,8 @@ function policy(
     firstResponseMinutes: 120,
     overdueHours: 48,
     reminderRules: [],
+    kindId: "kind-complaint",
+    kindName: "投诉",
     updatedAt: "2026-07-01T00:00:00.000Z",
     ...partial,
   };
@@ -117,6 +136,17 @@ const FACTORY: PolicyRow[] = [
     overdueHours: 4,
     reminderRules: [{ type: "rolling_follow_up", intervalHours: 1 }],
   }),
+  policy({
+    id: "p-refund",
+    name: "退费异常默认策略",
+    sortOrder: 1,
+    description: "退费异常：48 小时处理时限。",
+    kindId: "kind-refund",
+    kindName: "退费异常",
+    reminderRules: [
+      { type: "follow_up_checkpoint", checkpointHours: 36, requiredCount: 1, advanceMinutes: 180 },
+    ],
+  }),
 ];
 
 let db: PolicyRow[];
@@ -132,15 +162,38 @@ function conflict(message: string): never {
   throw Object.assign(new Error(message), { trpcCode: "CONFLICT" });
 }
 
+function kindOf(kindId: string) {
+  const kind = KINDS.find((item) => item.id === kindId);
+  if (!kind) {
+    throw new Error(`unknown kind id ${kindId}`);
+  }
+  return kind;
+}
+
+function sortedRows(): PolicyRow[] {
+  return [...db].sort((a, b) => {
+    const kindOrder =
+      KINDS.findIndex((kind) => kind.id === a.kindId) -
+      KINDS.findIndex((kind) => kind.id === b.kindId);
+    return kindOrder || a.sortOrder - b.sortOrder;
+  });
+}
+
 function respond(path: string, input: unknown): unknown {
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
+  if (path === "ticketKind.options") {
+    return KINDS;
+  }
   if (path === "sla.list") {
-    return [...db].sort((a, b) => a.sortOrder - b.sortOrder);
+    return sortedRows();
   }
   if (path === "sla.create") {
-    const payload = input as Omit<PolicyRow, "id" | "sortOrder" | "active" | "updatedAt">;
+    const payload = input as Omit<
+      PolicyRow,
+      "id" | "sortOrder" | "active" | "updatedAt" | "kindName"
+    >;
     if (nameTaken(payload.name)) {
       conflict(`时效策略「${payload.name}」名称已存在`);
     }
@@ -149,8 +202,13 @@ function respond(path: string, input: unknown): unknown {
       ...payload,
       description: payload.description ?? null,
       id: `p-new-${createSeq}`,
-      sortOrder: Math.max(...db.map((row) => row.sortOrder)) + 1,
+      sortOrder:
+        Math.max(
+          0,
+          ...db.filter((item) => item.kindId === payload.kindId).map((item) => item.sortOrder),
+        ) + 1,
       active: true,
+      kindName: kindOf(payload.kindId).name,
       updatedAt: "2026-08-17T00:00:00.000Z",
     };
     db.push(row);
@@ -179,11 +237,11 @@ function respond(path: string, input: unknown): unknown {
     return row;
   }
   if (path === "sla.sort") {
-    const { policyIds } = input as { policyIds: string[] };
+    const { kindId, policyIds } = input as { kindId: string; policyIds: string[] };
     for (const [index, id] of policyIds.entries()) {
-      const row = db.find((item) => item.id === id);
+      const row = db.find((item) => item.id === id && item.kindId === kindId);
       if (!row) {
-        throw new Error(`unknown policy id ${id}`);
+        throw new Error(`unknown policy id ${id} in kind ${kindId}`);
       }
       row.sortOrder = index + 1;
     }
@@ -289,17 +347,31 @@ beforeEach(() => {
   calls = [];
 });
 
-describe("卡片墙", () => {
-  it("按 sortOrder 渲染每张卡的名称、说明、首响、超时与提醒规则", async () => {
+describe("分组卡片墙", () => {
+  it("按种类分组渲染：组标题 + 分隔线，组内按 sortOrder 展示每张卡", async () => {
     renderSlaPage();
 
     await screen.findByText("一般投诉");
-    expect(cardOrder()).toEqual(["一般投诉", "高级投诉", "加急投诉", "特急投诉", "VIP 专线"]);
-    expect(screen.getAllByText("启用")).toHaveLength(4);
+    expect(cardOrder()).toEqual([
+      "一般投诉",
+      "高级投诉",
+      "加急投诉",
+      "特急投诉",
+      "VIP 专线",
+      "退费异常默认策略",
+    ]);
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    expect(headings.map((heading) => heading.textContent)).toEqual(["投诉", "退费异常"]);
+    expect(
+      document.querySelectorAll('[data-slot="separator"]:not([data-orientation="vertical"])')
+        .length,
+    ).toBe(1);
+
+    expect(screen.getAllByText("启用")).toHaveLength(5);
     expect(screen.getByText("已停用")).toBeInTheDocument();
     expect(screen.getByText("常规投诉：48 小时处理时限。")).toBeInTheDocument();
-    expect(screen.getAllByText("120 分钟内首次跟进，过线染红")).toHaveLength(2);
-    expect(screen.getAllByText(/48 小时（处理时限/)).toHaveLength(2);
+    expect(screen.getAllByText("120 分钟内首次跟进，过线染红")).toHaveLength(3);
+    expect(screen.getAllByText(/48 小时（处理时限/)).toHaveLength(3);
     expect(screen.getByText("不设超时")).toBeInTheDocument();
     expect(screen.getByText(/每满 12 小时提醒/)).toBeInTheDocument();
     expect(screen.getAllByText(/24 小时内累计跟进 1 次，提前 60 分钟提醒/).length).toBeGreaterThan(
@@ -331,7 +403,7 @@ describe("卡片墙", () => {
 });
 
 describe("新增策略", () => {
-  it("保存成功：sla.create 携带解析后的载荷，新卡出现在列表末尾", async () => {
+  it("保存成功：sla.create 携带解析后的载荷（默认投诉组），新卡组内末尾", async () => {
     renderSlaPage();
     const dialog = await openCreateDialog();
 
@@ -356,6 +428,7 @@ describe("新增策略", () => {
         firstResponseMinutes: 45,
         overdueHours: 12,
         reminderRules: [{ type: "rolling_follow_up", intervalHours: 6 }],
+        kindId: "kind-complaint",
       }),
     );
     await waitFor(() =>
@@ -366,8 +439,33 @@ describe("新增策略", () => {
         "特急投诉",
         "VIP 专线",
         "夜间专线",
+        "退费异常默认策略",
       ]),
     );
+  });
+
+  it("种类切换为退费异常：新策略落退费组", async () => {
+    renderSlaPage();
+    const dialog = await openCreateDialog();
+
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "工单种类" }));
+    fireEvent.click(await screen.findByRole("option", { name: "退费异常" }));
+    fireEvent.change(within(dialog).getByLabelText("策略名称"), { target: { value: "退费加急" } });
+    fireEvent.change(within(dialog).getByLabelText("首响违约线（分钟）"), {
+      target: { value: "30" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("超时时长（小时）"), {
+      target: { value: "24" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "sla.create")?.input).toMatchObject({
+        name: "退费加急",
+        kindId: "kind-refund",
+      }),
+    );
+    await waitFor(() => expect(cardOrder().at(-1)).toBe("退费加急"));
   });
 
   it("空名称、零首响、非数字超时各自给出字段错误并禁用保存", async () => {
@@ -406,10 +504,12 @@ describe("新增策略", () => {
 });
 
 describe("编辑策略", () => {
-  it("弹窗预填现值；保存按 id 分项提交改名与参数", async () => {
+  it("弹窗预填现值；种类为只读文本；保存按 id 分项提交改名与参数", async () => {
     renderSlaPage();
     const dialog = await openEditDialog("一般投诉");
 
+    expect(within(dialog).getByText("投诉")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("combobox", { name: "工单种类" })).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("策略名称")).toHaveValue("一般投诉");
     expect(within(dialog).getByLabelText("策略说明")).toHaveValue("常规投诉：48 小时处理时限。");
     expect(within(dialog).getByLabelText("首响违约线（分钟）")).toHaveValue("120");
@@ -487,8 +587,8 @@ describe("编辑策略", () => {
   });
 });
 
-describe("排序", () => {
-  it("下移首卡：sla.sort 收到交换后的全量清单，卡片墙即时重排", async () => {
+describe("组内排序", () => {
+  it("下移首卡：sla.sort 收到本组 kindId + 交换后的组内清单，卡片即时重排", async () => {
     renderSlaPage();
     await screen.findByText("一般投诉");
 
@@ -496,15 +596,23 @@ describe("排序", () => {
 
     await waitFor(() =>
       expect(calls.find((call) => call.path === "sla.sort")?.input).toEqual({
+        kindId: "kind-complaint",
         policyIds: ["p-high", "p-normal", "p-urgent", "p-critical", "p-vip"],
       }),
     );
     await waitFor(() =>
-      expect(cardOrder()).toEqual(["高级投诉", "一般投诉", "加急投诉", "特急投诉", "VIP 专线"]),
+      expect(cardOrder()).toEqual([
+        "高级投诉",
+        "一般投诉",
+        "加急投诉",
+        "特急投诉",
+        "VIP 专线",
+        "退费异常默认策略",
+      ]),
     );
   });
 
-  it("上移末二卡：sla.sort 收到交换后的全量清单", async () => {
+  it("上移末二卡：sla.sort 收到本组 kindId + 交换后的组内清单", async () => {
     renderSlaPage();
     await screen.findByText("特急投诉");
 
@@ -512,12 +620,13 @@ describe("排序", () => {
 
     await waitFor(() =>
       expect(calls.find((call) => call.path === "sla.sort")?.input).toEqual({
+        kindId: "kind-complaint",
         policyIds: ["p-normal", "p-high", "p-critical", "p-urgent", "p-vip"],
       }),
     );
   });
 
-  it("首卡禁用上移，末卡禁用下移", async () => {
+  it("组界即边界：组内首卡禁用上移、末卡禁用下移；单卡组两端皆禁用", async () => {
     renderSlaPage();
     await screen.findByText("一般投诉");
 
@@ -525,6 +634,8 @@ describe("排序", () => {
     expect(screen.getByRole("button", { name: "下移 一般投诉" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "上移 VIP 专线" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "下移 VIP 专线" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "上移 退费异常默认策略" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下移 退费异常默认策略" })).toBeDisabled();
   });
 });
 

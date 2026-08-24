@@ -293,6 +293,9 @@ describe("ticket import upload (Testcontainers)", () => {
 
   it("时效策略列按策略名匹配启用策略：接口新建的策略可导入，停用名即报错行", async () => {
     const session = await sessionFor("importer");
+    const complaintKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } })
+    ).id;
     const custom = await harness
       .callerFor(harness.seeded.users.admin, harness.seeded.roles.admin)
       .sla.create({
@@ -301,6 +304,7 @@ describe("ticket import upload (Testcontainers)", () => {
         firstResponseMinutes: 45,
         overdueHours: 12,
         reminderRules: [],
+        kindId: complaintKindId,
       });
 
     const ok = await uploadRequest(
@@ -333,6 +337,40 @@ describe("ticket import upload (Testcontainers)", () => {
       await prisma.slaPolicy.update({ where: { id: custom.id }, data: { active: true } });
     }
     expect(await prisma.ticket.count({ where: { customerName: "停用策略客户" } })).toBe(0);
+  });
+
+  it("按名匹配仅命中投诉组：导入行写退费组策略名报错误行", async () => {
+    const session = await sessionFor("importer");
+    const refundKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
+    ).id;
+    const refundPolicy = await harness
+      .callerFor(harness.seeded.users.admin, harness.seeded.roles.admin)
+      .sla.create({
+        name: "退费专属策略",
+        description: null,
+        firstResponseMinutes: 120,
+        overdueHours: 48,
+        reminderRules: [],
+        kindId: refundKindId,
+      });
+    try {
+      const res = await uploadRequest(
+        session,
+        await buildFile([{ 客户姓名: "退费策略客户", 时效策略: "退费专属策略" }]),
+      );
+      expect(res.statusCode).toBe(400);
+      expect(res.json().rowErrors).toEqual([
+        expect.objectContaining({
+          row: 2,
+          column: "时效策略",
+          message: expect.stringContaining("不存在"),
+        }),
+      ]);
+      expect(await prisma.ticket.count()).toBe(0);
+    } finally {
+      await prisma.slaPolicy.delete({ where: { id: refundPolicy.id } });
+    }
   });
 
   it("lands both-filled 完结 rows as completed, both-empty rows as unassigned, in one batch", async () => {
