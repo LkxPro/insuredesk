@@ -10,6 +10,7 @@ import { prisma } from "./db.ts";
 import type { Env } from "./env.ts";
 import { type AppRouter, appRouter } from "./routers/index.ts";
 import { registerExternalTicketExportRoute } from "./routes/external-ticket-export.route.ts";
+import { registerJbInsurancePushRoute } from "./routes/jb-insurance-push.route.ts";
 import { registerTicketExportRoute } from "./routes/ticket-export.route.ts";
 import { registerTicketImportRoute } from "./routes/ticket-import.route.ts";
 import { registerTicketImportTemplateRoute } from "./routes/ticket-import-template.route.ts";
@@ -133,6 +134,7 @@ export function buildServer(env: Env) {
   registerExternalTicketExportRoute(app);
   registerTicketImportTemplateRoute(app);
   registerTicketImportRoute(app);
+  registerJbInsurancePushRoute(app, env);
 
   // No CORS plugin: the web app talks to the API same-origin — via the Vite
   // proxy in dev (see apps/web/vite.config.ts) and behind a shared reverse
@@ -157,9 +159,6 @@ export function buildServer(env: Env) {
 
   app.get("/healthz", () => ({ status: "ok" }));
 
-  // In production the API also serves the built SPA: a single
-  // container fronts both the tRPC API and the static frontend, behind the
-  // host's nginx. In dev this is skipped — Vite owns the dev server.
   if (env.NODE_ENV === "production") {
     registerStaticFrontend(app, env);
   }
