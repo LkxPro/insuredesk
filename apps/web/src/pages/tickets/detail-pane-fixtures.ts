@@ -33,6 +33,7 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
     category: { id: "cat-claims", name: "理赔投诉", active: true },
     slaPolicyId: "pol-normal",
     slaPolicy: { id: "pol-normal", name: "一般投诉", active: true },
+    kindKey: "complaint",
     priority: null,
     followUpFrequency: "24小时内累计跟进1次",
     firstResponseRequirement: "120分钟内完成首次响应",

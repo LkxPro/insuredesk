@@ -6,6 +6,7 @@ import {
   TICKET_CREATE_FIELD_KEYS,
   type TicketCreateFieldKey,
   type TicketEditData,
+  TicketStatus,
   ticketProcessLogLabel,
 } from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client.ts";
@@ -15,6 +16,7 @@ import { applyTicketDataScope } from "./data-scope.service.ts";
 import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
 import {
   findSlaPolicyById,
+  SlaPolicyKindMismatchError,
   SlaPolicyNotConfiguredError,
   stampFromPolicy,
   type TicketServiceDeps,
@@ -154,8 +156,13 @@ export async function editTicket(
 
     const refPolicy = await findSlaPolicyById(tx, nextSlaPolicyId);
     const slaChanged = (refPolicy?.id ?? null) !== ticket.slaPolicyId;
-    if (slaChanged && refPolicy !== null && !refPolicy.active) {
-      throw new SlaPolicyNotConfiguredError(refPolicy.name);
+    if (slaChanged && refPolicy !== null) {
+      if (!refPolicy.active) {
+        throw new SlaPolicyNotConfiguredError(refPolicy.name);
+      }
+      if (refPolicy.kindId !== ticket.kindId) {
+        throw new SlaPolicyKindMismatchError(refPolicy.name);
+      }
     }
 
     if (changedFields.length === 0 && !slaChanged) {
@@ -219,9 +226,12 @@ export async function editTicket(
     // from the new policy, off the unchanged slaAnchorAt — the SLA clock stays
     // anchored to the original 计时锚 even when the reference is only supplied
     // by a later edit. Clearing the reference clears all stamps (未指定 = no
-    // SLA clock).
+    // SLA clock). 已完结工单盖章冻结——历史超时口径（考核 completionTime > dueAt）
+    // 依赖完结时刻的 dueAt。
     const slaFields: Prisma.TicketUncheckedUpdateInput = slaChanged
-      ? stampFromPolicy(refPolicy, ticket.slaAnchorAt)
+      ? ticket.status === TicketStatus.Completed
+        ? { slaPolicyId: refPolicy?.id ?? null }
+        : stampFromPolicy(refPolicy, ticket.slaAnchorAt)
       : {};
 
     await tx.ticket.update({

@@ -271,7 +271,7 @@ model SlaPolicy {
   id                   String   @id @default(cuid())
   name                 String   @unique
   description          String?
-  /// 目录序；dashboard 特急卡绑定 active 中 sortOrder 最大者
+  /// 组内目录序（组 = kindId 种类组）
   sortOrder            Int      @default(0)
   /// false = 停用：退出录入下拉/导入匹配/待办判定，存量引用照常显示
   active               Boolean  @default(true)

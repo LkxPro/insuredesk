@@ -68,6 +68,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
         slaPolicy: { select: { name: true } },
         status: true,
         createdAt: true,
+        slaAnchorAt: true,
         dueAt: true,
         contactCount: true,
       },
@@ -118,16 +119,17 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
       // 待首响: no first comment yet → in the todo from the moment it is
       // assigned, no trigger threshold. Strictly past firstResponseMinutes the
       // severity turns critical (超过 is strict, matching the overdue 已超过
-      // convention) — a color change only, never a count.
+      // convention) — a color change only, never a count. 退费单的
+      // slaAnchorAt = 平台 refundCreateTime：推送延迟计入等待。
       if (ticket.contactCount === 0) {
         const redLineMs =
           policy === undefined
             ? null
-            : ticket.createdAt.getTime() + policy.firstResponseMinutes * MINUTE_MS;
+            : ticket.slaAnchorAt.getTime() + policy.firstResponseMinutes * MINUTE_MS;
         alerts.push({
           type: "awaiting_first_response",
           severity: redLineMs !== null && now.getTime() > redLineMs ? "critical" : "warning",
-          message: `尚未首次跟进，已等待 ${formatDuration(now.getTime() - ticket.createdAt.getTime())}`,
+          message: `尚未首次跟进，已等待 ${formatDuration(now.getTime() - ticket.slaAnchorAt.getTime())}`,
         });
       }
 
@@ -187,7 +189,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
  */
 function evaluateRule(
   rule: ReminderRule,
-  ticket: { createdAt: Date; contactCount: number },
+  ticket: { slaAnchorAt: Date; contactCount: number },
   lastCommentAt: Date | null,
   now: Date,
 ): TodoAlert[] {
@@ -195,7 +197,7 @@ function evaluateRule(
     // In from (checkpoint − advance) inclusive, out at the checkpoint
     // exclusive — or the moment 累计 comments (contactCount, cumulative from
     // createdAt across assignees) reach requiredCount.
-    const checkpointMs = ticket.createdAt.getTime() + rule.checkpointHours * HOUR_MS;
+    const checkpointMs = ticket.slaAnchorAt.getTime() + rule.checkpointHours * HOUR_MS;
     const windowStartMs = checkpointMs - rule.advanceMinutes * MINUTE_MS;
     if (
       now.getTime() >= windowStartMs &&

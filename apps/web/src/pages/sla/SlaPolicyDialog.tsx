@@ -16,6 +16,14 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/toast";
@@ -142,6 +150,11 @@ export function SlaPolicyDialog({
   const [overdueHours, setOverdueHours] = useState("");
   const [rules, setRules] = useState<RuleDraft[]>([]);
   const [nameConflict, setNameConflict] = useState<string | null>(null);
+  const [kindId, setKindId] = useState("");
+
+  // 种类的归组建时选定、建后不可改（无换组操作）
+  const kindOptions =
+    trpc.ticketKind.options.useQuery(undefined, { enabled: open && !policy }).data ?? [];
 
   useEffect(() => {
     if (!open) {
@@ -154,7 +167,14 @@ export function SlaPolicyDialog({
     setOverdueHours(policy?.overdueHours == null ? "" : String(policy.overdueHours));
     setRules(policy ? policy.reminderRules.map(draftFrom) : []);
     setNameConflict(null);
+    setKindId(policy?.kindId ?? "");
   }, [open, policy]);
+
+  useEffect(() => {
+    if (open && !policy && kindId === "" && kindOptions.length > 0) {
+      setKindId(kindOptions[0]?.id ?? "");
+    }
+  }, [open, policy, kindId, kindOptions]);
 
   const onSaved = (saved: { name: string }) => {
     toast.success(policy ? `已更新时效策略「${saved.name}」` : `已创建时效策略「${saved.name}」`);
@@ -197,6 +217,7 @@ export function SlaPolicyDialog({
     descriptionError !== undefined ||
     firstResponseError !== undefined ||
     overdueError !== undefined ||
+    (!policy && kindId === "") ||
     ruleErrors.some((errors) => Object.keys(errors).length > 0);
   const busy = create.isPending || update.isPending;
   const saveError = create.error ?? update.error;
@@ -219,7 +240,7 @@ export function SlaPolicyDialog({
     if (policy) {
       update.mutate({ id: policy.id, ...payload });
     } else {
-      create.mutate(payload);
+      create.mutate({ ...payload, kindId });
     }
   }
 
@@ -234,6 +255,31 @@ export function SlaPolicyDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+          {policy ? (
+            <Field>
+              <FieldLabel>工单种类</FieldLabel>
+              <p className="text-sm text-muted-foreground">{policy.kindName}</p>
+            </Field>
+          ) : (
+            <Field>
+              <FieldLabel htmlFor="sla-policy-kind">工单种类</FieldLabel>
+              <Select value={kindId} onValueChange={setKindId}>
+                <SelectTrigger id="sla-policy-kind" className="w-full">
+                  <SelectValue placeholder="请选择" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {kindOptions.map((kind) => (
+                      <SelectItem key={kind.id} value={kind.id}>
+                        {kind.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+
           <Field data-invalid={nameError !== undefined}>
             <FieldLabel htmlFor="sla-policy-name">策略名称</FieldLabel>
             <Input

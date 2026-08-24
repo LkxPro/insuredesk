@@ -524,6 +524,7 @@ export async function importTickets(
 
   return prisma.$transaction(
     async (tx) => {
+      const kindId = await requireTicketKindId(tx, TicketKindKey.Complaint);
       const [
         channels,
         categories,
@@ -535,7 +536,7 @@ export async function importTickets(
         tx.channel.findMany(),
         tx.ticketCategory.findMany(),
         tx.completionStatus.findMany(),
-        tx.slaPolicy.findMany(),
+        tx.slaPolicy.findMany({ where: { kindId } }),
         tx.userFeedbackChannel.findMany(),
         tx.feedbackReceiveChannel.findMany(),
       ]);
@@ -559,10 +560,12 @@ export async function importTickets(
       const slaStamps = new Map<string | null, Awaited<ReturnType<typeof computeSlaStamp>>>();
       for (const ticket of tickets) {
         if (!slaStamps.has(ticket.slaPolicyId)) {
-          slaStamps.set(ticket.slaPolicyId, await computeSlaStamp(tx, ticket.slaPolicyId, now));
+          slaStamps.set(
+            ticket.slaPolicyId,
+            await computeSlaStamp(tx, ticket.slaPolicyId, now, kindId),
+          );
         }
       }
-      const kindId = await requireTicketKindId(tx, TicketKindKey.Complaint);
 
       const batch = await tx.ticketImportBatch.create({
         data: {
