@@ -5,7 +5,6 @@ entries:
     user: 外部「我的工单」列表新增「用户反馈渠道」列
     full: 外部账号的工单列表直接展示每单的用户反馈渠道（客户发起侧），无需点开详情即可核对；未填写的工单显示为横杠。
     page: /external-tickets
-    screenshot: external-tickets-feedback-channel.png
   - category: 改进
     user: 「投诉渠道」统一更名为「反馈渠道」
     full: 「用户投诉渠道」更名为「用户反馈渠道」，「投诉信息接收渠道」更名为「反馈信息接收渠道」；建单表单、工单详情、字典管理、列表筛选与导入导出的文案同步更新，存量数据与 Excel 旧列头模板照常可用。
