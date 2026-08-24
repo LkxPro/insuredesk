@@ -1,0 +1,19 @@
+version: v2026.08.6
+date: 2026-08-24
+entries:
+  - category: 新增
+    user: 外部「我的工单」列表新增「用户反馈渠道」列
+    full: 外部账号的工单列表直接展示每单的用户反馈渠道（客户发起侧），无需点开详情即可核对；未填写的工单显示为横杠。
+    page: /external-tickets
+    screenshot: external-tickets-feedback-channel.png
+  - category: 改进
+    user: 「投诉渠道」统一更名为「反馈渠道」
+    full: 「用户投诉渠道」更名为「用户反馈渠道」，「投诉信息接收渠道」更名为「反馈信息接收渠道」；建单表单、工单详情、字典管理、列表筛选与导入导出的文案同步更新，存量数据与 Excel 旧列头模板照常可用。
+    page: /dictionary
+  - category: 修复
+    user: 下拉拼音搜索支持多音字的全部读音
+    full: 责任人、工单渠道、客诉类别等搜索下拉的拼音匹配此前每个汉字只取一个读音，非首字多音字的另一读音搜不到（如「重庆」搜 zhongqing、「乐」搜 yue）；现按全部读音匹配，首字母搜索也允许跳字命中。
+    page: /tickets/new
+  - category: 内部
+    user: 开发流程与代码库维护
+    full: agent 自动化工作流：spec 子票改为合入集成分支，收尾自动开人工 review 的汇总 PR；代码注释规范白名单化并清理存量违规注释；本地开发启动链路兼容 Windows。
