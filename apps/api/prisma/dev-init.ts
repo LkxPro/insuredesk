@@ -44,8 +44,18 @@ try {
 // load the stub that throws on instantiation.
 const { PrismaPg } = await import("@prisma/adapter-pg");
 const { PrismaClient } = await import("../src/generated/prisma/client.ts");
-const { seedChannels, seedShiftTypes, seedTicketCategories } = await import("./seed-data.ts");
+const {
+  seedChannels,
+  seedRefundDefaultSlaPolicy,
+  seedShiftTypes,
+  seedTicketCategories,
+  seedTicketKinds,
+} = await import("./seed-data.ts");
 const prisma = new PrismaClient({ adapter: new PrismaPg(process.env.DATABASE_URL ?? "") });
+await seedTicketKinds(prisma);
+console.log("✓ Ticket kinds: 2 (inserted if missing)");
+await seedRefundDefaultSlaPolicy(prisma);
+console.log("✓ Refund default SLA policy (inserted if missing)");
 await seedShiftTypes(prisma);
 console.log("✓ Shift types: 4 (created if missing)");
 await seedTicketCategories(prisma);

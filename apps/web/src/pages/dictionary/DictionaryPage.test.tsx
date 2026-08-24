@@ -112,6 +112,24 @@ const canned = {
       updatedAt: "2026-08-19T00:00:00.000Z",
     },
   ],
+  ticketKinds: [
+    {
+      id: "kind-complaint",
+      name: "投诉",
+      active: true,
+      displayOrder: 1,
+      createdAt: "2026-08-25T00:00:00.000Z",
+      updatedAt: "2026-08-25T00:00:00.000Z",
+    },
+    {
+      id: "kind-refund",
+      name: "退费异常",
+      active: true,
+      displayOrder: 2,
+      createdAt: "2026-08-25T00:00:00.000Z",
+      updatedAt: "2026-08-25T00:00:00.000Z",
+    },
+  ],
 };
 let calls: Array<{ path: string; input: unknown }>;
 let deleteError: string | null;
@@ -122,6 +140,7 @@ const lists: Record<string, unknown> = {
   "completionStatus.list": canned.completionStatuses,
   "userFeedbackChannel.list": canned.userFeedbackChannels,
   "feedbackReceiveChannel.list": canned.feedbackReceiveChannels,
+  "ticketKind.list": canned.ticketKinds,
 };
 
 function respond(path: string, input: unknown): unknown {
@@ -509,6 +528,58 @@ describe("per-catalog config smoke", () => {
     await waitFor(() =>
       expect(calls.find((call) => call.path === `${c.ns}.delete`)?.input).toEqual({
         id: c.row.id,
+      }),
+    );
+  });
+
+  it("工单种类：增改排序启停走 ticketKind 命名空间，且无删除入口", async () => {
+    renderPage();
+    const sheet = await openSheet("工单种类");
+    await within(sheet).findByText("投诉");
+
+    expect(within(sheet).queryByRole("button", { name: /^删除 / })).toBeNull();
+
+    fireEvent.click(within(sheet).getByRole("button", { name: "新增种类" }));
+    const createDialog = await topDialog();
+    fireEvent.change(within(createDialog).getByLabelText("种类名称"), {
+      target: { value: "咨询" },
+    });
+    fireEvent.click(within(createDialog).getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "ticketKind.create")?.input).toEqual({
+        name: "咨询",
+      }),
+    );
+    await waitDialogClosed();
+
+    fireEvent.click(within(sheet).getByRole("button", { name: "编辑 投诉" }));
+    const editDialog = await topDialog();
+    fireEvent.change(within(editDialog).getByLabelText("种类名称"), {
+      target: { value: "客户投诉" },
+    });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "ticketKind.update")?.input).toEqual({
+        id: "kind-complaint",
+        name: "客户投诉",
+      }),
+    );
+    await waitDialogClosed();
+
+    fireEvent.click(within(sheet).getByRole("button", { name: "停用 退费异常" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "ticketKind.setActive")?.input).toEqual({
+        id: "kind-refund",
+        active: false,
+      }),
+    );
+
+    fireEvent.keyDown(within(sheet).getByRole("button", { name: /排序 投诉/ }), {
+      key: "ArrowDown",
+    });
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "ticketKind.reorder")?.input).toEqual({
+        ids: ["kind-refund", "kind-complaint"],
       }),
     );
   });

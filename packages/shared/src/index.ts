@@ -20,6 +20,7 @@ export * from "./ticket.ts";
 export * from "./ticket-category.ts";
 export * from "./ticket-fields.ts";
 export * from "./ticket-filter.ts";
+export * from "./ticket-kind.ts";
 export * from "./ticket-status.ts";
 export * from "./time-range.ts";
 export * from "./todo.ts";

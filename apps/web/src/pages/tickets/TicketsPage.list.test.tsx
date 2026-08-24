@@ -298,8 +298,9 @@ describe("归档工单默认隐藏（来源缺省）", () => {
       "manual",
       "community",
       "external_channel",
+      "jb-insurance",
     ]);
-    expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("4");
+    expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("5");
   });
 
   it("清空来源 → 空值参数下传，服务端按不过滤处理", async () => {
@@ -323,6 +324,7 @@ describe("归档工单默认隐藏（来源缺省）", () => {
         "manual",
         "community",
         "external_channel",
+        "jb-insurance",
         "file_import",
       ]),
     );

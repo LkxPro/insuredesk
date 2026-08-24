@@ -70,6 +70,7 @@ export const TICKET_SOURCES = [
   "community",
   "file_import",
   "external_channel",
+  "jb-insurance",
 ] as const;
 export const ticketSourceSchema = z.enum(TICKET_SOURCES);
 export type TicketSource = (typeof TICKET_SOURCES)[number];
@@ -84,6 +85,7 @@ export const DEFAULT_TICKET_SOURCE_FILTER: readonly TicketSource[] = [
   "manual",
   "community",
   "external_channel",
+  "jb-insurance",
 ];
 
 /**
@@ -96,6 +98,7 @@ export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   community: "社区",
   file_import: "文件导入",
   external_channel: "外部渠道",
+  "jb-insurance": "骏伯保险平台",
 };
 
 /**

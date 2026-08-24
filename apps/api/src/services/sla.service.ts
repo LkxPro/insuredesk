@@ -5,10 +5,12 @@ import {
   type SlaPolicyOption,
   type SlaPolicySortInput,
   type SlaPolicyUpdateInput,
+  TicketKindKey,
 } from "@insuredesk/shared";
 import type { SlaPolicy } from "../generated/prisma/client.ts";
 import { Prisma } from "../generated/prisma/client.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
+import { requireTicketKindId } from "./ticket-kind.service.ts";
 
 export class SlaPolicyNameConflictError extends Error {
   constructor(name: string) {
@@ -75,6 +77,7 @@ export async function createSlaPolicy({ prisma }: TicketServiceDeps, input: SlaP
         firstResponseMinutes: input.firstResponseMinutes,
         overdueHours: input.overdueHours,
         reminderRules: input.reminderRules,
+        kindId: await requireTicketKindId(prisma, TicketKindKey.Complaint),
       },
     });
     return toDto(row);

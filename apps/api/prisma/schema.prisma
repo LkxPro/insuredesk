@@ -95,6 +95,12 @@ model Ticket {
   feedbackTime DateTime? @db.Timestamptz
 
   source  String
+  /// 工单种类目录引用（行为按种类 key 绑代码）. Referenced rows can only be
+  /// 停用, never deleted — Restrict is the DB backstop.
+  kindId  String
+  /// SLA 计时锚盖章列：一切 SLA 计时（首响/检查点/超时）自它起算 —— 投诉单 =
+  /// createdAt，退费异常单 = 平台推送的 refundCreateTime。建单时写入，此后不改。
+  slaAnchorAt DateTime @db.Timestamptz
   /// 反馈渠道目录引用; null = 未填写. Referenced rows can only be 停用, never
   /// deleted — Restrict is the DB backstop behind the service's refusal.
   channelId String?
@@ -132,7 +138,7 @@ model Ticket {
   categoryId     String?
   /// 时效策略目录引用; null = 未指定: no dueAt, no 首响/跟进 requirements, no
   /// SLA time alerts until a later edit sets it (SLA then counts from the
-  /// original createdAt). Referenced rows can only be 停用, never deleted —
+  /// original slaAnchorAt). Referenced rows can only be 停用, never deleted —
   /// Restrict is the DB backstop.
   slaPolicyId    String?
   /// Independent free label (low/medium/high/urgent), default empty, no SLA role
@@ -148,7 +154,7 @@ model Ticket {
   assigneeId       String?
   /// First-assignment time, audit only — never used to compute dueAt
   assignedAt       DateTime? @db.Timestamptz
-  /// Fixed at creation: createdAt + level's overdueHours; null for 特急
+  /// Fixed at creation: slaAnchorAt + level's overdueHours; null for 特急
   dueAt            DateTime? @db.Timestamptz
   nextContactTime  DateTime? @db.Timestamptz
   /// Maintained solely by addComment (+1 per follow-up)
@@ -175,6 +181,7 @@ model Ticket {
 
   assignee         User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
   creator          User?              @relation("TicketCreator", fields: [creatorId], references: [id])
+  kind             TicketKind         @relation(fields: [kindId], references: [id], onDelete: Restrict)
   category         TicketCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   channel          Channel?           @relation(fields: [channelId], references: [id], onDelete: Restrict)
   completionStatus CompletionStatus?  @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
@@ -182,11 +189,15 @@ model Ticket {
   userFeedbackChannel    UserFeedbackChannel?     @relation(fields: [userFeedbackChannelId], references: [id], onDelete: Restrict)
   feedbackReceiveChannel FeedbackReceiveChannel?  @relation(fields: [feedbackReceiveChannelId], references: [id], onDelete: Restrict)
   importBatch      TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  refundDetail     TicketRefundDetail?
+  callbackDeliveries CallbackDelivery[]
   processLogs      ProcessLog[]
 
   @@index([assigneeId])
   /// The non-view_all data scope ORs assigneeId with creatorId
   @@index([creatorId])
+  @@index([kindId])
+  @@index([slaAnchorAt])
   @@index([categoryId])
   @@index([channelId])
   @@index([completionStatusId])
@@ -254,7 +265,7 @@ model ProcessLog {
 }
 
 /// 时效策略目录实体 + SLA rule configuration. Tickets reference a row via
-/// slaPolicyId; all durations count from ticket createdAt. Referenced rows are
+/// slaPolicyId; all durations count from ticket slaAnchorAt. Referenced rows are
 /// never deleted — 停用 only.
 model SlaPolicy {
   id                   String   @id @default(cuid())
@@ -264,19 +275,108 @@ model SlaPolicy {
   sortOrder            Int      @default(0)
   /// false = 停用：退出录入下拉/导入匹配/待办判定，存量引用照常显示
   active               Boolean  @default(true)
-  /// 首响违约线 (minutes from createdAt); red-line threshold only, no counting
+  /// 首响违约线 (minutes from slaAnchorAt); red-line threshold only, no counting
   firstResponseMinutes Int
-  /// Overdue duration (hours from createdAt); null = no deadline
+  /// Overdue duration (hours from slaAnchorAt); null = no deadline
   overdueHours         Int?
   /// Typed ReminderRule[] (packages/shared/src/sla.ts), validated by Zod at
   /// every boundary
   reminderRules        Json
+  /// 所属工单种类组. Referenced rows can only be 停用, never deleted —
+  /// Restrict is the DB backstop.
+  kindId               String
   createdAt            DateTime @default(now()) @db.Timestamptz
   updatedAt            DateTime @updatedAt @db.Timestamptz
 
+  kind    TicketKind @relation(fields: [kindId], references: [id], onDelete: Restrict)
   tickets Ticket[]
 
+  @@index([kindId])
   @@map("sla_policies")
+}
+
+/// 行为绑定行（种类携带的行为按稳定 key 由代码绑定）只启停、不物理删除、
+/// key 不可改。
+model TicketKind {
+  id           String   @id @default(cuid())
+  /// 行为绑定 key — 代码契约，创建后不可改；管理员新增的同形状行带随机 key
+  key          String   @unique
+  name         String   @unique
+  active       Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  tickets     Ticket[]
+  slaPolicies SlaPolicy[]
+
+  @@map("ticket_kinds")
+}
+
+/// 平台推送的实收清单，此后一律只读；金额一律 String 原样存取（系统不做数值
+/// 运算）。(platform, endorNo) 是推送幂等键 —— 重复推送命中即返回首个工单。
+model TicketRefundDetail {
+  id               String   @id @default(cuid())
+  ticketId         String   @unique
+  platform         String
+  endorNo          String
+  sysOrderId       String
+  /// 纯展示文本，不做枚举校验 —— 平台新增类型不应被己方拒收
+  workOrderType    String
+  expectedAmount   String
+  /// 平台推送的退费申请时刻；工单 slaAnchorAt 的盖章来源（可早于录入 12h）
+  refundCreateTime DateTime @db.Timestamptz
+  /// 期次明细，平台推送原文
+  refundTrades     Json
+  holderName       String?
+  holderPhone      String?
+  companyName      String?
+  productId        String?
+  productName      String?
+  policyNo         String?
+  failureReason    String?
+  /// 补偿金（诚意金）; null = 无补偿。客服可编辑，完结后随回调载荷快照锁定
+  compensationAmount String?
+  createdAt        DateTime @default(now()) @db.Timestamptz
+  updatedAt        DateTime @updatedAt @db.Timestamptz
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([platform, endorNo])
+  @@map("ticket_refund_details")
+}
+
+/// 完结事务内落行，载荷快照此后不变；at-least-once 投递（平台幂等吸收重复）。
+/// 状态机 pending → delivered | dead：退避 5m→30m→2h，自首试 24h 或平台
+/// 9998 转 dead 并告警管理员。
+model CallbackDelivery {
+  id               String    @id @default(cuid())
+  ticketId         String
+  /// pending | delivered | dead — 取值清单在 packages/shared/src/ticket-kind.ts
+  status           String    @default("pending")
+
+  // 回调明文载荷快照（完结时刻锁定，此后一切字段不再回读工单）
+  sysOrderId       String
+  endorNo          String
+  workOrderNumber  String
+  actualAmount     String
+  compensationAmount String?
+  remark           String?
+  operator         String?
+
+  attempts       Int       @default(0)
+  firstAttemptAt DateTime? @db.Timestamptz
+  nextAttemptAt  DateTime? @db.Timestamptz
+  lastError      String?
+  deliveredAt    DateTime? @db.Timestamptz
+  createdAt      DateTime  @default(now()) @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @db.Timestamptz
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([ticketId])
+  @@map("callback_deliveries")
 }
 
 /// 管理员（dictionary.manage）维护的客诉类别目录。停用项退出新建/编辑下拉但

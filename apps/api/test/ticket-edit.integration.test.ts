@@ -313,7 +313,10 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect((await manager().ticket.detail({ id: ticketId })).dueAt).toBeNull();
 
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
-      await prisma.ticket.update({ where: { id: ticketId }, data: { createdAt } });
+      await prisma.ticket.update({
+        where: { id: ticketId },
+        data: { createdAt, slaAnchorAt: createdAt },
+      });
 
       await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("一般投诉") }));
 
@@ -354,7 +357,10 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const rushId = policyId("加急投诉");
       const ticketId = await createTicket();
       const createdAt = new Date(Date.now() - 10 * HOUR_MS);
-      await prisma.ticket.update({ where: { id: ticketId }, data: { createdAt } });
+      await prisma.ticket.update({
+        where: { id: ticketId },
+        data: { createdAt, slaAnchorAt: createdAt },
+      });
 
       const result = await manager().ticket.edit(editInput(ticketId, { slaPolicyId: rushId }));
       expect(result.changedFields).toContain("slaPolicyId");

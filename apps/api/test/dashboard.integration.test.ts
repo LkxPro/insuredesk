@@ -14,6 +14,7 @@ describe("dashboard stats (Testcontainers)", () => {
   let seeded: IntegrationHarness["seeded"];
   let channelRows: { id: string; name: string }[];
   let channelIds: Map<string, string>;
+  let complaintKindId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
@@ -38,6 +39,8 @@ describe("dashboard stats (Testcontainers)", () => {
     };
     channelRows = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
     channelIds = new Map(channelRows.map((channel) => [channel.name, channel.id]));
+    complaintKindId = (await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } }))
+      .id;
   }, 180_000);
 
   afterAll(async () => {
@@ -120,6 +123,8 @@ describe("dashboard stats (Testcontainers)", () => {
     return {
       feedbackTime: new Date("2026-07-09T02:00:00.000Z"),
       source: "manual",
+      kindId: complaintKindId,
+      slaAnchorAt: new Date("2026-07-09T02:00:00.000Z"),
       channelId: channelId("保司"),
       project: "融盛",
       brokerageEntity: "东方大地",

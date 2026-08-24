@@ -31,19 +31,40 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     );
     expect(roles.filter((role) => role.system).map((role) => role.name)).toEqual(["管理员"]);
 
+    const kinds = await prisma.ticketKind.findMany({ orderBy: { displayOrder: "asc" } });
+    expect(kinds.map((kind) => [kind.key, kind.name, kind.active])).toEqual([
+      ["complaint", "投诉", true],
+      ["refund_exception", "退费异常", true],
+    ]);
+    const complaintKindId = kinds.find((kind) => kind.key === "complaint")?.id;
+    const refundKindId = kinds.find((kind) => kind.key === "refund_exception")?.id;
+
     const policies = await prisma.slaPolicy.findMany({
       orderBy: { sortOrder: "asc" },
     });
     expect(policies.map((policy) => policy.name)).toEqual([
+      "退费异常默认策略",
       "一般投诉",
       "高级投诉",
       "加急投诉",
       "特急投诉",
     ]);
-    for (const [index, policy] of policies.entries()) {
+    const refundPolicy = policies[0];
+    expect(refundPolicy).toMatchObject({
+      sortOrder: 0,
+      active: true,
+      firstResponseMinutes: 120,
+      overdueHours: 48,
+      kindId: refundKindId,
+    });
+    expect(refundPolicy?.reminderRules).toEqual([
+      { type: "follow_up_checkpoint", checkpointHours: 36, requiredCount: 1, advanceMinutes: 180 },
+    ]);
+    for (const [index, policy] of policies.slice(1).entries()) {
       expect(policy.sortOrder).toBe(index + 1);
       expect(policy.active).toBe(true);
       expect(policy.description).toBeTruthy();
+      expect(policy.kindId).toBe(complaintKindId);
     }
 
     expect(
@@ -129,7 +150,7 @@ describe("bootstrapSystemData (Testcontainers)", () => {
     expect(renamed?.permissions).toEqual(["ticket.view"]);
 
     const policies = await prisma.slaPolicy.findMany();
-    expect(policies).toHaveLength(4);
+    expect(policies).toHaveLength(5);
     const edited = policies.find((policy) => policy.name === "常规件");
     expect(edited).toMatchObject({ active: false });
     // 复位，后续用例读出厂口径
@@ -194,5 +215,38 @@ describe("bootstrapSystemData (Testcontainers)", () => {
       "管理员",
       "运营主管",
     ]);
+  });
+
+  it("种类行与退费默认策略：重跑幂等、删掉即补插、管理员改名不回写", async () => {
+    const options = { adminUsername: "sysadmin", adminPassword: "reinstall-pass" };
+
+    await bootstrapSystemData(prisma, options);
+    expect(await prisma.ticketKind.count()).toBe(2);
+    expect(await prisma.slaPolicy.count()).toBe(5);
+
+    await prisma.slaPolicy.delete({ where: { name: "退费异常默认策略" } });
+    await bootstrapSystemData(prisma, options);
+    expect(
+      await prisma.slaPolicy.findUnique({ where: { name: "退费异常默认策略" } }),
+    ).toMatchObject({ overdueHours: 48, active: true });
+    expect(await prisma.slaPolicy.count()).toBe(5);
+
+    await prisma.ticketKind.update({ where: { key: "complaint" }, data: { name: "客户投诉" } });
+    await bootstrapSystemData(prisma, options);
+    expect((await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } })).name).toBe(
+      "客户投诉",
+    );
+    expect(await prisma.ticketKind.count()).toBe(2);
+
+    await prisma.slaPolicy.update({
+      where: { name: "退费异常默认策略" },
+      data: { name: "退款加急线" },
+    });
+    await bootstrapSystemData(prisma, options);
+    expect(await prisma.slaPolicy.findUnique({ where: { name: "退款加急线" } })).not.toBeNull();
+    expect(
+      await prisma.slaPolicy.findUnique({ where: { name: "退费异常默认策略" } }),
+    ).toMatchObject({ overdueHours: 48 });
+    expect(await prisma.slaPolicy.count()).toBe(6);
   });
 });

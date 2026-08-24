@@ -5,6 +5,7 @@ import {
   externalTicketSubmitInputSchema,
   prioritySchema,
   processLogActionSchema,
+  TicketKindKey,
   ticketStatusSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
@@ -17,6 +18,7 @@ import {
   buildExternalSubmittedNotification,
   writeBulkNotifications,
 } from "../services/notification.service.ts";
+import { requireTicketKindId } from "../services/ticket-kind.service.ts";
 import { requirePermission, router } from "../trpc.ts";
 
 const deps = { prisma, clock: systemClock };
@@ -123,6 +125,8 @@ export const externalTicketRouter = router({
           data: {
             workOrderNumber,
             source: "external_channel",
+            kindId: await requireTicketKindId(tx, TicketKindKey.Complaint),
+            slaAnchorAt: now,
             submissionText: input.submissionText,
             creatorId: user.id,
             channelId: account.prefillChannelId,

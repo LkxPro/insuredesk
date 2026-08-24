@@ -14,6 +14,7 @@ import {
   TICKET_SOURCE_LABELS,
   type TicketCreateData,
   type TicketCreateFieldKey,
+  TicketKindKey,
   type TicketListQuery,
   TicketStatus,
   ticketListFilterConditions,
@@ -29,6 +30,7 @@ import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.servic
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { displayStatusTicketWhere } from "./ticket-display-status.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
+import { requireTicketKindId } from "./ticket-kind.service.ts";
 import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 export interface TicketServiceDeps {
@@ -57,12 +59,12 @@ export function toDateOrNull(value: string | null): Date | null {
 }
 
 /**
- * THE dueAt formula: createdAt + the policy's overdueHours, null when the
+ * THE dueAt formula: slaAnchorAt + the policy's overdueHours, null when the
  * policy has no deadline. Creation stamps it; a 改策略引用 re-runs it with
- * the new policy's hours against the same unchanging createdAt.
+ * the new policy's hours against the same unchanging slaAnchorAt.
  */
-export function computeDueAt(createdAt: Date, overdueHours: number | null): Date | null {
-  return overdueHours === null ? null : new Date(createdAt.getTime() + overdueHours * HOUR_MS);
+export function computeDueAt(slaAnchorAt: Date, overdueHours: number | null): Date | null {
+  return overdueHours === null ? null : new Date(slaAnchorAt.getTime() + overdueHours * HOUR_MS);
 }
 
 /**
@@ -98,11 +100,11 @@ export async function resolveSlaPolicy(
 /**
  * The SLA fields a 时效策略引用 stamps onto a ticket. A null policy (未指定)
  * stamps all-null: no dueAt, no 首响/跟进 requirements — and hence no SLA time
- * alerts until an edit sets a reference (off the original createdAt).
+ * alerts until an edit sets a reference (off the ticket's slaAnchorAt).
  */
 export function stampFromPolicy(
   policy: SlaPolicy | null,
-  createdAt: Date,
+  slaAnchorAt: Date,
 ): {
   slaPolicyId: string | null;
   dueAt: Date | null;
@@ -119,7 +121,7 @@ export function stampFromPolicy(
   }
   return {
     slaPolicyId: policy.id,
-    dueAt: computeDueAt(createdAt, policy.overdueHours),
+    dueAt: computeDueAt(slaAnchorAt, policy.overdueHours),
     followUpFrequency: formatFollowUpFrequency(reminderRulesSchema.parse(policy.reminderRules)),
     firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
   };
@@ -128,9 +130,9 @@ export function stampFromPolicy(
 export async function computeSlaStamp(
   db: Pick<PrismaClient, "slaPolicy">,
   slaPolicyId: string | null,
-  createdAt: Date,
+  slaAnchorAt: Date,
 ) {
-  return stampFromPolicy(await resolveSlaPolicy(db, slaPolicyId), createdAt);
+  return stampFromPolicy(await resolveSlaPolicy(db, slaPolicyId), slaAnchorAt);
 }
 
 /**
@@ -165,7 +167,8 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
  *   unfilled fields persist as NULL ("unknown", never "")
  * - requiredTicketFields of creator's role: missing any → reject with all missing fields
  * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
- * - dueAt is fixed once, here: createdAt + the policy's SLA overdueHours
+ * - 手工建单只产投诉单：kind 盖投诉、slaAnchorAt = createdAt；dueAt fixed
+ *   once, here: anchor + the policy's overdueHours
  *   (null for 特急 — never overdue; null while 未定级 — no SLA clock fields)
  * - 跟进频次/首响要求 are stamped from the policy's SLA config, not hardcoded
  * - source=manual records creatorId; "由谁创建" derives at read time
@@ -188,6 +191,7 @@ export async function createTicket(
   }
 
   const now = clock.now();
+  const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
   const slaStamp = await computeSlaStamp(prisma, data.slaPolicyId, now);
 
   return prisma.$transaction(async (tx) => {
@@ -214,6 +218,8 @@ export async function createTicket(
         feedbackTime: toDateOrNull(data.feedbackTime),
         contactTime: toDateOrNull(data.contactTime),
         createdAt: now,
+        slaAnchorAt: now,
+        kindId,
         source: "manual",
         creatorId: creator.id,
         status: TicketStatus.Unassigned,

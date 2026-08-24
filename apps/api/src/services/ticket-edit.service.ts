@@ -33,8 +33,8 @@ import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
  * - status is untouchable by construction: the input schema has no status
  *   field and this update never writes one, so editing can never reopen a
  *   completed ticket
- * - 改时效策略引用 = 改 SLA: dueAt re-runs the creation formula (createdAt +
- *   the NEW policy's overdueHours — computeDueAt, off the fixed createdAt
+ * - 改时效策略引用 = 改 SLA: dueAt re-runs the creation formula (slaAnchorAt +
+ *   the NEW policy's overdueHours — computeDueAt, off the fixed slaAnchorAt
  *   base), and 跟进频次/首响要求 re-stamp from the new policy. This may flip the
  *   ticket straight into overdue (e.g. 特急→一般 past 48h) — intended, and the
  *   read-time display/list predicates pick it up with no further writes.
@@ -216,12 +216,12 @@ export async function editTicket(
     };
 
     // 改策略引用 = 改 SLA: everything the policy stamped at creation re-derives
-    // from the new policy, off the unchanged createdAt — the SLA clock stays
-    // anchored to the ORIGINAL 录入时刻 even when the reference is only supplied
+    // from the new policy, off the unchanged slaAnchorAt — the SLA clock stays
+    // anchored to the original 计时锚 even when the reference is only supplied
     // by a later edit. Clearing the reference clears all stamps (未指定 = no
     // SLA clock).
     const slaFields: Prisma.TicketUncheckedUpdateInput = slaChanged
-      ? stampFromPolicy(refPolicy, ticket.createdAt)
+      ? stampFromPolicy(refPolicy, ticket.slaAnchorAt)
       : {};
 
     await tx.ticket.update({

@@ -8,6 +8,7 @@ import {
   type TicketCreateData,
   type TicketFieldDescriptor,
   type TicketImportRowError,
+  TicketKindKey,
   TicketStatus,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
@@ -18,6 +19,7 @@ import {
   resolveCatalogNameRef,
 } from "./dictionary-catalog.service.ts";
 import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service.ts";
+import { requireTicketKindId } from "./ticket-kind.service.ts";
 import { resolveTimeZone } from "./time-zone.ts";
 
 /**
@@ -560,6 +562,7 @@ export async function importTickets(
           slaStamps.set(ticket.slaPolicyId, await computeSlaStamp(tx, ticket.slaPolicyId, now));
         }
       }
+      const kindId = await requireTicketKindId(tx, TicketKindKey.Complaint);
 
       const batch = await tx.ticketImportBatch.create({
         data: {
@@ -576,6 +579,8 @@ export async function importTickets(
           feedbackTime: toDateOrNull(ticket.feedbackTime),
           contactTime: toDateOrNull(ticket.contactTime),
           createdAt: now,
+          slaAnchorAt: now,
+          kindId,
           source: "file_import",
           creatorId: importer.id,
           importBatchId: batch.id,

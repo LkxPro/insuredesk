@@ -153,6 +153,16 @@ export const DEFAULT_SLA_POLICIES: readonly (SlaPolicyDefaults & { name: string 
   },
 ];
 
+/** 组内默认的选取规则：active 中 sortOrder 最小者。 */
+export const DEFAULT_REFUND_SLA_POLICY: SlaPolicyDefaults & { name: string } = {
+  name: "退费异常默认策略",
+  firstResponseMinutes: 120,
+  overdueHours: 48,
+  reminderRules: [
+    { type: "follow_up_checkpoint", checkpointHours: 36, requiredCount: 1, advanceMinutes: 180 },
+  ],
+};
+
 export function formatFirstResponseRequirement(firstResponseMinutes: number): string {
   return `${firstResponseMinutes}分钟内完成首次响应`;
 }
