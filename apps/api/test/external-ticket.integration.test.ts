@@ -40,8 +40,8 @@ describe("external ticket API (Testcontainers)", () => {
         prefillProject: "融盛",
         prefillBrokerageEntity: "东方大地",
         prefillPaymentChannel: "连连",
-        prefillUserComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
-        prefillComplaintReceiveChannelId: harness.complaintReceiveChannelId(
+        prefillUserFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
+        prefillFeedbackReceiveChannelId: harness.feedbackReceiveChannelId(
           "（微信）凯森&骏伯客诉对接群",
         ),
       },
@@ -84,8 +84,8 @@ describe("external ticket API (Testcontainers)", () => {
         project: "融盛",
         brokerageEntity: "东方大地",
         paymentChannel: "连连",
-        userComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
-        complaintReceiveChannelId: harness.complaintReceiveChannelId("（微信）凯森&骏伯客诉对接群"),
+        userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
+        feedbackReceiveChannelId: harness.feedbackReceiveChannelId("（微信）凯森&骏伯客诉对接群"),
         status: "unassigned",
       });
       expect(ticket?.feedbackTime).toEqual(ticket?.createdAt);
@@ -102,8 +102,8 @@ describe("external ticket API (Testcontainers)", () => {
         project: null,
         brokerageEntity: null,
         paymentChannel: null,
-        userComplaintChannelId: null,
-        complaintReceiveChannelId: null,
+        userFeedbackChannelId: null,
+        feedbackReceiveChannelId: null,
       });
     });
 
@@ -899,8 +899,8 @@ describe("external ticket API (Testcontainers)", () => {
         paymentChannel: null,
         internalOrderNumber: null,
         policyNumbers: [],
-        userComplaintChannelId: null,
-        complaintReceiveChannelId: null,
+        userFeedbackChannelId: null,
+        feedbackReceiveChannelId: null,
         customerName: null,
         phone: null,
         contactPhone: null,
@@ -974,8 +974,8 @@ describe("external ticket API (Testcontainers)", () => {
         paymentChannel: null,
         internalOrderNumber: null,
         policyNumbers: [],
-        userComplaintChannelId: null,
-        complaintReceiveChannelId: null,
+        userFeedbackChannelId: null,
+        feedbackReceiveChannelId: null,
         customerName: null,
         phone: null,
         contactPhone: null,

@@ -21,7 +21,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026071000728"],
-      userComplaintChannelId: null,
+      userFeedbackChannelId: null,
       customerName: "孙完结",
       phone: "13800000003",
       customerRequest: "对理赔金额有异议，要求复核",

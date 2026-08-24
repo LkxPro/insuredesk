@@ -106,6 +106,11 @@ const columns: ReadonlyArray<SurfaceColumn<ListItem, ExternalListQuery>> = [
     render: (ticket) => (ticket.feedbackTime ? formatDateTime(ticket.feedbackTime) : <Unknown />),
   },
   {
+    key: "userFeedbackChannel",
+    header: TICKET_FIELDS.userFeedbackChannelId.label,
+    render: (ticket) => ticket.userFeedbackChannel ?? <Unknown />,
+  },
+  {
     key: "policyNumbers",
     header: TICKET_FIELDS.policyNumbers.label,
     render: (ticket) => <PolicyNumbersCell policyNumbers={ticket.policyNumbers} />,

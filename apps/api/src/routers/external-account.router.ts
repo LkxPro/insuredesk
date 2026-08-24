@@ -12,8 +12,8 @@ import {
   InvalidVisibleFieldError,
   listExternalAccounts,
   PrefillChannelNotFoundError,
-  PrefillComplaintReceiveChannelNotFoundError,
-  PrefillUserComplaintChannelNotFoundError,
+  PrefillFeedbackReceiveChannelNotFoundError,
+  PrefillUserFeedbackChannelNotFoundError,
   setExternalAccountActive,
   updateExternalAccount,
 } from "../services/external-account.service.ts";
@@ -40,8 +40,8 @@ function toTRPCError(error: unknown): never {
   if (
     error instanceof InvalidVisibleFieldError ||
     error instanceof PrefillChannelNotFoundError ||
-    error instanceof PrefillUserComplaintChannelNotFoundError ||
-    error instanceof PrefillComplaintReceiveChannelNotFoundError ||
+    error instanceof PrefillUserFeedbackChannelNotFoundError ||
+    error instanceof PrefillFeedbackReceiveChannelNotFoundError ||
     error instanceof ExternalAccountOnlyError ||
     error instanceof SelfDisableError
   ) {

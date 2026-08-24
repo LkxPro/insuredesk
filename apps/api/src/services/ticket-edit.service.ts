@@ -11,8 +11,8 @@ import {
 import type { Prisma } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
 import { channelCatalog } from "./channel.service.ts";
-import { complaintReceiveChannelCatalog } from "./complaint-receive-channel.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
+import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
 import {
   findSlaPolicyById,
   SlaPolicyNotConfiguredError,
@@ -23,7 +23,7 @@ import {
 import { TicketNotFoundError } from "./ticket-assign.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
-import { userComplaintChannelCatalog } from "./user-complaint-channel.service.ts";
+import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结
@@ -137,8 +137,8 @@ export async function editTicket(
         category: { select: { name: true } },
         channel: { select: { name: true } },
         slaPolicy: { select: { name: true } },
-        userComplaintChannel: { select: { name: true } },
-        complaintReceiveChannel: { select: { name: true } },
+        userFeedbackChannel: { select: { name: true } },
+        feedbackReceiveChannel: { select: { name: true } },
       },
     });
     if (!ticket) {
@@ -199,19 +199,18 @@ export async function editTicket(
           ? ((await channelCatalog.resolveNewRef(tx, next.channelId))?.name ?? null)
           : null,
       },
-      userComplaintChannelId: {
-        from: ticket.userComplaintChannel?.name ?? null,
-        to: changedFields.includes("userComplaintChannelId")
-          ? ((await userComplaintChannelCatalog.resolveNewRef(tx, next.userComplaintChannelId))
+      userFeedbackChannelId: {
+        from: ticket.userFeedbackChannel?.name ?? null,
+        to: changedFields.includes("userFeedbackChannelId")
+          ? ((await userFeedbackChannelCatalog.resolveNewRef(tx, next.userFeedbackChannelId))
               ?.name ?? null)
           : null,
       },
-      complaintReceiveChannelId: {
-        from: ticket.complaintReceiveChannel?.name ?? null,
-        to: changedFields.includes("complaintReceiveChannelId")
-          ? ((
-              await complaintReceiveChannelCatalog.resolveNewRef(tx, next.complaintReceiveChannelId)
-            )?.name ?? null)
+      feedbackReceiveChannelId: {
+        from: ticket.feedbackReceiveChannel?.name ?? null,
+        to: changedFields.includes("feedbackReceiveChannelId")
+          ? ((await feedbackReceiveChannelCatalog.resolveNewRef(tx, next.feedbackReceiveChannelId))
+              ?.name ?? null)
           : null,
       },
     };

@@ -15,10 +15,10 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
     paymentChannel: "连连支付",
     internalOrderNumber: null,
     policyNumbers: ["P2026070900123"],
-    userComplaintChannel: { id: "ucc-hotline", name: "保司400热线", active: true },
-    complaintReceiveChannel: {
-      id: "crc-group",
-      name: "（微信）凯森&骏伯客诉对接群",
+    userFeedbackChannel: { id: "ufc-hotline", name: "保司400热线", active: true },
+    feedbackReceiveChannel: {
+      id: "frc-group",
+      name: "（微信）凯森&骏伯反馈对接群",
       active: true,
     },
     customerName: "王小明",

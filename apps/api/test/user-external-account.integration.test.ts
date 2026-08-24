@@ -91,8 +91,8 @@ describe("用户管理 × 外部账号 (Testcontainers)", () => {
         prefillProject: null,
         prefillBrokerageEntity: null,
         prefillPaymentChannel: null,
-        prefillUserComplaintChannelId: null,
-        prefillComplaintReceiveChannelId: null,
+        prefillUserFeedbackChannelId: null,
+        prefillFeedbackReceiveChannelId: null,
       });
     });
   });

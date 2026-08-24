@@ -69,16 +69,16 @@ const EMPTY_PREFILL: NonNullable<ExternalAccountFormValues["prefill"]> = {
   project: "",
   brokerageEntity: "",
   paymentChannel: "",
-  userComplaintChannelId: "",
-  complaintReceiveChannelId: "",
+  userFeedbackChannelId: "",
+  feedbackReceiveChannelId: "",
 };
 
 const PREFILL_TEXT_KEYS = ["project", "brokerageEntity", "paymentChannel"] as const;
 
 const PREFILL_CATALOG_KEYS = [
   { key: "channelId", unsetLabel: "不预填渠道" },
-  { key: "userComplaintChannelId", unsetLabel: "不预填用户投诉渠道" },
-  { key: "complaintReceiveChannelId", unsetLabel: "不预填投诉信息接收渠道" },
+  { key: "userFeedbackChannelId", unsetLabel: "不预填用户反馈渠道" },
+  { key: "feedbackReceiveChannelId", unsetLabel: "不预填反馈信息接收渠道" },
 ] as const;
 
 type PrefillCatalogKey = (typeof PREFILL_CATALOG_KEYS)[number]["key"];
@@ -149,12 +149,12 @@ function PrefillFields({
   idPrefix: string;
 }) {
   const channelsQuery = trpc.channel.options.useQuery();
-  const userComplaintChannelsQuery = trpc.userComplaintChannel.options.useQuery();
-  const complaintReceiveChannelsQuery = trpc.complaintReceiveChannel.options.useQuery();
+  const userFeedbackChannelsQuery = trpc.userFeedbackChannel.options.useQuery();
+  const feedbackReceiveChannelsQuery = trpc.feedbackReceiveChannel.options.useQuery();
   const catalogQueries = {
     channelId: channelsQuery,
-    userComplaintChannelId: userComplaintChannelsQuery,
-    complaintReceiveChannelId: complaintReceiveChannelsQuery,
+    userFeedbackChannelId: userFeedbackChannelsQuery,
+    feedbackReceiveChannelId: feedbackReceiveChannelsQuery,
   } as const;
 
   const errors = form.formState.errors;
@@ -353,8 +353,8 @@ function UpdateDialog({
           project: account.prefill.project ?? "",
           brokerageEntity: account.prefill.brokerageEntity ?? "",
           paymentChannel: account.prefill.paymentChannel ?? "",
-          userComplaintChannelId: account.prefill.userComplaintChannelId ?? "",
-          complaintReceiveChannelId: account.prefill.complaintReceiveChannelId ?? "",
+          userFeedbackChannelId: account.prefill.userFeedbackChannelId ?? "",
+          feedbackReceiveChannelId: account.prefill.feedbackReceiveChannelId ?? "",
         },
       });
     }

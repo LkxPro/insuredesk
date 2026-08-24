@@ -58,17 +58,17 @@ export class PrefillChannelNotFoundError extends Error {
   }
 }
 
-export class PrefillUserComplaintChannelNotFoundError extends Error {
+export class PrefillUserFeedbackChannelNotFoundError extends Error {
   constructor() {
-    super("所选用户投诉渠道不存在");
-    this.name = "PrefillUserComplaintChannelNotFoundError";
+    super("所选用户反馈渠道不存在");
+    this.name = "PrefillUserFeedbackChannelNotFoundError";
   }
 }
 
-export class PrefillComplaintReceiveChannelNotFoundError extends Error {
+export class PrefillFeedbackReceiveChannelNotFoundError extends Error {
   constructor() {
-    super("所选投诉信息接收渠道不存在");
-    this.name = "PrefillComplaintReceiveChannelNotFoundError";
+    super("所选反馈信息接收渠道不存在");
+    this.name = "PrefillFeedbackReceiveChannelNotFoundError";
   }
 }
 
@@ -141,29 +141,29 @@ async function resolvePrefillChannel(prisma: PrismaClient, channelId: string | n
   }
 }
 
-async function resolvePrefillUserComplaintChannel(prisma: PrismaClient, id: string | null) {
+async function resolvePrefillUserFeedbackChannel(prisma: PrismaClient, id: string | null) {
   if (id === null) {
     return;
   }
-  const row = await prisma.userComplaintChannel.findUnique({
+  const row = await prisma.userFeedbackChannel.findUnique({
     where: { id },
     select: { id: true },
   });
   if (!row) {
-    throw new PrefillUserComplaintChannelNotFoundError();
+    throw new PrefillUserFeedbackChannelNotFoundError();
   }
 }
 
-async function resolvePrefillComplaintReceiveChannel(prisma: PrismaClient, id: string | null) {
+async function resolvePrefillFeedbackReceiveChannel(prisma: PrismaClient, id: string | null) {
   if (id === null) {
     return;
   }
-  const row = await prisma.complaintReceiveChannel.findUnique({
+  const row = await prisma.feedbackReceiveChannel.findUnique({
     where: { id },
     select: { id: true },
   });
   if (!row) {
-    throw new PrefillComplaintReceiveChannelNotFoundError();
+    throw new PrefillFeedbackReceiveChannelNotFoundError();
   }
 }
 
@@ -171,12 +171,12 @@ async function resolvePrefillRefs(
   prisma: PrismaClient,
   prefill: Pick<
     ExternalAccountPrefill,
-    "channelId" | "userComplaintChannelId" | "complaintReceiveChannelId"
+    "channelId" | "userFeedbackChannelId" | "feedbackReceiveChannelId"
   >,
 ) {
   await resolvePrefillChannel(prisma, prefill.channelId);
-  await resolvePrefillUserComplaintChannel(prisma, prefill.userComplaintChannelId);
-  await resolvePrefillComplaintReceiveChannel(prisma, prefill.complaintReceiveChannelId);
+  await resolvePrefillUserFeedbackChannel(prisma, prefill.userFeedbackChannelId);
+  await resolvePrefillFeedbackReceiveChannel(prisma, prefill.feedbackReceiveChannelId);
 }
 
 const EXTERNAL_ACCOUNT_WHERE: Prisma.UserWhereInput = {
@@ -185,8 +185,8 @@ const EXTERNAL_ACCOUNT_WHERE: Prisma.UserWhereInput = {
 
 const accountListInclude = {
   prefillChannel: { select: { name: true } },
-  prefillUserComplaintChannel: { select: { name: true } },
-  prefillComplaintReceiveChannel: { select: { name: true } },
+  prefillUserFeedbackChannel: { select: { name: true } },
+  prefillFeedbackReceiveChannel: { select: { name: true } },
   _count: { select: { createdTickets: true } },
 } as const;
 
@@ -206,10 +206,10 @@ function toListItem(row: AccountListRow): ExternalAccountListItem {
       project: row.prefillProject,
       brokerageEntity: row.prefillBrokerageEntity,
       paymentChannel: row.prefillPaymentChannel,
-      userComplaintChannelId: row.prefillUserComplaintChannelId,
-      userComplaintChannelName: row.prefillUserComplaintChannel?.name ?? null,
-      complaintReceiveChannelId: row.prefillComplaintReceiveChannelId,
-      complaintReceiveChannelName: row.prefillComplaintReceiveChannel?.name ?? null,
+      userFeedbackChannelId: row.prefillUserFeedbackChannelId,
+      userFeedbackChannelName: row.prefillUserFeedbackChannel?.name ?? null,
+      feedbackReceiveChannelId: row.prefillFeedbackReceiveChannelId,
+      feedbackReceiveChannelName: row.prefillFeedbackReceiveChannel?.name ?? null,
     },
     ticketCount: row._count.createdTickets,
   };
@@ -233,8 +233,8 @@ export async function createExternalAccount(
   const { prisma } = deps;
   await resolvePrefillRefs(prisma, {
     channelId: input.prefill?.channelId ?? null,
-    userComplaintChannelId: input.prefill?.userComplaintChannelId ?? null,
-    complaintReceiveChannelId: input.prefill?.complaintReceiveChannelId ?? null,
+    userFeedbackChannelId: input.prefill?.userFeedbackChannelId ?? null,
+    feedbackReceiveChannelId: input.prefill?.feedbackReceiveChannelId ?? null,
   });
   const role = await loadSoleExternalRole(prisma);
 
@@ -253,8 +253,8 @@ export async function createExternalAccount(
         prefillProject: input.prefill?.project ?? null,
         prefillBrokerageEntity: input.prefill?.brokerageEntity ?? null,
         prefillPaymentChannel: input.prefill?.paymentChannel ?? null,
-        prefillUserComplaintChannelId: input.prefill?.userComplaintChannelId ?? null,
-        prefillComplaintReceiveChannelId: input.prefill?.complaintReceiveChannelId ?? null,
+        prefillUserFeedbackChannelId: input.prefill?.userFeedbackChannelId ?? null,
+        prefillFeedbackReceiveChannelId: input.prefill?.feedbackReceiveChannelId ?? null,
       },
       select: { id: true, name: true },
     });
@@ -287,8 +287,8 @@ export async function updateExternalAccount(
     data.prefillProject = input.prefill.project;
     data.prefillBrokerageEntity = input.prefill.brokerageEntity;
     data.prefillPaymentChannel = input.prefill.paymentChannel;
-    data.prefillUserComplaintChannelId = input.prefill.userComplaintChannelId;
-    data.prefillComplaintReceiveChannelId = input.prefill.complaintReceiveChannelId;
+    data.prefillUserFeedbackChannelId = input.prefill.userFeedbackChannelId;
+    data.prefillFeedbackReceiveChannelId = input.prefill.feedbackReceiveChannelId;
   }
 
   return prisma.$transaction(async (tx) => {

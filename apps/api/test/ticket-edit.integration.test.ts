@@ -69,7 +69,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026071000829"],
-      userComplaintChannelId: harness.userComplaintChannelId("保司400热线"),
+      userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
       customerName: "张三",
       phone: "13800000004",
       customerRequest: "对理赔金额有异议，要求复核",
@@ -113,14 +113,14 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
           hasContacted: true,
           priority: "high",
           contactTime: "2026-07-08T13:15:00.000Z",
-          complaintReceiveChannelId: harness.complaintReceiveChannelId("内部客服热线"),
+          feedbackReceiveChannelId: harness.feedbackReceiveChannelId("内部客服热线"),
         }),
       );
       expect(result).toMatchObject({ id: ticketId });
       expect([...result.changedFields].sort()).toEqual(
         [
           "customerName",
-          "complaintReceiveChannelId",
+          "feedbackReceiveChannelId",
           "contactTime",
           "hasContacted",
           "internalOrderNumber",
@@ -134,7 +134,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.hasContacted).toBe(true);
       expect(detail.priority).toBe("high");
       expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");
-      expect(detail.complaintReceiveChannel?.name).toBe("内部客服热线");
+      expect(detail.feedbackReceiveChannel?.name).toBe("内部客服热线");
 
       expect(detail.processLogs.map((log) => log.action)).toEqual(["create", "edit"]);
       const editLog = detail.processLogs.at(-1);
@@ -146,7 +146,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       });
       expect(editLog?.remark).toBe(
         "内部订单号: （空）→IO-20260710-01；" +
-          "投诉信息接收渠道: （空）→内部客服热线；" +
+          "反馈信息接收渠道: （空）→内部客服热线；" +
           "客户姓名: 张三→张三丰；" +
           "客户曾进线: 否→是；" +
           "进线时间: （空）→2026-07-08T13:15:00.000Z；" +
@@ -154,28 +154,28 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       );
     });
 
-    it("clears 进线时间/投诉信息接收渠道 back to 未填写, logged as →（空）", async () => {
+    it("clears 进线时间/反馈信息接收渠道 back to 未填写, logged as →（空）", async () => {
       const ticketId = await createTicket({
         contactTime: "2026-07-08T13:15:00.000Z",
-        complaintReceiveChannelId: harness.complaintReceiveChannelId("（微信）私发"),
+        feedbackReceiveChannelId: harness.feedbackReceiveChannelId("（微信）私发"),
       });
 
       const result = await manager().ticket.edit(
         editInput(ticketId, {
           contactTime: null,
-          complaintReceiveChannelId: null,
+          feedbackReceiveChannelId: null,
         }),
       );
       expect([...result.changedFields].sort()).toEqual(
-        ["complaintReceiveChannelId", "contactTime"].sort(),
+        ["feedbackReceiveChannelId", "contactTime"].sort(),
       );
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.contactTime).toBeNull();
-      expect(detail.complaintReceiveChannel).toBeNull();
+      expect(detail.feedbackReceiveChannel).toBeNull();
       const editLog = detail.processLogs.at(-1);
       expect(editLog?.remark).toContain("进线时间: 2026-07-08T13:15:00.000Z→（空）");
-      expect(editLog?.remark).toContain("投诉信息接收渠道: （微信）私发→（空）");
+      expect(editLog?.remark).toContain("反馈信息接收渠道: （微信）私发→（空）");
     });
 
     it("edits 保单号 multi values with space-joined remark; clearing logs （空）; 等值提交不留痕", async () => {

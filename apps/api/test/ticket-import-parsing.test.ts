@@ -55,13 +55,13 @@ const catalogs = {
     ["特急投诉", { id: "sla-urgent", active: true }],
     ["旧策略", { id: "sla-legacy", active: false }],
   ]),
-  userComplaintChannels: new Map([
-    ["保司400热线", { id: "ucc-hotline", active: true }],
-    ["旧投诉渠道", { id: "ucc-legacy", active: false }],
+  userFeedbackChannels: new Map([
+    ["保司400热线", { id: "ufc-hotline", active: true }],
+    ["旧投诉渠道", { id: "ufc-legacy", active: false }],
   ]),
-  complaintReceiveChannels: new Map([
-    ["内部客服热线", { id: "crc-hotline", active: true }],
-    ["旧接收渠道", { id: "crc-legacy", active: false }],
+  feedbackReceiveChannels: new Map([
+    ["内部客服热线", { id: "frc-hotline", active: true }],
+    ["旧接收渠道", { id: "frc-legacy", active: false }],
   ]),
 };
 
@@ -133,8 +133,8 @@ describe("validateTicketImportRows", () => {
           反馈时间: "2026-07-01 10:00",
           反馈渠道: "飞书",
           "项目（保司）": " 融盛 ",
-          用户投诉渠道: "保司400热线",
-          投诉信息接收渠道: "内部客服热线",
+          用户反馈渠道: "保司400热线",
+          反馈信息接收渠道: "内部客服热线",
           客户姓名: "张三",
           保司侧是否核身: "待核实",
           客户曾进线: "是",
@@ -152,8 +152,8 @@ describe("validateTicketImportRows", () => {
     expect(ticket.feedbackTime).toBe("2026-07-01T02:00:00.000Z");
     expect(ticket.channelId).toBe("ch-feishu");
     expect(ticket.project).toBe("融盛");
-    expect(ticket.userComplaintChannelId).toBe("ucc-hotline");
-    expect(ticket.complaintReceiveChannelId).toBe("crc-hotline");
+    expect(ticket.userFeedbackChannelId).toBe("ufc-hotline");
+    expect(ticket.feedbackReceiveChannelId).toBe("frc-hotline");
     expect(ticket.customerName).toBe("张三");
     expect(ticket.nuclearBodyStatus).toBe("待核实");
     expect(ticket.hasContacted).toBe(true);
@@ -174,7 +174,7 @@ describe("validateTicketImportRows", () => {
     expect(ticket.slaPolicyId).toBeNull();
     expect(ticket.priority).toBeNull();
     expect(ticket.customerName).toBeNull();
-    expect(ticket.complaintReceiveChannelId).toBeNull();
+    expect(ticket.feedbackReceiveChannelId).toBeNull();
     expect(ticket.contactTime).toBeNull();
     expect(ticket.completionStatusId).toBeNull();
     expect(ticket.completionRemark).toBeNull();
@@ -184,16 +184,16 @@ describe("validateTicketImportRows", () => {
     const { errors } = await validate([
       { 进线时间: "2026/07/01 10:00" },
       { 进线时间: "2026-02-30 10:00" },
-      { 投诉信息接收渠道: "查无此群" },
-      { 用户投诉渠道: "旧投诉渠道" },
+      { 反馈信息接收渠道: "查无此群" },
+      { 用户反馈渠道: "旧投诉渠道" },
     ]);
     expect(errors).toHaveLength(4);
     expect(errors[0]).toMatchObject({ row: 2, column: "进线时间" });
     expect(errors[0]?.message).toContain("yyyy-MM-dd HH:mm");
     expect(errors[1]).toMatchObject({ row: 3, column: "进线时间" });
-    expect(errors[2]).toMatchObject({ row: 4, column: "投诉信息接收渠道" });
+    expect(errors[2]).toMatchObject({ row: 4, column: "反馈信息接收渠道" });
     expect(errors[2]?.message).toContain("「查无此群」不存在");
-    expect(errors[3]).toMatchObject({ row: 5, column: "用户投诉渠道" });
+    expect(errors[3]).toMatchObject({ row: 5, column: "用户反馈渠道" });
     expect(errors[3]?.message).toContain("「旧投诉渠道」已停用");
   });
 

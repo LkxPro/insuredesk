@@ -60,7 +60,7 @@ describe("assigned notifications (Testcontainers)", () => {
     brokerageEntity: "东方大地",
     paymentChannel: "连连支付",
     policyNumbers: ["P2026070900456"],
-    userComplaintChannelId: null,
+    userFeedbackChannelId: null,
     customerName: "钱通知",
     phone: "13800000002",
     customerRequest: "希望尽快跟进理赔",
