@@ -1,6 +1,9 @@
 import "./load-env.ts";
+import { systemClock } from "./clock.ts";
+import { prisma } from "./db.ts";
 import { type Env, parseEnv } from "./env.ts";
 import { buildServer } from "./server.ts";
+import { startCallbackDeliveryWorker } from "./services/callback-delivery.service.ts";
 
 async function main() {
   let env: Env;
@@ -12,6 +15,20 @@ async function main() {
   }
 
   const app = buildServer(env);
+
+  // onClose 必须在 listen 前注册（fastify 监听后拒收钩子）。
+  const callbackWorker = startCallbackDeliveryWorker({
+    prisma,
+    clock: systemClock,
+    config: {
+      callbackUrl: env.JB_INSURANCE_CALLBACK_URL,
+      callbackSecret: env.JB_INSURANCE_CALLBACK_SECRET,
+    },
+    log: app.log,
+  });
+  app.addHook("onClose", async () => {
+    callbackWorker.stop();
+  });
 
   try {
     // 绑 0.0.0.0 时 fastify 按网卡逐条打 listen 日志；只在 listen 期间静音，
@@ -28,6 +45,7 @@ async function main() {
     const fields = env.NODE_ENV === "production" ? { version: env.APP_VERSION } : {};
     app.log.info(fields, `Server listening at ${address}`);
   } catch (error) {
+    callbackWorker.stop();
     app.log.error(error, "Failed to start server");
     process.exit(1);
   }

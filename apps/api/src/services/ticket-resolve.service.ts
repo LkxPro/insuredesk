@@ -1,5 +1,6 @@
-import { type TicketResolveInput, TicketStatus } from "@insuredesk/shared";
+import { TicketKindKey, type TicketResolveInput, TicketStatus } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service.ts";
+import { createRefundCallbackDelivery } from "./callback-delivery.service.ts";
 import { completionStatusCatalog } from "./completion-status.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
 import {
@@ -10,9 +11,6 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
 import { TicketNotFoundError } from "./ticket-assign.service.ts";
 
 /**
- * Resolve domain logic: 完结工单 with a mandatory 完结状态目录 reference
- * (must exist and be 启用) and a 完结备注.
- *
  * Invariants enforced here:
  * - only assigned / processing tickets can resolve; completed is a 终态 —
  *   no reopen path exists anywhere (状态只能经生命周期动作流转)
@@ -40,13 +38,6 @@ export class TicketNotResolvableError extends Error {
   }
 }
 
-/**
- * Resolve one ticket. Guarded upstream by ticket.process; the lookup carries
- * the viewer data scope, so a frontline CS (no ticket.view_all) can only
- * resolve their own tickets — anything else surfaces as not-found (no
- * existence leak). A supervisor with ticket.view_all may resolve others'
- * tickets (顶班), same as follow-ups.
- */
 export async function resolveTicket(
   { prisma, clock }: TicketServiceDeps,
   actor: AuthenticatedUser,
@@ -56,7 +47,14 @@ export async function resolveTicket(
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
       where: { id: input.ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
-      select: { id: true, workOrderNumber: true, status: true, source: true, creatorId: true },
+      select: {
+        id: true,
+        workOrderNumber: true,
+        status: true,
+        source: true,
+        creatorId: true,
+        kind: { select: { key: true } },
+      },
     });
     if (!ticket) {
       throw new TicketNotFoundError();
@@ -74,11 +72,6 @@ export async function resolveTicket(
       input.completionStatusId,
     );
 
-    // Claim the 终态 with a conditional write on the EXACT status we read, so
-    // the status_change log's `from` is the true prior state. Statuses only
-    // move forward (assigned → processing → completed), so losing the claim
-    // means either a concurrent first follow-up slipped in (retry once on
-    // processing) or a concurrent resolve won (终态 — reject).
     const claim = (status: TicketStatus) =>
       tx.ticket.updateMany({
         where: { id: ticket.id, status },
@@ -126,6 +119,14 @@ export async function resolveTicket(
       ...buildExternalResolvedNotification({ workOrderNumber: ticket.workOrderNumber }),
       now,
     });
+
+    if (ticket.kind.key === TicketKindKey.RefundException) {
+      await createRefundCallbackDelivery(tx, {
+        ticket,
+        operatorUsername: actor.username,
+        remark: input.remark,
+      });
+    }
 
     return {
       id: ticket.id,
