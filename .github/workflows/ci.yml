@@ -46,6 +46,18 @@ jobs:
       - name: web tests shard ${{ matrix.shard }}/2
         run: sh scripts/ci.sh web --shard=${{ matrix.shard }}/2
 
+  # ruleset 的 required check 只能钉固定 context 名;matrix 腿名随 shard 数
+  # 变动,fan-in 给规则一个稳定名字。if: always() 保证 shard 红时本 job 照跑
+  # 并失败,否则 required check 永远 pending,合并被静默卡住。
+  web-test-result:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [web-test]
+    if: always()
+    steps:
+      - name: Require all shards green
+        run: test "${{ needs.web-test.result }}" = "success"
+
   # Build the production image with the same context/Dockerfile as the Release
   # workflow. Pushes to main additionally publish the test channel that the
   # staging stack pulls — decoupled from releases. PRs only build (no GHCR
