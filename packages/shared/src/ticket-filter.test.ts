@@ -24,6 +24,14 @@ describe("ticketListFilterConditions", () => {
     ]);
   });
 
+  it("种类集原样进入抽象条件；空集与缺省都不过滤", () => {
+    expect(ticketListFilterConditions({ kindId: ["kind-1", "kind-2"] })).toEqual([
+      { kind: "kindIn", kindIds: ["kind-1", "kind-2"] },
+    ]);
+    expect(ticketListFilterConditions({ kindId: [] })).toEqual([]);
+    expect(ticketListFilterConditions({})).toEqual([]);
+  });
+
   it("搜索词原样保留,通配由 substringSearchPattern 负责", () => {
     expect(ticketListFilterConditions({ search: "50%" })).toEqual([
       { kind: "search", term: "50%" },
@@ -58,15 +66,17 @@ describe("ticketListFilterConditions", () => {
     ]);
   });
 
-  it("条件顺序稳定:状态、搜索、日期区间", () => {
+  it("条件顺序稳定:状态、种类、搜索、日期区间", () => {
     expect(
       ticketListFilterConditions({
         createdTo: "2026-08-02T00:00:00Z",
         search: "WO",
+        kindId: ["kind-1"],
         status: ["completed"],
       }),
     ).toEqual([
       { kind: "statusIn", statuses: ["completed"] },
+      { kind: "kindIn", kindIds: ["kind-1"] },
       { kind: "search", term: "WO" },
       { kind: "createdAtRange", lte: new Date("2026-08-02T00:00:00Z") },
     ]);

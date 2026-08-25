@@ -49,6 +49,7 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
     params.has(key) ? params.get(key)?.split(",").filter(Boolean) : undefined;
   const candidate = {
     status: multi("status"),
+    kindId: multi("kind"),
     channelId: multi("channel"),
     categoryId: multi("category"),
     completionStatusId: multi("completionStatus"),
@@ -141,12 +142,21 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
+  const kindOptions = trpc.ticketKind.filterOptions.useQuery().data ?? [];
   const channelOptions = trpc.channel.filterOptions.useQuery().data ?? [];
   const categoryOptions = trpc.ticketCategory.filterOptions.useQuery().data ?? [];
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
   // 策略筛选只列启用项（sla.options 口径），与目录 filterOptions 的停用标注口径不同
   const slaOptions = trpc.sla.options.useQuery().data ?? [];
 
+  const kinds = useMemo(
+    () =>
+      kindOptions.map((kind) => ({
+        value: kind.id,
+        label: kind.active ? kind.name : `${kind.name}（已停用）`,
+      })),
+    [kindOptions],
+  );
   const channels = useMemo(
     () =>
       channelOptions.map((channel) => ({
@@ -413,6 +423,12 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             onChange={(values) => setParam("status", serializeSelection(values, []))}
           />
           <MultiSelectFilter
+            label="种类"
+            values={query.kindId ?? []}
+            options={kinds}
+            onChange={(values) => setParam("kind", serializeSelection(values, []))}
+          />
+          <MultiSelectFilter
             label={TICKET_FIELDS.channelId.overrides.listLabel}
             values={query.channelId ?? []}
             options={channels}
@@ -472,6 +488,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       activeFilterCount={(query) =>
         [
           query.status?.length,
+          query.kindId?.length,
           query.channelId?.length,
           query.categoryId?.length,
           query.completionStatusId?.length,

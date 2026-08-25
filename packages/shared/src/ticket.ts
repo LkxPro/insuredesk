@@ -5,6 +5,7 @@ import {
   prioritySchema,
   ticketSourceSchema,
 } from "./enums.ts";
+import { REFUND_AMOUNT_PATTERN } from "./refund-push.ts";
 import {
   normalizePolicyNumbers,
   policyNumbersError,
@@ -118,6 +119,24 @@ export const ticketEditInputSchema = ticketCreateInputSchema.extend({
 
 export type TicketEditInput = z.input<typeof ticketEditInputSchema>;
 export type TicketEditData = z.output<typeof ticketEditInputSchema>;
+
+export const ticketUpdateRefundCompensationInputSchema = z.object({
+  ticketId: z.string().min(1),
+  compensationAmount: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((value) => (value ? value : null))
+    .refine((value) => value === null || REFUND_AMOUNT_PATTERN.test(value), {
+      message: "补偿金须为不小于 0 的金额（最多两位小数）",
+    }),
+});
+export type TicketUpdateRefundCompensationInput = z.input<
+  typeof ticketUpdateRefundCompensationInputSchema
+>;
+export type TicketUpdateRefundCompensationData = z.output<
+  typeof ticketUpdateRefundCompensationInputSchema
+>;
 
 /** 查重命中字段（按输入侧字段命名）——命中位置决定提示挂在哪个输入框下。 */
 export const TICKET_DUPLICATE_MATCH_FIELDS = ["policyNumbers", "phone", "contactPhone"] as const;
@@ -323,6 +342,7 @@ export const ticketListInputSchema = z.object({
   complaintLevel: legacyComplaintLevelInputSchema,
   /** 时效策略目录引用筛选；停用策略也可选，仍能查到其存量工单。 */
   slaPolicyId: multiFilter(z.string().min(1)).optional(),
+  kindId: multiFilter(z.string().min(1)).optional(),
   policyNumberState: multiFilter(policyNumberStateFilterSchema).optional(),
   /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */
   source: multiFilter(ticketSourceSchema).default([...DEFAULT_TICKET_SOURCE_FILTER]),

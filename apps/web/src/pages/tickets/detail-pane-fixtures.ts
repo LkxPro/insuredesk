@@ -60,6 +60,57 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
         at: "2026-07-09T02:00:00.000Z",
       },
     ],
+    refundDetail: null,
+    callbackDelivery: null,
+    ...overrides,
+  };
+}
+
+export function refundDetailPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    sysOrderId: "SO-20260818",
+    endorNo: "ENDOR-20260818-NO1",
+    workOrderType: "卡异常-退费失败",
+    expectedAmount: "100.00",
+    refundCreateTime: "2026-08-18T08:40:00.000Z",
+    refundTrades: [
+      { tradeNo: "1", payNo: "PAY20260818001", expectedAmount: "60.00" },
+      { tradeNo: "2", payNo: "PAY20260818002", expectedAmount: "40.00" },
+    ],
+    holderName: "张三",
+    holderPhone: "13800000001",
+    companyName: "泰康在线",
+    productId: "P10001",
+    productName: "泰康百万医疗险",
+    policyNo: "P20260818000123",
+    failureReason: "银行卡状态异常，退款被退回",
+    pushedFields: [
+      "sysOrderId",
+      "endorNo",
+      "workOrderType",
+      "expectedAmount",
+      "refundCreateTime",
+      "refundTrade",
+      "holderName",
+      "holderPhone",
+      "companyName",
+      "productId",
+      "productName",
+      "policyNo",
+      "failureReason",
+    ],
+    compensationAmount: null,
+    ...overrides,
+  };
+}
+
+export function callbackDeliveryPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "delivery-1",
+    status: "pending",
+    attempts: 0,
+    lastError: null,
+    deliveredAt: null,
     ...overrides,
   };
 }

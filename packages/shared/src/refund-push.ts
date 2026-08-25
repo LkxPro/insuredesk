@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TicketCreateFieldKey } from "./ticket-fields.ts";
 
 export const REFUND_PUSH_PLATFORM = "jb-insurance";
 
@@ -17,7 +18,8 @@ export interface WorkOrderPushEnvelope {
   data: { workOrderNumber: string } | null;
 }
 
-const AMOUNT_PATTERN = /^\d+(\.\d{1,2})?$/;
+/** 平台金额口径：非负、最多两位小数的字符串；推送校验与补偿金编辑共用。 */
+export const REFUND_AMOUNT_PATTERN = /^\d+(\.\d{1,2})?$/;
 const REFUND_CREATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 
 /** 报错消息只点名字段、不回显值（PII）。 */
@@ -35,7 +37,7 @@ function requiredAmount(field: string) {
     .string({
       error: (issue) => (issue.input === undefined ? `${field} 不能为空` : `${field} 必须是字符串`),
     })
-    .regex(AMOUNT_PATTERN, `${field} 格式不正确`);
+    .regex(REFUND_AMOUNT_PATTERN, `${field} 格式不正确`);
 }
 
 function optionalText(field: string) {
@@ -104,3 +106,10 @@ export function computePushedFields(input: WorkOrderPushInput): string[] {
     ...WORK_ORDER_PUSH_OPTIONAL_FIELDS.filter((field) => input[field] !== undefined),
   ];
 }
+
+export const REFUND_PUSHED_TICKET_FIELDS: Readonly<Record<string, TicketCreateFieldKey>> = {
+  sysOrderId: "internalOrderNumber",
+  holderName: "customerName",
+  holderPhone: "phone",
+  policyNo: "policyNumbers",
+};

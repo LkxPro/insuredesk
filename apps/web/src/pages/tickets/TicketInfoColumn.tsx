@@ -1,9 +1,16 @@
-import { TICKET_FIELDS, TICKET_SOURCE_LABELS, type TicketCreateFieldKey } from "@insuredesk/shared";
+import {
+  REFUND_PUSHED_TICKET_FIELDS,
+  TICKET_FIELDS,
+  TICKET_SOURCE_LABELS,
+  type TicketCreateFieldKey,
+  TicketKindKey,
+} from "@insuredesk/shared";
 import type { ReactNode } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { formatDateTime } from "@/lib/datetime";
 import { DetailItem as Item, DetailSection as Section } from "@/pages/ticket-surface/DetailGrid";
 import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
+import { RefundModule } from "./RefundModule";
 import { SubmissionTextCollapse } from "./SubmissionTextCollapse";
 import { TicketDetailField } from "./TicketDetailFields";
 import type { TicketFormValues } from "./TicketFormFields";
@@ -21,11 +28,16 @@ export function TicketInfoColumn({
   fieldAddon?: (name: TicketCreateFieldKey) => ReactNode;
 }) {
   const { dirtyFields, errors } = form.formState;
+  const lockedFields = new Set(
+    (ticket.refundDetail?.pushedFields ?? [])
+      .map((field) => REFUND_PUSHED_TICKET_FIELDS[field])
+      .filter((key) => key !== undefined),
+  );
   const field = (name: TicketCreateFieldKey) => (
     <TicketDetailField
       name={name}
       ticket={ticket}
-      editing={editing}
+      editing={editing && !lockedFields.has(name)}
       form={form}
       dirty={!!dirtyFields[name] || (name === "policyNumbers" && !!dirtyFields.noPolicyNumber)}
       error={errors[name]?.message}
@@ -43,6 +55,8 @@ export function TicketInfoColumn({
         <Item label="工单来源">{TICKET_SOURCE_LABELS[ticket.source]}</Item>
         <Item label="创建人">{ticket.createdBy}</Item>
       </Section>
+
+      {ticket.kindKey === TicketKindKey.RefundException && <RefundModule ticket={ticket} />}
 
       <Section title="业务信息">
         {field("channelId")}

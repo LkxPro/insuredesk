@@ -6,6 +6,7 @@
 
 export interface TicketListFilterParams<S extends string = string> {
   status?: readonly S[] | undefined;
+  kindId?: readonly string[] | undefined;
   search?: string | undefined;
   createdFrom?: string | undefined;
   createdTo?: string | undefined;
@@ -17,6 +18,7 @@ export interface TicketListFilterParams<S extends string = string> {
  */
 export type TicketListFilterCondition<S extends string = string> =
   | { readonly kind: "statusIn"; readonly statuses: readonly S[] }
+  | { readonly kind: "kindIn"; readonly kindIds: readonly string[] }
   | { readonly kind: "search"; readonly term: string }
   | { readonly kind: "createdAtRange"; readonly gte?: Date; readonly lte?: Date };
 
@@ -35,6 +37,9 @@ export function ticketListFilterConditions<S extends string>(
   const conditions: TicketListFilterCondition<S>[] = [];
   if (input.status && input.status.length > 0) {
     conditions.push({ kind: "statusIn", statuses: input.status });
+  }
+  if (input.kindId && input.kindId.length > 0) {
+    conditions.push({ kind: "kindIn", kindIds: input.kindId });
   }
   if (input.search) {
     conditions.push({ kind: "search", term: input.search });

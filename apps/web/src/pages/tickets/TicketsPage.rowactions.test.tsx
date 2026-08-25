@@ -105,6 +105,7 @@ function respond(path: string, input: unknown): unknown {
     };
   }
   if (
+    path === "ticketKind.filterOptions" ||
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
     path === "sla.options" ||

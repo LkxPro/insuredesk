@@ -94,6 +94,7 @@ function respond(path: string): unknown {
   if (
     path === "channel.options" ||
     path === "ticketCategory.options" ||
+    path === "ticketKind.filterOptions" ||
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
     path === "sla.options" ||
