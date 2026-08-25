@@ -125,9 +125,19 @@ webhooks:
           application/json:
             schema:
               $ref: '#/components/schemas/CallbackEnvelope'
-            example:
-              channel: WORK-ORDER
-              body: a1b2c3d4e5f6
+            examples:
+              ciphertext:
+                summary: 实际传输的报文（body 为密文）
+                value:
+                  channel: WORK-ORDER
+                  body: ad24504c3b0216d2863bcb404c78446e19f9c153e19d8b3156df3eca02fa4b9775c4f4a163907111d6e0d5f505757fb4bce7a0a189c2f85dbc6c9ef9d21dcb5abf3d755d4c0ae1bdcbf896fda39077160e882fed32843e6d8567d40aeb5ac406c819ff646a5edef134e21c46d91874b4
+              plaintext:
+                summary: 上例 body 解密后的明文（仅示意，传输中不出现）
+                value:
+                  sysOrderId: TEST001
+                  endorNo: TEST001_NO1_001
+                  actualAmount: '100.00'
+                  workOrderNumber: WO100001
       responses:
         '200':
           description: 平台处理结果
@@ -215,6 +225,14 @@ components:
     CallbackPlaintext:
       type: object
       required: [sysOrderId, endorNo, actualAmount, workOrderNumber]
+      example:
+        sysOrderId: '20260818163304040016053'
+        endorNo: '20260818163304040016053_NO1_1787044393123'
+        actualAmount: '100.00'
+        workOrderNumber: WO100001
+        compensationAmount: '20.00'
+        remark: 已线下原路退回
+        operator: zhangsan
       properties:
         sysOrderId:
           type: string
