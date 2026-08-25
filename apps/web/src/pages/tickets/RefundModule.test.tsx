@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { formatDateTime } from "@/lib/datetime";
 import { callsTo, renderApp, type TestRole } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 import {
@@ -56,7 +57,9 @@ describe("退费模块渲染", () => {
     expect(within(section).getByText("卡异常-退费失败")).toBeInTheDocument();
     expect(within(section).getByText("银行卡状态异常，退款被退回")).toBeInTheDocument();
     expect(within(section).getByText("100.00")).toBeInTheDocument();
-    expect(within(section).getByText("2026-08-18 16:40")).toBeInTheDocument();
+    expect(
+      within(section).getByText(formatDateTime(refundDetailPayload().refundCreateTime)),
+    ).toBeInTheDocument();
     expect(within(section).getByText("泰康在线")).toBeInTheDocument();
     expect(within(section).getByText("泰康百万医疗险")).toBeInTheDocument();
     expect(within(section).getByText("张三")).toBeInTheDocument();
