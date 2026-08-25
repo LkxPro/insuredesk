@@ -10,10 +10,11 @@ build/
 *.tsbuildinfo
 apps/api/src/generated/
 
-# Env (only .env.example is committed)
+# Env (only the *.example templates are committed)
 .env
 .env.*
 !.env.example
+!.env.test.example
 
 # Test / coverage
 coverage/

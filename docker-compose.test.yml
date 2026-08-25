@@ -1,0 +1,80 @@
+# InsureDesk staging deployment, isolated from prod on the same host.
+#
+# Separate from docker-compose.prod.yml: own compose project (top-level name:),
+# own containers, own data volume, own credentials (.env.test). No backup
+# sidecar — the test database may be rebuilt with down -v at any time.
+#
+# api-test joins two networks: this project's default (to reach db-test) and
+# the prod project's external network insuredesk_default, where the caddy
+# container lives — caddy reverse-proxies test.insuredesk.jetmobo.com to the
+# container name insuredesk-api-test:3000. db-test stays on the internal
+# network only, unreachable from caddy.
+#
+# The image comes from CI's test channel (every main merge pushes :test and
+# :test-<shortsha>), pinned by TEST_IMAGE_TAG in .env.test. The variable name
+# deliberately differs from prod's IMAGE_TAG to avoid cross-talk with the
+# sibling prod .env in the same directory. The build: section is the branch
+# escape hatch: checkout any branch and `up -d --build` produces the same
+# artifact as the GHCR image.
+#
+# Every command must pass --env-file .env.test (interpolation does not read
+# the default .env). First start auto-runs prisma migrate deploy + bootstrap
+# (initial account admin/admin — change the password right after).
+
+name: insuredesk-test
+
+services:
+  insuredesk-db-test:
+    image: postgres:17-alpine
+    container_name: insuredesk-db-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${TEST_POSTGRES_USER:?set in .env.test, run with --env-file .env.test}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:?set in .env.test}
+      POSTGRES_DB: ${TEST_POSTGRES_DB:?set in .env.test}
+      TZ: Asia/Shanghai
+      PGTZ: Asia/Shanghai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No host port published: only api-test (same network) reaches Postgres.
+
+  insuredesk-api-test:
+    # GHCR is private — `docker login ghcr.io` with a PAT before pulling.
+    image: ghcr.io/lkxpro/insuredesk-api:${TEST_IMAGE_TAG:-test}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      # On a restricted network, set NPM_REGISTRY / PRISMA_ENGINES_MIRROR in
+      # .env.test before building.
+      args:
+        APP_VERSION: ${TEST_IMAGE_TAG:-test}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+        PRISMA_ENGINES_MIRROR: ${PRISMA_ENGINES_MIRROR:-https://binaries.prisma.sh}
+    container_name: insuredesk-api-test
+    restart: unless-stopped
+    env_file:
+      - .env.test
+    ports:
+      # Loopback only, for host-side curl debugging — public traffic reaches the
+      # container directly over the `proxied` network from caddy. Never 0.0.0.0.
+      - "127.0.0.1:3001:3000"
+    networks:
+      - default
+      - proxied
+    depends_on:
+      insuredesk-db-test:
+        condition: service_healthy
+
+networks:
+  proxied:
+    external: true
+    name: insuredesk_default
+
+volumes:
+  postgres_data:
+    name: insuredesk_postgres_data_test
