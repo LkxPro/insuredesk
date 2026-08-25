@@ -59,6 +59,12 @@ const num = (key: string, fallback: number) => {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 };
 
+// 成功路径的 worktree 与 issue-N.log 会被 dispatch 回收,daemon.log 是 worker 结局的唯一持久见证。
+const logLifecycle = (worktrees: string, msg: string) =>
+  appendFile(join(worktrees, "daemon.log"), `${new Date().toISOString()} ${msg}\n`).catch(
+    () => {},
+  );
+
 // subtype=success + is_error 是 transport/API 层失败的矛盾组合,按 transient 重试。
 const transient = (result: ExecutorResult) =>
   result.subtype === "" ||
@@ -110,6 +116,7 @@ export async function runWorker(root: string, worktree: string, issue: number): 
   };
   try {
     await runPipeline(root, worktree, issue, worktrees, runDir, abort.signal, ctx);
+    await logLifecycle(worktrees, `finished #${issue} ok ${ctx.timer.report()}`);
     return 0;
   } catch (error) {
     if (error instanceof WorkerFailure) {
@@ -748,7 +755,10 @@ async function handleFailure(
     "--jq",
     ".state",
   ]).catch(() => "");
-  if (issueState.trim() === "CLOSED") return;
+  if (issueState.trim() === "CLOSED") {
+    await logLifecycle(worktrees, `finished #${issue} cancelled: issue closed`);
+    return;
+  }
 
   if (error.failureClass === "process") {
     const comments = await ghJson<Array<{ body: string }>>([
@@ -768,6 +778,10 @@ async function handleFailure(
         `<!-- agent-requeue:${requeues + 1} --> ${error.message} Requeued automatically (${requeues + 1}/${requeueMax}); a further process-level failure will block. ${ctx.timer.report()}`,
       );
       await editIssue(issue, { add: ["agent:queued"], remove: ["agent:running"] });
+      await logLifecycle(
+        worktrees,
+        `finished #${issue} failed (${error.failureClass}): ${error.message.split("\n")[0]} → requeue ${requeues + 1}/${requeueMax}`,
+      );
       return;
     }
   }
@@ -775,6 +789,10 @@ async function handleFailure(
   await commentIssue(
     issue,
     `${error.message} See .worktrees/issue-${issue}.log for executor output. ${ctx.timer.report()}`,
+  );
+  await logLifecycle(
+    worktrees,
+    `finished #${issue} blocked (${error.failureClass}): ${error.message.split("\n")[0]}`,
   );
   // 桌面通知只在真实跑单时有意义;测试用 AGENT_BLOCK_NOTIFY=0 关掉。
   if (process.env.AGENT_BLOCK_NOTIFY === "0") return;
