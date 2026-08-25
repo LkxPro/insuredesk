@@ -8,6 +8,7 @@ import {
   TICKET_FIELDS,
   type TicketCreateFieldKey,
   type TicketCreateInput,
+  TicketKindKey,
   ticketCreateInputSchema,
 } from "@insuredesk/shared";
 import { CheckIcon } from "lucide-react";
@@ -43,12 +44,10 @@ import {
   splitLocalDateTime,
 } from "@/lib/local-date-time";
 import { trpc } from "@/lib/trpc";
+import { SearchableCombobox } from "./SearchableCombobox";
 import { DuplicateFieldHint, useTicketDuplicates } from "./TicketDuplicates";
 
 /**
- * The 建单 form body: the field set of 新建工单. 详情弹窗的原地编辑不走这里 ——
- * 同一批字段在详情分区里由 TicketDetailFields 按原位渲染。
- *
  * Every field is optional: a fully blank form submits cleanly and unfilled
  * fields reach the server as null. No label says 选填 — optional is the rule,
  * not the exception. Validation is the shared ticketCreateInputSchema — the
@@ -95,7 +94,6 @@ function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFiel
     case "text":
       return z.string(message).trim().min(1, message).max(descriptor.maxLength);
     case "textList":
-      // 必填＝至少一个值；单项长度/数量上限与非必填形态同一套 refinement
       return z.string(message).trim().min(1, message).superRefine(refinePolicyNumbersText);
     case "enum":
       // 布尔取值的三态字段（客户曾进线）在表单里就是 boolean|null
@@ -105,7 +103,6 @@ function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFiel
     case "date":
       return localDateTimeFieldSchema(descriptor.label, true);
     case "catalog":
-      // catalog 在表单里是目录 id
       return z.string(message).min(1, message);
   }
 }
@@ -146,10 +143,6 @@ function localDateTimeFieldSchema(label: string, required: boolean) {
   });
 }
 
-/**
- * 表单以空格分隔字符串承载多值保单号（split 在提交映射里做，与日期字段的
- * localDateTimeToIso 同位）；上限校验即数组契约那一套，报错文案不另抄。
- */
 const refinePolicyNumbersText = (value: string, ctx: z.RefinementCtx) => {
   const error = policyNumbersError(splitPolicyNumbers(value));
   if (error) {
@@ -165,10 +158,6 @@ export const ticketFormSchema = ticketCreateInputSchema.extend({
 
 export type TicketFormValues = z.input<typeof ticketFormSchema>;
 
-/**
- * Form values → wire payload：日期字段本地时间转绝对时刻，保单号空格分隔
- * 文本 split 成数组。建单与详情编辑的提交映射共用这一处。
- */
 export function ticketFormValuesToInput(values: TicketFormValues): TicketCreateInput {
   return {
     ...values,
@@ -288,15 +277,16 @@ export function SlaPolicySelect({
   onChange,
   invalid,
   current,
+  kindKey,
 }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   invalid?: boolean;
-  /** 编辑表单传入工单当前策略；建单不传。 */
   current?: CurrentCatalogOption | null;
+  kindKey: string;
 }) {
-  const options = withCurrentOption(trpc.sla.options.useQuery().data ?? [], current);
+  const options = withCurrentOption(trpc.sla.options.useQuery({ kindKey }).data ?? [], current);
   return (
     <Select
       value={value ? value : UNSET}
@@ -323,9 +313,7 @@ export function TicketFormFields({
   currentChannel,
 }: {
   form: UseFormReturn<TicketFormValues>;
-  /** 编辑表单传入工单当前类别；停用值以“（已停用）”入列，保持原值合法。 */
   currentCategory?: CurrentCatalogOption | null;
-  /** 同 currentCategory，作用于反馈渠道。 */
   currentChannel?: CurrentCatalogOption | null;
 }) {
   const {
@@ -347,6 +335,8 @@ export function TicketFormFields({
     trpc.channel.options.useQuery().data ?? [],
     currentChannel,
   );
+  const userFeedbackChannelOptions = trpc.userFeedbackChannel.options.useQuery().data ?? [];
+  const feedbackReceiveChannelOptions = trpc.feedbackReceiveChannel.options.useQuery().data ?? [];
 
   // 建单即时查重：命中提示贴身挂在保单号/手机号字段下（编辑面走 TicketDetailField 的 addon）
   const duplicates = useTicketDuplicates(form);
@@ -480,31 +470,47 @@ export function TicketFormFields({
             <FieldError errors={[errors.policyNumbers]} />
             <DuplicateFieldHint field="policyNumbers" duplicates={duplicates} />
           </Field>
-          <Field data-invalid={!!errors.userComplaintChannel}>
-            <FieldLabel htmlFor="userComplaintChannel">
-              {TICKET_FIELDS.userComplaintChannel.label}
-              {isRequired("userComplaintChannel") && <span className="text-destructive">*</span>}
+          <Field data-invalid={!!errors.userFeedbackChannelId}>
+            <FieldLabel htmlFor="userFeedbackChannelId">
+              {TICKET_FIELDS.userFeedbackChannelId.label}
+              {isRequired("userFeedbackChannelId") && <span className="text-destructive">*</span>}
             </FieldLabel>
-            <Input
-              id="userComplaintChannel"
-              placeholder="如：监管引导件、网微投诉、黑猫投诉"
-              aria-invalid={!!errors.userComplaintChannel}
-              {...register("userComplaintChannel")}
+            <Controller
+              control={control}
+              name="userFeedbackChannelId"
+              render={({ field }) => (
+                <SearchableCombobox
+                  id="userFeedbackChannelId"
+                  options={userFeedbackChannelOptions}
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  invalid={!!errors.userFeedbackChannelId}
+                />
+              )}
             />
-            <FieldError errors={[errors.userComplaintChannel]} />
+            <FieldError errors={[errors.userFeedbackChannelId]} />
           </Field>
-          <Field data-invalid={!!errors.complaintReceiveChannel}>
-            <FieldLabel htmlFor="complaintReceiveChannel">
-              {TICKET_FIELDS.complaintReceiveChannel.label}
-              {isRequired("complaintReceiveChannel") && <span className="text-destructive">*</span>}
+          <Field data-invalid={!!errors.feedbackReceiveChannelId}>
+            <FieldLabel htmlFor="feedbackReceiveChannelId">
+              {TICKET_FIELDS.feedbackReceiveChannelId.label}
+              {isRequired("feedbackReceiveChannelId") && (
+                <span className="text-destructive">*</span>
+              )}
             </FieldLabel>
-            <Input
-              id="complaintReceiveChannel"
-              placeholder="接受投诉信息的群名、邮箱"
-              aria-invalid={!!errors.complaintReceiveChannel}
-              {...register("complaintReceiveChannel")}
+            <Controller
+              control={control}
+              name="feedbackReceiveChannelId"
+              render={({ field }) => (
+                <SearchableCombobox
+                  id="feedbackReceiveChannelId"
+                  options={feedbackReceiveChannelOptions}
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  invalid={!!errors.feedbackReceiveChannelId}
+                />
+              )}
             />
-            <FieldError errors={[errors.complaintReceiveChannel]} />
+            <FieldError errors={[errors.feedbackReceiveChannelId]} />
           </Field>
         </div>
       </FieldSet>
@@ -680,28 +686,13 @@ export function TicketFormFields({
               control={control}
               name="categoryId"
               render={({ field }) => (
-                <Select
-                  value={field.value ? field.value : UNSET}
-                  onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
-                >
-                  <SelectTrigger
-                    id="categoryId"
-                    className="w-full"
-                    aria-invalid={!!errors.categoryId}
-                  >
-                    <SelectValue placeholder="请选择" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={UNSET}>未设置</SelectItem>
-                      {selectableCategories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <SearchableCombobox
+                  id="categoryId"
+                  options={selectableCategories}
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  invalid={!!errors.categoryId}
+                />
               )}
             />
             <FieldError errors={[errors.categoryId]} />
@@ -720,6 +711,7 @@ export function TicketFormFields({
                   value={field.value ?? ""}
                   onChange={field.onChange}
                   invalid={!!errors.slaPolicyId}
+                  kindKey={TicketKindKey.Complaint}
                 />
               )}
             />

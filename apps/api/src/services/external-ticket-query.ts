@@ -23,6 +23,9 @@ export function buildExternalTicketConditions(
       case "statusIn":
         conditions.push(Prisma.sql`t.status IN (${Prisma.join(condition.statuses)})`);
         break;
+      case "kindIn":
+        conditions.push(Prisma.sql`t."kindId" IN (${Prisma.join(condition.kindIds)})`);
+        break;
       case "search": {
         const pattern = substringSearchPattern(condition.term);
         conditions.push(

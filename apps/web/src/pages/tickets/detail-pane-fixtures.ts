@@ -1,12 +1,5 @@
-/**
- * 分栏详情测试的共用替身数据：一份 serializeTicketDetail 线格式的详情载荷、一份
- * ticket.list 行载荷，以及三个目录选项 feed。四个分栏测试文件（只读呈现、编辑、
- * 跟进、分栏切换）共用同一份真源，字段增删只改这里。
- */
-
 export type DetailPayload = ReturnType<typeof detailPayload>;
 
-/** serializeTicketDetail 的线格式，默认在途（processing）且已分配。 */
 export function detailPayload(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",
@@ -22,8 +15,12 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
     paymentChannel: "连连支付",
     internalOrderNumber: null,
     policyNumbers: ["P2026070900123"],
-    userComplaintChannel: "400热线",
-    complaintReceiveChannel: "监管转办",
+    userFeedbackChannel: { id: "ufc-hotline", name: "保司400热线", active: true },
+    feedbackReceiveChannel: {
+      id: "frc-group",
+      name: "（微信）凯森&骏伯反馈对接群",
+      active: true,
+    },
     customerName: "王小明",
     phone: "13800000001",
     contactPhone: null,
@@ -36,6 +33,7 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
     category: { id: "cat-claims", name: "理赔投诉", active: true },
     slaPolicyId: "pol-normal",
     slaPolicy: { id: "pol-normal", name: "一般投诉", active: true },
+    kindKey: "complaint",
     priority: null,
     followUpFrequency: "24小时内累计跟进1次",
     firstResponseRequirement: "120分钟内完成首次响应",
@@ -62,11 +60,61 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
         at: "2026-07-09T02:00:00.000Z",
       },
     ],
+    refundDetail: null,
+    callbackDelivery: null,
     ...overrides,
   };
 }
 
-/** ticket.list 的行载荷 —— 窄列与全宽表读的是同一份。 */
+export function refundDetailPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    sysOrderId: "SO-20260818",
+    endorNo: "ENDOR-20260818-NO1",
+    workOrderType: "卡异常-退费失败",
+    expectedAmount: "100.00",
+    refundCreateTime: "2026-08-18T08:40:00.000Z",
+    refundTrades: [
+      { tradeNo: "1", payNo: "PAY20260818001", expectedAmount: "60.00" },
+      { tradeNo: "2", payNo: "PAY20260818002", expectedAmount: "40.00" },
+    ],
+    holderName: "张三",
+    holderPhone: "13800000001",
+    companyName: "泰康在线",
+    productId: "P10001",
+    productName: "泰康百万医疗险",
+    policyNo: "P20260818000123",
+    failureReason: "银行卡状态异常，退款被退回",
+    pushedFields: [
+      "sysOrderId",
+      "endorNo",
+      "workOrderType",
+      "expectedAmount",
+      "refundCreateTime",
+      "refundTrade",
+      "holderName",
+      "holderPhone",
+      "companyName",
+      "productId",
+      "productName",
+      "policyNo",
+      "failureReason",
+    ],
+    compensationAmount: null,
+    ...overrides,
+  };
+}
+
+export function callbackDeliveryPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "delivery-1",
+    status: "pending",
+    attempts: 0,
+    lastError: null,
+    deliveredAt: null,
+    ...overrides,
+  };
+}
+
 export function listItem(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",

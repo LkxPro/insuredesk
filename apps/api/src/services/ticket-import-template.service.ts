@@ -9,7 +9,9 @@ import ExcelJS from "exceljs";
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import { channelCatalog } from "./channel.service.ts";
 import { completionStatusCatalog } from "./completion-status.service.ts";
+import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
+import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 /**
  * 批量导入 template: a dynamically generated workbook, never a static asset —
@@ -28,12 +30,13 @@ export interface TicketImportTemplateFile {
   body: Buffer;
 }
 
-/** The active-catalog names resolved once per download, fed to every dropdown. */
 type CatalogOptions = {
   channels: string[];
   categories: string[];
   completionStatuses: string[];
   slaPolicies: string[];
+  userFeedbackChannels: string[];
+  feedbackReceiveChannels: string[];
 };
 
 const CATALOG_OPTION_KEYS: Record<TicketCatalogKind, keyof CatalogOptions> = {
@@ -41,13 +44,13 @@ const CATALOG_OPTION_KEYS: Record<TicketCatalogKind, keyof CatalogOptions> = {
   category: "categories",
   completionStatus: "completionStatuses",
   slaPolicy: "slaPolicies",
+  userFeedbackChannel: "userFeedbackChannels",
+  feedbackReceiveChannel: "feedbackReceiveChannels",
 };
 
 type ImportColumn = {
   header: string;
-  /** 填写说明 sheet entry for this column. */
   note: string;
-  /** Dropdown feed; static lists inline, catalog lists resolved per download. */
   options?: (catalogs: CatalogOptions) => readonly string[];
 };
 
@@ -89,7 +92,14 @@ function columnLetter(column: number): string {
 export async function buildTicketImportTemplate(
   prisma: PrismaClient,
 ): Promise<TicketImportTemplateFile> {
-  const [channels, categories, completionStatuses, slaPolicies] = await Promise.all([
+  const [
+    channels,
+    categories,
+    completionStatuses,
+    slaPolicies,
+    userFeedbackChannels,
+    feedbackReceiveChannels,
+  ] = await Promise.all([
     channelCatalog.listOptions(prisma),
     ticketCategoryCatalog.listOptions(prisma),
     completionStatusCatalog.listOptions(prisma),
@@ -98,12 +108,16 @@ export async function buildTicketImportTemplate(
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { name: true },
     }),
+    userFeedbackChannelCatalog.listOptions(prisma),
+    feedbackReceiveChannelCatalog.listOptions(prisma),
   ]);
   const catalogs: CatalogOptions = {
     channels: channels.map((channel) => channel.name),
     categories: categories.map((category) => category.name),
     completionStatuses: completionStatuses.map((status) => status.name),
     slaPolicies: slaPolicies.map((policy) => policy.name),
+    userFeedbackChannels: userFeedbackChannels.map((channel) => channel.name),
+    feedbackReceiveChannels: feedbackReceiveChannels.map((channel) => channel.name),
   };
 
   const workbook = new ExcelJS.Workbook();

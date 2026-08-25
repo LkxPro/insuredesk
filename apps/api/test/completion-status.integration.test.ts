@@ -9,12 +9,6 @@ import { appRouter } from "../src/routers/index.ts";
 import type { AuthenticatedUser } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * CompletionStatus catalog smoke tests (issue #93). Full lifecycle coverage now lives
- * in dictionary-catalog.integration.test.ts; this suite verifies completion-status
- * specific behaviors: migration-seeded rows, 引用必填 (required at resolve), and
- * no edit path (status is assigned at resolve, not create/edit).
- */
 describe("CompletionStatus catalog smoke (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let seeded: IntegrationHarness["seeded"];
@@ -59,7 +53,6 @@ describe("CompletionStatus catalog smoke (Testcontainers)", () => {
       "ticket.export",
     ] as Permission[]);
 
-  /** A fresh ticket assigned to the manager, ready to resolve. */
   async function createResolvableTicket() {
     const created = await manager().ticket.create(blankTicketInput());
     await manager().ticket.assign({ ticketId: created.id, assigneeId: seeded.users.manager.id });
@@ -135,8 +128,6 @@ describe("CompletionStatus catalog smoke (Testcontainers)", () => {
     });
   });
 
-  // Completion-status specific behaviors below
-
   it("引用必填：resolving requires an existing, active status", async () => {
     const status = await manager().completionStatus.create({
       name: "完结用",
@@ -165,7 +156,6 @@ describe("CompletionStatus catalog smoke (Testcontainers)", () => {
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "所选完结状态已停用" });
 
-    // The rejected resolves left no trace — the ticket is still in flight.
     const result = await manager().ticket.resolve({
       ticketId,
       completionStatusId: status.id,
@@ -175,10 +165,6 @@ describe("CompletionStatus catalog smoke (Testcontainers)", () => {
   });
 
   it("无保留停用值的编辑路径：completion status is assigned at resolve, not create/edit", async () => {
-    // Unlike channel/category which are set at ticket.create() and can be
-    // edited via ticket.edit(), completionStatus is only assigned at
-    // ticket.resolve() and never changed after that. There's no edit path
-    // that would need to preserve a disabled value.
     const status = await manager().completionStatus.create({
       name: "完结后不可编辑",
       displayOrder: 240,
@@ -190,24 +176,18 @@ describe("CompletionStatus catalog smoke (Testcontainers)", () => {
       remark: "完结",
     });
 
-    // Resolved tickets are immutable; the completionStatus field is never
-    // touched again. This test documents that there's no edit path for it.
     const detail = await manager().ticket.detail({ id: ticketId });
     expect(detail.status).toBe("completed");
     expect(detail.completionStatus).toBe("完结后不可编辑");
   });
 
   it("目录行来自迁移：migration seeds 12 values, no app-layer seedCompletionStatuses", async () => {
-    // The other two catalogs have seedChannels/seedTicketCategories;
-    // completionStatus rows come from the migration itself (the historical
-    // enum values), and there's no application-layer seed function.
     const statuses = await manager().completionStatus.list();
     expect(statuses.length).toBeGreaterThanOrEqual(12);
     expect(statuses.map((s) => s.name)).toContain("未取得有效联系");
     expect(statuses.map((s) => s.name)).toContain("正常完结");
   });
 
-  /** A fully blank manual-ticket payload; tests override the fields they exercise. */
   function blankTicketInput() {
     return Object.fromEntries(
       TICKET_CREATE_FIELD_KEYS.map((key) => [key, null]),

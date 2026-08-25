@@ -36,10 +36,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { ExternalAccountRow } from "./ExternalAccountManagePage";
 
-/**
- * 新建/编辑共用一份表单形状（与 TicketFormFields 同一处理）：表单类型恒定，
- * 密码规则按模式挂在对象级 refinement 上（新建必填，编辑留空 = 不改密）。
- */
 const accountFormSchema = z.object({
   username: usernameSchema,
   password: z.string(),
@@ -73,22 +69,77 @@ const EMPTY_PREFILL: NonNullable<ExternalAccountFormValues["prefill"]> = {
   project: "",
   brokerageEntity: "",
   paymentChannel: "",
-  userComplaintChannel: "",
-  complaintReceiveChannel: "",
+  userFeedbackChannelId: "",
+  feedbackReceiveChannelId: "",
 };
 
-/** 预填文本项的字段 key 与表单注册路径。 */
-const PREFILL_TEXT_KEYS = [
-  "project",
-  "brokerageEntity",
-  "paymentChannel",
-  "userComplaintChannel",
-  "complaintReceiveChannel",
+const PREFILL_TEXT_KEYS = ["project", "brokerageEntity", "paymentChannel"] as const;
+
+const PREFILL_CATALOG_KEYS = [
+  { key: "channelId", unsetLabel: "不预填渠道" },
+  { key: "userFeedbackChannelId", unsetLabel: "不预填用户反馈渠道" },
+  { key: "feedbackReceiveChannelId", unsetLabel: "不预填反馈信息接收渠道" },
 ] as const;
 
+type PrefillCatalogKey = (typeof PREFILL_CATALOG_KEYS)[number]["key"];
+
+function PrefillCatalogSelect({
+  form,
+  idPrefix,
+  name,
+  unsetLabel,
+  options,
+  isLoading,
+}: {
+  form: UseFormReturn<ExternalAccountFormValues>;
+  idPrefix: string;
+  name: PrefillCatalogKey;
+  unsetLabel: string;
+  options: ReadonlyArray<{ id: string; name: string }>;
+  isLoading: boolean;
+}) {
+  const currentId = form.watch(`prefill.${name}`) ?? "";
+  const currentMissing = currentId !== "" && !options.some((option) => option.id === currentId);
+  const errors = form.formState.errors;
+
+  return (
+    <Field data-invalid={!!errors.prefill?.[name]}>
+      <FieldLabel htmlFor={`${idPrefix}-prefill-${name}`}>{TICKET_FIELDS[name].label}</FieldLabel>
+      <Controller
+        control={form.control}
+        name={`prefill.${name}`}
+        render={({ field }) => (
+          <Select
+            value={field.value ?? ""}
+            onValueChange={(value) => field.onChange(value === "" ? null : value)}
+          >
+            <SelectTrigger
+              id={`${idPrefix}-prefill-${name}`}
+              className="w-full"
+              disabled={isLoading}
+            >
+              <SelectValue placeholder={unsetLabel} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">{unsetLabel}</SelectItem>
+              {currentMissing && <SelectItem value={currentId}>当前引用（已停用）</SelectItem>}
+              {options.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      />
+      {errors.prefill?.[name] && <FieldError>{errors.prefill[name].message}</FieldError>}
+    </Field>
+  );
+}
+
 /**
- * 6 预填字段，create/update 两个表单共用。渠道下拉只列启用项;
- * 当前引用的停用渠道随表单初值补进选项（保持原值可存, 不能新选其他停用项）。
+ * 目录下拉只列启用项; 当前引用的停用项随表单初值补进选项（保持原值可存,
+ * 不能新选其他停用项）。
  */
 function PrefillFields({
   form,
@@ -98,9 +149,13 @@ function PrefillFields({
   idPrefix: string;
 }) {
   const channelsQuery = trpc.channel.options.useQuery();
-  const currentChannelId = form.watch("prefill.channelId") ?? "";
-  const options = channelsQuery.data ?? [];
-  const currentMissing = currentChannelId !== "" && !options.some((c) => c.id === currentChannelId);
+  const userFeedbackChannelsQuery = trpc.userFeedbackChannel.options.useQuery();
+  const feedbackReceiveChannelsQuery = trpc.feedbackReceiveChannel.options.useQuery();
+  const catalogQueries = {
+    channelId: channelsQuery,
+    userFeedbackChannelId: userFeedbackChannelsQuery,
+    feedbackReceiveChannelId: feedbackReceiveChannelsQuery,
+  } as const;
 
   const errors = form.formState.errors;
 
@@ -114,41 +169,17 @@ function PrefillFields({
         </p>
       </div>
 
-      <Field data-invalid={!!errors.prefill?.channelId}>
-        <FieldLabel htmlFor={`${idPrefix}-prefill-channel`}>
-          {TICKET_FIELDS.channelId.label}
-        </FieldLabel>
-        <Controller
-          control={form.control}
-          name="prefill.channelId"
-          render={({ field }) => (
-            <Select
-              value={field.value ?? ""}
-              onValueChange={(value) => field.onChange(value === "" ? null : value)}
-            >
-              <SelectTrigger
-                id={`${idPrefix}-prefill-channel`}
-                className="w-full"
-                disabled={channelsQuery.isLoading}
-              >
-                <SelectValue placeholder="不预填渠道" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">不预填渠道</SelectItem>
-                {currentMissing && (
-                  <SelectItem value={currentChannelId}>当前引用（已停用）</SelectItem>
-                )}
-                {options.map((channel) => (
-                  <SelectItem key={channel.id} value={channel.id}>
-                    {channel.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+      {PREFILL_CATALOG_KEYS.map(({ key, unsetLabel }) => (
+        <PrefillCatalogSelect
+          key={key}
+          form={form}
+          idPrefix={idPrefix}
+          name={key}
+          unsetLabel={unsetLabel}
+          options={catalogQueries[key].data ?? []}
+          isLoading={catalogQueries[key].isLoading}
         />
-        {errors.prefill?.channelId && <FieldError>{errors.prefill.channelId.message}</FieldError>}
-      </Field>
+      ))}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {PREFILL_TEXT_KEYS.map((key) => (
@@ -322,8 +353,8 @@ function UpdateDialog({
           project: account.prefill.project ?? "",
           brokerageEntity: account.prefill.brokerageEntity ?? "",
           paymentChannel: account.prefill.paymentChannel ?? "",
-          userComplaintChannel: account.prefill.userComplaintChannel ?? "",
-          complaintReceiveChannel: account.prefill.complaintReceiveChannel ?? "",
+          userFeedbackChannelId: account.prefill.userFeedbackChannelId ?? "",
+          feedbackReceiveChannelId: account.prefill.feedbackReceiveChannelId ?? "",
         },
       });
     }

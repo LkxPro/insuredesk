@@ -10,13 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * 用户管理 page: the account table renders role/state, operation buttons
- * appear only with their own permission points (mirroring the API guards),
- * and the dialogs fire the right mutations. Same faked-fetch tRPC pipeline
- * and useAuth-seam mock as the schedule-page tests.
- */
-
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -185,7 +178,6 @@ describe("the account table", () => {
     expect(screen.getByText("李离职")).toBeInTheDocument();
     expect(screen.getByText("已禁用")).toBeInTheDocument();
     expect(screen.getByText("质检专员")).toBeInTheDocument();
-    // Disabled rows offer 启用, active rows offer 禁用
     expect(screen.getAllByRole("button", { name: "禁用" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "启用" })).toHaveLength(1);
   });
@@ -207,7 +199,6 @@ describe("the account table", () => {
     renderUsersPage();
 
     await screen.findByText("张客服");
-    // Exactly one 禁用 — for 张客服, not for the operator's own row
     expect(screen.getAllByRole("button", { name: "禁用" })).toHaveLength(1);
   });
 });
@@ -244,7 +235,6 @@ describe("operations", () => {
     renderUsersPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "禁用" }));
-    // Nothing fired yet — the dialog is the only path to the mutation
     expect(calls.some((call) => call.path === "user.setActive")).toBe(false);
     expect(await screen.findByRole("heading", { name: "禁用用户" })).toBeInTheDocument();
 
@@ -267,7 +257,6 @@ describe("operations", () => {
     const trigger = screen.getByRole("combobox", { name: "角色" });
     await waitFor(() => expect(trigger).toBeEnabled());
     expect(trigger).toHaveTextContent("一线客服");
-    // Confirm stays disabled until the pick actually changes
     expect(screen.getByRole("button", { name: "确认" })).toBeDisabled();
 
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
@@ -313,7 +302,6 @@ describe("内部账号专属", () => {
 
     const trigger = screen.getByRole("combobox", { name: "角色" });
     await waitFor(() => expect(trigger).toBeEnabled());
-    // The 外部角色 option is gone at the source: roleOptions is 内部角色 only
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
     fireEvent.click(trigger);
     expect(screen.queryByRole("option", { name: "外部用户" })).not.toBeInTheDocument();
@@ -321,7 +309,6 @@ describe("内部账号专属", () => {
     fireEvent.click(await screen.findByRole("option", { name: "质检专员" }));
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
 
-    // No org rides along: the payload is id + roleId, nothing else
     await waitFor(() =>
       expect(calls.find((call) => call.path === "user.assignRole")?.input).toEqual({
         id: "u-zhang",

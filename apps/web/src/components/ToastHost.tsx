@@ -10,13 +10,6 @@ import {
 import { useState, useSyncExternalStore } from "react";
 import { type ToastItem, type ToastKind, toastStore } from "@/lib/toast-store";
 
-/**
- * 轻提示宿主：顶部正中央的胶囊队列，逐条带关闭键；默认 4 秒自动消失，
- * duration: "sticky" 的条目常驻。平时只显示最新一条；多条时折叠为
- * 「N 条」徽标，点开逐条查看/关闭。带 onClick 的条目点击本体即触发
- * （如跳转对应页面）并随之关闭。
- */
-
 const KIND_ICON = {
   success: CircleCheckIcon,
   error: OctagonXIcon,
@@ -44,7 +37,6 @@ function CloseButton({ id }: { id: number }) {
   );
 }
 
-/** 通知本体：带 onClick 时是按钮，否则纯文本。 */
 function ItemBody({ item, className }: { item: ToastItem; className?: string }) {
   const text = (
     <>

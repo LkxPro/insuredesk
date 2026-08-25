@@ -36,6 +36,10 @@ const exportInclude = {
   channel: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
+  userFeedbackChannel: { select: { name: true } },
+  feedbackReceiveChannel: { select: { name: true } },
+  kind: { select: { name: true } },
+  refundDetail: { select: { failureReason: true, expectedAmount: true, compensationAmount: true } },
   // internalOnly 不过滤：内部导出照常包含
   processLogs: {
     where: { action: "comment" },
@@ -79,12 +83,12 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: ticketExportHeader("paymentChannel"), value: (t) => t.paymentChannel ?? "" },
   { header: ticketExportHeader("internalOrderNumber"), value: (t) => t.internalOrderNumber ?? "" },
   {
-    header: ticketExportHeader("userComplaintChannel"),
-    value: (t) => t.userComplaintChannel ?? "",
+    header: ticketExportHeader("userFeedbackChannelId"),
+    value: (t) => t.userFeedbackChannel?.name ?? "",
   },
   {
-    header: ticketExportHeader("complaintReceiveChannel"),
-    value: (t) => t.complaintReceiveChannel ?? "",
+    header: ticketExportHeader("feedbackReceiveChannelId"),
+    value: (t) => t.feedbackReceiveChannel?.name ?? "",
   },
   { header: ticketExportHeader("customerRequest"), value: (t) => t.customerRequest ?? "" },
   { header: ticketExportHeader("nuclearBodyStatus"), value: (t) => t.nuclearBodyStatus ?? "" },
@@ -118,6 +122,10 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   },
   { header: "完结时间", value: (t, { formatDate }) => formatDate(t.completionTime) },
   { header: "完结状态", value: (t) => t.completionStatus?.name ?? "" },
+  { header: "种类", value: (t) => t.kind.name },
+  { header: "退费异常原因", value: (t) => t.refundDetail?.failureReason ?? "" },
+  { header: "应退金额", value: (t) => t.refundDetail?.expectedAmount ?? "" },
+  { header: "补偿金", value: (t) => t.refundDetail?.compensationAmount ?? "" },
 ];
 
 /**

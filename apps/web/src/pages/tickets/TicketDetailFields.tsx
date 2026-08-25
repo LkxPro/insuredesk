@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { SearchableCombobox } from "./SearchableCombobox";
 import {
   type CurrentCatalogOption,
   HAS_CONTACTED_OPTIONS,
@@ -35,16 +36,10 @@ import {
 } from "./TicketFormFields";
 
 /**
- * 详情/编辑双模式字段渲染器：同一个单元格按模式渲染——只读渲染值、编辑渲染
- * 控件，标签与栅格位置两态一致，原地编辑时字段不挪位。编辑态被用户改动过的
- * 字段在标签后带「已修改」高亮（调用方按 react-hook-form dirtyFields 传入），
- * 取消/保存后随模式退出消失。系统/SLA 字段不走这里，仍用详情弹窗的 Item。
- *
  * 目录下拉只列启用项；工单当前值若已停用，以「（已停用）」入列保持原值合法。
  * 校验与取值契约沿用建单的 ticketFormSchema —— 服务端解析的同一份 schema。
  */
 
-/** The editable slice of the detail payload the edit mode prefills from. */
 export interface EditableTicket {
   id: string;
   workOrderNumber: string;
@@ -56,8 +51,8 @@ export interface EditableTicket {
   internalOrderNumber: string | null;
   policyNumbers: string[];
   noPolicyNumber: boolean;
-  userComplaintChannel: string | null;
-  complaintReceiveChannel: string | null;
+  userFeedbackChannel: CurrentCatalogOption | null;
+  feedbackReceiveChannel: CurrentCatalogOption | null;
   customerName: string | null;
   phone: string | null;
   contactPhone: string | null;
@@ -68,6 +63,7 @@ export interface EditableTicket {
   contactId: string | null;
   category: CurrentCatalogOption | null;
   slaPolicy: CurrentCatalogOption | null;
+  kindKey: string;
   priority: Priority | null;
 }
 
@@ -88,8 +84,8 @@ export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
     internalOrderNumber: ticket?.internalOrderNumber ?? "",
     policyNumbers: joinPolicyNumbers(ticket?.policyNumbers ?? []),
     noPolicyNumber: ticket?.noPolicyNumber ?? false,
-    userComplaintChannel: ticket?.userComplaintChannel ?? "",
-    complaintReceiveChannel: ticket?.complaintReceiveChannel ?? "",
+    userFeedbackChannelId: ticket?.userFeedbackChannel?.id ?? "",
+    feedbackReceiveChannelId: ticket?.feedbackReceiveChannel?.id ?? "",
     customerName: ticket?.customerName ?? "",
     phone: ticket?.phone ?? "",
     contactPhone: ticket?.contactPhone ?? "",
@@ -116,6 +112,10 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
       return ticket.channel?.name ?? null;
     case "categoryId":
       return ticket.category?.name ?? null;
+    case "userFeedbackChannelId":
+      return ticket.userFeedbackChannel?.name ?? null;
+    case "feedbackReceiveChannelId":
+      return ticket.feedbackReceiveChannel?.name ?? null;
     case "slaPolicyId":
       return ticket.slaPolicy?.name ?? null;
     case "hasContacted":
@@ -138,8 +138,6 @@ function readValue(name: TicketCreateFieldKey, ticket: EditableTicket): ReactNod
     case "brokerageEntity":
     case "paymentChannel":
     case "internalOrderNumber":
-    case "userComplaintChannel":
-    case "complaintReceiveChannel":
     case "customerName":
     case "phone":
     case "contactPhone":
@@ -194,7 +192,7 @@ function CatalogControl({
   invalid,
 }: {
   form: UseFormReturn<TicketFormValues>;
-  name: "channelId" | "categoryId";
+  name: "channelId" | "categoryId" | "userFeedbackChannelId" | "feedbackReceiveChannelId";
   current: CurrentCatalogOption | null;
   invalid: boolean;
 }) {
@@ -204,34 +202,63 @@ function CatalogControl({
   const categoryOptions = trpc.ticketCategory.options.useQuery(undefined, {
     enabled: name === "categoryId",
   });
-  const options = withCurrentOption(
-    (name === "channelId" ? channelOptions.data : categoryOptions.data) ?? [],
-    current,
-  );
+  const userFeedbackChannelOptions = trpc.userFeedbackChannel.options.useQuery(undefined, {
+    enabled: name === "userFeedbackChannelId",
+  });
+  const feedbackReceiveChannelOptions = trpc.feedbackReceiveChannel.options.useQuery(undefined, {
+    enabled: name === "feedbackReceiveChannelId",
+  });
+  const data =
+    name === "channelId"
+      ? channelOptions.data
+      : name === "categoryId"
+        ? categoryOptions.data
+        : name === "userFeedbackChannelId"
+          ? userFeedbackChannelOptions.data
+          : feedbackReceiveChannelOptions.data;
+  const options = withCurrentOption(data ?? [], current);
+
+  if (name === "channelId") {
+    return (
+      <Controller
+        control={form.control}
+        name={name}
+        render={({ field }) => (
+          <Select
+            value={field.value ? field.value : UNSET}
+            onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
+          >
+            <SelectTrigger id={name} className="w-full" aria-invalid={invalid}>
+              <SelectValue placeholder="请选择" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value={UNSET}>未设置</SelectItem>
+                {options.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        )}
+      />
+    );
+  }
 
   return (
     <Controller
       control={form.control}
       name={name}
       render={({ field }) => (
-        <Select
-          value={field.value ? field.value : UNSET}
-          onValueChange={(value) => field.onChange(value === UNSET ? "" : value)}
-        >
-          <SelectTrigger id={name} className="w-full" aria-invalid={invalid}>
-            <SelectValue placeholder="请选择" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value={UNSET}>未设置</SelectItem>
-              {options.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.name}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        <SearchableCombobox
+          id={name}
+          options={options}
+          value={field.value || ""}
+          onChange={field.onChange}
+          invalid={invalid}
+        />
       )}
     />
   );
@@ -272,6 +299,24 @@ function EditControl({
       return <CatalogControl form={form} name={name} current={ticket.channel} invalid={invalid} />;
     case "categoryId":
       return <CatalogControl form={form} name={name} current={ticket.category} invalid={invalid} />;
+    case "userFeedbackChannelId":
+      return (
+        <CatalogControl
+          form={form}
+          name={name}
+          current={ticket.userFeedbackChannel}
+          invalid={invalid}
+        />
+      );
+    case "feedbackReceiveChannelId":
+      return (
+        <CatalogControl
+          form={form}
+          name={name}
+          current={ticket.feedbackReceiveChannel}
+          invalid={invalid}
+        />
+      );
     case "nuclearBodyStatus":
       return (
         <EnumControl
@@ -293,6 +338,7 @@ function EditControl({
               onChange={field.onChange}
               invalid={invalid}
               current={ticket.slaPolicy}
+              kindKey={ticket.kindKey}
             />
           )}
         />
@@ -361,10 +407,8 @@ export function TicketDetailField({
   ticket: EditableTicket;
   editing: boolean;
   form: UseFormReturn<TicketFormValues>;
-  /** 编辑态被用户改动过 → 标签后带「已修改」高亮。 */
   dirty: boolean;
   error?: string;
-  /** 编辑态控件下的附加块（查重命中提示）。 */
   addon?: ReactNode;
 }) {
   const descriptor = TICKET_FIELDS[name];

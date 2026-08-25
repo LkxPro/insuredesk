@@ -5,6 +5,7 @@ import {
   externalTicketSubmitInputSchema,
   prioritySchema,
   processLogActionSchema,
+  TicketKindKey,
   ticketStatusSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
@@ -17,6 +18,7 @@ import {
   buildExternalSubmittedNotification,
   writeBulkNotifications,
 } from "../services/notification.service.ts";
+import { requireTicketKindId } from "../services/ticket-kind.service.ts";
 import { requirePermission, router } from "../trpc.ts";
 
 const deps = { prisma, clock: systemClock };
@@ -26,6 +28,8 @@ const catalogInclude = {
   category: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
+  userFeedbackChannel: { select: { name: true } },
+  feedbackReceiveChannel: { select: { name: true } },
 } as const;
 
 type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclude }>;
@@ -49,8 +53,8 @@ function serializeExternalTicket(ticket: TicketWithCatalogs) {
     paymentChannel: ticket.paymentChannel,
     internalOrderNumber: ticket.internalOrderNumber,
     policyNumbers: ticket.policyNumbers,
-    userComplaintChannel: ticket.userComplaintChannel,
-    complaintReceiveChannel: ticket.complaintReceiveChannel,
+    userFeedbackChannel: ticket.userFeedbackChannel?.name ?? null,
+    feedbackReceiveChannel: ticket.feedbackReceiveChannel?.name ?? null,
     customerName: ticket.customerName,
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,
@@ -91,8 +95,8 @@ async function loadExternalAccountConfig(userId: string) {
       prefillProject: true,
       prefillBrokerageEntity: true,
       prefillPaymentChannel: true,
-      prefillUserComplaintChannel: true,
-      prefillComplaintReceiveChannel: true,
+      prefillUserFeedbackChannelId: true,
+      prefillFeedbackReceiveChannelId: true,
     },
   });
   if (!account) {
@@ -121,14 +125,16 @@ export const externalTicketRouter = router({
           data: {
             workOrderNumber,
             source: "external_channel",
+            kindId: await requireTicketKindId(tx, TicketKindKey.Complaint),
+            slaAnchorAt: now,
             submissionText: input.submissionText,
             creatorId: user.id,
             channelId: account.prefillChannelId,
             project: account.prefillProject,
             brokerageEntity: account.prefillBrokerageEntity,
             paymentChannel: account.prefillPaymentChannel,
-            userComplaintChannel: account.prefillUserComplaintChannel,
-            complaintReceiveChannel: account.prefillComplaintReceiveChannel,
+            userFeedbackChannelId: account.prefillUserFeedbackChannelId,
+            feedbackReceiveChannelId: account.prefillFeedbackReceiveChannelId,
             status: "unassigned",
             feedbackTime: now,
             createdAt: now,

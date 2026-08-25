@@ -12,26 +12,14 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests for 导出工单, driven over the real HTTP surface
- * (buildServer + app.inject with session cookies — the download is a REST
- * endpoint, not a tRPC procedure):
- *
- * - ticket.export guard: 401 unauthenticated, 403 without the permission
- * - 按列表当前筛选条件导出: the file's rows equal ticket.list's rows for the
- *   same filters — soft-deletes excluded, data scope applied (个人档只能
- *   导出本人名下), computed 状态 at export time (导出时刻口径)
- * - both formats round-trip (CSV parsed as text, XLSX re-read via exceljs)
- * - 导出不产生 ProcessLog
- */
 describe("ticket export (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let app: FastifyInstance;
   let seeded: IntegrationHarness["seeded"];
   let channelIds: Map<string, string>;
-  /** ticket.export WITHOUT ticket.view_all — the 个人档 exporter. */
   let scopedExporter: User;
+  let refundKindId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
@@ -39,6 +27,9 @@ describe("ticket export (Testcontainers)", () => {
     });
     prisma = harness.prisma;
     seeded = harness.seeded;
+    refundKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
+    ).id;
 
     baseInput = {
       feedbackTime: "2026-07-09T02:00:00.000Z",
@@ -46,7 +37,7 @@ describe("ticket export (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026070900123"],
-      userComplaintChannel: "400热线",
+      userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
       customerName: "王小明",
       phone: "13800000000",
       customerRequest: "对保费收取金额有异议，要求核实并回复",
@@ -95,7 +86,6 @@ describe("ticket export (Testcontainers)", () => {
     await prisma.ticket.deleteMany();
   });
 
-  /** Log in over the real endpoint; returns the session cookie value. */
   async function sessionFor(username: string): Promise<string> {
     const res = await app.inject({
       method: "POST",
@@ -116,7 +106,6 @@ describe("ticket export (Testcontainers)", () => {
     });
   }
 
-  /** tRPC caller mirroring the list page — the consistency oracle. */
   function callerFor(user: User, role: Role) {
     return appRouter.createCaller({
       traceId: "ticket-export-test",
@@ -161,7 +150,6 @@ describe("ticket export (Testcontainers)", () => {
     return created;
   }
 
-  /** BOM-stripped CSV → array of rows (quoted-field-aware enough for our data). */
   function parseCsv(payload: string): string[][] {
     const text = payload.replace(/^\uFEFF/, "").replace(/\r\n$/, "");
     return text.split("\r\n").map((line) => {
@@ -326,7 +314,6 @@ describe("ticket export (Testcontainers)", () => {
       expect(header).not.toContain("投诉等级");
       expect(header).toContain("完结状态");
 
-      // Same rows, same order as the list — and nobody else's
       const exportedNumbers = rows.slice(1).map((cells) => cells[0]);
       expect(exportedNumbers).toEqual(listed.items.map((item) => item.workOrderNumber));
       expect(exportedNumbers).toContain(payment1.workOrderNumber);
@@ -393,9 +380,8 @@ describe("ticket export (Testcontainers)", () => {
       const statusColumn = rows[0]?.indexOf("状态") ?? -1;
       expect(rows[1]?.[statusColumn]).toBe("已超时");
 
-      // …and filtering by the computed status selects that same row
       const filtered = await exportRequest(session, { format: "csv", status: "overdue" });
-      expect(parseCsv(filtered.body)).toHaveLength(2); // header + the one row
+      expect(parseCsv(filtered.body)).toHaveLength(2);
     });
 
     it("formats date columns in the requested IANA zone", async () => {
@@ -409,7 +395,7 @@ describe("ticket export (Testcontainers)", () => {
 
       const rows = parseCsv(res.body);
       const createdColumn = rows[0]?.indexOf("创建时间") ?? -1;
-      expect(rows[1]?.[createdColumn]).toBe("2026-07-10 00:30"); // UTC+8
+      expect(rows[1]?.[createdColumn]).toBe("2026-07-10 00:30");
 
       // An invalid zone degrades to UTC instead of failing the download
       const fallback = await exportRequest(session, { format: "csv", timeZone: "Not/AZone" });
@@ -417,10 +403,10 @@ describe("ticket export (Testcontainers)", () => {
       expect(parseCsv(fallback.body)[1]?.[createdColumn]).toBe("2026-07-09 16:30");
     });
 
-    it("进线时间/投诉信息接收渠道 columns sit in their detail-page positions, dates in the requested zone", async () => {
+    it("进线时间/反馈信息接收渠道 columns sit in their detail-page positions, dates in the requested zone", async () => {
       await makeTicket({
         contactTime: "2026-07-08T02:00:00.000Z",
-        complaintReceiveChannel: "监管转办",
+        feedbackReceiveChannelId: harness.feedbackReceiveChannelId("内部客服热线"),
       });
 
       const session = await sessionFor("manager");
@@ -429,14 +415,79 @@ describe("ticket export (Testcontainers)", () => {
 
       const rows = parseCsv(res.body);
       const header = rows[0] ?? [];
-      // 投诉信息接收渠道 紧跟 用户投诉渠道；进线时间 位于 是否已联系｜联系ID 之间
-      expect(header.indexOf("投诉信息接收渠道")).toBe(header.indexOf("用户投诉渠道") + 1);
+      expect(header.indexOf("反馈信息接收渠道")).toBe(header.indexOf("用户反馈渠道") + 1);
       expect(header.indexOf("进线时间")).toBe(header.indexOf("是否已联系") + 1);
       expect(header.indexOf("联系ID")).toBe(header.indexOf("进线时间") + 1);
 
       const row = rows[1] ?? [];
-      expect(row[header.indexOf("投诉信息接收渠道")]).toBe("监管转办");
-      expect(row[header.indexOf("进线时间")]).toBe("2026-07-08 10:00"); // UTC+8
+      expect(row[header.indexOf("反馈信息接收渠道")]).toBe("内部客服热线");
+      expect(row[header.indexOf("用户反馈渠道")]).toBe("保司400热线");
+      expect(row[header.indexOf("进线时间")]).toBe("2026-07-08 10:00");
+    });
+  });
+
+  describe("退费列", () => {
+    async function makeRefundTicket() {
+      const created = await makeTicket(
+        { customerName: "退费客户" },
+        { kindId: refundKindId, source: "jb-insurance" },
+      );
+      await prisma.ticketRefundDetail.create({
+        data: {
+          ticketId: created.id,
+          platform: "jb-insurance",
+          endorNo: "ENDOR-EXP-1",
+          sysOrderId: "SO-EXP-1",
+          workOrderType: "卡异常-退费失败",
+          expectedAmount: "100.00",
+          refundCreateTime: new Date("2026-08-24T08:40:00.000Z"),
+          refundTrades: [{ tradeNo: "1", payNo: "PAY-EXP-1", expectedAmount: "100.00" }],
+          failureReason: "银行卡状态异常",
+          compensationAmount: "20.50",
+          pushedFields: ["sysOrderId"],
+        },
+      });
+      return created;
+    }
+
+    it("退费单带种类/异常原因/应退金额/补偿金列；投诉单对应列为空", async () => {
+      const complaint = await makeTicket({ customerName: "投诉客户" });
+      const refund = await makeRefundTicket();
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv" });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      const header = rows[0] ?? [];
+      const kindCol = header.indexOf("种类");
+      const reasonCol = header.indexOf("退费异常原因");
+      const amountCol = header.indexOf("应退金额");
+      const compensationCol = header.indexOf("补偿金");
+      expect(Math.min(kindCol, reasonCol, amountCol, compensationCol)).toBeGreaterThanOrEqual(0);
+
+      const byNumber = new Map(rows.slice(1).map((cells) => [cells[0] ?? "", cells]));
+      const complaintRow = byNumber.get(complaint.workOrderNumber) ?? [];
+      const refundRow = byNumber.get(refund.workOrderNumber) ?? [];
+      expect(refundRow[kindCol]).toBe("退费异常");
+      expect(refundRow[reasonCol]).toBe("银行卡状态异常");
+      expect(refundRow[amountCol]).toBe("100.00");
+      expect(refundRow[compensationCol]).toBe("20.50");
+      expect(complaintRow[kindCol]).toBe("投诉");
+      expect(complaintRow[reasonCol]).toBe("");
+      expect(complaintRow[amountCol]).toBe("");
+      expect(complaintRow[compensationCol]).toBe("");
+    });
+
+    it("kindId 查询参数按种类过滤导出", async () => {
+      await makeTicket({ customerName: "投诉客户" });
+      await makeRefundTicket();
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv", kindId: refundKindId });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain("退费客户");
+      expect(res.body).not.toContain("投诉客户");
     });
   });
 
@@ -501,7 +552,6 @@ describe("ticket export (Testcontainers)", () => {
       const rows = parseCsv(res.body);
       const followUpColumn = (rows[0] ?? []).indexOf("跟进记录");
       expect(followUpColumn).toBeGreaterThan(-1);
-      // UTC+8：06:00Z → 14:00, 次日 02:00Z → 10:00；升序后首次联系在前
       expect(rows[1]?.[followUpColumn]).toBe(
         `[2026-07-09 14:00] ${seeded.users.cs1.name}：首次联系，核对扣费明细\n` +
           `[2026-07-10 10:00] ${seeded.users.manager.name}：第二次联系，客户接受方案`,
@@ -511,7 +561,7 @@ describe("ticket export (Testcontainers)", () => {
 
   describe("数据范围", () => {
     it("个人档只能导出本人名下 — no ticket.view_all pins the export to own tickets", async () => {
-      await makeTicket({ customerName: "无人认领" }); // unassigned pool
+      await makeTicket({ customerName: "无人认领" });
       const own = await makeTicket(
         { customerName: "档内自己的单" },
         { status: "assigned", assigneeId: scopedExporter.id, assignedAt: new Date() },
@@ -526,7 +576,7 @@ describe("ticket export (Testcontainers)", () => {
       expect(res.statusCode).toBe(200);
 
       const rows = parseCsv(res.body);
-      expect(rows).toHaveLength(2); // header + own ticket only
+      expect(rows).toHaveLength(2);
       expect(rows[1]?.[0]).toBe(own.workOrderNumber);
       expect(res.body).not.toContain("无人认领");
       expect(res.body).not.toContain("主管的单");
@@ -597,10 +647,9 @@ describe("ticket export (Testcontainers)", () => {
       await workbook.xlsx.load(res.rawPayload as unknown as ArrayBuffer);
       const sheet = workbook.getWorksheet("工单");
       expect(sheet).toBeDefined();
-      expect(sheet?.rowCount).toBe(3); // header + 2 tickets
+      expect(sheet?.rowCount).toBe(3);
 
       expect(sheet?.getRow(1).getCell(1).value).toBe("工单号");
-      // createdAt desc: the later-created 普通客户 row comes first
       expect(sheet?.getRow(2).getCell(1).value).toBe(normal.workOrderNumber);
       expect(sheet?.getRow(3).getCell(1).value).toBe(urgent.workOrderNumber);
 
@@ -612,7 +661,7 @@ describe("ticket export (Testcontainers)", () => {
       expect(sheet?.getRow(3).getCell(policyColumn).value).toBe("特急投诉");
       expect(sheet?.getRow(2).getCell(policyColumn).value).toBe("一般投诉");
       const dueColumn = headerCells.indexOf("处理时限");
-      expect(sheet?.getRow(3).getCell(dueColumn).value ?? "").toBe(""); // 特急: no dueAt
+      expect(sheet?.getRow(3).getCell(dueColumn).value ?? "").toBe("");
     });
   });
 

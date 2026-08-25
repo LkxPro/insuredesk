@@ -29,19 +29,6 @@ import { downloadFile } from "@/lib/download";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
-/**
- * 批量导入 dialog: download the server-generated template (its 渠道/客诉类别
- * dropdowns snapshot the active catalogs — no static asset), fill it in,
- * upload. The upload is all-or-nothing: success reports the imported count,
- * any error keeps the batch out entirely and lists 行号/列名/原因 so the user
- * fixes the ORIGINAL file and re-uploads.
- *
- * Below the upload area, 导入历史 lists the viewer's batches (every batch
- * with ticket.view_all — the scope is server-side). Holders of ticket.delete
- * see 撤销 on revocable batches: an all-or-nothing soft delete of the whole
- * batch, double-confirmed like single deletes.
- */
-
 type ImportOutcome =
   | { kind: "success"; imported: number }
   | { kind: "failure"; error: string; rowErrors: TicketImportRowError[] };
@@ -238,7 +225,6 @@ export function TicketImportDialog({
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
-        // The new tickets are already in the viewer's list scope
         await Promise.all([
           utils.ticket.list.invalidate(),
           utils.ticket.importBatches.invalidate(),

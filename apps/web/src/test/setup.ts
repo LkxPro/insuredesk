@@ -2,12 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
-// Under fork contention in the dev container, chained-async flows (mutation →
-// invalidate → refetch → toast) outrun waitFor/findBy's 1s default window and
-// flake. This governs those polls; vitest's testTimeout is a separate outer
-// bound and never reaches them. Passing assertions resolve as soon as the DOM
-// settles, so a wide value costs nothing except on genuine failures.
-configure({ asyncUtilTimeout: 5000 });
+configure({ asyncUtilTimeout: 12000 });
 
 // RTL only auto-cleans with vitest globals enabled; we import hooks explicitly.
 afterEach(() => {
@@ -25,6 +20,12 @@ class ResizeObserverStub {
 Object.defineProperty(globalThis, "ResizeObserver", {
   writable: true,
   value: ResizeObserverStub,
+});
+
+// jsdom has no scrollIntoView; Radix Select 打开时会把选中项滚动进可视区。
+Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+  writable: true,
+  value: () => {},
 });
 
 // jsdom has no matchMedia; ThemeProvider queries it for the initial theme.

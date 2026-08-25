@@ -9,14 +9,6 @@ if (existsSync(".env")) {
 
 const prisma = new PrismaClient({ adapter: new PrismaPg(process.env.DATABASE_URL ?? "") });
 
-/**
- * Production bootstrap: factory roles (first initialization only), default
- * SLA policies, shift definitions, and one admin account (admin/admin — the
- * operator must change the password right after first deploy). Runs on every production container
- * start, after `prisma migrate deploy`. Re-runs never touch existing roles or
- * users. The demo fixtures stay in seed.ts (dev only).
- */
-
 async function main() {
   console.log("🚀 Bootstrapping system data...");
   const { adminCreated, rolesCreated } = await bootstrapSystemData(prisma, {
@@ -29,7 +21,8 @@ async function main() {
       ? "✓ Factory roles created (first initialization)"
       : "✓ Roles already initialized — left untouched",
   );
-  console.log("✓ SLA policies: 4 (created if missing)");
+  console.log("✓ Ticket kinds: 2 (inserted if missing)");
+  console.log("✓ SLA policies: 4 complaint + 1 refund default (created if missing)");
   console.log("✓ Shift types: 4 (created if missing)");
   console.log("✓ Ticket categories: 17 (first initialization only)");
   console.log("✓ Channels: 4 (first initialization only)");

@@ -11,11 +11,17 @@ import {
   ticketImportRevokeInputSchema,
   ticketListInputSchema,
   ticketResolveInputSchema,
+  ticketUpdateRefundCompensationInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { systemClock } from "../clock.ts";
 import { prisma } from "../db.ts";
+import {
+  CallbackDeliveryNotDeadError,
+  CallbackDeliveryNotFoundError,
+  redeliverCallbackDelivery,
+} from "../services/callback-delivery.service.ts";
 import { CatalogUnavailableError } from "../services/dictionary-catalog.service.ts";
 import {
   createTicket,
@@ -40,7 +46,13 @@ import {
   DuplicateTicketsFoundError,
   findDuplicateTickets,
 } from "../services/ticket-duplicate.service.ts";
-import { editTicket } from "../services/ticket-edit.service.ts";
+import {
+  editTicket,
+  PushedFieldsReadOnlyError,
+  RefundCompensationLockedError,
+  RefundCompensationNotApplicableError,
+  updateRefundCompensation,
+} from "../services/ticket-edit.service.ts";
 import {
   ImportBatchAlreadyRevokedError,
   ImportBatchLockedError,
@@ -51,16 +63,8 @@ import {
 import { resolveTicket, TicketNotResolvableError } from "../services/ticket-resolve.service.ts";
 import { requireAnyPermission, requirePermission, router } from "../trpc.ts";
 
-/**
- * Ticket routes: manual creation, the detail page read, the filterable list,
- * assignment (manual and batch), follow-ups, resolution,
- * editing, and soft deletion. Thin wrappers — validation via the shared Zod
- * schemas, RBAC via requirePermission, business logic in the ticket services.
- */
-
 const deps = { prisma, clock: systemClock };
 
-/** Assignment domain errors → transport codes; anything else rethrows as-is. */
 function mapAssignmentError(error: unknown): never {
   if (error instanceof TicketNotFoundError) {
     throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
@@ -74,7 +78,6 @@ function mapAssignmentError(error: unknown): never {
   throw error;
 }
 
-/** 提交兜底查重命中 → 409；重复列表不入错误载荷，前端经 findDuplicates 重取。 */
 function mapDuplicateError(error: unknown): never {
   if (error instanceof DuplicateTicketsFoundError) {
     throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
@@ -83,11 +86,6 @@ function mapDuplicateError(error: unknown): never {
 }
 
 export const ticketRouter = router({
-  /**
-   * Create a manually-entered ticket. Guarded by ticket.create — users
-   * without it are rejected here regardless of what the UI shows.
-   * allowDuplicate 是前端确认「仍要创建」后的放行标记。
-   */
   create: requirePermission("ticket.create")
     .input(ticketCreateInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
@@ -117,24 +115,14 @@ export const ticketRouter = router({
       }
     }),
 
-  /** 建单/编辑的即时查重：命中即返回最小字段集 + 命中字段（输入侧命名）。 */
   findDuplicates: requirePermission("ticket.view")
     .input(ticketFindDuplicatesInputSchema)
     .query(({ input }) => findDuplicateTickets(deps, input)),
 
-  /**
-   * Paged, filterable list for 工单管理. Data scope applies: without
-   * ticket.view_all the query is pinned to 指派给我 OR 我创建的.
-   */
   list: requirePermission("ticket.view")
     .input(ticketListInputSchema)
     .query(({ ctx, input }) => listTickets(deps, ctx.user, input)),
 
-  /**
-   * Full detail + timeline for the detail page. Data scope applies: without
-   * ticket.view_all only tickets assigned to or created by the viewer
-   * resolve; anything else is NOT_FOUND.
-   */
   detail: requirePermission("ticket.view")
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
@@ -145,10 +133,6 @@ export const ticketRouter = router({
       return detail;
     }),
 
-  /**
-   * Assign or reassign one ticket. Guarded by ticket.assign —
-   * the UI hides its entry points without it, and the API rejects regardless.
-   */
   assign: requirePermission("ticket.assign")
     .input(ticketAssignInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -159,10 +143,6 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 添加跟进备注. Guarded by ticket.process; the data scope inside
-   * keeps a frontline CS on their own tickets.
-   */
   addComment: requirePermission("ticket.process")
     .input(ticketAddCommentInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -183,11 +163,6 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 完结工单. Guarded by ticket.process like follow-ups — 完结 is
-   * part of 处理工单; the data scope inside keeps a frontline CS on their own
-   * tickets.
-   */
   resolve: requirePermission("ticket.process")
     .input(ticketResolveInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -211,11 +186,27 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 编辑工单基本信息 — any status, 已完结 included; status itself
-   * is not an editable field. Guarded by ticket.edit; the data scope inside
-   * keeps an editor without ticket.view_all on their own tickets.
-   */
+  redeliverCallback: requirePermission("ticket.process")
+    .input(z.object({ deliveryId: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      try {
+        const row = await redeliverCallbackDelivery(deps, input.deliveryId);
+        return { id: row.id, status: row.status };
+      } catch (error) {
+        if (error instanceof CallbackDeliveryNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        if (error instanceof CallbackDeliveryNotDeadError) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+
   edit: requirePermission("ticket.edit")
     .input(ticketEditInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
@@ -225,6 +216,9 @@ export const ticketRouter = router({
       } catch (error) {
         if (error instanceof TicketNotFoundError) {
           throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        if (error instanceof PushedFieldsReadOnlyError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         if (error instanceof SlaPolicyNotConfiguredError) {
           throw new TRPCError({
@@ -240,10 +234,29 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 删除工单: soft delete — dangerous, double-confirmed in the UI,
-   * guarded by ticket.delete. No restore this phase.
-   */
+  updateRefundCompensation: requirePermission("ticket.process")
+    .input(ticketUpdateRefundCompensationInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await updateRefundCompensation(deps, ctx.user, input);
+      } catch (error) {
+        if (error instanceof TicketNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        if (error instanceof RefundCompensationNotApplicableError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+        }
+        if (error instanceof RefundCompensationLockedError) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+
   delete: requirePermission("ticket.delete")
     .input(ticketDeleteInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -257,21 +270,10 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 导入历史: the viewer's batches, or every batch with ticket.view_all.
-   * Guarded by ticket.import — the history lives inside the import dialog,
-   * behind the same entry point as uploading.
-   */
   importBatches: requirePermission("ticket.import")
     .input(ticketImportBatchListInputSchema)
     .query(({ ctx, input }) => listImportBatches(deps, ctx.user, input)),
 
-  /**
-   * 整批撤销导入: all-or-nothing soft delete of one clean batch — dangerous,
-   * double-confirmed in the UI, guarded by ticket.delete like single deletes.
-   * A batch with any processed ticket rejects with the count; a revoked batch
-   * is final.
-   */
   revokeImportBatch: requirePermission("ticket.delete")
     .input(ticketImportRevokeInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -295,9 +297,6 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 批量分配: the whole selection to one assignee, all-or-nothing.
-   */
   batchAssign: requirePermission("ticket.batch_assign")
     .input(ticketBatchAssignInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -324,10 +323,6 @@ export const ticketRouter = router({
       }
     }),
 
-  /**
-   * 合规责任人候选 for the 责任人 picker. Either assign permission unlocks it —
-   * the dropdown serves both the single and the batch dialog.
-   */
   assigneeOptions: requireAnyPermission(["ticket.assign", "ticket.batch_assign"]).query(() =>
     listAssigneeOptions(deps),
   ),

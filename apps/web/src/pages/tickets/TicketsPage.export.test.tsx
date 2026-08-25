@@ -4,13 +4,6 @@ import { buildTicketExportUrl } from "@/pages/ticket-surface/ticket-export";
 import { auth, renderApp, restFetch, toastSpies, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * Export flow: a format pick downloads via GET /api/tickets/export with the
- * URL carrying the list's *current* filters, and a server rejection surfaces
- * as a toast instead of a dead click. The download rides the global fetch
- * (restFetch); the tRPC link's injected fetch is a separate transport.
- */
-
 function renderAt(path: string) {
   return renderApp({
     path,
@@ -22,7 +15,6 @@ beforeEach(() => {
   auth.user = userWith(TEST_ROLES.CS_MANAGER);
 });
 
-/** Open the Radix dropdown (pointerDown, jsdom-style) and pick a format. */
 async function pickExport(itemName: RegExp) {
   const trigger = await screen.findByRole("button", { name: /导出/ });
   fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
@@ -51,7 +43,6 @@ describe("按列表当前筛选条件导出", () => {
     expect(url.searchParams.get("sortBy")).toBe("dueAt");
     expect(url.searchParams.get("sortOrder")).toBe("asc");
     expect(url.searchParams.get("timeZone")).toBeTruthy();
-    // an export always covers every matching row — pagination never rides along
     expect(url.searchParams.get("page")).toBeNull();
   });
 
@@ -63,7 +54,9 @@ describe("按列表当前筛选条件导出", () => {
 
     await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
     const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
-    expect(url.searchParams.get("source")).toBe("feishu_form,manual,community,external_channel");
+    expect(url.searchParams.get("source")).toBe(
+      "feishu_form,manual,community,external_channel,jb-insurance",
+    );
   });
 
   it("创建时间区间随导出下传（导出口径 = 列表口径）", async () => {

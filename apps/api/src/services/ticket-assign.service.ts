@@ -14,8 +14,7 @@ import { findOnDutyUserIds, localDateTimeParts } from "./schedule.service.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
- * Assignment domain logic: first assignment, 改派, and 批量分配. Pure service
- * layer — the router maps the domain errors below to transport codes.
+ * Assignment domain logic: first assignment, 改派, and 批量分配.
  *
  * Invariants enforced here:
  * - dueAt is never written — it is fixed at creation and assignment cannot
@@ -26,7 +25,6 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
  *   with the mandatory separate status_change log entry
  */
 
-/** Ticket invisible to the actor, soft-deleted, or plain missing. */
 export class TicketNotFoundError extends Error {
   constructor() {
     super("工单不存在或无权查看");
@@ -34,7 +32,6 @@ export class TicketNotFoundError extends Error {
   }
 }
 
-/** Ticket visible but not assignable in its current state. */
 export class TicketNotAssignableError extends Error {
   constructor(message: string) {
     super(message);
@@ -56,7 +53,6 @@ export class TicketNotAssignableError extends Error {
   }
 }
 
-/** Target user missing or deactivated. */
 export class AssigneeNotAssignableError extends Error {
   constructor() {
     super("所选责任人不存在或已停用");
@@ -64,7 +60,6 @@ export class AssigneeNotAssignableError extends Error {
   }
 }
 
-/** Target user active but their role cannot view and process tickets. */
 export class AssigneeNotProcessableError extends Error {
   constructor() {
     super("所选责任人无工单处理权限");
@@ -116,8 +111,6 @@ async function loadAssignee(tx: Prisma.TransactionClient, assigneeId: string) {
  * Core of both single and batch assignment: mutate one ticket and write its
  * ProcessLog entries. Runs inside the caller's transaction; `now` is shared so
  * every field and log entry of one action carries the same instant.
- *
- * Returns the ticket's status after the action.
  */
 async function applyAssignment(
   tx: Prisma.TransactionClient,
@@ -138,11 +131,8 @@ async function applyAssignment(
   await tx.ticket.update({
     where: { id: ticket.id },
     data: isFirstAssignment
-      ? // 首次分配: enters the assignee's queue and leaves 未分配 — dueAt is
-        // deliberately absent
-        { assigneeId: assignee.id, assignedAt: now, status: TicketStatus.Assigned }
-      : // 改派: only the owner changes; assignedAt keeps the FIRST assignment
-        { assigneeId: assignee.id },
+      ? { assigneeId: assignee.id, assignedAt: now, status: TicketStatus.Assigned }
+      : { assigneeId: assignee.id },
   });
 
   const operator = {
@@ -262,7 +252,7 @@ export async function batchAssignTickets(
         throw new TicketNotFoundError();
       }
       if (ticket.assigneeId === assignee.id) {
-        skippedCount += 1; // already the target's — nothing to change, no log
+        skippedCount += 1;
         continue;
       }
       await applyAssignment(tx, actor, ticket, assignee, now);

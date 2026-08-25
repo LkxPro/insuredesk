@@ -8,21 +8,14 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests for 数据看板 against a real Postgres: the 8 metric cards
- * (with the time cards reusing the single-truth predicates), the deliberate
- * difference between the two overdue 口径, soft-delete exclusion, the
- * channel table, the Top-10 跟进人考核表, the dashboard.view_all data
- * scope, and the <2s compute target. Runs through appRouter.createCaller;
- * clock-sensitive 口径 cases use the service directly with a fixed clock,
- * like the list tests.
- */
 describe("dashboard stats (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let seeded: IntegrationHarness["seeded"];
   let channelRows: { id: string; name: string }[];
   let channelIds: Map<string, string>;
+  let complaintKindId: string;
+  let refundKindId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
@@ -36,7 +29,7 @@ describe("dashboard stats (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026070900123"],
-      userComplaintChannel: "400热线",
+      userFeedbackChannelId: null,
       customerName: "王小明",
       phone: "13800000000",
       customerRequest: "对保费收取金额有异议，要求核实并回复",
@@ -47,6 +40,11 @@ describe("dashboard stats (Testcontainers)", () => {
     };
     channelRows = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
     channelIds = new Map(channelRows.map((channel) => [channel.name, channel.id]));
+    complaintKindId = (await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } }))
+      .id;
+    refundKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
+    ).id;
   }, 180_000);
 
   afterAll(async () => {
@@ -75,7 +73,6 @@ describe("dashboard stats (Testcontainers)", () => {
     };
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role, permissions?: Permission[]) {
     return appRouter.createCaller({
       traceId: "dashboard-test",
@@ -88,7 +85,6 @@ describe("dashboard stats (Testcontainers)", () => {
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
 
-  /** Fixed-clock service read for 口径 cases that must pin "now". */
   function statsAt(
     now: Date,
     viewer: User = seeded.users.manager,
@@ -110,10 +106,6 @@ describe("dashboard stats (Testcontainers)", () => {
 
   let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
-  /**
-   * Create a ticket through the real creation flow, then shape the row
-   * directly into the state under test (assignment, completion, soft delete).
-   */
   async function makeTicket(
     input: Partial<TicketCreateInput> = {},
     row: Prisma.TicketUncheckedUpdateInput = {},
@@ -129,19 +121,20 @@ describe("dashboard stats (Testcontainers)", () => {
     return created;
   }
 
-  /** Row shape for bulk createMany (perf / Top-10 fixtures). */
   function bulkRow(
     overrides: Partial<Prisma.TicketCreateManyInput> = {},
   ): Prisma.TicketCreateManyInput {
     return {
       feedbackTime: new Date("2026-07-09T02:00:00.000Z"),
       source: "manual",
+      kindId: complaintKindId,
+      slaAnchorAt: new Date("2026-07-09T02:00:00.000Z"),
       channelId: channelId("保司"),
       project: "融盛",
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["BULK"],
-      userComplaintChannel: "400热线",
+      userFeedbackChannelId: null,
       customerName: "批量客户",
       phone: "13800000000",
       customerRequest: "批量数据",
@@ -159,7 +152,7 @@ describe("dashboard stats (Testcontainers)", () => {
       const now = new Date();
       const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
 
-      await makeTicket({ customerName: "新单" }); // unassigned, due +48h
+      await makeTicket({ customerName: "新单" });
       await makeTicket(
         { customerName: "已分配" },
         { status: "assigned", assigneeId: seeded.users.cs1.id, dueAt: at(30) },
@@ -195,14 +188,13 @@ describe("dashboard stats (Testcontainers)", () => {
 
       expect(Object.keys(metrics).sort()).toEqual([...DASHBOARD_METRIC_KEYS].sort());
       expect(metrics.total).toBe(8);
-      expect(metrics.unassigned).toBe(3); // 新单 + 特急 + 监管件
-      expect(metrics.assigned).toBe(1); // 已分配 only; 预警中 now counts in pendingTimeout
-      expect(metrics.processing).toBe(1); // 处理中 only; 已超时 now counts in overdue
+      expect(metrics.unassigned).toBe(3);
+      expect(metrics.assigned).toBe(1);
+      expect(metrics.processing).toBe(1);
       expect(metrics.completed).toBe(1);
-      expect(metrics.pendingTimeout).toBe(1); // 预警中
-      expect(metrics.overdue).toBe(1); // 已超时
+      expect(metrics.pendingTimeout).toBe(1);
+      expect(metrics.overdue).toBe(1);
       expect(metrics.urgent).toBe(1);
-      // The 6 display status cards partition the set; their sum = total.
       expect(
         metrics.unassigned +
           metrics.assigned +
@@ -229,8 +221,8 @@ describe("dashboard stats (Testcontainers)", () => {
 
       // 不足 2 小时 is strict (exactly 2h left is safe); 已超过 is strict
       // (the dueAt instant is still pending) — same edges as the list filter.
-      expect(metrics.pendingTimeout).toBe(1); // 恰在时限 only
-      expect(metrics.overdue).toBe(1); // 刚过时限 only
+      expect(metrics.pendingTimeout).toBe(1);
+      expect(metrics.overdue).toBe(1);
     });
 
     it("完结即移出 — 已超时卡是实时运营视角，不含超时完结", async () => {
@@ -258,7 +250,6 @@ describe("dashboard stats (Testcontainers)", () => {
       const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
       const cs1 = seeded.users.cs1.id;
 
-      // A: 超时完结 — completed 1h ago on a deadline that passed 20h ago
       await makeTicket(
         { customerName: "超时完结" },
         {
@@ -269,12 +260,10 @@ describe("dashboard stats (Testcontainers)", () => {
           completionTime: at(-1),
         },
       );
-      // B: 在途超时
       await makeTicket(
         { customerName: "在途超时" },
         { status: "processing", assigneeId: cs1, createdAt: at(-60), dueAt: at(-12) },
       );
-      // C: 按时完结
       await makeTicket(
         { customerName: "按时完结" },
         {
@@ -288,18 +277,15 @@ describe("dashboard stats (Testcontainers)", () => {
 
       const stats = await statsAt(now);
 
-      // 实时运营视角: only B is overdue — A dropped out on completion.
       expect(stats.metrics.overdue).toBe(1);
 
-      // 历史追责视角: A and B both count; C keeps the rate below 1.
       const row = stats.assignees.find((entry) => entry.assigneeId === cs1);
       expect(row).toBeDefined();
       expect(row?.assigneeName).toBe(seeded.users.cs1.name);
       expect(row?.totalCount).toBe(3);
-      expect(row?.completedCount).toBe(2); // A + C
-      expect(row?.overdueCount).toBe(2); // A (超时完结) + B (在途超时)
+      expect(row?.completedCount).toBe(2);
+      expect(row?.overdueCount).toBe(2);
       expect(row?.overdueRate).toBeCloseTo(2 / 3, 10);
-      // 平均完结时长 = mean of completionTime − createdAt (端到端): A 49h, C 8h.
       expect(row?.avgCompletionMs).toBe(28.5 * HOUR_MS);
     });
 
@@ -362,7 +348,6 @@ describe("dashboard stats (Testcontainers)", () => {
       try {
         const stats = await statsAt(new Date());
         expect(stats.urgentPolicy).toEqual({ id: rushPolicy.id, name: "加急投诉" });
-        // 计数按新绑定策略的引用；被停用策略的工单不再计入
         expect(stats.metrics.urgent).toBe(2);
       } finally {
         await prisma.slaPolicy.update({ where: { id: urgentPolicy.id }, data: { active: true } });
@@ -375,10 +360,94 @@ describe("dashboard stats (Testcontainers)", () => {
         const stats = await statsAt(new Date());
         expect(stats.urgentPolicy).toBeNull();
         expect(stats.metrics.urgent).toBe(0);
-        // 其余卡片照常
         expect(stats.metrics.total).toBe(0);
       } finally {
         await prisma.slaPolicy.updateMany({ data: { active: true } });
+      }
+    });
+
+    it("退费组策略不参与绑定——即便 sortOrder 全表最大；退费单也不计入 urgent", async () => {
+      const refundPolicy = await prisma.slaPolicy.create({
+        data: {
+          name: "退费专属策略",
+          firstResponseMinutes: 120,
+          overdueHours: 48,
+          reminderRules: [],
+          kindId: refundKindId,
+          sortOrder: 999,
+        },
+      });
+      try {
+        await makeTicket(
+          { customerName: "退费单" },
+          { kindId: refundKindId, slaPolicyId: refundPolicy.id },
+        );
+        await makeTicket({
+          customerName: "特急",
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+        });
+
+        const stats = await statsAt(new Date());
+        expect(stats.urgentPolicy).toEqual({
+          id: harness.slaPolicyId("特急投诉"),
+          name: "特急投诉",
+        });
+        expect(stats.metrics.urgent).toBe(1);
+      } finally {
+        await prisma.ticket.deleteMany({ where: { slaPolicyId: refundPolicy.id } });
+        await prisma.slaPolicy.delete({ where: { id: refundPolicy.id } });
+      }
+    });
+  });
+
+  describe("考核口径：退费单超时单数按 slaAnchorAt 判定", () => {
+    it("平台推送延迟计入超时（completionTime > 锚定 dueAt），平均完结时长仍 completionTime − createdAt", async () => {
+      const now = new Date();
+      const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
+      const cs1 = seeded.users.cs1.id;
+      const refundPolicy = await prisma.slaPolicy.create({
+        data: {
+          name: "退费考核策略",
+          firstResponseMinutes: 120,
+          overdueHours: 48,
+          reminderRules: [],
+          kindId: refundKindId,
+        },
+      });
+      try {
+        await makeTicket(
+          { customerName: "退费超时完结" },
+          {
+            kindId: refundKindId,
+            slaPolicyId: refundPolicy.id,
+            status: "completed",
+            assigneeId: cs1,
+            createdAt: at(-36),
+            slaAnchorAt: at(-49),
+            dueAt: at(-1),
+            completionTime: at(0),
+          },
+        );
+        await makeTicket(
+          { customerName: "投诉按时完结" },
+          {
+            status: "completed",
+            assigneeId: cs1,
+            createdAt: at(-36),
+            slaAnchorAt: at(-36),
+            dueAt: at(12),
+            completionTime: at(0),
+          },
+        );
+
+        const stats = await statsAt(now);
+        const row = stats.assignees.find((entry) => entry.assigneeId === cs1);
+        expect(row?.overdueCount).toBe(1);
+        expect(row?.completedCount).toBe(2);
+        expect(row?.avgCompletionMs).toBe(36 * HOUR_MS);
+      } finally {
+        await prisma.ticket.deleteMany({ where: { slaPolicyId: refundPolicy.id } });
+        await prisma.slaPolicy.delete({ where: { id: refundPolicy.id } });
       }
     });
   });
@@ -387,7 +456,6 @@ describe("dashboard stats (Testcontainers)", () => {
     it("soft-deleted tickets count nowhere, whatever state they died in", async () => {
       const now = new Date();
       const kept = await makeTicket({ customerName: "存活" });
-      // One deleted ticket per 口径 it could have influenced:
       await makeTicket(
         {
           customerName: "删·超时",
@@ -431,7 +499,6 @@ describe("dashboard stats (Testcontainers)", () => {
         { channelId: channelId("监管"), name: "监管", count: 0 },
       ]);
 
-      // cs1 held only deleted tickets — the 考核表 must not know them.
       expect(stats.assignees).toHaveLength(0);
 
       const list = await manager().ticket.list({});
@@ -478,7 +545,6 @@ describe("dashboard stats (Testcontainers)", () => {
       expect(stats.channels.find((ch) => ch.name === "监管")?.count).toBe(0);
       expect(stats.channels.find((ch) => ch.name === "支付")?.count).toBe(0);
 
-      // cs1 held only file_import tickets — the 考核表 must not know them.
       expect(stats.assignees).toHaveLength(0);
     });
   });
@@ -518,7 +584,6 @@ describe("dashboard stats (Testcontainers)", () => {
 
   describe("跟进人考核 Top 10", () => {
     it("caps at 10 assignees ranked by 完单数, dropping the smallest producers", async () => {
-      // 12 assignees, i completions each (i = 1..12): ranks 12..3 stay, 2 and 1 drop.
       const extras = Array.from({ length: 12 }, (_, index) => ({
         username: `perf-cs-${index + 1}`,
         name: `考核客服${index + 1}`,
@@ -585,7 +650,7 @@ describe("dashboard stats (Testcontainers)", () => {
   describe("数据范围: 无 dashboard.view_all 收窄为本人名下", () => {
     it("frontline sees own-only numbers and scope=own; view_all roles see everything", async () => {
       const now = new Date();
-      await makeTicket({ customerName: "无主单", channelId: channelId("监管") }); // unassigned pool
+      await makeTicket({ customerName: "无主单", channelId: channelId("监管") });
       await makeTicket(
         { customerName: "主管的超时单" },
         {
@@ -613,11 +678,11 @@ describe("dashboard stats (Testcontainers)", () => {
 
       const own = await frontline().dashboard.stats({});
       expect(own.scope).toBe("own");
-      expect(own.metrics.total).toBe(2); // the unassigned pool and 主管's ticket are invisible
+      expect(own.metrics.total).toBe(2);
       expect(own.metrics.unassigned).toBe(0);
       expect(own.metrics.completed).toBe(1);
       expect(own.metrics.assigned).toBe(1);
-      expect(own.metrics.overdue).toBe(0); // 主管's overdue ticket is out of scope
+      expect(own.metrics.overdue).toBe(0);
       expect(own.channels.find((row) => row.name === "支付")?.count).toBe(1);
       expect(own.assignees.map((row) => row.assigneeId)).toEqual([seeded.users.cs1.id]);
 
@@ -767,7 +832,7 @@ describe("dashboard stats (Testcontainers)", () => {
       });
 
       expect(stats.metrics.total).toBe(4);
-      expect(stats.metrics.unassigned).toBe(1); // 区间内特急
+      expect(stats.metrics.unassigned).toBe(1);
       expect(stats.metrics.assigned).toBe(1);
       expect(stats.metrics.processing).toBe(1);
       expect(stats.metrics.completed).toBe(1);

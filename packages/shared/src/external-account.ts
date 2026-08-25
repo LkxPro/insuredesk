@@ -16,15 +16,7 @@ import {
  * 工单字段，对提交输入隐形。文本上限抄对应工单字段。
  */
 
-/** 预填文本字段：trim、上限抄工单字段、空串归一为 null（= 未配置）。 */
-function prefillTextField(
-  key:
-    | "project"
-    | "brokerageEntity"
-    | "paymentChannel"
-    | "userComplaintChannel"
-    | "complaintReceiveChannel",
-) {
+function prefillTextField(key: "project" | "brokerageEntity" | "paymentChannel") {
   const descriptor = TICKET_FIELDS[key];
   return z
     .string()
@@ -34,17 +26,22 @@ function prefillTextField(
     .transform((value) => (value ? value : null));
 }
 
-export const externalAccountPrefillSchema = z.object({
-  /** 反馈渠道引用；停用渠道保持引用且照常盖章。 */
-  channelId: z
+/** 停用项保持引用且照常盖章。 */
+function prefillCatalogField() {
+  return z
     .string()
     .nullish()
-    .transform((value) => (value ? value : null)),
+    .transform((value) => (value ? value : null));
+}
+
+export const externalAccountPrefillSchema = z.object({
+  /** 反馈渠道引用；停用渠道保持引用且照常盖章。 */
+  channelId: prefillCatalogField(),
   project: prefillTextField("project"),
   brokerageEntity: prefillTextField("brokerageEntity"),
   paymentChannel: prefillTextField("paymentChannel"),
-  userComplaintChannel: prefillTextField("userComplaintChannel"),
-  complaintReceiveChannel: prefillTextField("complaintReceiveChannel"),
+  userFeedbackChannelId: prefillCatalogField(),
+  feedbackReceiveChannelId: prefillCatalogField(),
 });
 export type ExternalAccountPrefillInput = z.input<typeof externalAccountPrefillSchema>;
 export type ExternalAccountPrefill = z.output<typeof externalAccountPrefillSchema>;
@@ -89,7 +86,11 @@ export interface ExternalAccountListItem {
   email: string | null;
   active: boolean;
   createdAt: string;
-  prefill: ExternalAccountPrefill & { channelName: string | null };
+  prefill: ExternalAccountPrefill & {
+    channelName: string | null;
+    userFeedbackChannelName: string | null;
+    feedbackReceiveChannelName: string | null;
+  };
   /** 该账号提交的工单数（含软删）。 */
   ticketCount: number;
 }

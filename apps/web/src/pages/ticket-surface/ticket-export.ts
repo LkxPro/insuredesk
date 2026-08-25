@@ -3,12 +3,6 @@ import { format as formatDate } from "date-fns";
 import { downloadFile } from "@/lib/download";
 
 /**
- * 导出工单 client: turns the list page's current query into the
- * GET /api/tickets/export download. Split from the page so the URL building —
- * the "按列表当前筛选条件导出" contract — is a pure, testable function.
- */
-
-/**
  * Current list state → export URL. Pagination is deliberately dropped (an
  * export covers every matching row); the browser's IANA zone rides along so
  * the file's date columns match what the list page displays (local time).
@@ -28,6 +22,7 @@ export function buildTicketExportUrl(
   // 显式下传覆盖缺省）
   for (const key of [
     "status",
+    "kindId",
     "channelId",
     "categoryId",
     "completionStatusId",
@@ -45,7 +40,6 @@ export function buildTicketExportUrl(
   if (query.search) {
     params.set("search", query.search);
   }
-  // 创建时间区间随导出下传；缺省（全部）不写参数
   for (const key of ["createdFrom", "createdTo"] as const) {
     const value = query[key];
     if (value !== undefined) {

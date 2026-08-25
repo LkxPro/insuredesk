@@ -1,47 +1,35 @@
 import { z } from "zod";
 
-/**
- * Flat permission-point string enum covering all access controls in the system.
- * Permission points are organized by feature area but stored as flat strings.
- * Roles are collections of permission points, managed in the database.
- */
-
-// Dashboard permissions
 export const DASHBOARD_PERMISSIONS = [
-  "dashboard.view", // Access data dashboard (page permission)
-  "dashboard.view_all", // View all data (data permission)
-  "dashboard.export", // Export data reports (operation permission)
+  "dashboard.view",
+  "dashboard.view_all",
+  "dashboard.export",
 ] as const;
 
-// Ticket management permissions
 export const TICKET_PERMISSIONS = [
-  "ticket.view", // Access ticket list (page permission)
-  "ticket.view_all", // View all tickets (data permission) - without this, only see tickets assigned to or created by oneself
-  "ticket.create", // Create new ticket (operation permission)
-  "ticket.edit", // Edit ticket basic info (operation permission)
-  "ticket.process", // Process ticket - add comments/follow-ups (operation permission)
-  "ticket.assign", // Assign ticket to user (operation permission)
-  "ticket.batch_assign", // Batch assign tickets (operation permission)
-  "ticket.export", // Export tickets (operation permission)
-  "ticket.import", // Batch import tickets (operation permission)
-  "ticket.delete", // Delete ticket - dangerous (operation permission)
-  "ticket.create_external", // Create external channel ticket (external user permission)
-  "ticket.process_external", // Add external note to ticket (external user permission)
+  "ticket.view",
+  "ticket.view_all", // without this, only see tickets assigned to or created by oneself
+  "ticket.create",
+  "ticket.edit",
+  "ticket.process",
+  "ticket.assign",
+  "ticket.batch_assign",
+  "ticket.export",
+  "ticket.import",
+  "ticket.delete",
+  "ticket.create_external",
+  "ticket.process_external",
 ] as const;
 
-// User management permissions
 export const USER_PERMISSIONS = [
-  "user.view", // Access user management (page permission)
-  "user.create", // Create new user (operation permission)
-  "user.edit", // Edit user (operation permission)
-  "user.delete", // Delete user (operation permission)
-  "user.assign_role", // Assign role to user (operation permission)
+  "user.view",
+  "user.create",
+  "user.edit",
+  "user.delete",
+  "user.assign_role",
 ] as const;
 
-// External account permissions
-export const EXTERNAL_ACCOUNT_PERMISSIONS = [
-  "external_account.manage", // Manage external accounts (admin permission)
-] as const;
+export const EXTERNAL_ACCOUNT_PERMISSIONS = ["external_account.manage"] as const;
 
 /**
  * Points that mark a role as belonging to an 外部账号 rather than an
@@ -67,34 +55,27 @@ export function isExternalRole(role: { system: boolean; permissions: readonly st
   return EXTERNAL_ROLE_PERMISSIONS.some((permission) => role.permissions.includes(permission));
 }
 
-// Role permissions
 export const ROLE_PERMISSIONS = [
-  "role.view", // Access role management (page permission)
-  "role.create", // Create new role (operation permission)
-  "role.edit", // Edit role (operation permission)
-  "role.delete", // Delete role (operation permission)
-  "role.edit_permission", // Edit permission configuration (operation permission)
+  "role.view",
+  "role.create",
+  "role.edit",
+  "role.delete",
+  "role.edit_permission",
 ] as const;
 
-// System configuration permissions
-// sla.view / sla.edit / dictionary.manage exist because SLA policies and the
-// dictionary catalogs need their own pages + operation points. Out of the
-// factory only 管理员 holds them.
 export const SYSTEM_PERMISSIONS = [
-  "schedule.view", // Access schedule configuration (page permission)
-  "schedule.edit", // Edit schedule (operation permission)
-  "schedule.manage_shifts", // Manage shift definitions (admin configuration)
-  "sla.view", // Access SLA policy configuration (page permission)
-  "sla.edit", // Edit SLA policies (operation permission)
-  "dictionary.manage", // Manage the dictionary catalogs (admin configuration)
+  "schedule.view",
+  "schedule.edit",
+  "schedule.manage_shifts",
+  "sla.view",
+  "sla.edit",
+  "dictionary.manage",
 ] as const;
 
 // Restrictive permissions: checked = forbidden, the inverse of every other
 // point. Kept in their own list so positive-permission consumers (admin
 // expansion, menu gating) can exclude them wholesale.
-export const RESTRICTIVE_PERMISSIONS = [
-  "user.forbid_change_own_password", // Forbid changing one's own password
-] as const;
+export const RESTRICTIVE_PERMISSIONS = ["user.forbid_change_own_password"] as const;
 
 // All positive (grant-type) permissions — what the 管理员 system role expands
 // to. Must never include restrictive points, or admin would be auto-forbidden.

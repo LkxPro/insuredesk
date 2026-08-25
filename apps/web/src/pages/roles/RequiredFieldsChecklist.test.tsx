@@ -4,9 +4,6 @@ import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { RequiredFieldsChecklist } from "./RequiredFieldsChecklist";
 
-/**
- * 建单必填字段清单组件测试：字段按表单分组呈现、label 为描述表标准名，勾选状态与 onChange 回调联动。
- */
 describe("RequiredFieldsChecklist", () => {
   it("renders every ticket creation field with its 标准名, grouped by form sections", () => {
     render(<RequiredFieldsChecklist value={[]} />);
@@ -14,7 +11,6 @@ describe("RequiredFieldsChecklist", () => {
     for (const section of ["来源与渠道", "业务信息", "客户信息", "分类与等级"]) {
       expect(screen.getByText(section)).toBeInTheDocument();
     }
-    // 描述表加字段但漏排进分组时，这里按清单逐个点名报警
     for (const key of TICKET_CREATE_FIELD_KEYS) {
       expect(screen.getByLabelText(TICKET_FIELDS[key].label)).toBeInTheDocument();
     }
@@ -92,7 +88,5 @@ describe("RequiredFieldsChecklist", () => {
 
     const phoneCheckbox = screen.getByLabelText("客户电话（投保人）");
     await user.click(phoneCheckbox);
-
-    // No error thrown, onChange simply not called
   });
 });

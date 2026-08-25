@@ -12,6 +12,8 @@ import {
   InvalidVisibleFieldError,
   listExternalAccounts,
   PrefillChannelNotFoundError,
+  PrefillFeedbackReceiveChannelNotFoundError,
+  PrefillUserFeedbackChannelNotFoundError,
   setExternalAccountActive,
   updateExternalAccount,
 } from "../services/external-account.service.ts";
@@ -38,6 +40,8 @@ function toTRPCError(error: unknown): never {
   if (
     error instanceof InvalidVisibleFieldError ||
     error instanceof PrefillChannelNotFoundError ||
+    error instanceof PrefillUserFeedbackChannelNotFoundError ||
+    error instanceof PrefillFeedbackReceiveChannelNotFoundError ||
     error instanceof ExternalAccountOnlyError ||
     error instanceof SelfDisableError
   ) {
@@ -54,7 +58,6 @@ function toTRPCError(error: unknown): never {
 }
 
 export const externalAccountRouter = router({
-  /** The manage page's account table — the edit dialog rides the same row. */
   list: requirePermission("external_account.manage").query(() => listExternalAccounts(deps)),
 
   /** New 外部账号: basic info + 6 预填 + 白名单; 唯一外部角色服务端挂载。 */

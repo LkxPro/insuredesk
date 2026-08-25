@@ -7,14 +7,6 @@ import {
   validateTicketImportRows,
 } from "../src/services/ticket-import.service.ts";
 
-/**
- * DB-free tests for the 批量导入 parsing/validation seam: workbook → raw rows
- * (header contract, blank-row skipping, size gates) and raw rows → per-row
- * errors / creation payloads (手工建单契约 semantics, Chinese literals,
- * catalog names, wall-clock dates in the request's zone, in-file duplicates).
- */
-
-/** Row literal keyed by header — unnamed positional tuples would be unreadable. */
 type RowInput = Partial<Record<string, string | Date>>;
 
 /** First element, asserted present — noUncheckedIndexedAccess-friendly. */
@@ -63,6 +55,14 @@ const catalogs = {
     ["特急投诉", { id: "sla-urgent", active: true }],
     ["旧策略", { id: "sla-legacy", active: false }],
   ]),
+  userFeedbackChannels: new Map([
+    ["保司400热线", { id: "ufc-hotline", active: true }],
+    ["旧投诉渠道", { id: "ufc-legacy", active: false }],
+  ]),
+  feedbackReceiveChannels: new Map([
+    ["内部客服热线", { id: "frc-hotline", active: true }],
+    ["旧接收渠道", { id: "frc-legacy", active: false }],
+  ]),
 };
 
 async function expectFileError(body: Buffer, messagePart: string) {
@@ -90,7 +90,7 @@ describe("readTicketImportSheet", () => {
     const body = await buildWorkbook([
       { 客户姓名: "张三" },
       null,
-      { 客户姓名: "  " }, // whitespace-only counts as blank
+      { 客户姓名: "  " },
       { 客户姓名: "李四" },
     ]);
     const rows = await readTicketImportSheet(body);
@@ -133,7 +133,8 @@ describe("validateTicketImportRows", () => {
           反馈时间: "2026-07-01 10:00",
           反馈渠道: "飞书",
           "项目（保司）": " 融盛 ",
-          投诉信息接收渠道: "监管转办",
+          用户反馈渠道: "保司400热线",
+          反馈信息接收渠道: "内部客服热线",
           客户姓名: "张三",
           保司侧是否核身: "待核实",
           客户曾进线: "是",
@@ -151,13 +152,13 @@ describe("validateTicketImportRows", () => {
     expect(ticket.feedbackTime).toBe("2026-07-01T02:00:00.000Z");
     expect(ticket.channelId).toBe("ch-feishu");
     expect(ticket.project).toBe("融盛");
-    expect(ticket.complaintReceiveChannel).toBe("监管转办");
+    expect(ticket.userFeedbackChannelId).toBe("ufc-hotline");
+    expect(ticket.feedbackReceiveChannelId).toBe("frc-hotline");
     expect(ticket.customerName).toBe("张三");
     expect(ticket.nuclearBodyStatus).toBe("待核实");
     expect(ticket.hasContacted).toBe(true);
     expect(ticket.contactTime).toBe("2026-06-30T13:15:00.000Z");
     expect(ticket.categoryId).toBe("cat-claims");
-    // 时效策略列按策略名匹配启用策略，payload 承载解析出的引用 id
     expect(ticket.slaPolicyId).toBe("sla-high");
     expect(ticket.priority).toBe("urgent");
   });
@@ -173,24 +174,27 @@ describe("validateTicketImportRows", () => {
     expect(ticket.slaPolicyId).toBeNull();
     expect(ticket.priority).toBeNull();
     expect(ticket.customerName).toBeNull();
-    expect(ticket.complaintReceiveChannel).toBeNull();
+    expect(ticket.feedbackReceiveChannelId).toBeNull();
     expect(ticket.contactTime).toBeNull();
     expect(ticket.completionStatusId).toBeNull();
     expect(ticket.completionRemark).toBeNull();
   });
 
-  it("进线时间 follows the 反馈时间 date contract; 投诉信息接收渠道 caps at 100 chars", async () => {
+  it("进线时间 follows the 反馈时间 date contract; 投诉渠道列只收启用目录名", async () => {
     const { errors } = await validate([
       { 进线时间: "2026/07/01 10:00" },
       { 进线时间: "2026-02-30 10:00" },
-      { 投诉信息接收渠道: "字".repeat(101) },
+      { 反馈信息接收渠道: "查无此群" },
+      { 用户反馈渠道: "旧投诉渠道" },
     ]);
-    expect(errors).toHaveLength(3);
+    expect(errors).toHaveLength(4);
     expect(errors[0]).toMatchObject({ row: 2, column: "进线时间" });
     expect(errors[0]?.message).toContain("yyyy-MM-dd HH:mm");
     expect(errors[1]).toMatchObject({ row: 3, column: "进线时间" });
-    expect(errors[2]).toMatchObject({ row: 4, column: "投诉信息接收渠道" });
-    expect(errors[2]?.message).toContain("100");
+    expect(errors[2]).toMatchObject({ row: 4, column: "反馈信息接收渠道" });
+    expect(errors[2]?.message).toContain("「查无此群」不存在");
+    expect(errors[3]).toMatchObject({ row: 5, column: "用户反馈渠道" });
+    expect(errors[3]?.message).toContain("「旧投诉渠道」已停用");
   });
 
   it("maps a filled 完结状态/完结备注 pair to the completion payload", async () => {

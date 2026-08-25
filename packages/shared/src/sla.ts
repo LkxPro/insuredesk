@@ -61,6 +61,8 @@ export const slaPolicyCreateInputSchema = z.object({
   /** null = 不设超时 (never overdue). */
   overdueHours: z.number().int().positive("超时时长需为正整数（小时）").nullable(),
   reminderRules: z.array(slaPolicyEditableRuleSchema),
+  /** 所属工单种类组（ticket_kinds.id）；建后不可改组。 */
+  kindId: z.string().min(1),
 });
 export type SlaPolicyCreateInput = z.output<typeof slaPolicyCreateInputSchema>;
 
@@ -76,10 +78,16 @@ export const slaPolicyUpdateInputSchema = z.object({
 });
 export type SlaPolicyUpdateInput = z.infer<typeof slaPolicyUpdateInputSchema>;
 
+/** 组内排序：policyIds 须恰好是该 kindId 组的全部策略。 */
 export const slaPolicySortInputSchema = z.object({
+  kindId: z.string().min(1),
   policyIds: z.array(z.string().min(1)).min(1),
 });
 export type SlaPolicySortInput = z.infer<typeof slaPolicySortInputSchema>;
+
+/** 不带 kindKey = 全量启用策略；带 kindKey = 仅该种类组的启用策略。 */
+export const slaPolicyOptionsInputSchema = z.object({ kindKey: z.string().min(1) }).optional();
+export type SlaPolicyOptionsInput = z.infer<typeof slaPolicyOptionsInputSchema>;
 
 export const slaPolicySetActiveInputSchema = z.object({
   id: z.string().min(1),
@@ -91,11 +99,14 @@ export interface SlaPolicyEntity {
   id: string;
   name: string;
   description: string | null;
+  /** 组内目录序（组 = kindId 所属种类）。 */
   sortOrder: number;
   active: boolean;
   firstResponseMinutes: number;
   overdueHours: number | null;
   reminderRules: ReminderRule[];
+  kindId: string;
+  kindName: string;
   updatedAt: string;
 }
 
@@ -152,6 +163,16 @@ export const DEFAULT_SLA_POLICIES: readonly (SlaPolicyDefaults & { name: string 
     ],
   },
 ];
+
+/** 组内默认的选取规则：active 中 sortOrder 最小者。 */
+export const DEFAULT_REFUND_SLA_POLICY: SlaPolicyDefaults & { name: string } = {
+  name: "退费异常默认策略",
+  firstResponseMinutes: 120,
+  overdueHours: 48,
+  reminderRules: [
+    { type: "follow_up_checkpoint", checkpointHours: 36, requiredCount: 1, advanceMinutes: 180 },
+  ],
+};
 
 export function formatFirstResponseRequirement(firstResponseMinutes: number): string {
   return `${firstResponseMinutes}分钟内完成首次响应`;

@@ -12,14 +12,12 @@ import {
 import { isCompleteLocalDate } from "./local-date-time";
 
 /**
- * 创建时间预设 ↔ 绝对时刻的换算，以及回显反查。契约只收 instant，预设纯属前端
- * 的糖：日界一律按浏览器时区算，周起始为周一。
+ * 契约只收 instant，预设纯属前端的糖：日界一律按浏览器时区算，周起始为周一。
  *
  * 反查的固有代价：今天选「本月」生成的链接明天打开会回显「自定义」——日期没
  * 变，但已不等于新的本月边界。分享一段数据的链接时，这正是想要的语义。
  */
 
-/** 两端都定死的区间——预设换算与自定义输入的产物。 */
 export type ResolvedCreatedRange = Required<CreatedRangeQuery>;
 
 const WEEK_OPTIONS = { weekStartsOn: 1 } as const;
@@ -65,7 +63,6 @@ export function presetToCreatedRange(
   }
 }
 
-/** 自定义 `YYYY-MM-DD` 起止 → 撑满两端日界的绝对区间；任一端残缺即换不出区间。 */
 export function localDatesToCreatedRange(from: string, to: string): ResolvedCreatedRange | null {
   if (!isCompleteLocalDate(from) || !isCompleteLocalDate(to)) {
     return null;
@@ -73,14 +70,12 @@ export function localDatesToCreatedRange(from: string, to: string): ResolvedCrea
   return toRange(startOfDay(new Date(`${from}T00:00:00`)), endOfDay(new Date(`${to}T00:00:00`)));
 }
 
-/** 绝对区间 → 自定义控件的 `YYYY-MM-DD` 回填值；缺的一端留空。 */
 export function createdRangeToLocalDates(range: CreatedRangeQuery): { from: string; to: string } {
   const toLocalDate = (iso: string | undefined) =>
     iso === undefined ? "" : format(new Date(iso), "yyyy-MM-dd");
   return { from: toLocalDate(range.createdFrom), to: toLocalDate(range.createdTo) };
 }
 
-/** 起止恰好等于某预设的边界则反查出该预设；单边区间永不匹配。 */
 export function matchCreatedRangePreset(
   range: CreatedRangeQuery,
   now: Date = new Date(),
@@ -101,7 +96,6 @@ export function matchCreatedRangePreset(
   );
 }
 
-/** 触发器回显：全部 / 预设名 / 自定义区间（单边区间也给可读文案）。 */
 export function createdRangeLabel(range: CreatedRangeQuery, now: Date = new Date()): string {
   if (range.createdFrom === undefined && range.createdTo === undefined) {
     return "全部";

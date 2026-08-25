@@ -12,23 +12,6 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests for 批量导入 upload over the real HTTP surface:
- *
- * - guard order mirrors 模板下载: 401 unauthenticated, 403 without ticket.import
- * - a valid file creates the whole batch with manual-creation semantics
- *   (source=file_import, creatorId=导入者, unassigned, SLA snapshot from the
- *   import instant, per-ticket create ProcessLog, batch bookkeeping row)
- * - the importer's requiredTicketFields do NOT gate the file契约
- * - any row error → 整批零入库 with the 行号/列名/原因 list
- * - file-level gates: header mismatch, zero rows, row limit, size limit
- * - the imported tickets surface through the importer's own data scope, the
- *   source filter, and the export's 来源 column
- * - rows with the 完结状态/完结备注 pair land directly completed (历史工单
- *   迁移): completionTime = the import instant, no assignee, SLA stamped as
- *   usual, create + resolve logs and no status_change — still only
- *   ticket.import, never ticket.process
- */
 describe("ticket import upload (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -185,7 +168,8 @@ describe("ticket import upload (Testcontainers)", () => {
           反馈渠道: channelName,
           "项目（保司）": "融盛",
           保单号: "P202607010001",
-          投诉信息接收渠道: "监管转办",
+          用户反馈渠道: "保司400热线",
+          反馈信息接收渠道: "内部客服热线",
           客户姓名: "张三",
           保司侧是否核身: "待核实",
           客户曾进线: "是",
@@ -211,13 +195,18 @@ describe("ticket import upload (Testcontainers)", () => {
       expect(ticket.importBatchId).not.toBeNull();
       expect(ticket.workOrderNumber).toMatch(/^WO\d{6,}$/);
     }
-    // 同一事务、同一导入时刻
     expect(leveled.createdAt.getTime()).toBe(unleveled.createdAt.getTime());
 
-    // 反馈时间 wall clock interpreted in Asia/Shanghai
     expect(leveled.feedbackTime?.toISOString()).toBe("2026-07-01T02:00:00.000Z");
     expect(leveled.contactTime?.toISOString()).toBe("2026-06-30T13:15:00.000Z");
-    expect(leveled.complaintReceiveChannel).toBe("监管转办");
+    const expectedReceiveChannel = await prisma.feedbackReceiveChannel.findUniqueOrThrow({
+      where: { name: "内部客服热线" },
+    });
+    const expectedUserChannel = await prisma.userFeedbackChannel.findUniqueOrThrow({
+      where: { name: "保司400热线" },
+    });
+    expect(leveled.feedbackReceiveChannelId).toBe(expectedReceiveChannel.id);
+    expect(leveled.userFeedbackChannelId).toBe(expectedUserChannel.id);
     expect(leveled.policyNumbers).toEqual(["P202607010001"]);
     expect(unleveled.policyNumbers).toEqual(["P202607010002"]);
     expect(leveled.nuclearBodyStatus).toBe("待核实");
@@ -226,7 +215,6 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(leveled.channelId).not.toBeNull();
     expect(leveled.categoryId).not.toBeNull();
 
-    // SLA 快照自导入时刻起算；未指定策略的行全空
     const policy = await prisma.slaPolicy.findUniqueOrThrow({
       where: { name: "高级投诉" },
     });
@@ -241,7 +229,6 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(unleveled.followUpFrequency).toBeNull();
     expect(unleveled.firstResponseRequirement).toBeNull();
 
-    // 批次留底：导入人/时刻/行数/文件名
     const batch = await prisma.ticketImportBatch.findFirstOrThrow();
     expect(batch.importerId).toBe(importerUser.id);
     expect(batch.rowCount).toBe(2);
@@ -250,7 +237,6 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(leveled.importBatchId).toBe(batch.id);
     expect(unleveled.importBatchId).toBe(batch.id);
 
-    // 每单一条 create ProcessLog，remark 导入创建
     const logs = await prisma.processLog.findMany({
       where: { ticketId: { in: tickets.map((ticket) => ticket.id) } },
     });
@@ -302,13 +288,14 @@ describe("ticket import upload (Testcontainers)", () => {
       }),
     ]);
 
-    // 拒绝的两批零入库
     expect(await prisma.ticket.count()).toBe(1);
   });
 
   it("时效策略列按策略名匹配启用策略：接口新建的策略可导入，停用名即报错行", async () => {
     const session = await sessionFor("importer");
-    // 管理员经 sla.create 新建策略（无旧锚），导入按名命中
+    const complaintKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } })
+    ).id;
     const custom = await harness
       .callerFor(harness.seeded.users.admin, harness.seeded.roles.admin)
       .sla.create({
@@ -317,6 +304,7 @@ describe("ticket import upload (Testcontainers)", () => {
         firstResponseMinutes: 45,
         overdueHours: 12,
         reminderRules: [],
+        kindId: complaintKindId,
       });
 
     const ok = await uploadRequest(
@@ -331,7 +319,6 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(landed.dueAt?.getTime()).toBe(landed.createdAt.getTime() + 12 * HOUR_MS);
     expect(landed.firstResponseRequirement).toBe("45分钟内完成首次响应");
 
-    // 停用其名：按停用名导入整批报错（与目录列同款口径）
     await prisma.slaPolicy.update({ where: { id: custom.id }, data: { active: false } });
     try {
       const bad = await uploadRequest(
@@ -350,6 +337,40 @@ describe("ticket import upload (Testcontainers)", () => {
       await prisma.slaPolicy.update({ where: { id: custom.id }, data: { active: true } });
     }
     expect(await prisma.ticket.count({ where: { customerName: "停用策略客户" } })).toBe(0);
+  });
+
+  it("按名匹配仅命中投诉组：导入行写退费组策略名报错误行", async () => {
+    const session = await sessionFor("importer");
+    const refundKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
+    ).id;
+    const refundPolicy = await harness
+      .callerFor(harness.seeded.users.admin, harness.seeded.roles.admin)
+      .sla.create({
+        name: "退费专属策略",
+        description: null,
+        firstResponseMinutes: 120,
+        overdueHours: 48,
+        reminderRules: [],
+        kindId: refundKindId,
+      });
+    try {
+      const res = await uploadRequest(
+        session,
+        await buildFile([{ 客户姓名: "退费策略客户", 时效策略: "退费专属策略" }]),
+      );
+      expect(res.statusCode).toBe(400);
+      expect(res.json().rowErrors).toEqual([
+        expect.objectContaining({
+          row: 2,
+          column: "时效策略",
+          message: expect.stringContaining("不存在"),
+        }),
+      ]);
+      expect(await prisma.ticket.count()).toBe(0);
+    } finally {
+      await prisma.slaPolicy.delete({ where: { id: refundPolicy.id } });
+    }
   });
 
   it("lands both-filled 完结 rows as completed, both-empty rows as unassigned, in one batch", async () => {
@@ -385,14 +406,12 @@ describe("ticket import upload (Testcontainers)", () => {
       where: { customerName: "新客户" },
     });
 
-    // 完结行落地即终态：完结时间=导入时刻、目录引用正确、无责任人
     expect(completed.status).toBe("completed");
     expect(completed.completionTime?.getTime()).toBe(batch.importedAt.getTime());
     expect(completed.completionStatusId).toBe(completionStatus.id);
     expect(completed.assigneeId).toBeNull();
     expect(completed.assignedAt).toBeNull();
 
-    // SLA 照常按策略引用盖章
     const policy = await prisma.slaPolicy.findUniqueOrThrow({
       where: { name: "高级投诉" },
     });
@@ -402,12 +421,10 @@ describe("ticket import upload (Testcontainers)", () => {
     );
     expect(completed.followUpFrequency).not.toBeNull();
 
-    // 两列都空的行照旧落未分配
     expect(unassigned.status).toBe("unassigned");
     expect(unassigned.completionTime).toBeNull();
     expect(unassigned.completionStatusId).toBeNull();
 
-    // 第二条完结行拿到自己的目录引用与备注，不与第一条窜行
     const otherCompleted = await prisma.ticket.findFirstOrThrow({
       where: { customerName: "迁移客户乙" },
     });
@@ -418,7 +435,6 @@ describe("ticket import upload (Testcontainers)", () => {
     });
     expect(otherResolve.remark).toBe("迁移备注乙");
 
-    // 完结行时间线 = create + resolve（同导入瞬间、完结备注可见），无 status_change
     const timeline = await prisma.processLog.findMany({
       where: { ticketId: completed.id },
       orderBy: [{ at: "asc" }, { id: "asc" }],
@@ -431,7 +447,6 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(resolve.operatorName).toBe("导入员一号");
     expect(resolve.at.getTime()).toBe(batch.importedAt.getTime());
 
-    // 未完结行只有 create
     const unassignedLogs = await prisma.processLog.findMany({
       where: { ticketId: unassigned.id },
     });
@@ -446,11 +461,11 @@ describe("ticket import upload (Testcontainers)", () => {
     const res = await uploadRequest(
       session,
       await buildFile([
-        { 客户姓名: "只填状态", 完结状态: "已达成一致" }, // row 2: half-filled
-        { 客户姓名: "只填备注", 完结备注: "备注" }, // row 3: half-filled
-        { 完结状态: "没有这个状态", 完结备注: "x" }, // row 4
-        { 完结状态: "停用完结X", 完结备注: "x" }, // row 5
-        { 完结状态: "已达成一致", 完结备注: "字".repeat(2001) }, // row 6
+        { 客户姓名: "只填状态", 完结状态: "已达成一致" },
+        { 客户姓名: "只填备注", 完结备注: "备注" },
+        { 完结状态: "没有这个状态", 完结备注: "x" },
+        { 完结状态: "停用完结X", 完结备注: "x" },
+        { 完结状态: "已达成一致", 完结备注: "字".repeat(2001) },
       ]),
     );
     expect(res.statusCode).toBe(400);
@@ -484,7 +499,6 @@ describe("ticket import upload (Testcontainers)", () => {
       ]),
     );
 
-    // 整批零入库
     expect(await prisma.ticket.count()).toBe(0);
     expect(await prisma.ticketImportBatch.count()).toBe(0);
   });
@@ -495,7 +509,6 @@ describe("ticket import upload (Testcontainers)", () => {
       200,
     );
 
-    // ticket.view without view_all — the importer sees the ticket as its creator
     const caller = importerCaller();
     const list = await caller.ticket.list({ source: "file_import" });
     expect(list.total).toBe(1);
@@ -532,15 +545,15 @@ describe("ticket import upload (Testcontainers)", () => {
       session,
       await buildFile([
         { 客户姓名: "合法行" }, // row 2: valid — must still not be imported
-        { 反馈渠道: "没有这个渠道" }, // row 3
-        { 客诉类别: "停用类别X" }, // row 4
-        { 时效策略: "特级投诉" }, // row 5
-        { 反馈时间: "2026/07/01" }, // row 6
-        { 客户姓名: "重".repeat(101) }, // row 7
-        { 客户姓名: "重复行", 保单号: "P1" }, // row 8
-        { 客户姓名: "重复行", 保单号: "P1" }, // row 9: duplicate of 8
-        { 进线时间: "昨天上午" }, // row 10
-        { 投诉信息接收渠道: "长".repeat(101) }, // row 11
+        { 反馈渠道: "没有这个渠道" },
+        { 客诉类别: "停用类别X" },
+        { 时效策略: "特级投诉" },
+        { 反馈时间: "2026/07/01" },
+        { 客户姓名: "重".repeat(101) },
+        { 客户姓名: "重复行", 保单号: "P1" },
+        { 客户姓名: "重复行", 保单号: "P1" },
+        { 进线时间: "昨天上午" },
+        { 反馈信息接收渠道: "长".repeat(101) },
       ]),
     );
     expect(res.statusCode).toBe(400);
@@ -558,11 +571,10 @@ describe("ticket import upload (Testcontainers)", () => {
         expect.objectContaining({ row: 7, column: "客户姓名" }),
         expect.objectContaining({ row: 9, column: null }),
         expect.objectContaining({ row: 10, column: "进线时间" }),
-        expect.objectContaining({ row: 11, column: "投诉信息接收渠道" }),
+        expect.objectContaining({ row: 11, column: "反馈信息接收渠道" }),
       ]),
     );
 
-    // 整批零入库
     expect(await prisma.ticket.count()).toBe(0);
     expect(await prisma.ticketImportBatch.count()).toBe(0);
   });
@@ -578,16 +590,16 @@ describe("ticket import upload (Testcontainers)", () => {
 
     // 缺列的旧模板文件整批拒收并指认第一处不符列，提示重新下载而非静默兼容
     const legacyHeaders = HEADERS.filter(
-      (header) => header !== "投诉信息接收渠道" && header !== "进线时间",
+      (header) => header !== "反馈信息接收渠道" && header !== "进线时间",
     );
     const legacy = await uploadRequest(
       session,
       await buildFile([{ 客户姓名: "x" }], legacyHeaders),
     );
     expect(legacy.statusCode).toBe(400);
-    const mismatchColumn = HEADERS.indexOf("投诉信息接收渠道") + 1;
+    const mismatchColumn = HEADERS.indexOf("反馈信息接收渠道") + 1;
     expect(legacy.json().rowErrors[0].message).toContain(
-      `第 ${mismatchColumn} 列应为「投诉信息接收渠道」`,
+      `第 ${mismatchColumn} 列应为「反馈信息接收渠道」`,
     );
     expect(legacy.json().rowErrors[0].message).toContain("请重新下载模板");
 
@@ -608,6 +620,38 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(oversizedRes.json().rowErrors).toEqual([]);
 
     expect(await prisma.ticket.count()).toBe(0);
+  });
+
+  it("老列头（用户投诉渠道/投诉信息接收渠道）按别名兼容，照常导入", async () => {
+    const session = await sessionFor("importer");
+    // 列位不变、仅两个渠道列头换成旧名：别名映射后应通过表头校验
+    const legacyHeaders = HEADERS.map((header) =>
+      header === "用户反馈渠道"
+        ? "用户投诉渠道"
+        : header === "反馈信息接收渠道"
+          ? "投诉信息接收渠道"
+          : header,
+    );
+    // buildFile 以 HEADERS 顺序铺数据行，行对象的键仍用新列名
+    const res = await uploadRequest(
+      session,
+      await buildFile(
+        [{ 用户反馈渠道: "保司400热线", 反馈信息接收渠道: "内部客服热线" }],
+        legacyHeaders,
+      ),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ imported: 1 });
+
+    const ticket = await prisma.ticket.findFirstOrThrow();
+    const expectedUserChannel = await prisma.userFeedbackChannel.findUniqueOrThrow({
+      where: { name: "保司400热线" },
+    });
+    const expectedReceiveChannel = await prisma.feedbackReceiveChannel.findUniqueOrThrow({
+      where: { name: "内部客服热线" },
+    });
+    expect(ticket.userFeedbackChannelId).toBe(expectedUserChannel.id);
+    expect(ticket.feedbackReceiveChannelId).toBe(expectedReceiveChannel.id);
   });
 
   it("imports the full 2000-row limit in one transaction", async () => {

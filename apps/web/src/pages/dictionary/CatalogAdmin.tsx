@@ -1,5 +1,14 @@
 import type { CatalogSchemas } from "@insuredesk/shared";
-import { AlertCircle, Ban, CircleCheck, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowDownAZ,
+  Ban,
+  CircleCheck,
+  GripVertical,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +23,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -26,15 +42,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { type NameSortDir, sortByName } from "@/lib/name-sort";
 import { toast } from "@/lib/toast";
-
-/**
- * 字典目录管理段, shared by the 渠道/类别/完结状态 catalogs: list with 已停用
- * 标注, create/rename/reorder dialog with schema error mapping, 停用/启用
- * toggle, and the delete dialog that surfaces the server's in-use refusal.
- * Each catalog is a `CatalogAdminConfig`: its tRPC hooks, wording, and input
- * schema — no behavior switches.
- */
 
 interface CatalogRow {
   id: string;
@@ -49,12 +58,6 @@ interface MutationLike<Input> {
   error: { message: string } | null;
 }
 
-/**
- * The structural slice of a catalog's tRPC namespace the section uses. Configs
- * pass the concrete `trpc.<catalog>` hooks so the wire stays typed end to end
- * — a config wired to the wrong namespace only compiles if the shapes match,
- * and the per-catalog smoke tests pin the namespace itself.
- */
 export interface CatalogAdminHooks {
   useList(): {
     data: CatalogRow[] | undefined;
@@ -62,39 +65,37 @@ export interface CatalogAdminHooks {
     error: { message: string } | null;
   };
   useInvalidate(): () => void;
-  useCreate(opts: { onSuccess: () => void }): MutationLike<{ name: string; displayOrder: number }>;
+  useCreate(opts: { onSuccess: () => void }): MutationLike<{ name: string; displayOrder?: number }>;
   useUpdate(opts: {
     onSuccess: () => void;
-  }): MutationLike<{ id: string; name: string; displayOrder: number }>;
+  }): MutationLike<{ id: string; name: string; displayOrder?: number }>;
   useSetActive(opts: {
     onSuccess: (row: { active: boolean } | undefined) => void;
     onError: (error: { message: string }) => void;
   }): MutationLike<{ id: string; active: boolean }>;
-  useDelete(opts: { onSuccess: () => void }): MutationLike<{ id: string }>;
+  useReorder(opts: {
+    onError: (error: { message: string }) => void;
+    onSettled: () => void;
+  }): MutationLike<{ ids: string[] }>;
+  /** 缺省 = 该目录不提供删除入口（只允许停用）。 */
+  useDelete?(opts: { onSuccess: () => void }): MutationLike<{ id: string }>;
 }
 
 export interface CatalogAdminConfig {
-  /** Dialog field DOM id prefix（channel → channel-name / channel-order）. */
   idPrefix: string;
-  /** 段标题（反馈渠道/客诉类别/完结状态）. */
   title: string;
-  /** 目录项名词，进按钮、弹窗标题与操作回执（渠道/类别/完结状态）. */
   noun: string;
-  /** 名称字段名词（渠道/类别/状态），与 shared schema 的报错措辞一致. */
   nameNoun: string;
-  /** 段副标题：该目录被哪些表单消费、停用的语义. */
   subtitle: string;
-  /** 空表引导文案. */
   emptyDescription: string;
-  /** 新增/编辑弹窗说明：改名与排序的生效面. */
   dialogDescription: string;
   createInputSchema: CatalogSchemas["createInputSchema"];
   hooks: CatalogAdminHooks;
 }
 
-type Draft = { name: string; displayOrder: string };
+type Draft = { name: string };
 
-const EMPTY_DRAFT: Draft = { name: "", displayOrder: "0" };
+const EMPTY_DRAFT: Draft = { name: "" };
 
 function CatalogDialog({
   config,
@@ -113,7 +114,7 @@ function CatalogDialog({
 
   useEffect(() => {
     if (!open) return;
-    setDraft(row ? { name: row.name, displayOrder: String(row.displayOrder) } : EMPTY_DRAFT);
+    setDraft(row ? { name: row.name } : EMPTY_DRAFT);
     setErrors({});
   }, [open, row]);
 
@@ -128,10 +129,7 @@ function CatalogDialog({
   const mutationError = create.error ?? update.error;
 
   function save() {
-    const parsed = config.createInputSchema.safeParse({
-      name: draft.name,
-      displayOrder: Number(draft.displayOrder),
-    });
+    const parsed = config.createInputSchema.safeParse({ name: draft.name });
     if (!parsed.success) {
       const nextErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
@@ -143,9 +141,9 @@ function CatalogDialog({
     }
     setErrors({});
     if (row) {
-      update.mutate({ id: row.id, ...parsed.data });
+      update.mutate({ id: row.id, name: parsed.data.name });
     } else {
-      create.mutate(parsed.data);
+      create.mutate({ name: parsed.data.name });
     }
   }
 
@@ -169,21 +167,6 @@ function CatalogDialog({
               }
             />
             <FieldError>{errors.name}</FieldError>
-          </Field>
-
-          <Field data-invalid={Boolean(errors.displayOrder)}>
-            <FieldLabel htmlFor={`${config.idPrefix}-order`}>显示顺序</FieldLabel>
-            <Input
-              id={`${config.idPrefix}-order`}
-              type="number"
-              value={draft.displayOrder}
-              aria-invalid={Boolean(errors.displayOrder)}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, displayOrder: event.target.value }))
-              }
-            />
-            <FieldDescription>数字越小越靠前。</FieldDescription>
-            <FieldError>{errors.displayOrder}</FieldError>
           </Field>
         </FieldGroup>
 
@@ -213,15 +196,17 @@ function CatalogDialog({
 
 function DeleteCatalogDialog({
   config,
+  useDelete,
   row,
   onOpenChange,
 }: {
   config: CatalogAdminConfig;
+  useDelete: NonNullable<CatalogAdminHooks["useDelete"]>;
   row: CatalogRow | null;
   onOpenChange: (open: boolean) => void;
 }) {
   const invalidate = config.hooks.useInvalidate();
-  const remove = config.hooks.useDelete({
+  const remove = useDelete({
     onSuccess: () => {
       toast.success(`${config.noun}已删除`);
       invalidate();
@@ -271,6 +256,20 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<CatalogRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CatalogRow | null>(null);
+  const useDelete = config.hooks.useDelete;
+
+  const [localRows, setLocalRows] = useState<CatalogRow[] | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [sortMode, setSortMode] = useState<NameSortDir | "manual">("manual");
+
+  useEffect(() => {
+    if (list.data) setLocalRows(null);
+  }, [list.data]);
+
+  const rows = localRows ?? list.data ?? [];
+  const preview = sortMode === "manual" ? null : sortByName(rows, sortMode);
+  const viewRows = preview ?? rows;
 
   const setActive = config.hooks.useSetActive({
     onSuccess: (row) => {
@@ -280,23 +279,81 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
     onError: (error) => toast.error(error.message),
   });
 
+  const reorder = config.hooks.useReorder({
+    onError: (error) => toast.error(error.message),
+    onSettled: () => invalidate(),
+  });
+
+  function applyOrder(next: CatalogRow[]) {
+    setLocalRows(next);
+    reorder.mutate({ ids: next.map((row) => row.id) });
+  }
+
+  function moveRow(from: number, to: number) {
+    if (to < 0 || to >= rows.length || from === to) return;
+    const next = [...rows];
+    const moved = next.splice(from, 1)[0];
+    if (!moved) return;
+    next.splice(to, 0, moved);
+    applyOrder(next);
+  }
+
+  function savePreview() {
+    if (!preview) return;
+    applyOrder(preview);
+    setSortMode("manual");
+    toast.success(`${config.noun}顺序已保存`);
+  }
+
   function openCreate() {
     setEditTarget(null);
     setEditorOpen(true);
   }
 
   return (
-    <section className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold">{config.title}</h2>
-          <p className="text-sm text-muted-foreground">{config.subtitle}</p>
+        <p className="text-xs text-muted-foreground">
+          拖拽行首手柄调整顺序，顺序即表单下拉的呈现顺序。
+        </p>
+        <div className="flex items-center gap-2">
+          <Select
+            value={sortMode}
+            onValueChange={(value) => setSortMode(value as NameSortDir | "manual")}
+          >
+            <SelectTrigger size="sm" className="w-44" aria-label="排序方式">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="manual">手动排序</SelectItem>
+              <SelectItem value="asc">名称 A→Z（拼音）</SelectItem>
+              <SelectItem value="desc">名称 Z→A（拼音）</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button onClick={openCreate}>
+            <Plus data-icon="inline-start" />
+            新增{config.noun}
+          </Button>
         </div>
-        <Button onClick={openCreate}>
-          <Plus data-icon="inline-start" />
-          新增{config.noun}
-        </Button>
       </div>
+
+      {preview && (
+        <Alert>
+          <ArrowDownAZ />
+          <AlertTitle>按名称{sortMode === "asc" ? "升序" : "降序"}预览中</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>拖拽已锁定；保存后才会替换手动顺序。</span>
+            <span className="flex items-center gap-2">
+              <Button size="sm" onClick={savePreview} disabled={reorder.isPending}>
+                保存此顺序
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSortMode("manual")}>
+                取消
+              </Button>
+            </span>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {list.error ? (
         <Alert variant="destructive">
@@ -309,8 +366,8 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10" />
                 <TableHead>名称</TableHead>
-                <TableHead>显示顺序</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="w-36">操作</TableHead>
               </TableRow>
@@ -319,21 +376,12 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
               {list.isLoading ? (
                 [0, 1, 2, 3].map((row) => (
                   <TableRow key={row}>
-                    <TableCell>
-                      <Skeleton className="h-5 w-40" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-5 w-12" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-5 w-14" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-8 w-28" />
+                    <TableCell colSpan={4}>
+                      <Skeleton className="h-5 w-full" />
                     </TableCell>
                   </TableRow>
                 ))
-              ) : (list.data ?? []).length === 0 ? (
+              ) : viewRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="p-0">
                     <Empty className="border-0">
@@ -345,10 +393,64 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
                   </TableCell>
                 </TableRow>
               ) : (
-                (list.data ?? []).map((row) => (
-                  <TableRow key={row.id}>
+                viewRows.map((row, index) => (
+                  <TableRow
+                    key={row.id}
+                    draggable={preview === null}
+                    onDragStart={(event) => {
+                      if (preview !== null) return;
+                      event.dataTransfer.effectAllowed = "move";
+                      setDragIndex(index);
+                    }}
+                    onDragOver={(event) => {
+                      if (preview !== null) return;
+                      event.preventDefault();
+                      setOverIndex(index);
+                    }}
+                    onDrop={(event) => {
+                      if (preview !== null) return;
+                      event.preventDefault();
+                      if (dragIndex !== null) moveRow(dragIndex, index);
+                      setDragIndex(null);
+                      setOverIndex(null);
+                    }}
+                    onDragEnd={() => {
+                      setDragIndex(null);
+                      setOverIndex(null);
+                    }}
+                    className={[
+                      dragIndex === index && preview === null ? "opacity-40" : "",
+                      preview === null &&
+                      overIndex === index &&
+                      dragIndex !== null &&
+                      dragIndex !== index
+                        ? "bg-accent"
+                        : "",
+                    ].join(" ")}
+                  >
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`排序 ${row.name}，方向键上下移动`}
+                        disabled={preview !== null}
+                        className="cursor-grab text-muted-foreground active:cursor-grabbing"
+                        onKeyDown={(event) => {
+                          if (preview !== null) return;
+                          if (event.key === "ArrowUp") {
+                            event.preventDefault();
+                            moveRow(index, index - 1);
+                          }
+                          if (event.key === "ArrowDown") {
+                            event.preventDefault();
+                            moveRow(index, index + 1);
+                          }
+                        }}
+                      >
+                        <GripVertical />
+                      </Button>
+                    </TableCell>
                     <TableCell className="font-medium">{row.name}</TableCell>
-                    <TableCell>{row.displayOrder}</TableCell>
                     <TableCell>
                       {row.active ? (
                         <Badge variant="secondary">启用</Badge>
@@ -378,14 +480,16 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
                         >
                           {row.active ? <Ban /> : <CircleCheck />}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`删除 ${row.name}`}
-                          onClick={() => setDeleteTarget(row)}
-                        >
-                          <Trash2 />
-                        </Button>
+                        {useDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`删除 ${row.name}`}
+                            onClick={() => setDeleteTarget(row)}
+                          >
+                            <Trash2 />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -405,13 +509,16 @@ export function CatalogAdmin({ config }: { config: CatalogAdminConfig }) {
           if (!open) setEditTarget(null);
         }}
       />
-      <DeleteCatalogDialog
-        config={config}
-        row={deleteTarget}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-      />
-    </section>
+      {useDelete && (
+        <DeleteCatalogDialog
+          config={config}
+          useDelete={useDelete}
+          row={deleteTarget}
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(null);
+          }}
+        />
+      )}
+    </div>
   );
 }

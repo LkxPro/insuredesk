@@ -1,5 +1,6 @@
 import {
   applyNoPolicyNumber,
+  CALLBACK_DELIVERY_STATUSES,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
   formatFollowUpFrequency,
@@ -7,6 +8,7 @@ import {
   nuclearBodyStatusSchema,
   prioritySchema,
   processLogActionSchema,
+  refundTradePushSchema,
   reminderRulesSchema,
   substringSearchPattern,
   TICKET_CREATE_FIELD_KEYS,
@@ -14,33 +16,31 @@ import {
   TICKET_SOURCE_LABELS,
   type TicketCreateData,
   type TicketCreateFieldKey,
+  TicketKindKey,
   type TicketListQuery,
   TicketStatus,
   ticketListFilterConditions,
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
+import { z } from "zod";
 import type { Clock } from "../clock.ts";
 import type { Prisma, PrismaClient, SlaPolicy } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
 import { channelCatalog } from "./channel.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
+import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { displayStatusTicketWhere } from "./ticket-display-status.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
-
-/**
- * Ticket domain logic: manual creation and detail reads. Pure service
- * layer — no tRPC/HTTP types; the router maps domain errors to transport
- * codes.
- */
+import { requireTicketKindId } from "./ticket-kind.service.ts";
+import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 export interface TicketServiceDeps {
   prisma: PrismaClient;
   clock: Clock;
 }
 
-/** 引用的策略行缺失或已停用 = 配置故障（与现状同错：路由映射 PRECONDITION_FAILED）。 */
 export class SlaPolicyNotConfiguredError extends Error {
   constructor(label: string) {
     super(`时效策略「${label}」缺少 SLA 策略配置或已停用`);
@@ -48,7 +48,14 @@ export class SlaPolicyNotConfiguredError extends Error {
   }
 }
 
-/** 角色建单必填字段校验失败：缺任一必填字段即拒绝，一次性报出全部缺失。 */
+export class SlaPolicyKindMismatchError extends SlaPolicyNotConfiguredError {
+  constructor(name: string) {
+    super(name);
+    this.name = "SlaPolicyKindMismatchError";
+    this.message = `时效策略「${name}」不属于该工单的种类组`;
+  }
+}
+
 export class RequiredFieldsMissingError extends Error {
   constructor(missingFields: string[]) {
     super(`以下字段为必填项：${missingFields.join("、")}`);
@@ -58,18 +65,17 @@ export class RequiredFieldsMissingError extends Error {
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** Wire ISO-8601 datetime string (null = 未填写) → Date for persistence. */
 export function toDateOrNull(value: string | null): Date | null {
   return value === null ? null : new Date(value);
 }
 
 /**
- * THE dueAt formula: createdAt + the policy's overdueHours, null when the
+ * THE dueAt formula: slaAnchorAt + the policy's overdueHours, null when the
  * policy has no deadline. Creation stamps it; a 改策略引用 re-runs it with
- * the new policy's hours against the same unchanging createdAt.
+ * the new policy's hours against the same unchanging slaAnchorAt.
  */
-export function computeDueAt(createdAt: Date, overdueHours: number | null): Date | null {
-  return overdueHours === null ? null : new Date(createdAt.getTime() + overdueHours * HOUR_MS);
+export function computeDueAt(slaAnchorAt: Date, overdueHours: number | null): Date | null {
+  return overdueHours === null ? null : new Date(slaAnchorAt.getTime() + overdueHours * HOUR_MS);
 }
 
 /**
@@ -94,10 +100,14 @@ export async function findSlaPolicyById(
 export async function resolveSlaPolicy(
   db: Pick<PrismaClient, "slaPolicy">,
   slaPolicyId: string | null,
+  expectedKindId: string,
 ): Promise<SlaPolicy | null> {
   const policy = await findSlaPolicyById(db, slaPolicyId);
   if (policy !== null && !policy.active) {
     throw new SlaPolicyNotConfiguredError(policy.name);
+  }
+  if (policy !== null && policy.kindId !== expectedKindId) {
+    throw new SlaPolicyKindMismatchError(policy.name);
   }
   return policy;
 }
@@ -105,11 +115,11 @@ export async function resolveSlaPolicy(
 /**
  * The SLA fields a 时效策略引用 stamps onto a ticket. A null policy (未指定)
  * stamps all-null: no dueAt, no 首响/跟进 requirements — and hence no SLA time
- * alerts until an edit sets a reference (off the original createdAt).
+ * alerts until an edit sets a reference (off the ticket's slaAnchorAt).
  */
 export function stampFromPolicy(
   policy: SlaPolicy | null,
-  createdAt: Date,
+  slaAnchorAt: Date,
 ): {
   slaPolicyId: string | null;
   dueAt: Date | null;
@@ -126,7 +136,7 @@ export function stampFromPolicy(
   }
   return {
     slaPolicyId: policy.id,
-    dueAt: computeDueAt(createdAt, policy.overdueHours),
+    dueAt: computeDueAt(slaAnchorAt, policy.overdueHours),
     followUpFrequency: formatFollowUpFrequency(reminderRulesSchema.parse(policy.reminderRules)),
     firstResponseRequirement: formatFirstResponseRequirement(policy.firstResponseMinutes),
   };
@@ -135,9 +145,10 @@ export function stampFromPolicy(
 export async function computeSlaStamp(
   db: Pick<PrismaClient, "slaPolicy">,
   slaPolicyId: string | null,
-  createdAt: Date,
+  slaAnchorAt: Date,
+  expectedKindId: string,
 ) {
-  return stampFromPolicy(await resolveSlaPolicy(db, slaPolicyId), createdAt);
+  return stampFromPolicy(await resolveSlaPolicy(db, slaPolicyId, expectedKindId), slaAnchorAt);
 }
 
 /**
@@ -172,7 +183,8 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
  *   unfilled fields persist as NULL ("unknown", never "")
  * - requiredTicketFields of creator's role: missing any → reject with all missing fields
  * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
- * - dueAt is fixed once, here: createdAt + the policy's SLA overdueHours
+ * - 手工建单只产投诉单：kind 盖投诉、slaAnchorAt = createdAt；dueAt fixed
+ *   once, here: anchor + the policy's overdueHours
  *   (null for 特急 — never overdue; null while 未定级 — no SLA clock fields)
  * - 跟进频次/首响要求 are stamped from the policy's SLA config, not hardcoded
  * - source=manual records creatorId; "由谁创建" derives at read time
@@ -195,7 +207,8 @@ export async function createTicket(
   }
 
   const now = clock.now();
-  const slaStamp = await computeSlaStamp(prisma, data.slaPolicyId, now);
+  const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
+  const slaStamp = await computeSlaStamp(prisma, data.slaPolicyId, now, kindId);
 
   return prisma.$transaction(async (tx) => {
     // 提交兜底查重：与插入同事务，命中即整体回滚；批量导入不经此路，天然豁免
@@ -212,6 +225,8 @@ export async function createTicket(
     // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
     await ticketCategoryCatalog.resolveNewRef(tx, data.categoryId);
     await channelCatalog.resolveNewRef(tx, data.channelId);
+    await userFeedbackChannelCatalog.resolveNewRef(tx, data.userFeedbackChannelId);
+    await feedbackReceiveChannelCatalog.resolveNewRef(tx, data.feedbackReceiveChannelId);
 
     const ticket = await tx.ticket.create({
       data: {
@@ -219,6 +234,8 @@ export async function createTicket(
         feedbackTime: toDateOrNull(data.feedbackTime),
         contactTime: toDateOrNull(data.contactTime),
         createdAt: now,
+        slaAnchorAt: now,
+        kindId,
         source: "manual",
         creatorId: creator.id,
         status: TicketStatus.Unassigned,
@@ -254,10 +271,10 @@ const listInclude = {
 
 type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
 
-/** The list's filter/sort subset — shared verbatim by the export. */
 type TicketListFilters = Pick<
   TicketListQuery,
   | "status"
+  | "kindId"
   | "channelId"
   | "categoryId"
   | "completionStatusId"
@@ -332,6 +349,9 @@ export async function buildTicketListWhere(
           OR: condition.statuses.map((status) => displayStatusTicketWhere(status, now)),
         });
         break;
+      case "kindIn":
+        filters.push({ kindId: { in: [...condition.kindIds] } });
+        break;
       case "search":
         filters.push({
           OR: [
@@ -361,7 +381,6 @@ export async function buildTicketListWhere(
   };
 }
 
-/** The list's ordering, shared with the export for row-for-row consistency. */
 export function buildTicketListOrderBy(
   query: TicketListFilters,
 ): Prisma.TicketOrderByWithRelationInput[] {
@@ -408,7 +427,6 @@ export async function listTickets(
   };
 }
 
-/** Re-narrow a nullable enum-like String column; null (未填写) passes through. */
 function parseNullable<T>(
   schema: { parse: (value: unknown) => T },
   value: string | null,
@@ -416,7 +434,6 @@ function parseNullable<T>(
   return value === null ? null : schema.parse(value);
 }
 
-/** Wire shape of one list row — the list's columns, nothing more. */
 function serializeTicketListItem(ticket: TicketListRow, now: Date) {
   const source = ticketSourceSchema.parse(ticket.source);
   const status = ticketStatusSchema.parse(ticket.status);
@@ -448,9 +465,15 @@ const detailInclude = {
   // selectable (labelled 已停用) while other disabled options never appear
   category: { select: { id: true, name: true, active: true } },
   channel: { select: { id: true, name: true, active: true } },
+  userFeedbackChannel: { select: { id: true, name: true, active: true } },
+  feedbackReceiveChannel: { select: { id: true, name: true, active: true } },
   slaPolicy: { select: { id: true, name: true, active: true } },
+  kind: { select: { key: true } },
   // 完结状态 is display-only on the detail page — the CURRENT name suffices
   completionStatus: { select: { name: true } },
+  refundDetail: true,
+  // 详情页只展示最新一次投递（完结一次 = 至多一条业务投递，重投复位同一行）
+  callbackDeliveries: { orderBy: [{ createdAt: "desc" as const }], take: 1 },
   processLogs: { orderBy: [{ at: "asc" }, { id: "asc" }] },
 } satisfies Prisma.TicketInclude;
 
@@ -508,8 +531,8 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     internalOrderNumber: ticket.internalOrderNumber,
     policyNumbers: ticket.policyNumbers,
     noPolicyNumber: ticket.noPolicyNumber,
-    userComplaintChannel: ticket.userComplaintChannel,
-    complaintReceiveChannel: ticket.complaintReceiveChannel,
+    userFeedbackChannel: ticket.userFeedbackChannel,
+    feedbackReceiveChannel: ticket.feedbackReceiveChannel,
     customerName: ticket.customerName,
     phone: ticket.phone,
     contactPhone: ticket.contactPhone,
@@ -522,6 +545,37 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     category: ticket.category,
     slaPolicyId: ticket.slaPolicyId,
     slaPolicy: ticket.slaPolicy,
+    kindKey: ticket.kind.key,
+    refundDetail:
+      ticket.refundDetail === null
+        ? null
+        : {
+            sysOrderId: ticket.refundDetail.sysOrderId,
+            endorNo: ticket.refundDetail.endorNo,
+            workOrderType: ticket.refundDetail.workOrderType,
+            expectedAmount: ticket.refundDetail.expectedAmount,
+            refundCreateTime: ticket.refundDetail.refundCreateTime.toISOString(),
+            refundTrades: z.array(refundTradePushSchema).parse(ticket.refundDetail.refundTrades),
+            holderName: ticket.refundDetail.holderName,
+            holderPhone: ticket.refundDetail.holderPhone,
+            companyName: ticket.refundDetail.companyName,
+            productId: ticket.refundDetail.productId,
+            productName: ticket.refundDetail.productName,
+            policyNo: ticket.refundDetail.policyNo,
+            failureReason: ticket.refundDetail.failureReason,
+            pushedFields: ticket.refundDetail.pushedFields,
+            compensationAmount: ticket.refundDetail.compensationAmount,
+          },
+    callbackDelivery:
+      ticket.callbackDeliveries[0] === undefined
+        ? null
+        : {
+            id: ticket.callbackDeliveries[0].id,
+            status: z.enum(CALLBACK_DELIVERY_STATUSES).parse(ticket.callbackDeliveries[0].status),
+            attempts: ticket.callbackDeliveries[0].attempts,
+            lastError: ticket.callbackDeliveries[0].lastError,
+            deliveredAt: ticket.callbackDeliveries[0].deliveredAt?.toISOString() ?? null,
+          },
     priority,
     followUpFrequency: ticket.followUpFrequency,
     firstResponseRequirement: ticket.firstResponseRequirement,

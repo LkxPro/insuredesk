@@ -6,7 +6,6 @@ import {
   type SlaPolicySortInput,
   type SlaPolicyUpdateInput,
 } from "@insuredesk/shared";
-import type { SlaPolicy } from "../generated/prisma/client.ts";
 import { Prisma } from "../generated/prisma/client.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 
@@ -26,12 +25,23 @@ export class SlaPolicyNotFoundError extends Error {
 
 export class SlaPolicySortMismatchError extends Error {
   constructor() {
-    super("排序清单须恰好包含全部时效策略");
+    super("排序清单须恰好包含该种类的全部时效策略");
     this.name = "SlaPolicySortMismatchError";
   }
 }
 
-function toDto(row: SlaPolicy): SlaPolicyEntity {
+export class SlaPolicyKindNotFoundError extends Error {
+  constructor() {
+    super("工单种类不存在");
+    this.name = "SlaPolicyKindNotFoundError";
+  }
+}
+
+const kindInclude = { kind: { select: { name: true } } } satisfies Prisma.SlaPolicyInclude;
+
+type SlaPolicyRow = Prisma.SlaPolicyGetPayload<{ include: typeof kindInclude }>;
+
+function toDto(row: SlaPolicyRow): SlaPolicyEntity {
   return {
     id: row.id,
     name: row.name,
@@ -41,30 +51,46 @@ function toDto(row: SlaPolicy): SlaPolicyEntity {
     firstResponseMinutes: row.firstResponseMinutes,
     overdueHours: row.overdueHours,
     reminderRules: reminderRulesSchema.parse(row.reminderRules),
+    kindId: row.kindId,
+    kindName: row.kind.name,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
 export async function listSlaPolicies({ prisma }: TicketServiceDeps) {
   const rows = await prisma.slaPolicy.findMany({
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    include: kindInclude,
+    orderBy: [{ kind: { displayOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
   });
   return rows.map(toDto);
 }
 
-export async function listSlaPolicyOptions({
-  prisma,
-}: TicketServiceDeps): Promise<SlaPolicyOption[]> {
+export async function listSlaPolicyOptions(
+  { prisma }: TicketServiceDeps,
+  kindKey?: string,
+): Promise<SlaPolicyOption[]> {
+  const kind =
+    kindKey === undefined ? null : await prisma.ticketKind.findUnique({ where: { key: kindKey } });
+  if (kindKey !== undefined && kind === null) {
+    throw new SlaPolicyKindNotFoundError();
+  }
   const rows = await prisma.slaPolicy.findMany({
-    where: { active: true },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    where: { active: true, ...(kind !== null && { kindId: kind.id }) },
+    orderBy: [{ kind: { displayOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
     select: { id: true, name: true, description: true },
   });
   return rows;
 }
 
 export async function createSlaPolicy({ prisma }: TicketServiceDeps, input: SlaPolicyCreateInput) {
-  const max = await prisma.slaPolicy.aggregate({ _max: { sortOrder: true } });
+  const kind = await prisma.ticketKind.findUnique({ where: { id: input.kindId } });
+  if (!kind) {
+    throw new SlaPolicyKindNotFoundError();
+  }
+  const max = await prisma.slaPolicy.aggregate({
+    _max: { sortOrder: true },
+    where: { kindId: input.kindId },
+  });
   try {
     const row = await prisma.slaPolicy.create({
       data: {
@@ -75,7 +101,9 @@ export async function createSlaPolicy({ prisma }: TicketServiceDeps, input: SlaP
         firstResponseMinutes: input.firstResponseMinutes,
         overdueHours: input.overdueHours,
         reminderRules: input.reminderRules,
+        kindId: input.kindId,
       },
+      include: kindInclude,
     });
     return toDto(row);
   } catch (error) {
@@ -101,7 +129,9 @@ export async function updateSlaPolicy({ prisma }: TicketServiceDeps, input: SlaP
     ...(input.reminderRules !== undefined && { reminderRules: input.reminderRules }),
   };
   try {
-    return toDto(await prisma.slaPolicy.update({ where: { id: input.id }, data }));
+    return toDto(
+      await prisma.slaPolicy.update({ where: { id: input.id }, data, include: kindInclude }),
+    );
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       throw new SlaPolicyNameConflictError(input.name ?? existing.name);
@@ -112,7 +142,10 @@ export async function updateSlaPolicy({ prisma }: TicketServiceDeps, input: SlaP
 
 export async function sortSlaPolicies(deps: TicketServiceDeps, input: SlaPolicySortInput) {
   const { prisma } = deps;
-  const rows = await prisma.slaPolicy.findMany({ select: { id: true } });
+  const rows = await prisma.slaPolicy.findMany({
+    where: { kindId: input.kindId },
+    select: { id: true },
+  });
   const incoming = new Set(input.policyIds);
   if (
     incoming.size !== input.policyIds.length ||
@@ -133,7 +166,10 @@ export async function setSlaPolicyActive(
   { prisma }: TicketServiceDeps,
   input: { id: string; active: boolean },
 ) {
-  const existing = await prisma.slaPolicy.findUnique({ where: { id: input.id } });
+  const existing = await prisma.slaPolicy.findUnique({
+    where: { id: input.id },
+    include: kindInclude,
+  });
   if (!existing) {
     throw new SlaPolicyNotFoundError();
   }
@@ -141,6 +177,10 @@ export async function setSlaPolicyActive(
     return toDto(existing);
   }
   return toDto(
-    await prisma.slaPolicy.update({ where: { id: input.id }, data: { active: input.active } }),
+    await prisma.slaPolicy.update({
+      where: { id: input.id },
+      data: { active: input.active },
+      include: kindInclude,
+    }),
   );
 }

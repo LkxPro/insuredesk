@@ -2,7 +2,7 @@ import type { AppRouter } from "@insuredesk/api";
 import type { ReminderRule } from "@insuredesk/shared";
 import type { inferRouterOutputs } from "@trpc/server";
 import { AlertCircle, ArrowDown, ArrowUp, Plus } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,13 +25,10 @@ import { trpc } from "@/lib/trpc";
 import { SlaPolicyDialog } from "./SlaPolicyDialog";
 
 /**
- * sla.view opens the page (route-guarded);
- * every write entry — 新增/编辑/排序/停用/复活 — appears only with sla.edit,
- * and the API re-checks regardless. A save is the whole rollout: new tickets
- * stamp dueAt from the saved hours and the 待办 poll judges by the saved
- * rules, while existing tickets keep their dueAt. 停用不拆引用、不物理删除。
+ * A save is the whole rollout: new tickets stamp dueAt from the saved hours
+ * and the 待办 poll judges by the saved rules, while existing tickets keep
+ * their dueAt. 停用不拆引用、不物理删除。
  */
-
 export type SlaPolicyRow = inferRouterOutputs<AppRouter>["sla"]["list"][number];
 
 function describeRule(rule: ReminderRule): string {
@@ -252,18 +250,27 @@ export function SlaPage() {
     onError: (error) => toast.error(error.message),
   });
 
-  const policies = listQuery.data ?? [];
+  // 服务端按种类 displayOrder + 组内 sortOrder 排序，这里按连续同组切段
+  const groups: { kindId: string; kindName: string; policies: SlaPolicyRow[] }[] = [];
+  for (const policy of listQuery.data ?? []) {
+    const last = groups.at(-1);
+    if (last && last.kindId === policy.kindId) {
+      last.policies.push(policy);
+    } else {
+      groups.push({ kindId: policy.kindId, kindName: policy.kindName, policies: [policy] });
+    }
+  }
 
-  function move(index: number, delta: -1 | 1) {
-    const neighbor = policies[index + delta];
-    const current = policies[index];
+  function move(group: { kindId: string; policies: SlaPolicyRow[] }, index: number, delta: -1 | 1) {
+    const neighbor = group.policies[index + delta];
+    const current = group.policies[index];
     if (!neighbor || !current) {
       return;
     }
-    const policyIds = policies.map((policy) => policy.id);
+    const policyIds = group.policies.map((policy) => policy.id);
     policyIds[index] = neighbor.id;
     policyIds[index + delta] = current.id;
-    sort.mutate({ policyIds });
+    sort.mutate({ kindId: group.kindId, policyIds });
   }
 
   return (
@@ -271,7 +278,7 @@ export function SlaPage() {
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">SLA 策略</h1>
         <p className="text-sm text-muted-foreground">
-          管理时效策略目录：首响违约线、超时时长与提醒规则。保存即时生效——此后新建单按所选策略计算处理时限、待办告警按新规则判定；存量工单不变。停用后新建工单不可再选，无物理删除。
+          时效策略按工单种类分组管理，各组独立排序与启停；建单与编辑工单的策略下拉只列该工单种类的策略。保存即时生效——此后新建单按所选策略计算处理时限、待办告警按新规则判定；存量工单不变。停用后新建工单不可再选，无物理删除。
         </p>
       </div>
 
@@ -282,39 +289,52 @@ export function SlaPage() {
           <AlertDescription>{listQuery.error.message}</AlertDescription>
         </Alert>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {listQuery.isLoading &&
-            [0, 1, 2, 3].map((index) => (
-              <Card key={index}>
-                <CardHeader>
-                  <Skeleton className="h-6 w-24" />
-                </CardHeader>
-                <CardContent className="flex flex-col gap-3">
-                  <Skeleton className="h-5 w-full" />
-                  <Skeleton className="h-5 w-full" />
-                  <Skeleton className="h-5 w-2/3" />
-                </CardContent>
-              </Card>
-            ))}
-          {policies.map((policy, index) => (
-            <PolicyCard
-              key={policy.id}
-              policy={policy}
-              canEdit={canEdit}
-              isFirst={index === 0}
-              isLast={index === policies.length - 1}
-              sortPending={sort.isPending}
-              onEdit={() => setEditor({ open: true, policy })}
-              onMove={(delta) => move(index, delta)}
-              onDeactivate={() => setDeactivateTarget(policy)}
-              onRevive={() => revive.mutate({ id: policy.id, active: true })}
-            />
+        <div className="flex flex-col gap-6">
+          {listQuery.isLoading && (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {[0, 1, 2, 3].map((index) => (
+                <Card key={index}>
+                  <CardHeader>
+                    <Skeleton className="h-6 w-24" />
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3">
+                    <Skeleton className="h-5 w-full" />
+                    <Skeleton className="h-5 w-full" />
+                    <Skeleton className="h-5 w-2/3" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+          {groups.map((group, groupIndex) => (
+            <Fragment key={group.kindId}>
+              {groupIndex > 0 && <Separator />}
+              <section className="flex flex-col gap-3">
+                <h2 className="text-base font-medium">{group.kindName}</h2>
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {group.policies.map((policy, index) => (
+                    <PolicyCard
+                      key={policy.id}
+                      policy={policy}
+                      canEdit={canEdit}
+                      isFirst={index === 0}
+                      isLast={index === group.policies.length - 1}
+                      sortPending={sort.isPending}
+                      onEdit={() => setEditor({ open: true, policy })}
+                      onMove={(delta) => move(group, index, delta)}
+                      onDeactivate={() => setDeactivateTarget(policy)}
+                      onRevive={() => revive.mutate({ id: policy.id, active: true })}
+                    />
+                  ))}
+                </div>
+              </section>
+            </Fragment>
           ))}
           {canEdit && !listQuery.isLoading && (
             <button
               type="button"
               onClick={() => setEditor({ open: true, policy: null })}
-              className="flex min-h-48 flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-sm text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+              className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-sm text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
             >
               <Plus className="size-5" />
               新增策略

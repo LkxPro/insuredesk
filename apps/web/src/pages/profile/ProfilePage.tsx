@@ -2,11 +2,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { ChangePasswordCard } from "./ChangePasswordCard";
 
-/**
- * 个人资料: read-only view of the logged-in user's own identity, straight
- * from `auth.me` — no extra query — plus the 修改密码 self-service block.
- */
-
 export function ProfilePage() {
   const { user } = useAuth();
   if (!user) {

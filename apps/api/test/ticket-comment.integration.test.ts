@@ -4,15 +4,6 @@ import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts
 import { appRouter } from "../src/routers/index.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Acceptance tests against a real Postgres: adding a follow-up (跟进备注)
- * maintains contactCount / nextContactTime in one action (单点维护), the FIRST
- * follow-up moves assigned → processing with the comment + status_change
- * ProcessLog pair, and later follow-ups append a single comment entry with no
- * transition. 跟进内容只落 ProcessLog —— 工单上没有快照字段，时间线是唯一
- * 展示面. Runs through appRouter.createCaller — the same procedure pipeline
- * (permission middleware included) the HTTP adapter uses.
- */
 describe("ticket follow-up comments (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -30,7 +21,7 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026070900654"],
-      userComplaintChannel: "400热线",
+      userFeedbackChannelId: null,
       customerName: "钱跟进",
       phone: "13800000002",
       customerRequest: "对退保金额有异议，要求重新核算",
@@ -54,7 +45,6 @@ describe("ticket follow-up comments (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** Caller with the given user identity and an explicit permission set. */
   function callerWith(user: User, roleName: string, permissions: Permission[]) {
     return appRouter.createCaller({
       traceId: "comment-test",
@@ -74,7 +64,6 @@ describe("ticket follow-up comments (Testcontainers)", () => {
     });
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return callerWith(user, role.name, role.permissions as Permission[]);
   }
@@ -85,13 +74,11 @@ describe("ticket follow-up comments (Testcontainers)", () => {
 
   let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** A fresh unassigned ticket, created through the real create procedure. */
   async function createTicket() {
     const created = await manager().ticket.create(baseInput);
     return created.id;
   }
 
-  /** A fresh ticket already assigned to the given user (default cs1). */
   async function createAssignedTicket(assigneeId?: string) {
     const ticketId = await createTicket();
     await manager().ticket.assign({
@@ -122,8 +109,6 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       expect(detail).not.toHaveProperty("processingResult");
       expect(detail.nextContactTime).toBe("2026-07-12T02:00:00.000Z");
 
-      // Two log entries beyond create/assign/status_change, in order: the
-      // comment first, then the separate transition entry
       expect(detail.processLogs.map((log) => log.action)).toEqual([
         "create",
         "assign",
@@ -145,7 +130,6 @@ describe("ticket follow-up comments (Testcontainers)", () => {
         from: "assigned",
         to: "processing",
       });
-      // One action, one instant: both entries carry the same timestamp
       expect(transitionLog?.at).toBe(commentLog?.at);
     });
 
@@ -187,7 +171,6 @@ describe("ticket follow-up comments (Testcontainers)", () => {
       expect(detail.contactCount).toBe(2);
       expect(detail).not.toHaveProperty("processingResult");
 
-      // Exactly one new entry — no second assigned → processing transition
       expect(detail.processLogs.map((log) => log.action)).toEqual([
         "create",
         "assign",

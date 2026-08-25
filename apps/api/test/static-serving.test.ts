@@ -79,7 +79,6 @@ describe("production static frontend serving", () => {
     const res = await app.inject({ method: "GET", url: "/trpc/does-not-exist" });
     expect(res.statusCode).not.toBe(200);
     expect(res.body).not.toBe(INDEX_HTML);
-    // tRPC replies with a JSON error envelope, never the HTML shell.
     expect(res.headers["content-type"]).toContain("application/json");
   });
 });

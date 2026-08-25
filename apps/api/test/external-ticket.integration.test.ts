@@ -3,11 +3,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * External ticket API integration tests: submit with prefill stamping,
- * creatorId-scoped list/detail, full field exposure (no whitelist filtering),
- * ProcessLog filtering, and notification writing.
- */
 describe("external ticket API (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -34,7 +29,6 @@ describe("external ticket API (Testcontainers)", () => {
       },
     });
 
-    // 账号1: 6 预填全配
     externalUser1 = await prisma.user.create({
       data: {
         username: "external1",
@@ -46,12 +40,13 @@ describe("external ticket API (Testcontainers)", () => {
         prefillProject: "融盛",
         prefillBrokerageEntity: "东方大地",
         prefillPaymentChannel: "连连",
-        prefillUserComplaintChannel: "400热线",
-        prefillComplaintReceiveChannel: "客服群",
+        prefillUserFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
+        prefillFeedbackReceiveChannelId: harness.feedbackReceiveChannelId(
+          "（微信）凯森&骏伯客诉对接群",
+        ),
       },
     });
 
-    // 账号2: 无预填
     externalUser2 = await prisma.user.create({
       data: {
         username: "external2",
@@ -89,11 +84,10 @@ describe("external ticket API (Testcontainers)", () => {
         project: "融盛",
         brokerageEntity: "东方大地",
         paymentChannel: "连连",
-        userComplaintChannel: "400热线",
-        complaintReceiveChannel: "客服群",
+        userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
+        feedbackReceiveChannelId: harness.feedbackReceiveChannelId("（微信）凯森&骏伯客诉对接群"),
         status: "unassigned",
       });
-      // 外部单的客户反馈随提交发生：反馈时间即创建时间
       expect(ticket?.feedbackTime).toEqual(ticket?.createdAt);
     });
 
@@ -108,8 +102,8 @@ describe("external ticket API (Testcontainers)", () => {
         project: null,
         brokerageEntity: null,
         paymentChannel: null,
-        userComplaintChannel: null,
-        complaintReceiveChannel: null,
+        userFeedbackChannelId: null,
+        feedbackReceiveChannelId: null,
       });
     });
 
@@ -409,7 +403,6 @@ describe("external ticket API (Testcontainers)", () => {
           at: new Date(Date.now() + 60_000),
         },
       });
-      // 更新的内部跟进对外部不可见，不能成为 latestLog
       await prisma.processLog.create({
         data: {
           ticketId: ticket.id,
@@ -444,7 +437,6 @@ describe("external ticket API (Testcontainers)", () => {
       const noted = await caller.externalTicket.submit({ submissionText: "我留言过" });
       const idle = await caller.externalTicket.submit({ submissionText: "无动静" });
 
-      // noted 活跃更新，但 replied 是客服新发言 → replied 置顶，noted 次之
       await prisma.processLog.create({
         data: {
           ticketId: replied.id,
@@ -573,7 +565,6 @@ describe("external ticket API (Testcontainers)", () => {
       expect(JSON.stringify(detail)).not.toContain("内部口径，勿外传");
       expect(detail.processLogs.map((log) => log.remark)).toContain("对外可见的跟进");
 
-      // 列表每单附最新一条可见跟进：最新跟进是 internalOnly 时也要回退到可见的那条
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
       const item = list.items.find((t) => t.id === ticket.id);
       expect(item?.latestLog?.remark).toBe("对外可见的跟进");
@@ -617,11 +608,9 @@ describe("external ticket API (Testcontainers)", () => {
         submissionText: "时效策略可见性",
       });
 
-      // 外部提交不接受策略输入：未定级
       const fresh = await caller.externalTicket.detail({ ticketId: ticket.id });
       expect(fresh.ticket.slaPolicyName).toBeNull();
 
-      // 客服补录时效策略（按 slaPolicyId 新轨）
       const policy = await prisma.slaPolicy.findUniqueOrThrow({
         where: { name: "加急投诉" },
       });
@@ -631,7 +620,6 @@ describe("external ticket API (Testcontainers)", () => {
       const detail = await caller.externalTicket.detail({ ticketId: ticket.id });
       expect(detail.ticket.slaPolicyName).toBe("加急投诉");
 
-      // 改名即时显新名（引用而非快照）
       await prisma.slaPolicy.update({ where: { id: policy.id }, data: { name: "加急专线" } });
       try {
         const renamed = await caller.externalTicket.detail({ ticketId: ticket.id });
@@ -911,8 +899,8 @@ describe("external ticket API (Testcontainers)", () => {
         paymentChannel: null,
         internalOrderNumber: null,
         policyNumbers: [],
-        userComplaintChannel: null,
-        complaintReceiveChannel: null,
+        userFeedbackChannelId: null,
+        feedbackReceiveChannelId: null,
         customerName: null,
         phone: null,
         contactPhone: null,
@@ -986,8 +974,8 @@ describe("external ticket API (Testcontainers)", () => {
         paymentChannel: null,
         internalOrderNumber: null,
         policyNumbers: [],
-        userComplaintChannel: null,
-        complaintReceiveChannel: null,
+        userFeedbackChannelId: null,
+        feedbackReceiveChannelId: null,
         customerName: null,
         phone: null,
         contactPhone: null,

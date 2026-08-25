@@ -3,13 +3,6 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { callsTo, renderApp, toastSpies } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
 
-/**
- * 外部账号管理 page: the account table renders prefill/whitelist/status,
- * the create/edit dialogs carry the 6-prefill section plus the whitelist
- * multi-select, and disable goes through the confirm dialog while enable
- * fires directly. Data is faked at the tRPC fetch seam (renderApp).
- */
-
 // Radix Select drives its dropdown with pointer-capture and scroll APIs that
 // jsdom doesn't implement.
 beforeAll(() => {
@@ -35,8 +28,10 @@ function accountRow(overrides: Record<string, unknown> = {}) {
       project: "融盛",
       brokerageEntity: null,
       paymentChannel: null,
-      userComplaintChannel: null,
-      complaintReceiveChannel: null,
+      userFeedbackChannelId: null,
+      userFeedbackChannelName: null,
+      feedbackReceiveChannelId: null,
+      feedbackReceiveChannelName: null,
     },
     ticketCount: 3,
     ...overrides,
@@ -55,6 +50,8 @@ function renderPage(overrides: Record<string, unknown> = {}) {
     trpc: {
       "externalAccount.list": [accountRow()],
       "channel.options": CHANNEL_OPTIONS,
+      "userFeedbackChannel.options": [],
+      "feedbackReceiveChannel.options": [],
       "externalAccount.create": { id: "acc-new", name: "新账号" },
       "externalAccount.update": { id: "acc-1", name: "甲合作方" },
       "externalAccount.setActive": { id: "acc-1", name: "甲合作方", active: false },
@@ -69,7 +66,6 @@ describe("账号列表", () => {
 
     const row = (await screen.findByText("甲合作方")).closest("tr") as HTMLElement;
     expect(within(row).getByText("partner1")).toBeInTheDocument();
-    // 预填概览:已配置值按序拼接(渠道名 + 项目)
     expect(within(row).getByText("保司 · 融盛")).toBeInTheDocument();
     expect(within(row).getByText("3")).toBeInTheDocument();
     expect(within(row).getByText("启用")).toBeInTheDocument();
@@ -85,8 +81,10 @@ describe("账号列表", () => {
             project: null,
             brokerageEntity: null,
             paymentChannel: null,
-            userComplaintChannel: null,
-            complaintReceiveChannel: null,
+            userFeedbackChannelId: null,
+            userFeedbackChannelName: null,
+            feedbackReceiveChannelId: null,
+            feedbackReceiveChannelName: null,
           },
         }),
       ],

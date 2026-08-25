@@ -52,6 +52,20 @@ if [ "$parent" -gt 0 ]; then
 fi
 
 node "$script_dir/plan.mjs" render "$parent" <"$plan_file" >"$tmp/rendered.json"
+
+# spec 分支是子票 PR 的 base,必须先于任何子票落库;建支失败即中止,lease 释放后重跑幂等。
+if [ "$parent" -gt 0 ]; then
+  main_sha=$(gh_call api "repos/$repo/git/ref/heads/main" --jq .object.sha)
+  if ! gh_call api --method POST "repos/$repo/git/refs" \
+    -F "ref=refs/heads/agent/spec-$parent" -F "sha=$main_sha" >/dev/null 2>"$tmp/branch-error"; then
+    # 重发/并发下分支已存在不算失败;确认 ref 真实存在才放行,否则中止。
+    if ! gh_call api "repos/$repo/git/ref/heads/agent/spec-$parent" --jq .object.sha >/dev/null 2>&1; then
+      cat "$tmp/branch-error" >&2
+      exit 1
+    fi
+  fi
+fi
+
 printf '{}\n' >"$tmp/map.json"
 all_tasks=$(gh_call api "repos/$repo/issues?state=all&labels=agent%3Atask&per_page=100" --paginate)
 

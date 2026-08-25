@@ -1,13 +1,6 @@
 import type { Permission } from "@insuredesk/shared";
 import { POSITIVE_PERMISSIONS } from "@insuredesk/shared";
 
-/**
- * Permission-set personas for tests: an admin holding every positive
- * permission (mirroring the server's system-role expansion, which excludes
- * restrictive points) plus three typical staff profiles (mirroring the
- * factory roles the api seeds). Roles are runtime configuration, so tests
- * pin their own sets here instead of reading anything from the seed.
- */
 export const TEST_ROLES = {
   ADMIN: {
     name: "管理员",

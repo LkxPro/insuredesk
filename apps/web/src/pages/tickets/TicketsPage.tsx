@@ -42,32 +42,14 @@ import { TicketCreateDialog } from "./TicketCreateDialog";
 import { TicketDetailPane } from "./TicketDetailPane";
 import { TicketImportDialog } from "./TicketImportDialog";
 
-/**
- * 内部工单页 adapter：只声明槽位——解析器、ticket.list 查询、9 个筛选维度、
- * 列定义（创建时间/处理时限双轴排序）、批量分配 selection、头部动作（导出/
- * 导入/新建）、对话框槽与详情 pane。三态骨架、URL 筛选态、翻单契约与选中
- * 状态机都在 ticket-surface 深模块，本文件不含编排 JSX。
- *
- * 门控全部在本层展开：ticket.batch_assign 决定给不给 selection 槽，
- * ticket.assign/process 决定有没有「操作」列，ticket.create/import/export
- * 决定头部动作的有无——深模块只看到槽位的有无，看不到权限点。
- */
-
-/** ticket.list 行类型，从 router 推导——列定义与 selection 共用一个真源。 */
 type ListItem = inferRouterOutputs<AppRouter>["ticket"]["list"]["items"][number];
 
-/**
- * URL query string → validated list query. Each param is salvaged on its own,
- * so one malformed value (a hand-edited page, say) falls back to its default
- * without silently dropping the other filters. Filter params carry
- * comma-separated multi-selections; a param's absence means 默认（状态等不过
- * 滤，来源按 schema 缺省排除归档单）。
- */
 function parseListQuery(params: URLSearchParams): TicketListQuery {
   const multi = (key: string) =>
     params.has(key) ? params.get(key)?.split(",").filter(Boolean) : undefined;
   const candidate = {
     status: multi("status"),
+    kindId: multi("kind"),
     channelId: multi("channel"),
     categoryId: multi("category"),
     completionStatusId: multi("completionStatus"),
@@ -92,13 +74,11 @@ function parseListQuery(params: URLSearchParams): TicketListQuery {
   );
 }
 
-/** Selection → URL value; null removes the param (回到默认). */
 function serializeSelection(
   values: readonly string[],
   defaultValues: readonly string[],
 ): string | null {
   if (values.length === 0) {
-    // 空选 = 全部：对无默认的维度即默认态，不写入；对来源偏离默认，写空值标记
     return defaultValues.length === 0 ? null : "";
   }
   const sameSet =
@@ -159,16 +139,24 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [batchOpen, setBatchOpen] = useState(false);
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  // 建单成功留在列表：新建行高亮，直到下一次建单或离开本页
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
+  const kindOptions = trpc.ticketKind.filterOptions.useQuery().data ?? [];
   const channelOptions = trpc.channel.filterOptions.useQuery().data ?? [];
   const categoryOptions = trpc.ticketCategory.filterOptions.useQuery().data ?? [];
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
   // 策略筛选只列启用项（sla.options 口径），与目录 filterOptions 的停用标注口径不同
   const slaOptions = trpc.sla.options.useQuery().data ?? [];
 
+  const kinds = useMemo(
+    () =>
+      kindOptions.map((kind) => ({
+        value: kind.id,
+        label: kind.active ? kind.name : `${kind.name}（已停用）`,
+      })),
+    [kindOptions],
+  );
   const channels = useMemo(
     () =>
       channelOptions.map((channel) => ({
@@ -418,13 +406,27 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           )}
         </>
       )}
-      filters={({ query, searchDraft, setSearchDraft, submitSearch, setParam, setParams }) => (
+      filters={({
+        query,
+        searchDraft,
+        setSearchDraft,
+        submitSearch,
+        clearSearch,
+        setParam,
+        setParams,
+      }) => (
         <>
           <MultiSelectFilter
             label="状态"
             values={query.status ?? []}
             options={STATUS_FILTER_OPTIONS}
             onChange={(values) => setParam("status", serializeSelection(values, []))}
+          />
+          <MultiSelectFilter
+            label="种类"
+            values={query.kindId ?? []}
+            options={kinds}
+            onChange={(values) => setParam("kind", serializeSelection(values, []))}
           />
           <MultiSelectFilter
             label={TICKET_FIELDS.channelId.overrides.listLabel}
@@ -478,6 +480,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             draft={searchDraft}
             onDraftChange={setSearchDraft}
             onSubmit={submitSearch}
+            onClear={clearSearch}
             placeholder="工单号 / 客户姓名 / 保单号 / 电话"
           />
         </>
@@ -485,6 +488,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       activeFilterCount={(query) =>
         [
           query.status?.length,
+          query.kindId?.length,
           query.channelId?.length,
           query.categoryId?.length,
           query.completionStatusId?.length,

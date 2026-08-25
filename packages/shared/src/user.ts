@@ -21,7 +21,6 @@ export const usernameSchema = z
 /** bcrypt truncates beyond 72 bytes — cap at the algorithm's limit. */
 export const passwordSchema = z.string().min(6, "密码至少 6 位").max(72, "密码最长 72 字符");
 
-/** 自助改密 (profile page) — old credential re-verified server-side. */
 export const changeOwnPasswordInputSchema = z.object({
   oldPassword: z.string().min(1, "请输入旧密码"),
   newPassword: passwordSchema,
@@ -30,7 +29,6 @@ export type ChangeOwnPasswordInput = z.infer<typeof changeOwnPasswordInputSchema
 
 export const displayNameSchema = z.string().trim().min(1, "请输入姓名").max(50, "姓名最长 50 字符");
 
-/** Optional email: empty input means "none", non-empty must be well-formed. */
 export const optionalEmailSchema = z
   .union([z.string().trim().email("邮箱格式不正确"), z.literal(""), z.null(), z.undefined()])
   .transform((value) => (value ? value : null));
@@ -59,14 +57,12 @@ export const userCreateInputSchema = z.object({
   team: optionalTeamSchema,
   roleId: z.string().min(1, "请选择角色"),
 });
-/** Form-side shape (before transforms). */
 export type UserCreateInput = z.input<typeof userCreateInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type UserCreateData = z.output<typeof userCreateInputSchema>;
 
 /**
  * Edit basic info (user.edit). Role changes ride user.assignRole (a separate
- * permission point); a non-empty password resets it, empty/null keeps it.
+ * permission point).
  */
 export const userUpdateInputSchema = z.object({
   id: z.string().min(1),

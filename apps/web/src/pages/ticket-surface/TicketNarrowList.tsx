@@ -3,13 +3,6 @@ import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "./StatusBadge";
 
-/**
- * 详情态的左侧窄列：全宽表压缩后的样子，内外两端共用。行 = 客户名、状态、
- * 一个时间槽（内部传处理时限，外部传反馈时间，语义由调用方定），overdue
- * 行的时间红字。不显示工单号（窄列里它挤掉了真正要扫的信息，工单号在右侧
- * 详情头部）。行序沿用调用方列表当前的筛选/排序结果，不另发查询。
- */
-
 export type NarrowListItem = {
   id: string;
   customerName: string | null;

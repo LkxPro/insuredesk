@@ -29,9 +29,7 @@ import {
 } from "./TicketFormFields";
 
 /**
- * Blank defaults with feedbackTime prefilled to the current local minute —
- * built fresh on each open so a reopen refreshes 此刻, never restoring a
- * stale draft. 手工建单多在客户刚反馈后，默认当前时间省一步操作；清空按钮
+ * 手工建单多在客户刚反馈后，默认 feedbackTime 为当前时间省一步操作；清空按钮
  * 兜住"反馈时间未知"的少数场景，提交为 null。
  *
  * Every field is listed so isDirty compares against a complete baseline: a
@@ -48,8 +46,8 @@ function createDefaults(): TicketFormValues {
     internalOrderNumber: "",
     policyNumbers: "",
     noPolicyNumber: false,
-    userComplaintChannel: "",
-    complaintReceiveChannel: "",
+    userFeedbackChannelId: "",
+    feedbackReceiveChannelId: "",
     customerName: "",
     phone: "",
     contactPhone: "",
@@ -64,15 +62,6 @@ function createDefaults(): TicketFormValues {
   };
 }
 
-/**
- * Manual ticket creation, presented as a modal dialog over 工单管理 rather
- * than a separate page. The field set and validation live in TicketFormFields;
- * this dialog owns the blank defaults and the ticket.create submit. Success
- * stays on the list (toast carries the 工单号; the caller highlights the new
- * row via onCreated) — the detail is one click away as a dialog. Any close
- * path (outside click, X, Esc, 取消) first asks 丢弃修改？ when the form has
- * been edited beyond the feedbackTime default.
- */
 export function TicketCreateDialog({
   open,
   onOpenChange,
@@ -85,7 +74,6 @@ export function TicketCreateDialog({
   const { user } = useAuth();
   const utils = trpc.useUtils();
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
-  /** 提交被 409 兜底拦下时的载荷；非空即显示查重确认框，「仍要创建」带 allowDuplicate 重发。 */
   const [duplicateConflict, setDuplicateConflict] = useState<{
     payload: TicketCreateInput & { allowDuplicate?: boolean };
   } | null>(null);

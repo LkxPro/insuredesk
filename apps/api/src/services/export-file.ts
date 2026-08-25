@@ -2,11 +2,6 @@ import type { TicketExportFormat } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import { resolveTimeZone } from "./time-zone.ts";
 
-/**
- * 导出生成单源：Excel/CSV 序列化、日期格式化、文件名规则都收在这里。
- * 内外两个导出 service 只声明列集（表头 + 行取值）与文件名前缀。
- */
-
 export interface ExportFile {
   /** ASCII-safe filename for the Content-Disposition fallback. */
   filename: string;
@@ -25,7 +20,6 @@ export interface ExportContext {
   formatDate: (date: Date | null) => string;
 }
 
-/** "yyyy-MM-dd HH:mm" in the requested zone; empty cell for null dates. */
 function makeDateFormatter(timeZone: string | undefined) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: resolveTimeZone(timeZone),
@@ -72,10 +66,6 @@ const CONTENT_TYPES: Record<TicketExportFormat, string> = {
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
-/**
- * 列集 + 行 → 成品文件。日期列服务端格式化（浏览器 IANA 时区，非法回落 UTC）；
- * 文件名带导出时刻戳（同一 formatDate 口径）。
- */
 export async function renderExportFile<Row>(options: {
   baseName: string;
   format: TicketExportFormat;

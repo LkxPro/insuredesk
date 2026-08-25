@@ -10,16 +10,6 @@ import { appRouter } from "../src/routers/index.ts";
 import type { AuthenticatedUser } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * 字典目录 parameterized acceptance tests (issue #93). One canonical suite
- * runs three catalog instances (channel, ticketCategory, completionStatus),
- * plus one smoke test per catalog. The suite covers the full lifecycle:
- * rename propagation, 停用/deletion guards, reference validation, concurrent
- * P2003 backstop, filtering by disabled rows, and edit path quirks.
- * 完结状态-specific behaviors (引用必填, no edit path, migration-seeded rows)
- * are tested explicitly in the completionStatus smoke section.
- */
-
 interface CatalogConfig {
   name: string;
   routerKey: "channel" | "ticketCategory" | "completionStatus";
@@ -35,13 +25,9 @@ interface CatalogConfig {
   seedFunction: string | null;
   ticketFieldId: "channelId" | "categoryId" | null;
   ticketFieldDisplay: "channel" | "category" | "completionStatus";
-  /** For edit log snapshots: "反馈渠道: X→Y" */
   editLogPrefix: string | null;
-  /** For ticket list filter input */
   filterKey: "channelId" | "categoryId" | "completionStatusId";
-  /** True = catalog rows come from migration only (no app-layer seed) */
   migrationSeeded: boolean;
-  /** completionStatus is referenced at resolve, not create/edit */
   referencedViaResolve: boolean;
 }
 
@@ -212,6 +198,38 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           ).rejects.toMatchObject({ code: "CONFLICT", message: cfg.labels.conflictMessage });
         });
       }
+
+      it("reorder renumbers the whole catalog by array order; stale id sets are refused", async () => {
+        const router = manager()[cfg.routerKey];
+        const before = await router.list();
+        const ids = before.map((row) => row.id);
+        const last = ids.at(-1);
+        if (!last) throw new Error("目录为空");
+        const moved = [last, ...ids.slice(0, -1)];
+
+        await router.reorder({ ids: moved });
+
+        const after = await router.list();
+        expect(after.map((row) => row.id)).toEqual(moved);
+        expect(after.map((row) => row.displayOrder)).toEqual(moved.map((_, i) => i + 1));
+
+        await expect(router.reorder({ ids: moved.slice(1) })).rejects.toMatchObject({
+          code: "CONFLICT",
+        });
+        await expect(
+          router.reorder({ ids: [...moved.slice(1), "not-a-member"] }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+
+        // 还原：后面的 smoke（如完结状态的迁移顺序断言）依赖初始行序。
+        await router.reorder({ ids });
+      });
+
+      it("create without displayOrder appends to the end of the catalog", async () => {
+        const router = manager()[cfg.routerKey];
+        const created = await router.create({ name: "追加顺序项" });
+        const list = await router.list();
+        expect(list.at(-1)?.id).toBe(created.id);
+      });
 
       it("停用 removes from options but keeps in filter feed, labelled by active", async () => {
         const router = manager()[cfg.routerKey];
@@ -447,7 +465,6 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           });
           await router.setActive({ id: oldItem.id, active: false });
 
-          // Keeping the (now disabled) original value is a no-op edit for the field.
           const kept = await manager().ticket.edit({
             ...blankTicketInput(),
             ticketId: ticket.id,
@@ -456,7 +473,6 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           });
           expect(kept.changedFields).toEqual(["customerName"]);
 
-          // Newly selecting a different disabled item is rejected.
           const otherDisabled = await router.create({ name: "另一停用", displayOrder: 242 });
           await router.setActive({ id: otherDisabled.id, active: false });
           await expect(
@@ -467,13 +483,11 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
             }),
           ).rejects.toMatchObject({ code: "BAD_REQUEST", message: cfg.labels.disabledMessage });
 
-          // Switching to an active item logs literal name snapshots …
           await manager().ticket.edit({
             ...blankTicketInput(),
             ticketId: ticket.id,
             [cfg.ticketFieldId]: newItem.id,
           });
-          // … that survive later renames (处理记录保留操作当时的字面快照).
           await router.update({ id: newItem.id, name: "新项改名", displayOrder: 241 });
           const detail = await manager().ticket.detail({ id: ticket.id });
           const editLogs = detail.processLogs.filter((log) => log.action === "edit");
@@ -484,7 +498,6 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           const displayField = detail[cfg.ticketFieldDisplay] as { name: string } | null;
           expect(displayField?.name).toBe("新项改名");
 
-          // Clearing back to 未填写 stays allowed.
           const cleared = await manager().ticket.edit({
             ...blankTicketInput(),
             ticketId: ticket.id,
@@ -513,7 +526,6 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
     });
   }
 
-  // Smoke tests for catalog-specific behaviors
   describe("Channel catalog smoke", () => {
     it("seeds the 4 factory channels once", async () => {
       const channels = await manager().channel.list();
@@ -549,11 +561,9 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
         "冷处理",
         "联系不上",
       ];
-      // Check all 12 migration values are present
       for (const name of expectedMigrationValues) {
         expect(names).toContain(name);
       }
-      // First 12 should be the migration values in order
       expect(names.slice(0, 12)).toEqual(expectedMigrationValues);
     });
   });

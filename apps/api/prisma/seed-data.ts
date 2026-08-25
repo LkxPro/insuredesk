@@ -1,5 +1,12 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
-import { DEFAULT_SLA_POLICIES, isExternalRole, TicketStatus } from "@insuredesk/shared";
+import {
+  DEFAULT_REFUND_SLA_POLICY,
+  DEFAULT_SLA_POLICIES,
+  DEFAULT_TICKET_KINDS,
+  isExternalRole,
+  TicketKindKey,
+  TicketStatus,
+} from "@insuredesk/shared";
 import type { Clock } from "../src/clock.ts";
 import type {
   Channel,
@@ -9,11 +16,13 @@ import type {
   SlaPolicy,
   Ticket,
   TicketCategory,
+  TicketKind,
   User,
 } from "../src/generated/prisma/client.ts";
 import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service.ts";
 import { computeSlaStamp, createTicket } from "../src/services/ticket.service.ts";
 import { assignTicket } from "../src/services/ticket-assign.service.ts";
+import { requireTicketKindId } from "../src/services/ticket-kind.service.ts";
 
 export const DEMO_PASSWORD = "password123";
 
@@ -150,7 +159,9 @@ export async function bootstrapSystemData(
   options: { adminUsername: string; adminPassword: string },
 ): Promise<{ adminCreated: boolean; rolesCreated: boolean }> {
   const factoryRoles = await createFactoryRoles(prisma);
+  await seedTicketKinds(prisma);
   await seedSlaPolicies(prisma);
+  await seedRefundDefaultSlaPolicy(prisma);
   await seedShiftTypes(prisma);
   await seedTicketCategories(prisma);
   await seedChannels(prisma);
@@ -252,17 +263,34 @@ export async function seedExternalUserRole(prisma: PrismaClient): Promise<Role> 
   });
 }
 
+/**
+ * 无 count==0 守卫（姊妹种子有）：存量环境也要随时补插缺失的行为绑定行；
+ * update 留空 = 管理员改名/停用不被回写。
+ */
+export async function seedTicketKinds(prisma: PrismaClient): Promise<TicketKind[]> {
+  for (const defaults of DEFAULT_TICKET_KINDS) {
+    await prisma.ticketKind.upsert({
+      where: { key: defaults.key },
+      update: {},
+      create: { ...defaults },
+    });
+  }
+  return prisma.ticketKind.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] });
+}
+
 export const DEFAULT_SLA_POLICY_DESCRIPTIONS: Record<string, string> = {
   一般投诉: "常规投诉：48 小时处理时限，首响 120 分钟；24 小时检查点累计 1 次、48 小时累计 2 次。",
   高级投诉: "重要投诉：48 小时处理时限，首响 120 分钟；24 小时检查点累计 1 次、48 小时累计 3 次。",
   加急投诉: "加急投诉：72 小时处理时限，首响 60 分钟；24/48/72 小时检查点，分别累计 2/4/6 次。",
   特急投诉:
     "特急投诉：不设处理时限，首响 30 分钟；24/48 小时检查点，此后每 12 小时滚动跟进直至完结。",
+  退费异常默认策略: "退费异常：48 小时处理时限，首响 120 分钟；36 小时检查点累计 1 次。",
 };
 
 export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]> {
   return prisma.$transaction(async (tx) => {
     if ((await tx.slaPolicy.count()) === 0) {
+      const complaintKindId = await requireTicketKindId(tx, TicketKindKey.Complaint);
       await tx.slaPolicy.createMany({
         data: DEFAULT_SLA_POLICIES.map((defaults, index) => ({
           name: defaults.name,
@@ -272,10 +300,33 @@ export async function seedSlaPolicies(prisma: PrismaClient): Promise<SlaPolicy[]
           firstResponseMinutes: defaults.firstResponseMinutes,
           overdueHours: defaults.overdueHours,
           reminderRules: defaults.reminderRules,
+          kindId: complaintKindId,
         })),
       });
     }
     return tx.slaPolicy.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  });
+}
+
+/**
+ * 独立于 seedSlaPolicies 的 count==0 守卫：存量环境已有四条投诉策略时也能补插；
+ * update 留空 = 管理员改名不回写。
+ */
+export async function seedRefundDefaultSlaPolicy(prisma: PrismaClient): Promise<SlaPolicy> {
+  const kindId = await requireTicketKindId(prisma, TicketKindKey.RefundException);
+  return prisma.slaPolicy.upsert({
+    where: { name: DEFAULT_REFUND_SLA_POLICY.name },
+    update: {},
+    create: {
+      name: DEFAULT_REFUND_SLA_POLICY.name,
+      description: DEFAULT_SLA_POLICY_DESCRIPTIONS[DEFAULT_REFUND_SLA_POLICY.name] ?? null,
+      sortOrder: 0,
+      active: true,
+      firstResponseMinutes: DEFAULT_REFUND_SLA_POLICY.firstResponseMinutes,
+      overdueHours: DEFAULT_REFUND_SLA_POLICY.overdueHours,
+      reminderRules: DEFAULT_REFUND_SLA_POLICY.reminderRules,
+      kindId,
+    },
   });
 }
 
@@ -352,6 +403,8 @@ interface DemoTicketSpec {
   slaPolicyName?: string;
   categoryName?: string;
   channelName?: string;
+  userFeedbackChannelName?: string;
+  feedbackReceiveChannelName?: string;
   source?: "manual" | "feishu_form" | "community";
   creator?: keyof SeededUsersAndRoles["users"];
   assignee?: keyof SeededUsersAndRoles["users"];
@@ -410,8 +463,8 @@ function demoInput(
     internalOrderNumber: `DEMO-ORDER-${demoPolicyNumber.slice(-4)}`,
     policyNumbers: [demoPolicyNumber],
     noPolicyNumber: false,
-    userComplaintChannel: "400热线",
-    complaintReceiveChannel: null,
+    userFeedbackChannelId: null,
+    feedbackReceiveChannelId: null,
     customerName: "演示客户",
     phone: "13800000000",
     contactPhone: null,
@@ -712,8 +765,8 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "杨可欣",
       phone: "13810001011",
       customerRequest: "飞书表单转入：客户咨询保障责任和等待期。",
-      userComplaintChannel: "飞书表单",
     }),
+    userFeedbackChannelName: "飞书表单",
     categoryName: "产品咨询",
   },
   {
@@ -727,8 +780,8 @@ const demoTicketSpecs: DemoTicketSpec[] = [
       customerName: "马梓涵",
       phone: "13810001012",
       customerRequest: "社区反馈：客户称回访时间不便，希望改约晚间联系。",
-      userComplaintChannel: "社区",
     }),
+    userFeedbackChannelName: "社区",
     categoryName: "回访问题",
   },
 ];
@@ -762,13 +815,16 @@ async function createExternalTicket(
   input: TicketCreateData,
   createdAt: Date,
 ): Promise<Ticket> {
-  const slaStamp = await computeSlaStamp(prisma, input.slaPolicyId, createdAt);
+  const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
+  const slaStamp = await computeSlaStamp(prisma, input.slaPolicyId, createdAt, kindId);
 
   const ticket = await prisma.ticket.create({
     data: {
       ...input,
       feedbackTime: input.feedbackTime === null ? null : new Date(input.feedbackTime),
       createdAt,
+      slaAnchorAt: createdAt,
+      kindId,
       source: spec.source ?? "manual",
       creatorId: null,
       ...slaStamp,
@@ -878,6 +934,18 @@ export async function seedDemoTickets(
       policy.id,
     ]),
   );
+  const userFeedbackChannelIdByName = new Map(
+    (await prisma.userFeedbackChannel.findMany({ where: { active: true } })).map((channel) => [
+      channel.name,
+      channel.id,
+    ]),
+  );
+  const feedbackReceiveChannelIdByName = new Map(
+    (await prisma.feedbackReceiveChannel.findMany({ where: { active: true } })).map((channel) => [
+      channel.name,
+      channel.id,
+    ]),
+  );
 
   for (const spec of demoTicketSpecs) {
     const createdAt = hoursAgo(spec.createdHoursAgo, now);
@@ -887,6 +955,11 @@ export async function seedDemoTickets(
       categoryId: spec.categoryName ? (categoryIdByName.get(spec.categoryName) ?? null) : null,
       channelId: spec.channelName ? (channelIdByName.get(spec.channelName) ?? null) : null,
       slaPolicyId: slaPolicyIdByName.get(spec.slaPolicyName ?? "一般投诉") ?? null,
+      userFeedbackChannelId:
+        userFeedbackChannelIdByName.get(spec.userFeedbackChannelName ?? "保司400热线") ?? null,
+      feedbackReceiveChannelId: spec.feedbackReceiveChannelName
+        ? (feedbackReceiveChannelIdByName.get(spec.feedbackReceiveChannelName) ?? null)
+        : null,
     };
     const ticket =
       spec.source === undefined || spec.source === "manual"

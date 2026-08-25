@@ -5,6 +5,7 @@ import {
   prioritySchema,
   ticketSourceSchema,
 } from "./enums.ts";
+import { REFUND_AMOUNT_PATTERN } from "./refund-push.ts";
 import {
   normalizePolicyNumbers,
   policyNumbersError,
@@ -27,7 +28,6 @@ import { createdRangeFields } from "./time-range.ts";
  * "" or an assumed value. hasContacted unfilled means 未知, not false.
  */
 
-/** Optional free-text field: empty/whitespace form input becomes NULL, not "". */
 const optionalText = (max: number) =>
   z
     .string()
@@ -36,7 +36,6 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((value) => (value ? value : null));
 
-/** Optional enum select: "" (nothing chosen) and absence both become NULL. */
 const optionalEnum = <T extends z.ZodTypeAny>(schema: T) =>
   schema
     .or(z.literal(""))
@@ -51,12 +50,6 @@ export const legacyComplaintLevelInputSchema = z
   .undefined({ error: "投诉等级文本轨已下线，请改用时效策略（slaPolicyId）" })
   .optional();
 
-/**
- * Optional multi-value text (保单号): items are trimmed, blanks dropped and
- * duplicates removed (case-sensitive) BEFORE the per-item length / count
- * limits apply — dedupe is silent, only genuine excess rejects. Absence and
- * [] both mean 未填写.
- */
 const optionalPolicyNumbers = z
   .array(z.string())
   .nullish()
@@ -83,9 +76,10 @@ export const ticketCreateInputSchema = z.object({
     .boolean()
     .nullish()
     .transform((value) => value ?? false),
-  userComplaintChannel: optionalText(TICKET_TEXT_LIMITS.userComplaintChannel),
-  /** 我方收到投诉信息的途径（如监管转办、邮箱接收），区别于客户发起侧的用户投诉渠道。 */
-  complaintReceiveChannel: optionalText(TICKET_TEXT_LIMITS.complaintReceiveChannel),
+  /** 用户反馈渠道目录引用（客户发起侧）；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
+  userFeedbackChannelId: optionalText(TICKET_FIELDS.userFeedbackChannelId.maxLength),
+  /** 反馈信息接收渠道目录引用（我方收到反馈的途径）；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
+  feedbackReceiveChannelId: optionalText(TICKET_FIELDS.feedbackReceiveChannelId.maxLength),
   customerName: optionalText(TICKET_TEXT_LIMITS.customerName),
   phone: optionalText(TICKET_TEXT_LIMITS.phone),
   contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
@@ -108,9 +102,7 @@ export const ticketCreateInputSchema = z.object({
   priority: optionalEnum(prioritySchema),
 });
 
-/** Form-side shape (before transforms) — what react-hook-form holds. */
 export type TicketCreateInput = z.input<typeof ticketCreateInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type TicketCreateData = z.output<typeof ticketCreateInputSchema>;
 
 /**
@@ -125,10 +117,26 @@ export const ticketEditInputSchema = ticketCreateInputSchema.extend({
   ticketId: z.string().min(1),
 });
 
-/** Form-side shape (before transforms) — what the edit form holds. */
 export type TicketEditInput = z.input<typeof ticketEditInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type TicketEditData = z.output<typeof ticketEditInputSchema>;
+
+export const ticketUpdateRefundCompensationInputSchema = z.object({
+  ticketId: z.string().min(1),
+  compensationAmount: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((value) => (value ? value : null))
+    .refine((value) => value === null || REFUND_AMOUNT_PATTERN.test(value), {
+      message: "补偿金须为不小于 0 的金额（最多两位小数）",
+    }),
+});
+export type TicketUpdateRefundCompensationInput = z.input<
+  typeof ticketUpdateRefundCompensationInputSchema
+>;
+export type TicketUpdateRefundCompensationData = z.output<
+  typeof ticketUpdateRefundCompensationInputSchema
+>;
 
 /** 查重命中字段（按输入侧字段命名）——命中位置决定提示挂在哪个输入框下。 */
 export const TICKET_DUPLICATE_MATCH_FIELDS = ["policyNumbers", "phone", "contactPhone"] as const;
@@ -149,11 +157,9 @@ export const ticketFindDuplicatesInputSchema = z.object({
     .transform((values) => normalizePolicyNumbers(values ?? [])),
   phone: optionalText(TICKET_TEXT_LIMITS.phone),
   contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
-  /** 编辑场景排除工单自身。 */
   excludeTicketId: z.string().min(1).optional(),
 });
 export type TicketFindDuplicatesInput = z.input<typeof ticketFindDuplicatesInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type TicketFindDuplicatesQuery = z.output<typeof ticketFindDuplicatesInputSchema>;
 
 /**
@@ -289,9 +295,7 @@ export const ticketAddCommentInputSchema = z.object({
   internalOnly: z.boolean().optional().default(false),
 });
 
-/** Form-side shape (before transforms) — what the follow-up form holds. */
 export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
-/** Server-side shape (after transforms) — what the service receives. */
 export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
 
 /**
@@ -307,7 +311,6 @@ export const ticketResolveInputSchema = z.object({
 });
 export type TicketResolveInput = z.infer<typeof ticketResolveInputSchema>;
 
-/** List sort keys: 创建时间 / 处理时限. */
 export const TICKET_SORT_FIELDS = ["createdAt", "dueAt"] as const;
 export const ticketSortFieldSchema = z.enum(TICKET_SORT_FIELDS);
 export type TicketSortField = (typeof TICKET_SORT_FIELDS)[number];
@@ -325,7 +328,6 @@ export type PolicyNumberStateFilter = (typeof POLICY_NUMBER_STATE_FILTERS)[numbe
  * a legacy single value (old `?source=manual` links) by wrapping it.
  */
 
-/** 多选筛选字段：数组为正，宽容接受旧链接的单值并包成单元素数组。 */
 const multiFilter = <T extends z.ZodTypeAny>(schema: T) =>
   z.array(schema).or(schema.transform((value): z.output<T>[] => [value]));
 
@@ -340,6 +342,7 @@ export const ticketListInputSchema = z.object({
   complaintLevel: legacyComplaintLevelInputSchema,
   /** 时效策略目录引用筛选；停用策略也可选，仍能查到其存量工单。 */
   slaPolicyId: multiFilter(z.string().min(1)).optional(),
+  kindId: multiFilter(z.string().min(1)).optional(),
   policyNumberState: multiFilter(policyNumberStateFilterSchema).optional(),
   /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */
   source: multiFilter(ticketSourceSchema).default([...DEFAULT_TICKET_SOURCE_FILTER]),
@@ -357,9 +360,7 @@ export const ticketListInputSchema = z.object({
   pageSize: z.number().int().min(1).max(100).default(20),
 });
 
-/** Client-side shape (before defaults/transforms). */
 export type TicketListInput = z.input<typeof ticketListInputSchema>;
-/** Server-side shape (after defaults/transforms) — what the service receives. */
 export type TicketListQuery = z.output<typeof ticketListInputSchema>;
 
 export const TICKET_EXPORT_FORMATS = ["xlsx", "csv"] as const;
@@ -386,7 +387,5 @@ export const ticketExportInputSchema = ticketListInputSchema
       .optional(),
   });
 
-/** Client-side shape (before defaults/transforms). */
 export type TicketExportInput = z.input<typeof ticketExportInputSchema>;
-/** Server-side shape (after defaults/transforms) — what the service receives. */
 export type TicketExportQuery = z.output<typeof ticketExportInputSchema>;

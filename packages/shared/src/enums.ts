@@ -42,7 +42,6 @@ export const PROCESS_LOG_ACTIONS = [
 export const processLogActionSchema = z.enum(PROCESS_LOG_ACTIONS);
 export type ProcessLogAction = (typeof PROCESS_LOG_ACTIONS)[number];
 
-/** Timeline display labels per action. */
 export const PROCESS_LOG_ACTION_LABELS: Record<ProcessLogAction, string> = {
   create: "创建工单",
   assign: "分配责任人",
@@ -58,7 +57,6 @@ export const SHIFTS = ["day", "night"] as const;
 export const shiftSchema = z.enum(SHIFTS);
 export type Shift = (typeof SHIFTS)[number];
 
-// SLA reminder-rule types used by the "my to-do" read-time predicates.
 export const REMINDER_RULE_TYPES = ["follow_up_checkpoint", "rolling_follow_up"] as const;
 export const reminderRuleTypeSchema = z.enum(REMINDER_RULE_TYPES);
 export type ReminderRuleType = (typeof REMINDER_RULE_TYPES)[number];
@@ -72,6 +70,7 @@ export const TICKET_SOURCES = [
   "community",
   "file_import",
   "external_channel",
+  "jb-insurance",
 ] as const;
 export const ticketSourceSchema = z.enum(TICKET_SOURCES);
 export type TicketSource = (typeof TICKET_SOURCES)[number];
@@ -86,6 +85,7 @@ export const DEFAULT_TICKET_SOURCE_FILTER: readonly TicketSource[] = [
   "manual",
   "community",
   "external_channel",
+  "jb-insurance",
 ];
 
 /**
@@ -98,6 +98,7 @@ export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   community: "社区",
   file_import: "文件导入",
   external_channel: "外部渠道",
+  "jb-insurance": "骏伯保险平台",
 };
 
 /**
@@ -126,7 +127,6 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
   urgent: "紧急",
 };
 
-// 保司侧是否核身.
 export const NUCLEAR_BODY_STATUSES = ["是", "否", "待核实"] as const;
 export const nuclearBodyStatusSchema = z.enum(NUCLEAR_BODY_STATUSES);
 export type NuclearBodyStatus = (typeof NUCLEAR_BODY_STATUSES)[number];

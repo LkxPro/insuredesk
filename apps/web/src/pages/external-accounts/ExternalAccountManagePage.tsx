@@ -23,24 +23,19 @@ import { ExternalAccountEditDialog } from "./ExternalAccountEditDialog";
 
 export type ExternalAccountRow = inferRouterOutputs<AppRouter>["externalAccount"]["list"][number];
 
-/** 预填概览：已配置值按序拼接；空 = 未配置。 */
 export function prefillSummary(prefill: ExternalAccountRow["prefill"]): string {
   return [
     prefill.channelName,
     prefill.project,
     prefill.brokerageEntity,
     prefill.paymentChannel,
-    prefill.userComplaintChannel,
-    prefill.complaintReceiveChannel,
+    prefill.userFeedbackChannelName,
+    prefill.feedbackReceiveChannelName,
   ]
     .filter((value) => value)
     .join(" · ");
 }
 
-/**
- * 外部账号管理 (external_account.manage 单点)：列表即全部——没有详情页，
- * 编辑弹窗直接吃列表行。账号的提交/留言/导出能力恒为一档，管理界面不出现"角色"。
- */
 export function ExternalAccountManagePage() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission("external_account.manage");

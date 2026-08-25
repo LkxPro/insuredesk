@@ -1,10 +1,6 @@
 import { TICKET_FIELDS, type TicketCreateFieldKey } from "@insuredesk/shared";
 import { Checkbox } from "@/components/ui/checkbox";
 
-/**
- * 建单必填字段清单：勾选列表按表单分组排列。
- * 必填集保存在 Role 上，建单时从会话载荷读取并动态生成校验。
- */
 export function RequiredFieldsChecklist({
   value,
   onChange,
@@ -60,8 +56,8 @@ export function RequiredFieldsChecklist({
             "paymentChannel",
             "internalOrderNumber",
             "policyNumbers",
-            "userComplaintChannel",
-            "complaintReceiveChannel",
+            "userFeedbackChannelId",
+            "feedbackReceiveChannelId",
           ].map((field) => (
             <div key={field} className="flex items-start gap-2 text-sm">
               <Checkbox

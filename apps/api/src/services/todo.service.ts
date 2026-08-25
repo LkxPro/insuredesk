@@ -40,7 +40,6 @@ interface TodoAlert {
   message: string;
 }
 
-/** One duration component set, floored to whole minutes: "35 小时 20 分钟". */
 function formatDuration(ms: number) {
   const totalMinutes = Math.floor(ms / MINUTE_MS);
   if (totalMinutes < 1) {
@@ -54,18 +53,12 @@ function formatDuration(ms: number) {
   return hours > 0 ? `${hours} 小时` : `${minutes} 分钟`;
 }
 
-/**
- * The viewer's 我的待办: every open ticket of theirs carrying at least one
- * active time alert, worst first. `count` (tickets, not alerts) feeds the
- * red-dot badge.
- */
+/** `count` (tickets, not alerts) feeds the red-dot badge. */
 export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: AuthenticatedUser) {
   const now = clock.now();
 
   const [tickets, policyRows] = await Promise.all([
     prisma.ticket.findMany({
-      // assigneeId pinned to the viewer + not-completed IS the todo universe
-      // (see module doc); soft-deleted tickets alert nobody.
       where: { deletedAt: null, assigneeId: viewer.id, status: { not: TicketStatus.Completed } },
       select: {
         id: true,
@@ -75,11 +68,11 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
         slaPolicy: { select: { name: true } },
         status: true,
         createdAt: true,
+        slaAnchorAt: true,
         dueAt: true,
         contactCount: true,
       },
     }),
-    // 停用策略退出读时判定：其工单走缺行降级路径（不抛错）
     prisma.slaPolicy.findMany({ where: { active: true } }),
   ]);
 
@@ -126,16 +119,17 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
       // 待首响: no first comment yet → in the todo from the moment it is
       // assigned, no trigger threshold. Strictly past firstResponseMinutes the
       // severity turns critical (超过 is strict, matching the overdue 已超过
-      // convention) — a color change only, never a count.
+      // convention) — a color change only, never a count. 退费单的
+      // slaAnchorAt = 平台 refundCreateTime：推送延迟计入等待。
       if (ticket.contactCount === 0) {
         const redLineMs =
           policy === undefined
             ? null
-            : ticket.createdAt.getTime() + policy.firstResponseMinutes * MINUTE_MS;
+            : ticket.slaAnchorAt.getTime() + policy.firstResponseMinutes * MINUTE_MS;
         alerts.push({
           type: "awaiting_first_response",
           severity: redLineMs !== null && now.getTime() > redLineMs ? "critical" : "warning",
-          message: `尚未首次跟进，已等待 ${formatDuration(now.getTime() - ticket.createdAt.getTime())}`,
+          message: `尚未首次跟进，已等待 ${formatDuration(now.getTime() - ticket.slaAnchorAt.getTime())}`,
         });
       }
 
@@ -143,8 +137,6 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
         alerts.push(...evaluateRule(rule, ticket, lastCommentAt.get(ticket.id) ?? null, now));
       }
 
-      // due_soon / overdue wear the shared display-status derivation as
-      // alerts — the one place the time predicates live.
       const displayStatus = deriveDisplayStatus(
         ticketStatusSchema.parse(ticket.status),
         ticket.dueAt,
@@ -197,7 +189,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
  */
 function evaluateRule(
   rule: ReminderRule,
-  ticket: { createdAt: Date; contactCount: number },
+  ticket: { slaAnchorAt: Date; contactCount: number },
   lastCommentAt: Date | null,
   now: Date,
 ): TodoAlert[] {
@@ -205,7 +197,7 @@ function evaluateRule(
     // In from (checkpoint − advance) inclusive, out at the checkpoint
     // exclusive — or the moment 累计 comments (contactCount, cumulative from
     // createdAt across assignees) reach requiredCount.
-    const checkpointMs = ticket.createdAt.getTime() + rule.checkpointHours * HOUR_MS;
+    const checkpointMs = ticket.slaAnchorAt.getTime() + rule.checkpointHours * HOUR_MS;
     const windowStartMs = checkpointMs - rule.advanceMinutes * MINUTE_MS;
     if (
       now.getTime() >= windowStartMs &&

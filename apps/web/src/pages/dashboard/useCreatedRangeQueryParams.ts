@@ -1,10 +1,6 @@
 import type { CreatedRangeQuery } from "@insuredesk/shared";
 import { useSearchParams } from "react-router";
 
-/**
- * createdFrom/createdTo query params for dashboard, mirroring ticket list.
- * Dirty params degrade one-sided: invalid param is treated as absent.
- */
 export function useCreatedRangeQueryParams(): [
   CreatedRangeQuery,
   (range: CreatedRangeQuery) => void,

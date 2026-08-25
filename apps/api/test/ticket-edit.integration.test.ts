@@ -7,17 +7,6 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests against a real Postgres: 编辑工单 (any status,
- * 已完结 included; status untouchable; 改时效策略引用重算 dueAt off
- * createdAt + re-stamps the SLA requirement strings; one `edit` ProcessLog
- * per effective edit with the field diff in remark、改策略引用时 from/to 存
- * 策略名快照) and 软删除
- * (deletedAt tombstone; default list, detail and every lifecycle action
- * exclude it; ProcessLogs survive; no restore). Runs through
- * appRouter.createCaller — the same procedure pipeline (permission middleware
- * included) the HTTP adapter uses.
- */
 describe("ticket edit + soft delete (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -43,7 +32,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** Caller with the given user identity and an explicit permission set. */
   function callerWith(user: User, roleName: string, permissions: Permission[]) {
     return appRouter.createCaller({
       traceId: "edit-test",
@@ -63,7 +51,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     });
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return callerWith(user, role.name, effectivePermissions(role));
   }
@@ -82,7 +69,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026071000829"],
-      userComplaintChannel: "400热线",
+      userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
       customerName: "张三",
       phone: "13800000004",
       customerRequest: "对理赔金额有异议，要求复核",
@@ -92,18 +79,15 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       allowDuplicate: true,
     }) satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** Full edit payload for the ticket: the unchanged base fields + overrides. */
   function editInput(ticketId: string, overrides: Partial<TicketEditInput> = {}): TicketEditInput {
     return { ticketId, ...baseInput(), ...overrides };
   }
 
-  /** A fresh unassigned ticket, created through the real create procedure. */
   async function createTicket(overrides: Partial<TicketCreateInput> = {}) {
     const created = await manager().ticket.create({ ...baseInput(), ...overrides });
     return created.id;
   }
 
-  /** A fresh completed ticket assigned to cs1. */
   async function createCompletedTicket() {
     const ticketId = await createTicket();
     await manager().ticket.assign({ ticketId, assigneeId: seeded.users.cs1.id });
@@ -129,14 +113,14 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
           hasContacted: true,
           priority: "high",
           contactTime: "2026-07-08T13:15:00.000Z",
-          complaintReceiveChannel: "监管转办",
+          feedbackReceiveChannelId: harness.feedbackReceiveChannelId("内部客服热线"),
         }),
       );
       expect(result).toMatchObject({ id: ticketId });
       expect([...result.changedFields].sort()).toEqual(
         [
           "customerName",
-          "complaintReceiveChannel",
+          "feedbackReceiveChannelId",
           "contactTime",
           "hasContacted",
           "internalOrderNumber",
@@ -150,10 +134,8 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.hasContacted).toBe(true);
       expect(detail.priority).toBe("high");
       expect(detail.contactTime).toBe("2026-07-08T13:15:00.000Z");
-      expect(detail.complaintReceiveChannel).toBe("监管转办");
+      expect(detail.feedbackReceiveChannel?.name).toBe("内部客服热线");
 
-      // 留痕: exactly one edit entry on top of create, remark carries the
-      // per-field diff in 描述表行序（＝表单顺序）, from/to stay empty
       expect(detail.processLogs.map((log) => log.action)).toEqual(["create", "edit"]);
       const editLog = detail.processLogs.at(-1);
       expect(editLog).toMatchObject({
@@ -164,7 +146,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       });
       expect(editLog?.remark).toBe(
         "内部订单号: （空）→IO-20260710-01；" +
-          "投诉信息接收渠道: （空）→监管转办；" +
+          "反馈信息接收渠道: （空）→内部客服热线；" +
           "客户姓名: 张三→张三丰；" +
           "客户曾进线: 否→是；" +
           "进线时间: （空）→2026-07-08T13:15:00.000Z；" +
@@ -172,28 +154,28 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       );
     });
 
-    it("clears 进线时间/投诉信息接收渠道 back to 未填写, logged as →（空）", async () => {
+    it("clears 进线时间/反馈信息接收渠道 back to 未填写, logged as →（空）", async () => {
       const ticketId = await createTicket({
         contactTime: "2026-07-08T13:15:00.000Z",
-        complaintReceiveChannel: "邮箱接收",
+        feedbackReceiveChannelId: harness.feedbackReceiveChannelId("（微信）私发"),
       });
 
       const result = await manager().ticket.edit(
         editInput(ticketId, {
           contactTime: null,
-          complaintReceiveChannel: null,
+          feedbackReceiveChannelId: null,
         }),
       );
       expect([...result.changedFields].sort()).toEqual(
-        ["complaintReceiveChannel", "contactTime"].sort(),
+        ["feedbackReceiveChannelId", "contactTime"].sort(),
       );
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.contactTime).toBeNull();
-      expect(detail.complaintReceiveChannel).toBeNull();
+      expect(detail.feedbackReceiveChannel).toBeNull();
       const editLog = detail.processLogs.at(-1);
       expect(editLog?.remark).toContain("进线时间: 2026-07-08T13:15:00.000Z→（空）");
-      expect(editLog?.remark).toContain("投诉信息接收渠道: 邮箱接收→（空）");
+      expect(editLog?.remark).toContain("反馈信息接收渠道: （微信）私发→（空）");
     });
 
     it("edits 保单号 multi values with space-joined remark; clearing logs （空）; 等值提交不留痕", async () => {
@@ -328,28 +310,25 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
   describe("改时效策略引用 = 改 SLA（重算 dueAt、切换要求、策略名快照留痕）", () => {
     it("特急→一般 on a 70h-old ticket: dueAt = createdAt + 48h, immediately overdue", async () => {
       const ticketId = await createTicket({ slaPolicyId: policyId("特急投诉") });
-      // 特急: no deadline at all
       expect((await manager().ticket.detail({ id: ticketId })).dueAt).toBeNull();
 
-      // Backdate the ticket well past 一般's 48h window
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
-      await prisma.ticket.update({ where: { id: ticketId }, data: { createdAt } });
+      await prisma.ticket.update({
+        where: { id: ticketId },
+        data: { createdAt, slaAnchorAt: createdAt },
+      });
 
       await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("一般投诉") }));
 
       const detail = await manager().ticket.detail({ id: ticketId });
-      // The creation formula re-runs off the UNCHANGED createdAt
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 48 * HOUR_MS).toISOString());
-      // 录入已超 48h → the ticket flips overdue the moment the edit commits
       expect(detail.displayStatus).toBe("overdue");
-      // The requirement strings re-stamp from the NEW policy
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
       expect(detail.followUpFrequency).toBe("24小时内累计跟进1次；48小时内累计跟进2次");
       const editLog = detail.processLogs.at(-1);
       expect(editLog?.remark).toContain("时效策略: 特急投诉→一般投诉");
       expect(editLog).toMatchObject({ from: "特急投诉", to: "一般投诉" });
 
-      // The overdue 口径 (list filter side) picks it up with no extra writes
       const { items } = await manager().ticket.list({
         status: "overdue",
         search: detail.workOrderNumber,
@@ -359,7 +338,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
 
     it("一般→特急 clears the deadline: dueAt null, never overdue again", async () => {
       const ticketId = await createTicket();
-      // Already past the 一般 deadline: backdate creation AND the stamped dueAt
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
       await prisma.ticket.update({
         where: { id: ticketId },
@@ -379,14 +357,16 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const rushId = policyId("加急投诉");
       const ticketId = await createTicket();
       const createdAt = new Date(Date.now() - 10 * HOUR_MS);
-      await prisma.ticket.update({ where: { id: ticketId }, data: { createdAt } });
+      await prisma.ticket.update({
+        where: { id: ticketId },
+        data: { createdAt, slaAnchorAt: createdAt },
+      });
 
       const result = await manager().ticket.edit(editInput(ticketId, { slaPolicyId: rushId }));
       expect(result.changedFields).toContain("slaPolicyId");
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.slaPolicyId).toBe(rushId);
-      // 锚定原始 createdAt：10h 前录入 + 72h → 仍有 62h
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 72 * HOUR_MS).toISOString());
       expect(detail.firstResponseRequirement).toBe("60分钟内完成首次响应");
       const editLog = detail.processLogs.at(-1);
@@ -420,7 +400,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         expect(detail.slaPolicyId).toBe(rushId);
         expect(detail.dueAt).toBe(before.dueAt);
 
-        // 新选停用策略：与缺行同错
         const otherId = await createTicket();
         await expect(
           manager().ticket.edit(editInput(otherId, { slaPolicyId: rushId })),
@@ -453,6 +432,35 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.followUpFrequency).toBe(before.followUpFrequency);
       expect(detail.firstResponseRequirement).toBe(before.firstResponseRequirement);
     });
+
+    it("重盖章锚定 slaAnchorAt 而非 createdAt（锚早于录入 12h 的退费口径）", async () => {
+      const ticketId = await createTicket();
+      const { createdAt: createdAtIso } = await manager().ticket.detail({ id: ticketId });
+      const anchor = new Date(new Date(createdAtIso).getTime() - 12 * HOUR_MS);
+      await prisma.ticket.update({ where: { id: ticketId }, data: { slaAnchorAt: anchor } });
+
+      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("加急投诉") }));
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.dueAt).toBe(new Date(anchor.getTime() + 72 * HOUR_MS).toISOString());
+    });
+
+    it("已完结工单改策略引用：只换引用，dueAt 与要求文本冻结不改写", async () => {
+      const ticketId = await createCompletedTicket();
+      const before = await manager().ticket.detail({ id: ticketId });
+      expect(before.dueAt).not.toBeNull();
+
+      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("加急投诉") }));
+
+      const detail = await manager().ticket.detail({ id: ticketId });
+      expect(detail.slaPolicyId).toBe(policyId("加急投诉"));
+      expect(detail.dueAt).toBe(before.dueAt);
+      expect(detail.followUpFrequency).toBe(before.followUpFrequency);
+      expect(detail.firstResponseRequirement).toBe(before.firstResponseRequirement);
+      const editLog = detail.processLogs.at(-1);
+      expect(editLog?.action).toBe("edit");
+      expect(editLog).toMatchObject({ from: "一般投诉", to: "加急投诉" });
+    });
   });
 
   describe("软删除", () => {
@@ -463,12 +471,10 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const result = await admin().ticket.delete({ ticketId });
       expect(result).toEqual({ id: ticketId, workOrderNumber });
 
-      // Tombstone, not a physical delete — row and its logs stay 可追溯
       const row = await prisma.ticket.findUnique({ where: { id: ticketId } });
       expect(row?.deletedAt).toBeInstanceOf(Date);
       expect(await prisma.processLog.count({ where: { ticketId } })).toBeGreaterThan(0);
 
-      // Default list and detail exclude it (一切默认读已过滤 deletedAt)
       const { items, total } = await admin().ticket.list({ search: workOrderNumber });
       expect(items).toEqual([]);
       expect(total).toBe(0);

@@ -17,25 +17,24 @@ function factoryDefaults(name: string) {
   return defaults;
 }
 
-/**
- * Acceptance tests against a real Postgres: the SLA 策略 editor is
- * admin-only (sla.view / sla.edit), a saved policy takes effect immediately —
- * the next created ticket stamps dueAt from the new overdueHours and the next
- * 待办 evaluation judges by the new rules — while existing tickets keep their
- * dueAt (re-stamped only on a 时效策略引用 edit), and the shared
- * Zod contract rejects malformed rules at the API boundary.
- */
 describe("SLA 策略配置 (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let seeded: IntegrationHarness["seeded"];
   let policyId: (name: string) => string;
+  let complaintKindId: string;
+  let refundKindId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
     prisma = harness.prisma;
     seeded = harness.seeded;
     policyId = harness.slaPolicyId;
+    complaintKindId = (await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } }))
+      .id;
+    refundKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
+    ).id;
   }, 180_000);
 
   afterAll(async () => {
@@ -57,7 +56,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     };
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return appRouter.createCaller({
       traceId: "sla-test",
@@ -78,7 +76,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["SLA2026071000001"],
-      userComplaintChannel: "400热线",
+      userFeedbackChannelId: null,
       customerName: "王小明",
       phone: "13800000000",
       customerRequest: "对保费收取金额有异议，要求核实并回复",
@@ -88,7 +86,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       allowDuplicate: true,
     }) satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** dueAt − createdAt of a detail read, in whole hours. */
   function dueOffsetHours(detail: { createdAt: string; dueAt: string | null }): number {
     expect(detail.dueAt).not.toBeNull();
     return (
@@ -96,11 +93,14 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     );
   }
 
+  async function groupPolicies(kindId: string) {
+    return (await admin().sla.list()).filter((policy) => policy.kindId === kindId);
+  }
+
   it("registers sla.view / sla.edit and factory-grants them to 管理员 only", () => {
     // 管理员动态持有全量权限点,两个点进 ALL_PERMISSIONS 即归管理员
     expect(ALL_PERMISSIONS).toContain("sla.view");
     expect(ALL_PERMISSIONS).toContain("sla.edit");
-    // 访问与编辑限管理员: no other factory role holds either
     for (const role of [seeded.roles.csManager, seeded.roles.frontline, seeded.roles.readOnly]) {
       expect(role.permissions).not.toContain("sla.view");
       expect(role.permissions).not.toContain("sla.edit");
@@ -125,6 +125,14 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       expect(policy.id).toBeTruthy();
       expect(policy.active).toBe(true);
       expect(policy.description).toBeTruthy();
+    }
+  });
+
+  it("sla.list 行携带种类组（kindId/kindName），存量四条归投诉组", async () => {
+    const policies = await admin().sla.list();
+    for (const policy of policies) {
+      expect(policy.kindId).toBe(complaintKindId);
+      expect(policy.kindName).toBe("投诉");
     }
   });
 
@@ -170,11 +178,9 @@ describe("SLA 策略配置 (Testcontainers)", () => {
         reminderRules: factoryDefaults("一般投诉").reminderRules,
       });
 
-      // 存量工单 dueAt 不变 — dueAt 建单一次算定
       const existingAfter = await manager().ticket.detail({ id: existing.id });
       expect(existingAfter.dueAt).toBe(existingBefore.dueAt);
 
-      // 此后新建单按新 overdueHours 计算, and stamps the new 首响要求 text
       const created = await manager().ticket.create(baseInput());
       const detail = await manager().ticket.detail({ id: created.id });
       expect(dueOffsetHours(detail)).toBe(24);
@@ -249,7 +255,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
 
       const after = await listMyTodos({ prisma, clock }, viewer);
       const afterAlerts = after.items.find((item) => item.ticketId === created.id)?.alerts ?? [];
-      // Same ticket, same instant: the 2h rule now judges the 3h gap overdue
       expect(afterAlerts.some((alert) => alert.type === "rolling_follow_up")).toBe(true);
     });
   });
@@ -328,7 +333,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
   });
 
   describe("时效策略目录 CRUD（实体化）", () => {
-    const newPolicyInput = {
+    const newPolicyInput = () => ({
       name: "VIP专线",
       description: "大客户专线：24 小时处理时限，首响 30 分钟。",
       firstResponseMinutes: 30,
@@ -341,17 +346,20 @@ describe("SLA 策略配置 (Testcontainers)", () => {
           advanceMinutes: 60,
         },
       ],
-    };
+      kindId: complaintKindId,
+    });
 
-    it("create 追加新策略：sortOrder 落末尾、恒启用", async () => {
-      const created = await admin().sla.create(newPolicyInput);
+    it("create 追加新策略：sortOrder 组内 max+1、恒启用", async () => {
+      const created = await admin().sla.create(newPolicyInput());
       expect(created).toMatchObject({
         name: "VIP专线",
-        description: newPolicyInput.description,
+        description: newPolicyInput().description,
         sortOrder: 5,
         active: true,
         firstResponseMinutes: 30,
         overdueHours: 24,
+        kindId: complaintKindId,
+        kindName: "投诉",
       });
 
       const listed = await admin().sla.list();
@@ -359,34 +367,50 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       expect(listed.at(-1)?.name).toBe("VIP专线");
     });
 
+    it("create 落组即组内 max+1：退费组首条从 1 起；未知 kindId 即拒绝", async () => {
+      const refund = await admin().sla.create({
+        ...newPolicyInput(),
+        name: "退费测试策略",
+        kindId: refundKindId,
+      });
+      expect(refund.sortOrder).toBe(1);
+      expect(refund.kindId).toBe(refundKindId);
+      expect(refund.kindName).toBe("退费异常");
+
+      const listed = await admin().sla.list();
+      expect(listed.at(-1)?.name).toBe("退费测试策略");
+
+      await expect(
+        admin().sla.create({ ...newPolicyInput(), name: "无的放矢策略", kindId: "no-such-kind" }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
     it("create 名称全表唯一：撞启用行与撞停用行同报 CONFLICT", async () => {
       await expect(
-        admin().sla.create({ ...newPolicyInput, name: "一般投诉" }),
+        admin().sla.create({ ...newPolicyInput(), name: "一般投诉" }),
       ).rejects.toMatchObject({ code: "CONFLICT" });
 
-      const retired = await admin().sla.create({ ...newPolicyInput, name: "已退役策略" });
+      const retired = await admin().sla.create({ ...newPolicyInput(), name: "已退役策略" });
       await admin().sla.setActive({ id: retired.id, active: false });
       await expect(
-        admin().sla.create({ ...newPolicyInput, name: "已退役策略" }),
+        admin().sla.create({ ...newPolicyInput(), name: "已退役策略" }),
       ).rejects.toMatchObject({ code: "CONFLICT" });
-      // 复活后撞名判定不变
       await admin().sla.setActive({ id: retired.id, active: true });
     });
 
     it("create 拒绝 trim 后为空的名称", async () => {
-      await expect(admin().sla.create({ ...newPolicyInput, name: "   " })).rejects.toMatchObject({
+      await expect(admin().sla.create({ ...newPolicyInput(), name: "   " })).rejects.toMatchObject({
         code: "BAD_REQUEST",
       });
     });
 
     it("update 按 id 分项更新：改名/描述/规则；缺席字段保持原值", async () => {
-      const created = await admin().sla.create({ ...newPolicyInput, name: "银卡专线" });
+      const created = await admin().sla.create({ ...newPolicyInput(), name: "银卡专线" });
       const renamed = await admin().sla.update({ id: created.id, name: "金卡专线" });
       expect(renamed.name).toBe("金卡专线");
-      // 缺席字段原样保留
       expect(renamed.firstResponseMinutes).toBe(30);
       expect(renamed.overdueHours).toBe(24);
-      expect(renamed.description).toBe(newPolicyInput.description);
+      expect(renamed.description).toBe(newPolicyInput().description);
 
       const edited = await admin().sla.update({
         id: created.id,
@@ -400,9 +424,9 @@ describe("SLA 策略配置 (Testcontainers)", () => {
     });
 
     it("update 改名撞任何行（含停用行）即 CONFLICT；未知 id NOT_FOUND", async () => {
-      const retiring = await admin().sla.create({ ...newPolicyInput, name: "待停用策略" });
+      const retiring = await admin().sla.create({ ...newPolicyInput(), name: "待停用策略" });
       await admin().sla.setActive({ id: retiring.id, active: false });
-      const other = await admin().sla.create({ ...newPolicyInput, name: "另一专线" });
+      const other = await admin().sla.create({ ...newPolicyInput(), name: "另一专线" });
       await expect(admin().sla.update({ id: other.id, name: "待停用策略" })).rejects.toMatchObject({
         code: "CONFLICT",
       });
@@ -411,14 +435,21 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
-    it("sort 整组重排：顺序即新 sortOrder，list/options 随之；清单须恰好全覆盖", async () => {
-      const before = await admin().sla.list();
+    it("sort 组内重排：顺序即新组内 sortOrder，list/options 随之；清单须恰好全覆盖本组", async () => {
+      const before = await groupPolicies(complaintKindId);
       const reversed = [...before].reverse();
-      const sorted = await admin().sla.sort({ policyIds: reversed.map((policy) => policy.id) });
-      expect(sorted.map((policy) => policy.id)).toEqual(reversed.map((policy) => policy.id));
-      expect(sorted.map((policy) => policy.sortOrder)).toEqual(
-        reversed.map((_, index) => index + 1),
-      );
+      const sorted = await admin().sla.sort({
+        kindId: complaintKindId,
+        policyIds: reversed.map((policy) => policy.id),
+      });
+      expect(
+        sorted.filter((policy) => policy.kindId === complaintKindId).map((policy) => policy.id),
+      ).toEqual(reversed.map((policy) => policy.id));
+      expect(
+        sorted
+          .filter((policy) => policy.kindId === complaintKindId)
+          .map((policy) => policy.sortOrder),
+      ).toEqual(reversed.map((_, index) => index + 1));
 
       const options = await frontline().sla.options();
       expect(options.map((option) => option.id)).toEqual(
@@ -426,14 +457,21 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       );
 
       await expect(
-        admin().sla.sort({ policyIds: before.slice(1).map((policy) => policy.id) }),
+        admin().sla.sort({
+          kindId: complaintKindId,
+          policyIds: before.slice(1).map((policy) => policy.id),
+        }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
       await expect(
-        admin().sla.sort({ policyIds: [...before.map((policy) => policy.id), "no-such-id"] }),
+        admin().sla.sort({
+          kindId: complaintKindId,
+          policyIds: [...before.map((policy) => policy.id), "no-such-id"],
+        }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
       // 全覆盖但含重复 id：集合判定之外还须拒绝，否则 sortOrder 出缺口
       await expect(
         admin().sla.sort({
+          kindId: complaintKindId,
           policyIds: [...before.map((policy) => policy.id), before[0]?.id ?? ""],
         }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -450,7 +488,48 @@ describe("SLA 策略配置 (Testcontainers)", () => {
           .map((policy) => policy.id),
         ...before.filter((policy) => !isFactory(policy)).map((policy) => policy.id),
       ];
-      await admin().sla.sort({ policyIds: factoryIds });
+      await admin().sla.sort({ kindId: complaintKindId, policyIds: factoryIds });
+    });
+
+    it("sort 组间隔离：跨组混入/只排他组 id 均被拒，重排不改他组 sortOrder", async () => {
+      const refundGroup = await groupPolicies(refundKindId);
+      const complaintGroup = await groupPolicies(complaintKindId);
+      expect(refundGroup.length).toBeGreaterThan(0);
+
+      await expect(
+        admin().sla.sort({
+          kindId: complaintKindId,
+          policyIds: [
+            ...complaintGroup.slice(1).map((policy) => policy.id),
+            refundGroup[0]?.id ?? "",
+          ],
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(
+        admin().sla.sort({
+          kindId: complaintKindId,
+          policyIds: refundGroup.map((policy) => policy.id),
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      const complaintBefore = new Map(
+        complaintGroup.map((policy) => [policy.id, policy.sortOrder]),
+      );
+      const reordered = await admin().sla.sort({
+        kindId: refundKindId,
+        policyIds: [...refundGroup].reverse().map((policy) => policy.id),
+      });
+      expect(
+        reordered.filter((policy) => policy.kindId === refundKindId).map((policy) => policy.id),
+      ).toEqual([...refundGroup].reverse().map((policy) => policy.id));
+      expect(
+        reordered
+          .filter((policy) => policy.kindId === refundKindId)
+          .map((policy) => policy.sortOrder),
+      ).toEqual(refundGroup.map((_, index) => index + 1));
+      for (const policy of reordered.filter((row) => row.kindId === complaintKindId)) {
+        expect(policy.sortOrder).toBe(complaintBefore.get(policy.id));
+      }
     });
 
     it("setActive 停用即退出 options，复活即回归；重复表态幂等", async () => {
@@ -458,7 +537,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       const deactivated = await admin().sla.setActive({ id: victimId, active: false });
       expect(deactivated.active).toBe(false);
       expect((await frontline().sla.options()).map((option) => option.id)).not.toContain(victimId);
-      // 完整 list 仍含停用行
       expect((await admin().sla.list()).find((policy) => policy.id === victimId)?.active).toBe(
         false,
       );
@@ -474,13 +552,15 @@ describe("SLA 策略配置 (Testcontainers)", () => {
 
     it("新 mutations 均需 sla.edit（客服主管/一线/只读一律 FORBIDDEN）", async () => {
       for (const caller of [manager(), frontline(), observer()]) {
-        await expect(caller.sla.create(newPolicyInput)).rejects.toMatchObject({
+        await expect(caller.sla.create(newPolicyInput())).rejects.toMatchObject({
           code: "FORBIDDEN",
         });
         await expect(caller.sla.update({ id: "any", name: "x" })).rejects.toMatchObject({
           code: "FORBIDDEN",
         });
-        await expect(caller.sla.sort({ policyIds: ["any"] })).rejects.toMatchObject({
+        await expect(
+          caller.sla.sort({ kindId: complaintKindId, policyIds: ["any"] }),
+        ).rejects.toMatchObject({
           code: "FORBIDDEN",
         });
         await expect(caller.sla.setActive({ id: "any", active: false })).rejects.toMatchObject({
@@ -501,12 +581,31 @@ describe("SLA 策略配置 (Testcontainers)", () => {
 
       const options = await observer().sla.options();
       const names = options.map((option) => option.name);
-      // 出厂四条按目录序打头，新建启用策略随其后；停用行不出现
       expect(names.slice(0, 4)).toEqual(FACTORY_POLICY_NAMES);
       expect(names).toContain("VIP专线");
       expect(names).not.toContain("待停用策略");
-      // 只载 id/name/description
       expect(Object.keys(options[0] ?? {}).sort()).toEqual(["description", "id", "name"]);
+    });
+
+    it("按 kindKey 过滤：投诉组只见投诉策略，退费组只见退费策略；未知 key 报错", async () => {
+      const refundGroup = await groupPolicies(refundKindId);
+      expect(refundGroup.length).toBeGreaterThan(0);
+
+      const complaint = await observer().sla.options({ kindKey: "complaint" });
+      const complaintIds = new Set(complaint.map((option) => option.id));
+      expect(complaint.length).toBeGreaterThan(0);
+      for (const id of refundGroup.map((policy) => policy.id)) {
+        expect(complaintIds.has(id)).toBe(false);
+      }
+
+      const refund = await observer().sla.options({ kindKey: "refund_exception" });
+      expect(refund.map((option) => option.id)).toEqual(
+        refundGroup.filter((policy) => policy.active).map((policy) => policy.id),
+      );
+
+      await expect(observer().sla.options({ kindKey: "no-such-kind" })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
     });
   });
 
@@ -538,6 +637,44 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       } finally {
         await admin().sla.setActive({ id: victimId, active: true });
       }
+    });
+
+    it("跨组绑定双执法：投诉单建单/编辑绑退费组策略被拒，反向亦然", async () => {
+      const refundPolicy = (await groupPolicies(refundKindId))[0];
+      expect(refundPolicy).toBeDefined();
+
+      await expect(
+        manager().ticket.create({ ...baseInput(), slaPolicyId: refundPolicy?.id ?? "" }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      const created = await manager().ticket.create(baseInput());
+      await expect(
+        manager().ticket.edit({
+          ...baseInput(),
+          ticketId: created.id,
+          slaPolicyId: refundPolicy?.id ?? "",
+        }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      await prisma.ticket.update({
+        where: { id: created.id },
+        data: { kindId: refundKindId, slaPolicyId: null },
+      });
+      await expect(
+        manager().ticket.edit({
+          ...baseInput(),
+          ticketId: created.id,
+          slaPolicyId: policyId("一般投诉"),
+        }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      await manager().ticket.edit({
+        ...baseInput(),
+        ticketId: created.id,
+        slaPolicyId: refundPolicy?.id ?? "",
+      });
+      const detail = await manager().ticket.detail({ id: created.id });
+      expect(detail.slaPolicyId).toBe(refundPolicy?.id);
     });
 
     it("旧 complaintLevel 输入返回明确校验错误（建单/编辑同口径）", async () => {

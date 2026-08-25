@@ -4,28 +4,6 @@ import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
-/**
- * 分栏详情的右栏：ProcessLog 聊天式时间线（可滚动）+ 钉在底部的 composer。
- * 内部（添加跟进）与外部（添加留言）共用本栏：log 形状已归一（外部把
- * createdAt 映射成 at 传入），composer 由调用方按门控决定给不给。
- *
- * 渲染规则：
- * - 沟通条目（external_note/comment）是气泡：颜色区分类型（蓝=留言，琥珀=
- *   跟进），左右区分谁发的——incomingActions 落左侧带头像，让"对方在工单上
- *   有更新"一眼可见。内部默认客户留言是对方；外部端传 ["comment"]（客服跟进
- *   是对方）
- * - 完结是 emerald 细线里程碑：一行装齐 状态值·人·时间，备注裸文跟随。完结
- *   状态取工单当前目录名（resolve 一生一次，与工单恒 1:1）；目录改名会回映
- *   到历史留痕的显示，与详情左栏口径一致
- * - 编辑行点开看逐字段 旧值→新值；其余系统动作（创建/分配/上传）收成居中分隔细线
- * - status_change 不渲染：流转已由完结里程碑与沟通气泡讲完，独立一行是噪音
- *
- * 布局契约：本栏自身撑满详情区高度，只有时间线那一段滚动，composer 始终在
- * 视口内。时间线默认贴底（最新即所见，换单也回到底部）；新增条目时用户若
- * 翻上去则不拽回，改弹「↓ 新记录」跳转钮。
- */
-
-/** 时间线条目的归一形状：内外两端的 ProcessLog wire shape 都能映射进来。 */
 export type TimelineLog = {
   id: string;
   action: ProcessLogAction;
@@ -82,10 +60,6 @@ function parseEditRemark(remark: string): EditDiffSegment[] {
     });
 }
 
-/**
- * 贴底滚动：首屏与换单（首条 id 变化）都滚到底；新增条目时若本就在底部附近
- * 则跟着滚到底，用户翻上去时不拽回，改弹跳转钮。
- */
 function useStickToBottom(logs: readonly TimelineLog[]) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
@@ -145,7 +119,6 @@ export function TicketTimelineColumn({
   completionStatus,
 }: {
   logs: readonly TimelineLog[];
-  /** 钉底的输入区；undefined = 本单不接受新记录（如已完结）。 */
   composer?: ReactNode;
   /** 从当前查看者视角"对方发出"的 action。 */
   incomingActions?: readonly ProcessLogAction[];

@@ -15,7 +15,6 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
  * there is no time limit and no restore this phase.
  */
 
-/** Batch invisible to the actor (scope) or plain missing. */
 export class ImportBatchNotFoundError extends Error {
   constructor() {
     super("导入批次不存在或无权查看");
@@ -23,7 +22,6 @@ export class ImportBatchNotFoundError extends Error {
   }
 }
 
-/** 已撤销批次是终态，不可再次撤销。 */
 export class ImportBatchAlreadyRevokedError extends Error {
   constructor() {
     super("该批次已撤销，不可再次撤销");
@@ -31,7 +29,6 @@ export class ImportBatchAlreadyRevokedError extends Error {
   }
 }
 
-/** Batch has processed tickets; carries the count the UI reports. */
 export class ImportBatchLockedError extends Error {
   readonly processedCount: number;
 

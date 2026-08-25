@@ -4,12 +4,6 @@ import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { DateTimePicker } from "./DateTimePicker";
 
-/**
- * The shared 日期时间选择器: a clear affordance appears only when the field
- * holds a value and returns it to the unfilled state ("") — the gap #62
- * closes, since a filled time previously had no way back to 未填写.
- */
-
 function Harness({ initial }: { initial: string }) {
   const [value, setValue] = useState(initial);
   return (

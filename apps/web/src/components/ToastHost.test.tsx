@@ -4,13 +4,6 @@ import { ToastHost } from "@/components/ToastHost";
 import { toast } from "@/lib/toast";
 import { toastStore } from "@/lib/toast-store";
 
-/**
- * 胶囊队列轻提示：顶部居中、逐条带关闭键；默认 4 秒自动消失（push 即启动
- * 各自计时），duration: "sticky" 或自定义毫秒数可覆盖；多条折叠为「N 条」
- * 徽标可展开；带 onClick 的条目点击本体触发并随之关闭。
- * Store 是全局单例，用例间清空（afterEach 同时清掉未燃的计时器）。
- */
-
 afterEach(() => {
   toastStore.clear();
 });
@@ -38,7 +31,6 @@ describe("ToastHost", () => {
     fireEvent.click(screen.getByRole("button", { name: "关闭通知" }));
     expect(screen.queryByText("第二条")).not.toBeInTheDocument();
 
-    // 关掉最新后露出上一条
     expect(await screen.findByText("第一条")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭通知" }));
     expect(screen.queryByText("第一条")).not.toBeInTheDocument();
@@ -50,7 +42,6 @@ describe("ToastHost", () => {
     toast.warning("中间的");
     toast.error("最新的");
 
-    // 胶囊只显示最新一条，其余折叠进徽标
     expect(await screen.findByText("最新的")).toBeInTheDocument();
     expect(screen.queryByText("最早的")).not.toBeInTheDocument();
 
@@ -59,11 +50,9 @@ describe("ToastHost", () => {
     expect(within(queue).getByText("最早的")).toBeInTheDocument();
     expect(within(queue).getByText("中间的")).toBeInTheDocument();
 
-    // 展开态逐条关闭：第一行是最新一条
     fireEvent.click(within(queue).getAllByRole("button", { name: "关闭通知" })[0] as HTMLElement);
     expect(within(queue).queryByText("最新的")).not.toBeInTheDocument();
     expect(within(queue).getByText("中间的")).toBeInTheDocument();
-    // 关掉一条后徽标计数随之收缩
     expect(screen.getByRole("button", { name: /2 条/ })).toBeInTheDocument();
   });
 
@@ -161,7 +150,6 @@ describe("ToastHost 自动消失", () => {
       vi.advanceTimersByTime(2_000);
     });
 
-    // 先入队的到点消失（即使一直折叠在徽标里），后入队的还剩 2 秒
     expect(screen.queryByText("先入队的")).not.toBeInTheDocument();
     expect(screen.getByText("后入队的")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /条/ })).not.toBeInTheDocument();

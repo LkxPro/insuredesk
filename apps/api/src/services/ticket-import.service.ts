@@ -8,6 +8,7 @@ import {
   type TicketCreateData,
   type TicketFieldDescriptor,
   type TicketImportRowError,
+  TicketKindKey,
   TicketStatus,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
@@ -18,6 +19,7 @@ import {
   resolveCatalogNameRef,
 } from "./dictionary-catalog.service.ts";
 import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service.ts";
+import { requireTicketKindId } from "./ticket-kind.service.ts";
 import { resolveTimeZone } from "./time-zone.ts";
 
 /**
@@ -27,7 +29,6 @@ import { resolveTimeZone } from "./time-zone.ts";
  * fixes the original file and re-uploads instead of diffing what landed.
  */
 
-/** Carrier for the 行号/列名/原因 list; the route serializes it as the 400 body. */
 export class TicketImportValidationError extends Error {
   readonly rowErrors: TicketImportRowError[];
 
@@ -42,7 +43,6 @@ function fileError(message: string): TicketImportValidationError {
   return new TicketImportValidationError([{ row: null, column: null, message }]);
 }
 
-/** A cell is either its trimmed text or a native Excel date. */
 type ImportCellValue = string | Date;
 
 export interface TicketImportSheetRow {
@@ -83,10 +83,12 @@ function cellToRaw(cell: ExcelJS.Cell): ImportCellValue {
   return String(value).trim();
 }
 
-/**
- * Load the 工单 sheet and gate the file shape: template headers verbatim,
- * blank rows skipped, ≥1 and ≤TICKET_IMPORT_ROW_LIMIT data rows.
- */
+// 老列头兼容：改名前下载的存量模板仍按别名解析（外部约束，模板已散发）。
+const LEGACY_IMPORT_HEADER_ALIASES: Record<string, string> = {
+  用户投诉渠道: "用户反馈渠道",
+  投诉信息接收渠道: "反馈信息接收渠道",
+};
+
 export async function readTicketImportSheet(body: Buffer): Promise<TicketImportSheetRow[]> {
   const workbook = new ExcelJS.Workbook();
   try {
@@ -103,7 +105,11 @@ export async function readTicketImportSheet(body: Buffer): Promise<TicketImportS
   const headerCount = Math.max(TICKET_IMPORT_HEADERS.length, headerRow.cellCount);
   for (let column = 1; column <= headerCount; column += 1) {
     const expected = TICKET_IMPORT_HEADERS[column - 1] ?? "";
-    const actual = cellToRaw(headerRow.getCell(column));
+    const rawActual = cellToRaw(headerRow.getCell(column));
+    const actual =
+      typeof rawActual === "string"
+        ? (LEGACY_IMPORT_HEADER_ALIASES[rawActual] ?? rawActual)
+        : rawActual;
     if (actual !== expected) {
       throw fileError(
         `表头与模板不符（第 ${column} 列应为「${expected}」）：请重新下载模板并按其填写`,
@@ -134,16 +140,14 @@ export async function readTicketImportSheet(body: Buffer): Promise<TicketImportS
   return rows;
 }
 
-// ---------------------------------------------------------------------------
-// Per-row validation — same semantics as the manual creation contract
-// ---------------------------------------------------------------------------
-
 /** Catalog name indexes (the file carries names, not ids); the module owns the missing/disabled 判定. */
 export interface TicketImportCatalogs {
   channels: CatalogNameIndex;
   categories: CatalogNameIndex;
   completionStatuses: CatalogNameIndex;
   slaPolicies: CatalogNameIndex;
+  userFeedbackChannels: CatalogNameIndex;
+  feedbackReceiveChannels: CatalogNameIndex;
 }
 
 /**
@@ -158,7 +162,6 @@ export type TicketImportRowData = TicketCreateData & {
 
 type WallClock = { year: number; month: number; day: number; hour: number; minute: number };
 
-/** The zone's UTC offset (ms) at the given timestamp, via Intl — no tz library. */
 function zoneOffsetMs(timestamp: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -200,7 +203,6 @@ export function wallClockToInstant(wall: WallClock, timeZone: string): Date {
 // 一律拒绝，避免静默丢弃秒数等歧义。
 const WALL_CLOCK_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
 
-/** "yyyy-MM-dd HH:mm" (or a native date cell's UTC fields) → wall clock; null = unparseable. */
 function toWallClock(raw: ImportCellValue): WallClock | null {
   if (raw instanceof Date) {
     return {
@@ -323,6 +325,8 @@ const CATALOG_INDEXES: Record<
   category: (catalogs) => catalogs.categories,
   completionStatus: (catalogs) => catalogs.completionStatuses,
   slaPolicy: (catalogs) => catalogs.slaPolicies,
+  userFeedbackChannel: (catalogs) => catalogs.userFeedbackChannels,
+  feedbackReceiveChannel: (catalogs) => catalogs.feedbackReceiveChannels,
 };
 
 function catalogColumn(
@@ -351,10 +355,6 @@ function catalogColumn(
   };
 }
 
-/**
- * Wall-clock date column （反馈时间/进线时间）: blank → null, a native date cell
- * or exact "yyyy-MM-dd HH:mm" text → the instant in the upload's zone.
- */
 function wallClockColumn(
   descriptor: Extract<TicketFieldDescriptor, { type: "date" }>,
 ): ImportColumnSpec {
@@ -487,13 +487,8 @@ export function validateTicketImportRows(
   return { tickets, errors };
 }
 
-// ---------------------------------------------------------------------------
-// Transactional creation — same construction as manual creation
-// ---------------------------------------------------------------------------
-
 export interface TicketImportInput {
   body: Buffer;
-  /** Uploaded filename, kept on the batch for human recognition. */
   filename: string;
   /** IANA zone the file's wall-clock dates are written in (symmetric with export). */
   timeZone?: string;
@@ -529,11 +524,21 @@ export async function importTickets(
 
   return prisma.$transaction(
     async (tx) => {
-      const [channels, categories, completionStatuses, slaPolicies] = await Promise.all([
+      const kindId = await requireTicketKindId(tx, TicketKindKey.Complaint);
+      const [
+        channels,
+        categories,
+        completionStatuses,
+        slaPolicies,
+        userFeedbackChannels,
+        feedbackReceiveChannels,
+      ] = await Promise.all([
         tx.channel.findMany(),
         tx.ticketCategory.findMany(),
         tx.completionStatus.findMany(),
-        tx.slaPolicy.findMany(),
+        tx.slaPolicy.findMany({ where: { kindId } }),
+        tx.userFeedbackChannel.findMany(),
+        tx.feedbackReceiveChannel.findMany(),
       ]);
       const { tickets, errors } = validateTicketImportRows(
         rows,
@@ -542,6 +547,8 @@ export async function importTickets(
           categories: buildCatalogNameIndex(categories),
           completionStatuses: buildCatalogNameIndex(completionStatuses),
           slaPolicies: buildCatalogNameIndex(slaPolicies),
+          userFeedbackChannels: buildCatalogNameIndex(userFeedbackChannels),
+          feedbackReceiveChannels: buildCatalogNameIndex(feedbackReceiveChannels),
         },
         input.timeZone,
       );
@@ -553,7 +560,10 @@ export async function importTickets(
       const slaStamps = new Map<string | null, Awaited<ReturnType<typeof computeSlaStamp>>>();
       for (const ticket of tickets) {
         if (!slaStamps.has(ticket.slaPolicyId)) {
-          slaStamps.set(ticket.slaPolicyId, await computeSlaStamp(tx, ticket.slaPolicyId, now));
+          slaStamps.set(
+            ticket.slaPolicyId,
+            await computeSlaStamp(tx, ticket.slaPolicyId, now, kindId),
+          );
         }
       }
 
@@ -572,6 +582,8 @@ export async function importTickets(
           feedbackTime: toDateOrNull(ticket.feedbackTime),
           contactTime: toDateOrNull(ticket.contactTime),
           createdAt: now,
+          slaAnchorAt: now,
+          kindId,
           source: "file_import",
           creatorId: importer.id,
           importBatchId: batch.id,

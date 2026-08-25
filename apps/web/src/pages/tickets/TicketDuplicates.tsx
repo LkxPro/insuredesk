@@ -205,7 +205,6 @@ export function DuplicateConfirmDialog({
   );
 }
 
-/** 摘要保持裸文本：不加「完结状态/最新记录」前缀——状态徽标已表达。 */
 export function DuplicateTicketsBanner({ ticket }: { ticket: TicketDetail }) {
   const queryable =
     ticket.policyNumbers.length > 0 || ticket.phone !== null || ticket.contactPhone !== null;

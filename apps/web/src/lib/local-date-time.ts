@@ -52,7 +52,6 @@ export function isPartialLocalDateTime(value: string): boolean {
   return value !== "" && !isCompleteLocalDateTime(value);
 }
 
-/** Complete local minute → absolute instant; an entirely empty field stays unset. */
 export function localDateTimeToIso(value: string): string | null {
   if (!value) return null;
   if (!isCompleteLocalDateTime(value)) {

@@ -61,6 +61,10 @@ export interface IntegrationHarness {
   channelId(name: string): string;
   /** 类别名 → id；需声明 seed 集 "categories"。 */
   categoryId(name: string): string;
+  /** 用户反馈渠道名 → id；目录行由迁移插入，无需声明 seed 集。 */
+  userFeedbackChannelId(name: string): string;
+  /** 反馈信息接收渠道名 → id；目录行由迁移插入，无需声明 seed 集。 */
+  feedbackReceiveChannelId(name: string): string;
   /** 与真实登录同口径的身份（系统角色展开全量权限），可显式覆盖权限集。 */
   authUserFor(user: User, role: Role, permissions?: Permission[]): AuthenticatedUser;
   callerFor(user: User, role: Role): Caller;
@@ -141,6 +145,9 @@ export async function startIntegrationHarness(
     }
     const channels = selected.has("channels") ? await seedChannels(prisma) : undefined;
     const categories = selected.has("categories") ? await seedTicketCategories(prisma) : undefined;
+    // 两个投诉渠道目录无应用层种子：目录行随迁移落库，直接读
+    const userFeedbackChannels = await prisma.userFeedbackChannel.findMany();
+    const feedbackReceiveChannels = await prisma.feedbackReceiveChannel.findMany();
 
     const authUserFor = (
       user: User,
@@ -175,6 +182,8 @@ export async function startIntegrationHarness(
       channelId: idLookup(channels, "channels", "渠道"),
       categoryId: idLookup(categories, "categories", "类别"),
       slaPolicyId: idLookup(slaPolicies, "slaPolicies", "时效策略"),
+      userFeedbackChannelId: idLookup(userFeedbackChannels, "channels", "用户反馈渠道"),
+      feedbackReceiveChannelId: idLookup(feedbackReceiveChannels, "channels", "反馈信息接收渠道"),
       authUserFor,
       callerFor: (user, role) => caller(authUserFor(user, role)),
       callerWith: (user, role, permissions) => caller(authUserFor(user, role, permissions)),

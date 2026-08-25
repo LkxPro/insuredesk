@@ -12,17 +12,6 @@ import { type IntegrationHarness, startIntegrationHarness } from "./integration-
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/**
- * Acceptance tests against a real Postgres: 新建工单 with no required
- * business fields. A fully blank submission succeeds; unfilled
- * fields persist as NULL (never ""); hasContacted unfilled means 未知, not
- * false; system fields (workOrderNumber/source/createdAt/creatorId/status)
- * still generate. 未定级 tickets carry no dueAt / SLA requirement strings and
- * raise no SLA time alerts; a later 时效策略 edit computes SLA off the
- * ORIGINAL createdAt. 未填渠道 tickets stay manually assignable but 按排班
- * 自动分配 skips them with an explicit reason. List / detail / todo / export
- * all read null-heavy rows without failing.
- */
 describe("optional business fields (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -38,7 +27,6 @@ describe("optional business fields (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return appRouter.createCaller({
       traceId: "optional-fields-test",
@@ -63,7 +51,6 @@ describe("optional business fields (Testcontainers)", () => {
   /** Create-field keys double as ticket column names; a blank submission must persist each as NULL. */
   const NULLABLE_COLUMNS = TICKET_CREATE_FIELD_KEYS;
 
-  /** A full edit payload that changes nothing: every field blank. */
   function blankEditInput(ticketId: string, overrides: Partial<TicketEditInput> = {}) {
     const blank = Object.fromEntries(NULLABLE_COLUMNS.map((column) => [column, null]));
     return { ...blank, ticketId, ...overrides } as TicketEditInput;
@@ -83,16 +70,13 @@ describe("optional business fields (Testcontainers)", () => {
           expect(row[column], column).toBeNull();
         }
       }
-      // System-derived fields are unaffected by the blankness
       expect(row.source).toBe("manual");
       expect(row.creatorId).toBe(seeded.users.manager.id);
       expect(row.status).toBe("unassigned");
       expect(row.createdAt).toBeInstanceOf(Date);
-      // 未定级 → no SLA clock fields at all
       expect(row.dueAt).toBeNull();
       expect(row.followUpFrequency).toBeNull();
       expect(row.firstResponseRequirement).toBeNull();
-      // The timeline root still lands in the same transaction
       const logs = await prisma.processLog.findMany({ where: { ticketId: created.id } });
       expect(logs.map((log) => log.action)).toEqual(["create"]);
     });
@@ -164,15 +148,16 @@ describe("optional business fields (Testcontainers)", () => {
     it("a later 时效策略 edit computes SLA off the ORIGINAL createdAt", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
       const createdAt = new Date(Date.now() - 70 * HOUR_MS);
-      await prisma.ticket.update({ where: { id: created.id }, data: { createdAt } });
+      await prisma.ticket.update({
+        where: { id: created.id },
+        data: { createdAt, slaAnchorAt: createdAt },
+      });
 
       await manager().ticket.edit(
         blankEditInput(created.id, { slaPolicyId: harness.slaPolicyId("一般投诉") }),
       );
 
       const detail = await manager().ticket.detail({ id: created.id });
-      // dueAt anchors to 录入时刻, not the edit instant — 70h old
-      // against 一般's 48h window means instantly overdue.
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 48 * HOUR_MS).toISOString());
       expect(detail.displayStatus).toBe("overdue");
       expect(detail.firstResponseRequirement).toBe("120分钟内完成首次响应");
@@ -285,7 +270,6 @@ describe("optional business fields (Testcontainers)", () => {
       const body = file.body.toString("utf8");
       const lines = body.replace(/^﻿/, "").trimEnd().split("\r\n");
       expect(lines).toHaveLength(2);
-      // 工单号 present; unfilled fields are empty cells — never the string "null"
       expect(lines[1]?.startsWith(created.workOrderNumber)).toBe(true);
       expect(body).not.toContain("null");
     });

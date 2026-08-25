@@ -9,17 +9,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
-/**
- * 轨 2 我的待办 red-dot indicator: the count of my tickets currently carrying
- * a time alert — 待首响 / 检查点未达 / 特急欠跟进 / due_soon / overdue — with
- * a popover list linking to each ticket.
- *
- * It consumes the SAME notification.list query as the inbox bell: react-query
- * dedupes the two hooks into one cache entry, so the 30s poll stays a single
- * request carrying both tracks. Nothing here is stored or marked read — an
- * alert disappears the moment its condition stops holding.
- */
-
 type TodoItem = inferRouterOutputs<AppRouter>["notification"]["list"]["todo"]["items"][number];
 
 export function TodoBell() {
@@ -95,7 +84,6 @@ export function TodoBell() {
                       data-severity={alert.severity}
                       className="flex items-baseline gap-1.5 text-xs"
                     >
-                      {/* 黄转红 lives here: warning renders amber, critical red */}
                       <span
                         className={cn(
                           "shrink-0 rounded-sm px-1 py-px font-medium",

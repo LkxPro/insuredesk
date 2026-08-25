@@ -32,7 +32,11 @@ async function writeShim(dir: string, name: string, body: string) {
   await run("chmod", ["+x", path]);
 }
 
-async function setupSandbox(claudeBody: string, makeBody: string): Promise<Sandbox> {
+async function setupSandbox(
+  claudeBody: string,
+  makeBody: string,
+  specParent?: number,
+): Promise<Sandbox> {
   const dir = await mkdtemp(join(tmpdir(), "worker-test-"));
   const repo = join(dir, "repo");
   const origin = join(dir, "origin.git");
@@ -55,7 +59,20 @@ async function setupSandbox(claudeBody: string, makeBody: string): Promise<Sandb
   await git(repo, ["branch", "-M", "main"]);
   await git(repo, ["remote", "add", "origin", origin]);
   await git(repo, ["push", "-q", "-u", "origin", "main"]);
-  await git(repo, ["checkout", "-qb", "codex/issue-7"]);
+  if (specParent !== undefined) {
+    await git(repo, ["checkout", "-qb", `agent/spec-${specParent}`]);
+    await writeFile(join(repo, "sibling.txt"), "sibling\n");
+    await git(repo, ["add", "."]);
+    await git(repo, ["commit", "-qm", "sibling slice"]);
+    await git(repo, ["push", "-q", "origin", `agent/spec-${specParent}`]);
+    await git(repo, ["checkout", "-qb", "codex/issue-7", `origin/agent/spec-${specParent}`]);
+  } else {
+    await git(repo, ["checkout", "-qb", "codex/issue-7"]);
+  }
+  const issueBody =
+    specParent === undefined
+      ? ISSUE_BODY
+      : `<!-- agent-plan:${specParent}:slice -->\nPart of #${specParent}.\n${ISSUE_BODY}`;
 
   await writeShim(
     bin,
@@ -65,11 +82,12 @@ printf '%s\\n' "$*" >>"$capture"
 case "$*" in
   'issue view 7 --json number,title,body,comments,labels')
     cat <<'JSON'
-{"number":7,"title":"Test task","body":${JSON.stringify(ISSUE_BODY)},"comments":[],"labels":[{"name":"agent:task"}]}
+{"number":7,"title":"Test task","body":${JSON.stringify(issueBody)},"comments":[],"labels":[{"name":"agent:task"}]}
 JSON
     ;;
   'issue view 7 --json comments --jq .comments') printf '[]\\n' ;;
   'pr list --head codex/issue-7 --state open --json number') printf '[]\\n' ;;
+  'pr list --head codex/issue-7 --state open --json number,baseRefName') printf '[]\\n' ;;
   'pr create'* ) printf 'https://example.test/pull/12\\n' ;;
 esac
 exit 0`,
@@ -131,8 +149,12 @@ after(async () => {
   for (const dir of sandboxes) await rm(dir, { recursive: true, force: true });
 });
 
-async function makeSandbox(claudeBody: string, makeBody: string): Promise<Sandbox> {
-  const sandbox = await setupSandbox(claudeBody, makeBody);
+async function makeSandbox(
+  claudeBody: string,
+  makeBody: string,
+  specParent?: number,
+): Promise<Sandbox> {
+  const sandbox = await setupSandbox(claudeBody, makeBody, specParent);
   sandboxes.push(sandbox.dir);
   return sandbox;
 }
@@ -166,6 +188,23 @@ test("worker 全管线：impl→check→sweep→publish→摘标签→claim 释�
   assert.equal(status?.turns, 3);
   const events = await readFile(join(sandbox.worktrees, "issue-7.events.jsonl"), "utf8");
   assert.ok(events.includes('"type":"result"'));
+});
+
+test("spec 子票:base 为 agent/spec-<parent>,兄弟票产出不被 reset 抹掉", async () => {
+  const sandbox = await makeSandbox(CLAUDE_HAPPY, MAKE_OK, 100);
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  const files = await git(sandbox.origin, ["ls-tree", "-r", "--name-only", "codex/issue-7"]);
+  assert.ok(files.split("\n").includes("sibling.txt"));
+  assert.ok(files.split("\n").includes("allowed.txt"));
+  assert.equal(
+    await git(sandbox.origin, ["rev-list", "--count", "agent/spec-100..codex/issue-7"]),
+    "1",
+  );
+  const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls.includes("pr create --head codex/issue-7 --base agent/spec-100"));
 });
 
 test("review 未改码:快照 check 被采信,主 worktree 不重跑", async () => {

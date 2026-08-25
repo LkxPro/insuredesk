@@ -27,12 +27,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
-/**
- * 新增用户 (user.create): 内部账号 basics + initial password + role. The role
- * picker carries 内部角色 only — 外部账号 are created on the 外部账号管理页. The field
- * contract is the shared userCreateInputSchema — the exact schema the API
- * parses.
- */
 export function UserCreateDialog({
   open,
   onOpenChange,

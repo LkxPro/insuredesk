@@ -4,16 +4,6 @@ import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts
 import { appRouter } from "../src/routers/index.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Acceptance tests against a real Postgres: resolving (完结) moves an
- * in-flight ticket to the completed 终态 with completionTime + the mandatory
- * 完结状态目录引用, writing the resolve + status_change
- * ProcessLog pair. completed is terminal — no reopen, no further follow-ups —
- * and a resolved ticket immediately leaves the pending_timeout / overdue
- * 实时运营口径. Runs through
- * appRouter.createCaller — the same procedure pipeline (permission middleware
- * included) the HTTP adapter uses.
- */
 describe("ticket resolve 完结 (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -31,7 +21,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026071000728"],
-      userComplaintChannel: "400热线",
+      userFeedbackChannelId: null,
       customerName: "孙完结",
       phone: "13800000003",
       customerRequest: "对理赔金额有异议，要求复核",
@@ -55,7 +45,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** Caller with the given user identity and an explicit permission set. */
   function callerWith(user: User, roleName: string, permissions: Permission[]) {
     return appRouter.createCaller({
       traceId: "resolve-test",
@@ -75,12 +64,10 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
     });
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return callerWith(user, role.name, role.permissions as Permission[]);
   }
 
-  /** 目录 id by name — the migration populated the 12 historical values. */
   async function statusId(name: string) {
     const row = await prisma.completionStatus.findUniqueOrThrow({ where: { name } });
     return row.id;
@@ -92,13 +79,11 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
   let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** A fresh unassigned ticket, created through the real create procedure. */
   async function createTicket() {
     const created = await manager().ticket.create(baseInput);
     return created.id;
   }
 
-  /** A fresh ticket already assigned to the given user (default cs1). */
   async function createAssignedTicket(assigneeId?: string) {
     const ticketId = await createTicket();
     await manager().ticket.assign({
@@ -108,7 +93,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
     return ticketId;
   }
 
-  /** A fresh ticket in processing: assigned to cs1 with one follow-up. */
   async function createProcessingTicket() {
     const ticketId = await createAssignedTicket();
     await frontline().ticket.addComment({ ticketId, remark: "已电话联系客户，复核中" });
@@ -136,8 +120,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
       expect(detail.displayStatus).toBe("completed");
       expect(detail.completionStatus).toBe("已协商解决");
 
-      // Two log entries beyond the in-flight history, in order: the resolve
-      // first, then the separate transition entry
       expect(detail.processLogs.map((log) => log.action)).toEqual([
         "create",
         "assign",
@@ -161,7 +143,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
         from: "processing",
         to: "completed",
       });
-      // One action, one instant: completionTime and both entries agree
       expect(transitionLog?.at).toBe(resolveLog?.at);
       expect(detail.completionTime).toBe(resolveLog?.at);
     });
@@ -186,7 +167,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
         "resolve",
         "status_change",
       ]);
-      // Straight from assigned — no processing detour in the transition entry
       expect(detail.processLogs.at(-1)).toMatchObject({ from: "assigned", to: "completed" });
 
       expect(detail.dueAt).toBe(before.dueAt);
@@ -238,7 +218,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
         { code: "PRECONDITION_FAILED" },
       );
 
-      // The rejected actions left no marks: the resolve pair stays terminal
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.status).toBe("completed");
       expect(detail.completionStatus).toBe("已达成一致");
@@ -356,7 +335,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
   });
 
   describe("完结后移出超时/预警口径 (实时运营视角)", () => {
-    /** The ticket's list rows under each display-status filter, pinned by 工单号. */
     async function listUnder(status: "pending_timeout" | "overdue" | "completed", search: string) {
       const { items } = await manager().ticket.list({ status, search });
       return items;
@@ -365,7 +343,6 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
     it("an overdue ticket leaves the overdue 口径 the moment it resolves", async () => {
       const ticketId = await createAssignedTicket();
       const { workOrderNumber } = await manager().ticket.detail({ id: ticketId });
-      // Backdate the deadline: an in-flight ticket already past dueAt
       await prisma.ticket.update({
         where: { id: ticketId },
         data: { dueAt: new Date(Date.now() - 60 * 60 * 1000) },
@@ -383,14 +360,12 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
 
       expect(await listUnder("overdue", workOrderNumber)).toEqual([]);
       const after = await listUnder("completed", workOrderNumber);
-      // Past dueAt no longer computes: the stored 终态 wins
       expect(after.map((item) => item.displayStatus)).toEqual(["completed"]);
     });
 
     it("a pending_timeout ticket leaves the 预警口径 the moment it resolves", async () => {
       const ticketId = await createAssignedTicket();
       const { workOrderNumber } = await manager().ticket.detail({ id: ticketId });
-      // Pull the deadline inside the 2h warning window
       await prisma.ticket.update({
         where: { id: ticketId },
         data: { dueAt: new Date(Date.now() + 60 * 60 * 1000) },

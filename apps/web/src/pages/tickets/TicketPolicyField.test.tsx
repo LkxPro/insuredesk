@@ -41,6 +41,19 @@ describe("建单表单的策略下拉", () => {
     expect(within(urgent).getByText("特急投诉：不设处理时限，滚动跟进。")).toBeInTheDocument();
   });
 
+  it("手工建单只产投诉单：下拉按投诉组取数（kindKey=complaint）", async () => {
+    renderCreate();
+    await screen.findByRole("heading", { name: "新建工单" });
+
+    await waitFor(() =>
+      expect(
+        callsTo("sla.options").some(
+          (call) => (call.input as { kindKey?: string } | undefined)?.kindKey === "complaint",
+        ),
+      ).toBe(true),
+    );
+  });
+
   it("选中策略后提交：slaPolicyId 随行，不携带旧投诉等级文本键", async () => {
     renderCreate();
     await screen.findByRole("heading", { name: "新建工单" });
@@ -134,5 +147,19 @@ describe("详情编辑的策略下拉", () => {
 
     await waitFor(() => expect(callsTo("ticket.edit")).toHaveLength(1));
     expect(callsTo("ticket.edit")[0]?.input).toMatchObject({ slaPolicyId: null });
+  });
+
+  it("编辑下拉按工单的种类取数：kindKey 随详情下发", async () => {
+    renderDetail(detailPayload({ kindKey: "refund_exception" }));
+    await enterEditing();
+
+    await waitFor(() =>
+      expect(
+        callsTo("sla.options").some(
+          (call) =>
+            (call.input as { kindKey?: string } | undefined)?.kindKey === "refund_exception",
+        ),
+      ).toBe(true),
+    );
   });
 });

@@ -11,22 +11,6 @@ import { exportTickets } from "../src/services/ticket-export.service.ts";
 import { importTickets } from "../src/services/ticket-import.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Acceptance tests for 导入历史 + 整批撤销 against a real Postgres, through
- * appRouter.createCaller (permission middleware included):
- *
- * - history scope: own batches by default, every batch with ticket.view_all;
- *   listing gated on ticket.import
- * - clean revoke: all-or-nothing soft delete — tickets leave the list, the
- *   dashboard, and the export; the batch stays in history as 已撤销 with
- *   revoker + instant
- * - locked: any log later than the batch's import instant (assign/edit/…)
- *   or any ticket individually deleted → the whole revoke is rejected with
- *   the processed count, nothing deleted, and the batch lists as locked;
- *   same-instant logs are the import's own and never lock
- * - guards: no ticket.delete → FORBIDDEN; out-of-scope batch → NOT_FOUND;
- *   a revoked batch can never be revoked again
- */
 describe("ticket import history & batch revocation (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -100,7 +84,6 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
 
   let fileSeq = 0;
 
-  /** Import a batch through the real import service; a string row = 客户姓名 only. */
   async function importBatchOf(
     actor: User,
     permissions: Permission[],
@@ -155,7 +138,6 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       const result = await supervisorCaller().ticket.revokeImportBatch({ batchId });
       expect(result).toEqual({ revoked: 2 });
 
-      // 整批打 deletedAt；批次记撤销人/撤销时刻
       const tickets = await prisma.ticket.findMany();
       expect(tickets).toHaveLength(2);
       for (const ticket of tickets) {
@@ -165,10 +147,8 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       expect(batch.revokedAt).not.toBeNull();
       expect(batch.revokedById).toBe(supervisor.id);
 
-      // 与既有删除口径一致：处理记录留在墓碑后，不写额外 ProcessLog
       expect(await prisma.processLog.count({ where: { action: { not: "create" } } })).toBe(0);
 
-      // 列表、看板与导出即刻不可见 — the importer's own scope included
       expect((await supervisorCaller().ticket.list({})).total).toBe(0);
       expect((await importerCaller().ticket.list({})).total).toBe(0);
       const stats = await supervisorCaller().dashboard.stats({});
@@ -181,7 +161,6 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       });
       expect(file.body.toString("utf-8")).not.toContain("张三");
 
-      // 历史列表标「已撤销」
       const history = await supervisorCaller().ticket.importBatches({});
       expect(history.items[0]).toMatchObject({
         status: "revoked",
@@ -195,14 +174,12 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       const tickets = await prisma.ticket.findMany({ orderBy: { customerName: "asc" } });
       const [first, second] = tickets as [(typeof tickets)[0], (typeof tickets)[0]];
 
-      // 分配其中一单 → 整批拒撤，批内 1 单已有处理
       await supervisorCaller().ticket.assign({ ticketId: first.id, assigneeId: importer.id });
       await expect(supervisorCaller().ticket.revokeImportBatch({ batchId })).rejects.toMatchObject({
         code: "PRECONDITION_FAILED",
         message: expect.stringContaining("批内 1 单已有处理"),
       });
 
-      // 全或无：没有任何一单被删，批次未标撤销，历史列表显示「已锁定」
       expect(await prisma.ticket.count({ where: { deletedAt: null } })).toBe(2);
       expect(
         (await prisma.ticketImportBatch.findUniqueOrThrow({ where: { id: batchId } })).revokedAt,
@@ -210,7 +187,6 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       const history = await supervisorCaller().ticket.importBatches({});
       expect(history.items[0]?.status).toBe("locked");
 
-      // 另一单被单独删除 → 两单都算已有处理
       await supervisorCaller().ticket.delete({ ticketId: second.id });
       await expect(supervisorCaller().ticket.revokeImportBatch({ batchId })).rejects.toMatchObject({
         code: "PRECONDITION_FAILED",
@@ -229,7 +205,6 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       expect((await supervisorCaller().ticket.importBatches({})).items[0]?.status).toBe("locked");
     });
 
-    // 导入即完结的整条链路：完结行的 resolve 日志与导入同瞬间，不锁批。
     it("keeps a batch containing 导入即完结 rows immediately revocable", async () => {
       const batchId = await importBatchOf(importer, IMPORTER_PERMISSIONS, [
         { 客户姓名: "迁移客户", 完结状态: "已达成一致", 完结备注: "历史迁移" },

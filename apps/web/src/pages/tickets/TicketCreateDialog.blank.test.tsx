@@ -10,16 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/**
- * 空白提交回归: the 新建工单 form submits with
- * only feedbackTime prefilled (打开对话框的时刻) — no required-field validation
- * errors, every OTHER unfilled field reaching the wire as null — no label
- * carries 选填/非必填 wording, and the detail dialog renders a null-heavy ticket
- * with consistent 未知 placeholders. Clearing feedbackTime restores the null
- * (未填写) semantics. Same faked-fetch tRPC pipeline and
- * useAuth-seam mock as the sibling ticket tests.
- */
-
 /** Frozen 此刻 so the prefilled feedbackTime is a known, minute-precise instant. */
 const NOW = new Date("2026-07-15T09:30:00.000Z");
 
@@ -53,7 +43,6 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
   };
 }
 
-/** serializeTicketDetail wire shape for a fully blank ticket. */
 function blankDetailPayload() {
   return {
     id: "t1",
@@ -69,8 +58,8 @@ function blankDetailPayload() {
     paymentChannel: null,
     internalOrderNumber: null,
     policyNumbers: [],
-    userComplaintChannel: null,
-    complaintReceiveChannel: null,
+    userFeedbackChannel: null,
+    feedbackReceiveChannel: null,
     customerName: null,
     phone: null,
     contactPhone: null,
@@ -129,6 +118,7 @@ function respond(path: string): unknown {
     path === "ticket.assigneeOptions" ||
     path === "ticketCategory.options" ||
     path === "channel.options" ||
+    path === "ticketKind.filterOptions" ||
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
     path === "sla.options" ||
@@ -201,7 +191,6 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       expect(calls.some((call) => call.path === "ticket.create")).toBe(true);
     });
     const mutation = calls.find((call) => call.path === "ticket.create");
-    // feedbackTime defaults to the open instant, minute precision (秒归零)；
     // 多值保单号的「未填写」形态是空数组而非 null
     expect(mutation?.input).toEqual({
       ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
@@ -210,7 +199,6 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       noPolicyNumber: false,
     });
 
-    // 建单后留列表: the dialog closes onto 工单管理, no detail opens
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument();
     });
@@ -222,7 +210,6 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
     renderAt("/tickets/new");
     await screen.findByRole("heading", { name: "新建工单" });
 
-    // The prefilled default shows the clear affordance; clearing returns to 未填写
     fireEvent.click(screen.getByRole("button", { name: "清空时间" }));
     fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
 
@@ -266,7 +253,6 @@ describe("空值展示 (issue #43)", () => {
     renderAt("/tickets/t1");
 
     expect(await screen.findByRole("heading", { name: "WO100001" })).toBeInTheDocument();
-    // Unfilled fields all show the same placeholder
     expect(screen.getAllByText("—").length).toBeGreaterThan(5);
     expect(screen.queryByText("不设时限")).not.toBeInTheDocument();
   });

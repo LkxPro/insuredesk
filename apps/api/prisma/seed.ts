@@ -7,9 +7,11 @@ import {
   seedDemoTickets,
   seedExternalUserRole,
   seedFactoryRolesAndDemoUsers,
+  seedRefundDefaultSlaPolicy,
   seedShiftTypes,
   seedSlaPolicies,
   seedTicketCategories,
+  seedTicketKinds,
 } from "./seed-data.ts";
 
 if (existsSync(".env")) {
@@ -41,11 +43,16 @@ async function main() {
   const externalRole = await seedExternalUserRole(prisma);
   console.log(`✓ External role: ${externalRole.name}`);
 
+  const kinds = await seedTicketKinds(prisma);
+  console.log(`✓ Ticket kinds: ${kinds.length}`);
+
   const policies = await seedSlaPolicies(prisma);
   for (const policy of policies) {
     const overdue = policy.overdueHours === null ? "不设超时" : `超时${policy.overdueHours}h`;
     console.log(`✓ 时效策略: ${policy.name}（首响${policy.firstResponseMinutes}min / ${overdue}）`);
   }
+  const refundPolicy = await seedRefundDefaultSlaPolicy(prisma);
+  console.log(`✓ 时效策略: ${refundPolicy.name}（退费异常组默认）`);
 
   const shifts = await seedShiftTypes(prisma);
   for (const shift of shifts) {

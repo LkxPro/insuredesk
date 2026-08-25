@@ -17,20 +17,9 @@ import {
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
-/**
- * 添加跟进 composer，钉在分栏详情右栏底部 —— one submission = one actual
- * customer contact. 调用方按 ticket.process 与在途状态门控渲染；一切派生
- * （contactCount、assigned → processing 及其 ProcessLog 对）都在服务端的
- * ticket.addComment 里发生。
- *
- * 无 Card 外壳：它是右栏的固定页脚，边框与内边距由容器给，自身保持紧凑，
- * 免得挤掉时间线的可视高度。
- */
 export function AddCommentCard({ ticketId }: { ticketId: string }) {
   const utils = trpc.useUtils();
   const [remark, setRemark] = useState("");
-  // Held as a partial LOCAL "YYYY-MM-DDTHH:mm" string until submit, like
-  // feedbackTime in the create form; "" = no plan (clears any previous one)
   const [nextContactTime, setNextContactTime] = useState("");
   const [nextContactTimeError, setNextContactTimeError] = useState("");
   // 默认不勾：跟进对外可见是常态，仅内部可见是坐席的显式决定

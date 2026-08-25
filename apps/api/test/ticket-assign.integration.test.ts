@@ -7,14 +7,6 @@ import { localDateTimeParts } from "../src/services/schedule.service.ts";
 import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * Acceptance tests against a real Postgres: first assignment vs reassignment
- * field behavior (dueAt/assignedAt invariants), the assign + status_change
- * ProcessLog pair (order and content), batch assignment as one all-or-nothing
- * transaction, and permission/data-scope rejections. Runs through
- * appRouter.createCaller — the same procedure
- * pipeline (permission middleware included) the HTTP adapter uses.
- */
 describe("ticket assignment (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -37,7 +29,7 @@ describe("ticket assignment (Testcontainers)", () => {
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
       policyNumbers: ["P2026070900321"],
-      userComplaintChannel: "400热线",
+      userFeedbackChannelId: null,
       customerName: "赵可分",
       phone: "13800000001",
       customerRequest: "对理赔进度有异议，要求尽快处理",
@@ -89,7 +81,6 @@ describe("ticket assignment (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  /** Caller with the given user identity and an explicit permission set. */
   function callerWith(user: User, roleName: string, permissions: Permission[]) {
     return appRouter.createCaller({
       traceId: "assign-test",
@@ -109,7 +100,6 @@ describe("ticket assignment (Testcontainers)", () => {
     });
   }
 
-  /** Caller with the given seeded user's identity, permissions from their role. */
   function callerFor(user: User, role: Role) {
     return callerWith(user, role.name, role.permissions as Permission[]);
   }
@@ -120,7 +110,6 @@ describe("ticket assignment (Testcontainers)", () => {
 
   let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
-  /** A fresh unassigned ticket, created through the real create procedure. */
   async function createTicket() {
     const created = await manager().ticket.create(baseInput);
     return created.id;
@@ -146,12 +135,9 @@ describe("ticket assignment (Testcontainers)", () => {
       expect(detail.assigneeName).toBe(seeded.users.cs1.name);
       expect(detail.status).toBe("assigned");
       expect(detail.assignedAt).not.toBeNull();
-      // dueAt anchored to createdAt at creation; assignment never recomputes it
       expect(detail.dueAt).toBe(before.dueAt);
       expect(detail.createdAt).toBe(before.createdAt);
 
-      // Two log entries beyond `create`, in order: assign first, then the
-      // separate status_change, both at the same instant
       expect(detail.processLogs.map((log) => log.action)).toEqual([
         "create",
         "assign",
@@ -162,8 +148,8 @@ describe("ticket assignment (Testcontainers)", () => {
       expect(assignLog).toMatchObject({
         operatorId: seeded.users.manager.id,
         operatorName: seeded.users.manager.name,
-        from: null, // first assignment: no previous assignee
-        to: seeded.users.cs1.name, // name snapshot, not an id
+        from: null,
+        to: seeded.users.cs1.name,
       });
       expect(assignLog?.remark).toBeTruthy();
       expect(statusLog).toMatchObject({
@@ -187,11 +173,9 @@ describe("ticket assignment (Testcontainers)", () => {
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.assigneeId).toBe(cs2.id);
       expect(detail.status).toBe("assigned");
-      expect(detail.assignedAt).toBe(first.assignedAt); // 首次分配时刻不变
-      expect(detail.dueAt).toBe(first.dueAt); // 改派永不重算时限
+      expect(detail.assignedAt).toBe(first.assignedAt);
+      expect(detail.dueAt).toBe(first.dueAt);
 
-      // Exactly one new log: assign 从谁改派到谁 — status didn't change, so no
-      // extra status_change entry
       expect(detail.processLogs.map((log) => log.action)).toEqual([
         "create",
         "assign",
@@ -231,8 +215,8 @@ describe("ticket assignment (Testcontainers)", () => {
 
         const detail = await manager().ticket.detail({ id: ticketId });
         const [firstAssign, reassign] = detail.processLogs.filter((log) => log.action === "assign");
-        expect(firstAssign?.to).toBe(originalName); // old snapshot untouched
-        expect(reassign?.from).toBe("张客服（改名后）"); // 当时是谁 = current name at reassign time
+        expect(firstAssign?.to).toBe(originalName);
+        expect(reassign?.from).toBe("张客服（改名后）");
       } finally {
         await prisma.user.update({
           where: { id: seeded.users.cs1.id },
@@ -282,7 +266,6 @@ describe("ticket assignment (Testcontainers)", () => {
     it("rejects assign and batchAssign to users whose roles cannot process tickets, with a distinct message", async () => {
       const ticketId = await createTicket();
 
-      // 只读（无 ticket.process）、无 ticket.view、外部账号同一兜底文案
       for (const assigneeId of [seeded.users.observer.id, noViewUser.id, externalUser.id]) {
         await expect(manager().ticket.assign({ ticketId, assigneeId })).rejects.toMatchObject({
           code: "BAD_REQUEST",
@@ -365,7 +348,6 @@ describe("ticket assignment (Testcontainers)", () => {
         assigneeName: cs2.name,
       });
 
-      // The ticket now belongs to someone else — the creator can still 改派 it
       const reassigned = await creatorAssigner.ticket.assign({
         ticketId: created.id,
         assigneeId: seeded.users.manager.id,
@@ -442,7 +424,6 @@ describe("ticket assignment (Testcontainers)", () => {
       const fresh = await manager().ticket.detail({ id: freshId });
       expect(fresh.assigneeId).toBe(cs2.id);
 
-      // The skipped ticket is untouched: no new logs, nothing rewritten
       const already = await manager().ticket.detail({ id: alreadyTheirsId });
       expect(already.processLogs).toHaveLength(alreadyBefore.processLogs.length);
       expect(already.updatedAt).toBe(alreadyBefore.updatedAt);
@@ -460,7 +441,6 @@ describe("ticket assignment (Testcontainers)", () => {
         }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
-      // The assignable ticket must be untouched — no partial batch
       const detail = await manager().ticket.detail({ id: okId });
       expect(detail.status).toBe("unassigned");
       expect(detail.assigneeId).toBeNull();
@@ -519,17 +499,14 @@ describe("ticket assignment (Testcontainers)", () => {
     it("只列合规责任人：启用 + 非外部角色 + 权限同含 ticket.view 与 ticket.process，system 角色恒在列", async () => {
       const options = await manager().ticket.assigneeOptions();
       const ids = options.map((option) => option.id);
-      // 一线客服 / 主管 / 管理员在列
       expect(ids).toContain(seeded.users.cs1.id);
       expect(ids).toContain(cs2.id);
       expect(ids).toContain(seeded.users.manager.id);
       expect(ids).toContain(seeded.users.admin.id);
-      // 停用、无 ticket.process、无 ticket.view、外部账号静默消失
       expect(ids).not.toContain(inactiveUser.id);
       expect(ids).not.toContain(seeded.users.observer.id);
       expect(ids).not.toContain(noViewUser.id);
       expect(ids).not.toContain(externalUser.id);
-      // 无灰显或标注：选项只有 id/name/username
       for (const option of options) {
         expect(option).toEqual({
           id: expect.any(String),
@@ -552,7 +529,6 @@ describe("ticket assignment (Testcontainers)", () => {
       const options = await manager().ticket.assigneeOptions();
       const ids = options.map((option) => option.id);
       expect(ids).toContain(seeded.users.cs1.id);
-      // cs2 无排班记录，仍须可选
       expect(ids).toContain(cs2.id);
       expect(ids).not.toContain(inactiveUser.id);
     });
@@ -584,7 +560,6 @@ describe("ticket assignment (Testcontainers)", () => {
         },
       });
       await prisma.schedule.create({ data: { date, userId: eligibleDuty.id, shiftId: full.id } });
-      // 同样在册但不可为候选：只读（无 ticket.process）与外部账号
       await prisma.schedule.create({
         data: { date, userId: seeded.users.observer.id, shiftId: full.id },
       });
@@ -648,7 +623,6 @@ describe("ticket assignment (Testcontainers)", () => {
       const options = await batchOnly.ticket.assigneeOptions();
       expect(options.length).toBeGreaterThan(0);
 
-      // …but not the single-assign mutation
       const ticketId = await createTicket();
       await expect(
         batchOnly.ticket.assign({ ticketId, assigneeId: seeded.users.cs1.id }),

@@ -5,12 +5,6 @@ import {
 } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
 
-/**
- * Contract tests: every user-entered field of the shared ticket
- * create/edit schemas is optional, and every unfilled representation the form
- * can produce (absent, null, "", whitespace) normalizes to null — "unknown",
- * never "" or an assumed value.
- */
 describe("ticketCreateInputSchema (issue #43 all-optional)", () => {
   it("accepts a completely empty object and yields all-null data across every create field", () => {
     const data = ticketCreateInputSchema.parse({});

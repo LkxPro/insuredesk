@@ -3,17 +3,24 @@ import {
   joinPolicyNumbers,
   PRIORITY_LABELS,
   type Priority,
+  REFUND_PUSHED_TICKET_FIELDS,
   TICKET_CREATE_FIELD_KEYS,
+  TICKET_FIELDS,
   type TicketCreateFieldKey,
   type TicketEditData,
+  TicketKindKey,
+  TicketStatus,
+  type TicketUpdateRefundCompensationData,
   ticketProcessLogLabel,
 } from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
 import { channelCatalog } from "./channel.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
+import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
 import {
   findSlaPolicyById,
+  SlaPolicyKindMismatchError,
   SlaPolicyNotConfiguredError,
   stampFromPolicy,
   type TicketServiceDeps,
@@ -22,18 +29,18 @@ import {
 import { TicketNotFoundError } from "./ticket-assign.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
+import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 /**
  * Edit domain logic: every basic-info field editable in any status, 已完结
- * included. Pure service layer — the router maps the domain errors to
- * transport codes.
+ * included.
  *
  * Invariants enforced here:
  * - status is untouchable by construction: the input schema has no status
  *   field and this update never writes one, so editing can never reopen a
  *   completed ticket
- * - 改时效策略引用 = 改 SLA: dueAt re-runs the creation formula (createdAt +
- *   the NEW policy's overdueHours — computeDueAt, off the fixed createdAt
+ * - 改时效策略引用 = 改 SLA: dueAt re-runs the creation formula (slaAnchorAt +
+ *   the NEW policy's overdueHours — computeDueAt, off the fixed slaAnchorAt
  *   base), and 跟进频次/首响要求 re-stamp from the new policy. This may flip the
  *   ticket straight into overdue (e.g. 特急→一般 past 48h) — intended, and the
  *   read-time display/list predicates pick it up with no further writes.
@@ -51,6 +58,15 @@ import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
 
 type EditableFields = Omit<TicketEditData, "ticketId" | "complaintLevel">;
 type EditableFieldKey = keyof EditableFields;
+
+export class PushedFieldsReadOnlyError extends Error {
+  constructor(fields: readonly TicketCreateFieldKey[]) {
+    super(
+      `推送实收字段只读，不可修改：${fields.map((key) => TICKET_FIELDS[key].label).join("、")}`,
+    );
+    this.name = "PushedFieldsReadOnlyError";
+  }
+}
 
 const EDITABLE_FIELD_KEYS: [
   Exclude<
@@ -136,6 +152,10 @@ export async function editTicket(
         category: { select: { name: true } },
         channel: { select: { name: true } },
         slaPolicy: { select: { name: true } },
+        userFeedbackChannel: { select: { name: true } },
+        feedbackReceiveChannel: { select: { name: true } },
+        kind: { select: { key: true } },
+        refundDetail: { select: { pushedFields: true } },
       },
     });
     if (!ticket) {
@@ -149,10 +169,27 @@ export async function editTicket(
         !sameValue(ticket[key], writableNext[key]) || (key === "policyNumbers" && noneToggled),
     );
 
+    if (ticket.kind.key === TicketKindKey.RefundException && ticket.refundDetail !== null) {
+      const lockedKeys = new Set(
+        ticket.refundDetail.pushedFields
+          .map((field) => REFUND_PUSHED_TICKET_FIELDS[field])
+          .filter((key) => key !== undefined),
+      );
+      const violations = changedFields.filter((key) => lockedKeys.has(key));
+      if (violations.length > 0) {
+        throw new PushedFieldsReadOnlyError(violations);
+      }
+    }
+
     const refPolicy = await findSlaPolicyById(tx, nextSlaPolicyId);
     const slaChanged = (refPolicy?.id ?? null) !== ticket.slaPolicyId;
-    if (slaChanged && refPolicy !== null && !refPolicy.active) {
-      throw new SlaPolicyNotConfiguredError(refPolicy.name);
+    if (slaChanged && refPolicy !== null) {
+      if (!refPolicy.active) {
+        throw new SlaPolicyNotConfiguredError(refPolicy.name);
+      }
+      if (refPolicy.kindId !== ticket.kindId) {
+        throw new SlaPolicyKindMismatchError(refPolicy.name);
+      }
     }
 
     if (changedFields.length === 0 && !slaChanged) {
@@ -196,15 +233,32 @@ export async function editTicket(
           ? ((await channelCatalog.resolveNewRef(tx, next.channelId))?.name ?? null)
           : null,
       },
+      userFeedbackChannelId: {
+        from: ticket.userFeedbackChannel?.name ?? null,
+        to: changedFields.includes("userFeedbackChannelId")
+          ? ((await userFeedbackChannelCatalog.resolveNewRef(tx, next.userFeedbackChannelId))
+              ?.name ?? null)
+          : null,
+      },
+      feedbackReceiveChannelId: {
+        from: ticket.feedbackReceiveChannel?.name ?? null,
+        to: changedFields.includes("feedbackReceiveChannelId")
+          ? ((await feedbackReceiveChannelCatalog.resolveNewRef(tx, next.feedbackReceiveChannelId))
+              ?.name ?? null)
+          : null,
+      },
     };
 
     // 改策略引用 = 改 SLA: everything the policy stamped at creation re-derives
-    // from the new policy, off the unchanged createdAt — the SLA clock stays
-    // anchored to the ORIGINAL 录入时刻 even when the reference is only supplied
+    // from the new policy, off the unchanged slaAnchorAt — the SLA clock stays
+    // anchored to the original 计时锚 even when the reference is only supplied
     // by a later edit. Clearing the reference clears all stamps (未指定 = no
-    // SLA clock).
+    // SLA clock). 已完结工单盖章冻结——历史超时口径（考核 completionTime > dueAt）
+    // 依赖完结时刻的 dueAt。
     const slaFields: Prisma.TicketUncheckedUpdateInput = slaChanged
-      ? stampFromPolicy(refPolicy, ticket.createdAt)
+      ? ticket.status === TicketStatus.Completed
+        ? { slaPolicyId: refPolicy?.id ?? null }
+        : stampFromPolicy(refPolicy, ticket.slaAnchorAt)
       : {};
 
     await tx.ticket.update({
@@ -248,7 +302,6 @@ export async function editTicket(
         operatorId: actor.id,
         operatorName: actor.name,
         action: "edit",
-        // 改策略引用：from/to 存策略名字面快照（null = 未指定）
         from: slaChanged ? (ticket.slaPolicy?.name ?? null) : null,
         to: slaChanged ? (refPolicy?.name ?? null) : null,
         remark: remarkLines.join("；"),
@@ -263,6 +316,70 @@ export async function editTicket(
         ...changedFields,
         ...(slaChanged ? (["slaPolicyId"] as const) : []),
       ] as EditableFieldKey[],
+    };
+  });
+}
+
+export class RefundCompensationNotApplicableError extends Error {
+  constructor() {
+    super("非退费异常工单，无补偿金可编辑");
+    this.name = "RefundCompensationNotApplicableError";
+  }
+}
+
+export class RefundCompensationLockedError extends Error {
+  constructor() {
+    super("工单已完结，补偿金已随回调载荷快照锁定");
+    this.name = "RefundCompensationLockedError";
+  }
+}
+
+export async function updateRefundCompensation(
+  { prisma, clock }: TicketServiceDeps,
+  actor: AuthenticatedUser,
+  input: TicketUpdateRefundCompensationData,
+) {
+  const now = clock.now();
+  return prisma.$transaction(async (tx) => {
+    const ticket = await tx.ticket.findFirst({
+      where: { id: input.ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
+      select: {
+        id: true,
+        workOrderNumber: true,
+        status: true,
+        kind: { select: { key: true } },
+        refundDetail: { select: { compensationAmount: true } },
+      },
+    });
+    if (!ticket) {
+      throw new TicketNotFoundError();
+    }
+    if (ticket.kind.key !== TicketKindKey.RefundException || ticket.refundDetail === null) {
+      throw new RefundCompensationNotApplicableError();
+    }
+    if (ticket.status === TicketStatus.Completed) {
+      throw new RefundCompensationLockedError();
+    }
+    if (ticket.refundDetail.compensationAmount !== input.compensationAmount) {
+      await tx.ticketRefundDetail.update({
+        where: { ticketId: ticket.id },
+        data: { compensationAmount: input.compensationAmount },
+      });
+      await tx.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          operatorId: actor.id,
+          operatorName: actor.name,
+          action: "edit",
+          remark: `补偿金: ${ticket.refundDetail.compensationAmount ?? "（空）"}→${input.compensationAmount ?? "（空）"}`,
+          at: now,
+        },
+      });
+    }
+    return {
+      id: ticket.id,
+      workOrderNumber: ticket.workOrderNumber,
+      compensationAmount: input.compensationAmount,
     };
   });
 }

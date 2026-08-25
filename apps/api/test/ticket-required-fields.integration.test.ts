@@ -10,10 +10,6 @@ import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts
 import { appRouter } from "../src/routers/index.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * 角色建单必填字段集验证：按请求者角色强制必填集，缺失字段一次性报错，
- * 三态字段必须明确选择，编辑不受约束，外部来源不适用，清单外 key 防御性忽略。
- */
 describe("role required ticket fields (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -307,7 +303,7 @@ describe("role required ticket fields (Testcontainers)", () => {
       });
     });
 
-    it("enforces 进线时间/投诉信息接收渠道 when configured required", async () => {
+    it("enforces 进线时间/反馈信息接收渠道 when configured required", async () => {
       await prisma.role.update({
         where: { id: roleWithRequired.id },
         data: {
@@ -317,7 +313,7 @@ describe("role required ticket fields (Testcontainers)", () => {
             "channelId",
             "hasContacted",
             "contactTime",
-            "complaintReceiveChannel",
+            "feedbackReceiveChannelId",
           ],
         },
       });
@@ -328,16 +324,16 @@ describe("role required ticket fields (Testcontainers)", () => {
       expect(error).toBeInstanceOf(TRPCError);
       expect((error as TRPCError).message).toContain("以下字段为必填项");
       expect((error as TRPCError).message).toContain("进线时间");
-      expect((error as TRPCError).message).toContain("投诉信息接收渠道");
+      expect((error as TRPCError).message).toContain("反馈信息接收渠道");
 
       const result = await requiredUser().ticket.create({
         ...validInput(),
         contactTime: "2026-07-14T02:00:00.000Z",
-        complaintReceiveChannel: "邮箱接收",
+        feedbackReceiveChannelId: harness.feedbackReceiveChannelId("内部客服热线"),
       });
       const detail = await requiredUser().ticket.detail({ id: result.id });
       expect(detail.contactTime).toBe("2026-07-14T02:00:00.000Z");
-      expect(detail.complaintReceiveChannel).toBe("邮箱接收");
+      expect(detail.feedbackReceiveChannel?.name).toBe("内部客服热线");
 
       await prisma.role.update({
         where: { id: roleWithRequired.id },

@@ -14,7 +14,6 @@ export const scheduleDateSchema = z
     );
   }, "不是有效的日期");
 
-/** The grid fetches all schedule cells in an inclusive wall-clock date range. */
 export const scheduleListInputSchema = z
   .object({
     startDate: scheduleDateSchema,

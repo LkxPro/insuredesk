@@ -7,6 +7,7 @@ import { normalizeIssue, outsideTouchSet } from "./frontier.ts";
 import { commentIssue, editIssue, ghCall, ghJson } from "./gh.ts";
 import { DirLock } from "./lock.ts";
 import { callGit, run } from "./net.ts";
+import { baseBranchOf } from "./spec.ts";
 import { appendEvent, patchStatus, readStatus } from "./status.ts";
 
 type FailureClass = "process" | "fatal" | "exhausted";
@@ -181,6 +182,11 @@ async function runPipeline(
   const repair = labelNames.includes("agent:repair");
   const promptFile = join(root, ".github", "agent-prompts", repair ? "repair.md" : "task.md");
 
+  // spec 子票的 base 是 agent/spec-<parent>;startHead 回退链若落回 origin/main,
+  // reset --hard 会把兄弟票产出从 spec 分支上抹掉。
+  const baseBranch = baseBranchOf(parsed.body);
+  const baseRef = `origin/${baseBranch}`;
+
   let repairLog = "";
   if (repair) {
     const branch = (await git(worktree, ["branch", "--show-current"])).trim();
@@ -212,7 +218,7 @@ async function runPipeline(
 
   const startHead = (
     (await git(worktree, ["rev-parse", "--verify", "@{upstream}^{commit}"]).catch(() => "")) ||
-    (await git(worktree, ["rev-parse", "--verify", "origin/main^{commit}"]).catch(() => "")) ||
+    (await git(worktree, ["rev-parse", "--verify", `${baseRef}^{commit}`]).catch(() => "")) ||
     (await git(worktree, ["rev-parse", "--verify", "HEAD^{commit}"]))
   ).trim();
   ctx.startHead = startHead;
@@ -224,8 +230,8 @@ async function runPipeline(
     .then((text) => text.trim())
     .catch(() => "");
   const headSha = (await git(worktree, ["rev-parse", "HEAD"])).trim();
-  const aheadOfMain =
-    (await git(worktree, ["rev-list", "--count", "origin/main..HEAD"]).catch(() => "0")).trim() !==
+  const aheadOfBase =
+    (await git(worktree, ["rev-list", "--count", `${baseRef}..HEAD`]).catch(() => "0")).trim() !==
     "0";
   const openPr = pendingSha
     ? await ghJson<Array<{ number: number }>>([
@@ -242,7 +248,7 @@ async function runPipeline(
         .catch(() => false)
     : false;
   const resumePublish =
-    !repair && pendingSha !== "" && pendingSha === headSha && aheadOfMain && !openPr;
+    !repair && pendingSha !== "" && pendingSha === headSha && aheadOfBase && !openPr;
   if (resumePublish) ctx.publishCommitted = true;
   else await rm(publishPendingFile, { force: true });
 
@@ -255,7 +261,7 @@ async function runPipeline(
       .split("\n")
       .filter(Boolean);
     const committed = resumePublish
-      ? (await git(worktree, ["diff", "--name-only", "origin/main...HEAD"]))
+      ? (await git(worktree, ["diff", "--name-only", `${baseRef}...HEAD`]))
           .split("\n")
           .filter(Boolean)
       : [];
@@ -681,7 +687,7 @@ async function runPipeline(
     throw new WorkerFailure("Agent could not push its publication branch.", "process");
   }
 
-  const existing = await ghJson<Array<{ number: number }>>([
+  const existing = await ghJson<Array<{ number: number; baseRefName: string }>>([
     "pr",
     "list",
     "--head",
@@ -689,9 +695,12 @@ async function runPipeline(
     "--state",
     "open",
     "--json",
-    "number",
+    "number,baseRefName",
   ]);
   let pr = existing[0]?.number;
+  // 复用的 open PR 可能来自 base 切换前,base 不符必须纠正。
+  if (pr && existing[0]?.baseRefName !== baseBranch)
+    await ghCall(["pr", "edit", String(pr), "--base", baseBranch]);
   if (!pr) {
     const bodyFile = join(runDir, "pr-body.md");
     await writeFile(
@@ -704,7 +713,7 @@ async function runPipeline(
       "--head",
       branch,
       "--base",
-      "main",
+      baseBranch,
       "--title",
       `${parsed.title} (#${issue})`,
       "--body-file",

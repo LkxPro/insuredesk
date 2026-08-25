@@ -15,16 +15,9 @@ import { ExternalNoteCard } from "./ExternalNoteCard";
 import { ExternalTicketInfoColumn } from "./ExternalTicketInfoColumn";
 
 /**
- * 整页详情，镜像内部分栏：头部（返回列表+工单号+状态+翻单按钮）→ 左栏工单
- * 信息（原文折叠+白名单字段），右栏处理记录时间线与钉底留言框。已完结是终态，
- * 只读（无留言框）。时间线内容已由服务端过滤（create + comment 非 internal +
- * external_note + resolve）；从外部方视角客服跟进（comment）是"对方发出"，
- * 落左侧气泡。骨架（可聚焦 section、方向键翻单、头部行与 prev/next 按钮）由
- * DetailPaneShell 承载，本组件只留数据与两栏正文。
- *
- * 方向键（↑/↓/←/→）与 prev/next 按钮按列表顺序翻单，越界翻页（nav 由页面
- * 按当前筛选与页码算出，无路可走则按钮禁用、按键死停）；输入控件内的方向
- * 键归控件自己。key={ticketId} 强制换单重挂：折叠态与留言草稿不跨单残留。
+ * 时间线内容已由服务端过滤（create + comment 非 internal + external_note +
+ * resolve）；从外部方视角客服跟进（comment）是"对方发出"，落左侧气泡。
+ * key={ticketId} 强制换单重挂：折叠态与留言草稿不跨单残留。
  */
 
 export function ExternalTicketDetailPane({
@@ -44,7 +37,6 @@ export function ExternalTicketDetailPane({
   const data = detailQuery.data;
   const ticket = data?.ticket ?? null;
 
-  /** 键盘与 prev/next 按钮同一入口。 */
   function applyStep(step: DetailNavStep) {
     if (step.kind === "switch") {
       onSwitch(step.ticketId);

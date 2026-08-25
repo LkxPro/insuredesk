@@ -15,11 +15,6 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import type { ExternalAccountRow } from "./ExternalAccountManagePage";
 
-/**
- * 禁用外部账号 confirmation (external_account.manage): 与内部账号禁用同语义 —
- * locks out login AND kicks live sessions at once. 启用 is harmless and fires
- * directly from the table.
- */
 export function ExternalAccountDisableDialog({
   account,
   onOpenChange,

@@ -12,25 +12,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
-
-/**
- * 分配 / 改派 / 批量分配 dialog. mode="single" drives ticket.assign,
- * mode="batch" drives ticket.batchAssign — the caller gates each entry point
- * on the matching permission. The dialog only picks WHO — status, assignedAt
- * and the ProcessLog trail are derived server-side, and dueAt never changes;
- * for a reassignment the remaining time is shown so a supervisor sees what
- * the new assignee inherits.
- */
+import { SearchableCombobox } from "./SearchableCombobox";
 
 export type AssignTarget = {
   id: string;
@@ -40,7 +25,6 @@ export type AssignTarget = {
   dueAt: string | null;
 };
 
-/** 改派不重置时限 hint — say how much of the deadline is already gone. */
 function remainingTimeHint(dueAt: string | null): string {
   if (!dueAt) {
     return "不设时限";
@@ -57,7 +41,6 @@ export function AssignTicketDialog({
   targets,
   onAssigned,
 }: {
-  /** Which mutation backs the dialog — matches the permission gating the entry point. */
   mode: "single" | "batch";
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -67,8 +50,6 @@ export function AssignTicketDialog({
   const utils = trpc.useUtils();
   const [assigneeId, setAssigneeId] = useState("");
 
-  // A fresh dialog starts unselected — a leftover pick from the previous
-  // ticket must never be one click away from confirming.
   useEffect(() => {
     if (open) {
       setAssigneeId("");
@@ -79,8 +60,6 @@ export function AssignTicketDialog({
 
   const single = mode === "single" ? targets[0] : undefined;
   const isReassign = Boolean(single?.assigneeId);
-  // Batch selections can mix fresh assignments with 改派 — count the latter
-  // so the warning shows whenever a deadline is being inherited
   const reassignCount = single ? 0 : targets.filter((target) => target.assigneeId).length;
   const title = single ? (isReassign ? "改派工单" : "分配工单") : "批量分配";
 
@@ -156,24 +135,20 @@ export function AssignTicketDialog({
 
         <Field>
           <FieldLabel htmlFor="assignee">责任人</FieldLabel>
-          <Select value={assigneeId} onValueChange={setAssigneeId}>
-            <SelectTrigger id="assignee" className="w-full" disabled={options.isLoading}>
-              <SelectValue placeholder="请选择责任人" />
-            </SelectTrigger>
-            <SelectContent>
-              {(options.data ?? []).map((user) => (
-                <SelectItem
-                  key={user.id}
-                  value={user.id}
-                  // 改派给当前责任人 is a server-rejected no-op; grey it out here
-                  disabled={user.id === single?.assigneeId}
-                >
-                  {user.name}
-                  {user.id === single?.assigneeId && "（当前责任人）"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableCombobox
+            id="assignee"
+            options={options.data ?? []}
+            value={assigneeId}
+            onChange={setAssigneeId}
+            disabled={options.isLoading}
+            autoFocus
+            placeholder="输入姓名、拼音或首字母搜索"
+            emptyText="无匹配的责任人"
+            disabledReason={(option) =>
+              // 改派场景置灰当前责任人——服务端会拒绝改派给同一人
+              option.id === single?.assigneeId ? "当前责任人" : null
+            }
+          />
         </Field>
 
         {error && (
