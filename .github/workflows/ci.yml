@@ -11,32 +11,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 显式超时是自愈前提:挂死(如 Docker Hub 限流拉镜像)会变 failure 触发
-  # agent-pr-health 回队修复;不设超时则默认 6 小时,自动合并干等。
-  lint-and-test:
+  # 显式超时是自愈前提:挂死变 failure 才会触发 agent-pr-health 回队修复,
+  # 否则自动合并干等。
+  static:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-node-pnpm
 
-      # pnpm is not preinstalled on the runner, and setup-node's `cache: pnpm`
-      # shells out to `pnpm store path` — so pnpm has to land on PATH first.
-      # Version comes from the packageManager field, same as local dev.
-      - uses: pnpm/action-setup@v6
+      - name: Script tests + lint + typecheck + build
+        run: sh scripts/ci.sh static
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
+  api-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-node-pnpm
 
-      - name: Install + lint + typecheck + build + test
-        run: sh scripts/ci.sh
+      - name: shared + api tests
+        run: sh scripts/ci.sh api
+
+  web-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-node-pnpm
+
+      - name: web tests shard ${{ matrix.shard }}/2
+        run: sh scripts/ci.sh web --shard=${{ matrix.shard }}/2
+
+  # ruleset 的 required check 只能钉固定 context 名;matrix 腿名随 shard 数
+  # 变动,fan-in 给规则一个稳定名字。if: always() 保证 shard 红时本 job 照跑
+  # 并失败,否则 required check 永远 pending,合并被静默卡住。
+  web-test-result:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [web-test]
+    if: always()
+    steps:
+      - name: Require all shards green
+        run: test "${{ needs.web-test.result }}" = "success"
 
   # Build the production image with the same context/Dockerfile as the Release
-  # workflow. Pushes to main additionally publish the test channel
-  # (:test + :test-<shortsha>) that the staging stack pulls — decoupled from
-  # releases. PRs only build (no GHCR login on untrusted refs): a broken image
-  # turns the PR red instead of surfacing at deploy time.
+  # workflow. Pushes to main additionally publish the test channel that the
+  # staging stack pulls — decoupled from releases. PRs only build (no GHCR
+  # login on untrusted refs): a broken image turns the PR red instead of
+  # surfacing at deploy time.
   docker-build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
