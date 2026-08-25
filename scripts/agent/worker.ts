@@ -62,9 +62,7 @@ const num = (key: string, fallback: number) => {
 
 // 成功路径的 worktree 与 issue-N.log 会被 dispatch 回收,daemon.log 是 worker 结局的唯一持久见证。
 const logLifecycle = (worktrees: string, msg: string) =>
-  appendFile(join(worktrees, "daemon.log"), `${new Date().toISOString()} ${msg}\n`).catch(
-    () => {},
-  );
+  appendFile(join(worktrees, "daemon.log"), `${new Date().toISOString()} ${msg}\n`).catch(() => {});
 
 // subtype=success + is_error 是 transport/API 层失败的矛盾组合,按 transient 重试。
 const transient = (result: ExecutorResult) =>
