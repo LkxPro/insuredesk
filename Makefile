@@ -1,4 +1,4 @@
-.PHONY: help dev open down db-reset test typecheck lint check upgrade release-prepare release agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-daemon-start agent-loop-status
+.PHONY: help dev open down db-reset test typecheck lint check upgrade upgrade-test release-prepare release agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-daemon-start agent-loop-status
 
 help:
 	@echo "InsureDesk development commands:"
@@ -18,6 +18,7 @@ help:
 	@echo "  make agent-loop-daemon-start - Start the daemon detached (survives session exit)"
 	@echo "  make agent-loop-status   - Watch live worker status (phase, last event, stalls)"
 	@echo "  make upgrade   - Upgrade production to the latest release"
+	@echo "  make upgrade-test - Update the staging stack to the latest :test image (on the server)"
 
 dev:
 	@./scripts/dev-up.sh
@@ -77,3 +78,7 @@ release:
 # 跑在宿主机（需 git + docker + 服务器 .env），故不经容器。
 upgrade:
 	./scripts/upgrade.sh
+
+# 跑在服务器部署目录（需 .env.test）。
+upgrade-test:
+	@./scripts/upgrade-test.sh

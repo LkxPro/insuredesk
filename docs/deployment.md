@@ -113,12 +113,11 @@ docker compose --env-file .env.test -f docker-compose.test.yml up -d
 ### 日常更新(main 最新)
 
 ```bash
-git pull
-docker compose --env-file .env.test -f docker-compose.test.yml pull
-docker compose --env-file .env.test -f docker-compose.test.yml up -d
+git pull && make upgrade-test
 ```
 
-更新时机由人控制(联调中重启会断对方会话),不上自动滚动。
+`make upgrade-test` = pull `:test` + `up -d` + 就绪等待(超时打印日志)。更新
+时机由人控制(联调中重启会断对方会话),不上自动滚动。
 
 ### 联调未合并的分支(本地 build 逃生舱)
 
