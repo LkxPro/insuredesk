@@ -76,6 +76,72 @@ admin/admin)→ 起服务。`curl -I http://127.0.0.1:3000` 验证存活,配好 
 
 旧镜像会残留,定期 `docker image prune -f` 清理。
 
+## 联调测试环境(test.insuredesk.jetmobo.com)
+
+与 prod 同机隔离部署:独立 compose project(`insuredesk-test`)、独立容器
+(`insuredesk-api-test` / `insuredesk-db-test`)、独立数据卷、独立凭证
+(`.env.test`)。镜像走 CI test 通道——main 每次合并自动推
+`ghcr.io/lkxpro/insuredesk-api:test`(及 `:test-<shortsha>`),与 release
+发版完全解耦。首启同样自动 migrate + bootstrap(admin/admin,登录后改密码)。
+
+前置(一次性,人工):DNS A 记录 `test.insuredesk.jetmobo.com` 指向服务器;
+caddy 的 Caddyfile 加一个站点块(caddy 与 api-test 同在 `insuredesk_default`
+网络,按容器名转发,LE 证书自动签):
+
+```
+test.insuredesk.jetmobo.com {
+    encode zstd gzip
+    reverse_proxy insuredesk-api-test:3000 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+}
+```
+
+### 首次部署
+
+```bash
+cd /home/hermes/compose/insuredesk
+git pull
+cp .env.test.example .env.test   # 填真实值,凭证与 prod 完全独立
+docker compose --env-file .env.test -f docker-compose.test.yml pull
+docker compose --env-file .env.test -f docker-compose.test.yml up -d
+```
+
+`curl -I http://127.0.0.1:3001` 验证存活(宿主回环 3001 映射容器 3000)。
+
+### 日常更新(main 最新)
+
+```bash
+git pull
+docker compose --env-file .env.test -f docker-compose.test.yml pull
+docker compose --env-file .env.test -f docker-compose.test.yml up -d
+```
+
+更新时机由人控制(联调中重启会断对方会话),不上自动滚动。
+
+### 联调未合并的分支(本地 build 逃生舱)
+
+```bash
+git checkout <branch>
+docker compose --env-file .env.test -f docker-compose.test.yml up -d --build
+# 联调完回到 test 通道:git checkout main && 重新 pull + up -d(不带 --build)
+```
+
+注意:`up -d --build` 后镜像停留在本地构建产物,显式 `pull` 才会回到 GHCR
+的 `:test`。
+
+### 重置(丢弃全部测试数据)
+
+```bash
+docker compose --env-file .env.test -f docker-compose.test.yml down -v
+docker compose --env-file .env.test -f docker-compose.test.yml up -d
+```
+
+骏伯对接:推送地址配 `https://test.insuredesk.jetmobo.com/api/integrations/jb-insurance/work-orders`,
+token 用 `.env.test` 里独立的一套;`JB_INSURANCE_CALLBACK_URL` 留空则回调
+投递空转。
+
 ## 备份与恢复
 
 每日备份由 backup sidecar 完成,不再依赖宿主机 cron:`up -d` 起的
