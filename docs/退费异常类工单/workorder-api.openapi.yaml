@@ -48,7 +48,7 @@ paths:
                   payNo: PAY20260818001
                   expectedAmount: '100.00'
               holderName: 张三
-              holderPhone: 13888888888
+              holderPhone: '13888888888'
               companyName: 泰康在线
               productId: P10001
               productName: 泰康百万医疗险
