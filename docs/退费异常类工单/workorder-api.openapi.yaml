@@ -17,8 +17,8 @@ info:
     - `workOrderType` 为展示文本，工单系统**不做枚举校验**，平台新增类型不会被拒收；当前约定值：`卡异常-退费失败` / `其它异常-退费失败`。
     - 凭证按环境分发：推送 token 与回调 AES secret 由工单系统按 dev/prod 环境分别配置下发，不出现在任何文档与代码库中。
 servers:
-  - url: https://workorder.example.com
-    description: 工单系统生产环境（以实际部署为准）
+  - url: /
+    description: 同域部署；dev 走 Vite 代理，生产经 nginx 反代
 paths:
   /api/integrations/jb-insurance/work-orders:
     post:
@@ -75,7 +75,7 @@ paths:
                   value:
                     success: false
                     code: '9998'
-                    message: 参数校验失败: endorNo 不能为空
+                    message: "参数校验失败: endorNo 不能为空"
                     data: null
                 retryable:
                   summary: 系统处理失败（可稍后重试）
@@ -138,7 +138,7 @@ webhooks:
                   value: { success: false, code: '9999', message: '处理异常: xxx', data: false }
                 fatal:
                   summary: 解密/参数失败，不会重试
-                  value: { success: false, code: '9998', message: 工单回调解密异常, data: false }
+                  value: { success: false, code: '9998', message: '工单回调解密异常', data: false }
 components:
   securitySchemes:
     bearerAuth:

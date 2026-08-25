@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import fastifyCookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
 import { loginBodySchema } from "@insuredesk/shared";
+import fastifyApiReference from "@scalar/fastify-api-reference";
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance, LogController } from "fastify";
 import { prisma } from "./db.ts";
@@ -159,6 +161,20 @@ export function buildServer(env: Env) {
 
   app.get("/healthz", () => ({ status: "ok" }));
 
+  const openApiPath = resolveOpenApiPath(env);
+  app.get("/openapi/workorder-api.yaml", async (_req, reply) => {
+    return reply.type("application/yaml").send(await readFile(openApiPath, "utf8"));
+  });
+  app.register(fastifyApiReference, {
+    routePrefix: "/docs",
+    openApiDocumentEndpoints: { yaml: "/workorder-api.yaml" },
+    configuration: {
+      url: "/openapi/workorder-api.yaml",
+      hideTestRequestButton: true,
+      hideClientButton: true,
+    },
+  });
+
   if (env.NODE_ENV === "production") {
     registerStaticFrontend(app, env);
   }
@@ -172,6 +188,14 @@ function resolveWebDistPath(env: Env): string {
   }
   const here = dirname(fileURLToPath(import.meta.url));
   return resolve(here, "..", "..", "web", "dist");
+}
+
+function resolveOpenApiPath(env: Env): string {
+  if (env.OPENAPI_WORKORDER_PATH) {
+    return resolve(env.OPENAPI_WORKORDER_PATH);
+  }
+  const here = dirname(fileURLToPath(import.meta.url));
+  return resolve(here, "..", "..", "..", "docs", "退费异常类工单", "workorder-api.openapi.yaml");
 }
 
 function registerStaticFrontend(app: FastifyInstance, env: Env) {

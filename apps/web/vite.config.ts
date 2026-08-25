@@ -46,13 +46,22 @@ export default defineConfig({
     host: "127.0.0.1",
     // Proxy API calls to the api in dev so the browser talks same-origin
     // (no CORS dance). /trpc carries queries; /api carries the login/logout
-    // REST endpoints (cookie handling).
+    // REST endpoints (cookie handling). /docs + /openapi 是对接方公开文档路由,
+    // 不经代理时 vite 会把它们回退到 SPA index.html 并跳回 dashboard。
     proxy: {
       "/trpc": {
         target: process.env.VITE_API_URL ?? "http://localhost:3000",
         changeOrigin: true,
       },
       "/api": {
+        target: process.env.VITE_API_URL ?? "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/docs": {
+        target: process.env.VITE_API_URL ?? "http://localhost:3000",
+        changeOrigin: true,
+      },
+      "/openapi": {
         target: process.env.VITE_API_URL ?? "http://localhost:3000",
         changeOrigin: true,
       },

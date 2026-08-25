@@ -1,3 +1,4 @@
+import { callbackPlaintextSchema } from "@insuredesk/shared";
 import type { Clock } from "../clock.ts";
 import type { CallbackDelivery, Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { writeOpsAlertNotifications } from "./notification.service.ts";
@@ -39,22 +40,16 @@ export interface TickSummary {
   dead: number;
 }
 
-function buildPayload(row: CallbackDelivery): Record<string, string> {
-  const payload: Record<string, string> = {
+function buildPayload(row: CallbackDelivery) {
+  const payload = callbackPlaintextSchema.parse({
     sysOrderId: row.sysOrderId,
     endorNo: row.endorNo,
     actualAmount: row.actualAmount,
     workOrderNumber: row.workOrderNumber,
-  };
-  if (row.compensationAmount !== null) {
-    payload.compensationAmount = row.compensationAmount;
-  }
-  if (row.remark !== null) {
-    payload.remark = row.remark;
-  }
-  if (row.operator !== null) {
-    payload.operator = row.operator;
-  }
+    ...(row.compensationAmount !== null ? { compensationAmount: row.compensationAmount } : {}),
+    ...(row.remark !== null ? { remark: row.remark } : {}),
+    ...(row.operator !== null ? { operator: row.operator } : {}),
+  });
   return payload;
 }
 
