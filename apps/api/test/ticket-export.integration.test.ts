@@ -19,6 +19,7 @@ describe("ticket export (Testcontainers)", () => {
   let seeded: IntegrationHarness["seeded"];
   let channelIds: Map<string, string>;
   let scopedExporter: User;
+  let refundKindId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
@@ -26,6 +27,9 @@ describe("ticket export (Testcontainers)", () => {
     });
     prisma = harness.prisma;
     seeded = harness.seeded;
+    refundKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
+    ).id;
 
     baseInput = {
       feedbackTime: "2026-07-09T02:00:00.000Z",
@@ -419,6 +423,71 @@ describe("ticket export (Testcontainers)", () => {
       expect(row[header.indexOf("反馈信息接收渠道")]).toBe("内部客服热线");
       expect(row[header.indexOf("用户反馈渠道")]).toBe("保司400热线");
       expect(row[header.indexOf("进线时间")]).toBe("2026-07-08 10:00");
+    });
+  });
+
+  describe("退费列", () => {
+    async function makeRefundTicket() {
+      const created = await makeTicket(
+        { customerName: "退费客户" },
+        { kindId: refundKindId, source: "jb-insurance" },
+      );
+      await prisma.ticketRefundDetail.create({
+        data: {
+          ticketId: created.id,
+          platform: "jb-insurance",
+          endorNo: "ENDOR-EXP-1",
+          sysOrderId: "SO-EXP-1",
+          workOrderType: "卡异常-退费失败",
+          expectedAmount: "100.00",
+          refundCreateTime: new Date("2026-08-24T08:40:00.000Z"),
+          refundTrades: [{ tradeNo: "1", payNo: "PAY-EXP-1", expectedAmount: "100.00" }],
+          failureReason: "银行卡状态异常",
+          compensationAmount: "20.50",
+          pushedFields: ["sysOrderId"],
+        },
+      });
+      return created;
+    }
+
+    it("退费单带种类/异常原因/应退金额/补偿金列；投诉单对应列为空", async () => {
+      const complaint = await makeTicket({ customerName: "投诉客户" });
+      const refund = await makeRefundTicket();
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv" });
+      expect(res.statusCode).toBe(200);
+
+      const rows = parseCsv(res.body);
+      const header = rows[0] ?? [];
+      const kindCol = header.indexOf("种类");
+      const reasonCol = header.indexOf("退费异常原因");
+      const amountCol = header.indexOf("应退金额");
+      const compensationCol = header.indexOf("补偿金");
+      expect(Math.min(kindCol, reasonCol, amountCol, compensationCol)).toBeGreaterThanOrEqual(0);
+
+      const byNumber = new Map(rows.slice(1).map((cells) => [cells[0] ?? "", cells]));
+      const complaintRow = byNumber.get(complaint.workOrderNumber) ?? [];
+      const refundRow = byNumber.get(refund.workOrderNumber) ?? [];
+      expect(refundRow[kindCol]).toBe("退费异常");
+      expect(refundRow[reasonCol]).toBe("银行卡状态异常");
+      expect(refundRow[amountCol]).toBe("100.00");
+      expect(refundRow[compensationCol]).toBe("20.50");
+      expect(complaintRow[kindCol]).toBe("投诉");
+      expect(complaintRow[reasonCol]).toBe("");
+      expect(complaintRow[amountCol]).toBe("");
+      expect(complaintRow[compensationCol]).toBe("");
+    });
+
+    it("kindId 查询参数按种类过滤导出", async () => {
+      await makeTicket({ customerName: "投诉客户" });
+      await makeRefundTicket();
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv", kindId: refundKindId });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain("退费客户");
+      expect(res.body).not.toContain("投诉客户");
     });
   });
 

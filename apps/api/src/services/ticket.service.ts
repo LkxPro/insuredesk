@@ -1,5 +1,6 @@
 import {
   applyNoPolicyNumber,
+  CALLBACK_DELIVERY_STATUSES,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
   formatFollowUpFrequency,
@@ -7,6 +8,7 @@ import {
   nuclearBodyStatusSchema,
   prioritySchema,
   processLogActionSchema,
+  refundTradePushSchema,
   reminderRulesSchema,
   substringSearchPattern,
   TICKET_CREATE_FIELD_KEYS,
@@ -21,6 +23,7 @@ import {
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
+import { z } from "zod";
 import type { Clock } from "../clock.ts";
 import type { Prisma, PrismaClient, SlaPolicy } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
@@ -271,6 +274,7 @@ type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
 type TicketListFilters = Pick<
   TicketListQuery,
   | "status"
+  | "kindId"
   | "channelId"
   | "categoryId"
   | "completionStatusId"
@@ -344,6 +348,9 @@ export async function buildTicketListWhere(
         filters.push({
           OR: condition.statuses.map((status) => displayStatusTicketWhere(status, now)),
         });
+        break;
+      case "kindIn":
+        filters.push({ kindId: { in: [...condition.kindIds] } });
         break;
       case "search":
         filters.push({
@@ -464,6 +471,9 @@ const detailInclude = {
   kind: { select: { key: true } },
   // 完结状态 is display-only on the detail page — the CURRENT name suffices
   completionStatus: { select: { name: true } },
+  refundDetail: true,
+  // 详情页只展示最新一次投递（完结一次 = 至多一条业务投递，重投复位同一行）
+  callbackDeliveries: { orderBy: [{ createdAt: "desc" as const }], take: 1 },
   processLogs: { orderBy: [{ at: "asc" }, { id: "asc" }] },
 } satisfies Prisma.TicketInclude;
 
@@ -536,6 +546,36 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     slaPolicyId: ticket.slaPolicyId,
     slaPolicy: ticket.slaPolicy,
     kindKey: ticket.kind.key,
+    refundDetail:
+      ticket.refundDetail === null
+        ? null
+        : {
+            sysOrderId: ticket.refundDetail.sysOrderId,
+            endorNo: ticket.refundDetail.endorNo,
+            workOrderType: ticket.refundDetail.workOrderType,
+            expectedAmount: ticket.refundDetail.expectedAmount,
+            refundCreateTime: ticket.refundDetail.refundCreateTime.toISOString(),
+            refundTrades: z.array(refundTradePushSchema).parse(ticket.refundDetail.refundTrades),
+            holderName: ticket.refundDetail.holderName,
+            holderPhone: ticket.refundDetail.holderPhone,
+            companyName: ticket.refundDetail.companyName,
+            productId: ticket.refundDetail.productId,
+            productName: ticket.refundDetail.productName,
+            policyNo: ticket.refundDetail.policyNo,
+            failureReason: ticket.refundDetail.failureReason,
+            pushedFields: ticket.refundDetail.pushedFields,
+            compensationAmount: ticket.refundDetail.compensationAmount,
+          },
+    callbackDelivery:
+      ticket.callbackDeliveries[0] === undefined
+        ? null
+        : {
+            id: ticket.callbackDeliveries[0].id,
+            status: z.enum(CALLBACK_DELIVERY_STATUSES).parse(ticket.callbackDeliveries[0].status),
+            attempts: ticket.callbackDeliveries[0].attempts,
+            lastError: ticket.callbackDeliveries[0].lastError,
+            deliveredAt: ticket.callbackDeliveries[0].deliveredAt?.toISOString() ?? null,
+          },
     priority,
     followUpFrequency: ticket.followUpFrequency,
     firstResponseRequirement: ticket.firstResponseRequirement,

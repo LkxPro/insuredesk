@@ -102,6 +102,7 @@ function respond(path: string, input: unknown): unknown {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
   if (
+    path === "ticketKind.filterOptions" ||
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
     path === "sla.options" ||

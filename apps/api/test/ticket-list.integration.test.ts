@@ -12,6 +12,7 @@ describe("ticket list (Testcontainers)", () => {
   let prisma: PrismaClient;
   let seeded: IntegrationHarness["seeded"];
   let complaintKindId: string;
+  let refundKindId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
@@ -22,6 +23,9 @@ describe("ticket list (Testcontainers)", () => {
     seeded = harness.seeded;
     complaintKindId = (await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } }))
       .id;
+    refundKindId = (
+      await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
+    ).id;
   }, 180_000);
 
   afterAll(async () => {
@@ -324,6 +328,27 @@ describe("ticket list (Testcontainers)", () => {
       const result = await manager().ticket.list({ source: "feishu_form" });
       expect(result.items.map((t) => t.id)).toEqual([feishu.id]);
       expect(result.items[0]?.source).toBe("feishu_form");
+    });
+  });
+
+  describe("种类筛选", () => {
+    it("kindId 命中对应种类；多选取并集；缺省不过滤", async () => {
+      const complaint = await makeTicket({ customerName: "投诉客户" });
+      const refund = await makeTicket(
+        { customerName: "退费客户" },
+        { kindId: refundKindId, source: "jb-insurance", creatorId: null },
+      );
+
+      expect((await manager().ticket.list({})).total).toBe(2);
+
+      const refunds = await manager().ticket.list({ kindId: refundKindId });
+      expect(refunds.items.map((t) => t.id)).toEqual([refund.id]);
+
+      const complaints = await manager().ticket.list({ kindId: complaintKindId });
+      expect(complaints.items.map((t) => t.id)).toEqual([complaint.id]);
+
+      const union = await manager().ticket.list({ kindId: [refundKindId, complaintKindId] });
+      expect(union.total).toBe(2);
     });
   });
 

@@ -118,6 +118,7 @@ function respond(path: string): unknown {
     path === "ticket.assigneeOptions" ||
     path === "ticketCategory.options" ||
     path === "channel.options" ||
+    path === "ticketKind.filterOptions" ||
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
     path === "sla.options" ||

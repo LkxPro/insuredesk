@@ -3,10 +3,14 @@ import {
   joinPolicyNumbers,
   PRIORITY_LABELS,
   type Priority,
+  REFUND_PUSHED_TICKET_FIELDS,
   TICKET_CREATE_FIELD_KEYS,
+  TICKET_FIELDS,
   type TicketCreateFieldKey,
   type TicketEditData,
+  TicketKindKey,
   TicketStatus,
+  type TicketUpdateRefundCompensationData,
   ticketProcessLogLabel,
 } from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client.ts";
@@ -54,6 +58,15 @@ import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 type EditableFields = Omit<TicketEditData, "ticketId" | "complaintLevel">;
 type EditableFieldKey = keyof EditableFields;
+
+export class PushedFieldsReadOnlyError extends Error {
+  constructor(fields: readonly TicketCreateFieldKey[]) {
+    super(
+      `推送实收字段只读，不可修改：${fields.map((key) => TICKET_FIELDS[key].label).join("、")}`,
+    );
+    this.name = "PushedFieldsReadOnlyError";
+  }
+}
 
 const EDITABLE_FIELD_KEYS: [
   Exclude<
@@ -141,6 +154,8 @@ export async function editTicket(
         slaPolicy: { select: { name: true } },
         userFeedbackChannel: { select: { name: true } },
         feedbackReceiveChannel: { select: { name: true } },
+        kind: { select: { key: true } },
+        refundDetail: { select: { pushedFields: true } },
       },
     });
     if (!ticket) {
@@ -153,6 +168,18 @@ export async function editTicket(
       (key) =>
         !sameValue(ticket[key], writableNext[key]) || (key === "policyNumbers" && noneToggled),
     );
+
+    if (ticket.kind.key === TicketKindKey.RefundException && ticket.refundDetail !== null) {
+      const lockedKeys = new Set(
+        ticket.refundDetail.pushedFields
+          .map((field) => REFUND_PUSHED_TICKET_FIELDS[field])
+          .filter((key) => key !== undefined),
+      );
+      const violations = changedFields.filter((key) => lockedKeys.has(key));
+      if (violations.length > 0) {
+        throw new PushedFieldsReadOnlyError(violations);
+      }
+    }
 
     const refPolicy = await findSlaPolicyById(tx, nextSlaPolicyId);
     const slaChanged = (refPolicy?.id ?? null) !== ticket.slaPolicyId;
@@ -289,6 +316,70 @@ export async function editTicket(
         ...changedFields,
         ...(slaChanged ? (["slaPolicyId"] as const) : []),
       ] as EditableFieldKey[],
+    };
+  });
+}
+
+export class RefundCompensationNotApplicableError extends Error {
+  constructor() {
+    super("非退费异常工单，无补偿金可编辑");
+    this.name = "RefundCompensationNotApplicableError";
+  }
+}
+
+export class RefundCompensationLockedError extends Error {
+  constructor() {
+    super("工单已完结，补偿金已随回调载荷快照锁定");
+    this.name = "RefundCompensationLockedError";
+  }
+}
+
+export async function updateRefundCompensation(
+  { prisma, clock }: TicketServiceDeps,
+  actor: AuthenticatedUser,
+  input: TicketUpdateRefundCompensationData,
+) {
+  const now = clock.now();
+  return prisma.$transaction(async (tx) => {
+    const ticket = await tx.ticket.findFirst({
+      where: { id: input.ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
+      select: {
+        id: true,
+        workOrderNumber: true,
+        status: true,
+        kind: { select: { key: true } },
+        refundDetail: { select: { compensationAmount: true } },
+      },
+    });
+    if (!ticket) {
+      throw new TicketNotFoundError();
+    }
+    if (ticket.kind.key !== TicketKindKey.RefundException || ticket.refundDetail === null) {
+      throw new RefundCompensationNotApplicableError();
+    }
+    if (ticket.status === TicketStatus.Completed) {
+      throw new RefundCompensationLockedError();
+    }
+    if (ticket.refundDetail.compensationAmount !== input.compensationAmount) {
+      await tx.ticketRefundDetail.update({
+        where: { ticketId: ticket.id },
+        data: { compensationAmount: input.compensationAmount },
+      });
+      await tx.processLog.create({
+        data: {
+          ticketId: ticket.id,
+          operatorId: actor.id,
+          operatorName: actor.name,
+          action: "edit",
+          remark: `补偿金: ${ticket.refundDetail.compensationAmount ?? "（空）"}→${input.compensationAmount ?? "（空）"}`,
+          at: now,
+        },
+      });
+    }
+    return {
+      id: ticket.id,
+      workOrderNumber: ticket.workOrderNumber,
+      compensationAmount: input.compensationAmount,
     };
   });
 }

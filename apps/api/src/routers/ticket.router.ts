@@ -11,6 +11,7 @@ import {
   ticketImportRevokeInputSchema,
   ticketListInputSchema,
   ticketResolveInputSchema,
+  ticketUpdateRefundCompensationInputSchema,
 } from "@insuredesk/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -45,7 +46,13 @@ import {
   DuplicateTicketsFoundError,
   findDuplicateTickets,
 } from "../services/ticket-duplicate.service.ts";
-import { editTicket } from "../services/ticket-edit.service.ts";
+import {
+  editTicket,
+  PushedFieldsReadOnlyError,
+  RefundCompensationLockedError,
+  RefundCompensationNotApplicableError,
+  updateRefundCompensation,
+} from "../services/ticket-edit.service.ts";
 import {
   ImportBatchAlreadyRevokedError,
   ImportBatchLockedError,
@@ -210,6 +217,9 @@ export const ticketRouter = router({
         if (error instanceof TicketNotFoundError) {
           throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
         }
+        if (error instanceof PushedFieldsReadOnlyError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+        }
         if (error instanceof SlaPolicyNotConfiguredError) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -221,6 +231,29 @@ export const ticketRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         mapDuplicateError(error);
+      }
+    }),
+
+  updateRefundCompensation: requirePermission("ticket.process")
+    .input(ticketUpdateRefundCompensationInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await updateRefundCompensation(deps, ctx.user, input);
+      } catch (error) {
+        if (error instanceof TicketNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+        }
+        if (error instanceof RefundCompensationNotApplicableError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+        }
+        if (error instanceof RefundCompensationLockedError) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
       }
     }),
 

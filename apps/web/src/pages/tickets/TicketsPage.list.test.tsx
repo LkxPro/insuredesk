@@ -56,6 +56,10 @@ function renderAt(path: string) {
   return renderApp({
     path,
     trpc: {
+      "ticketKind.filterOptions": [
+        { id: "kind-complaint", name: "投诉", active: true },
+        { id: "kind-refund", name: "退费异常", active: true },
+      ],
       "channel.filterOptions": [
         { id: "ch-baosi", name: "保司", active: true },
         { id: "ch-pay", name: "支付", active: true },
@@ -216,6 +220,35 @@ describe("URL-driven filters (deep-linkable)", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "时效策略" })).toHaveTextContent("1"),
     );
+  });
+
+  it("种类筛选：?kind= 入参落到 kindId，触发器挂计数徽标", async () => {
+    renderAt("/tickets?kind=kind-refund");
+
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ kindId: ["kind-refund"] });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "种类" })).toHaveTextContent("1"),
+    );
+  });
+
+  it("勾选种类写 URL 并回第 1 页", async () => {
+    renderAt("/tickets?page=3");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole("button", { name: "种类" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "退费异常" }));
+
+    await waitFor(() =>
+      expect(listInputs().at(-1)).toMatchObject({ kindId: ["kind-refund"], page: 1 }),
+    );
+  });
+
+  it("种类筛选与其他筛选共存（AND 语义由服务端保证）", async () => {
+    renderAt("/tickets?kind=kind-refund&status=processing");
+
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs()[0]).toMatchObject({ kindId: ["kind-refund"], status: ["processing"] });
   });
 
   it("旧 ?level= 参数静默忽略：不按等级筛选，也不报错", async () => {

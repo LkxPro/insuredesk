@@ -22,6 +22,7 @@ export function buildTicketExportUrl(
   // 显式下传覆盖缺省）
   for (const key of [
     "status",
+    "kindId",
     "channelId",
     "categoryId",
     "completionStatusId",
