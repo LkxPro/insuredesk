@@ -90,6 +90,23 @@ export const WORK_ORDER_PUSH_REQUIRED_FIELDS = [
   "refundTrade",
 ] as const;
 
+export const callbackPlaintextSchema = z.object(
+  {
+    sysOrderId: requiredText("sysOrderId"),
+    endorNo: requiredText("endorNo"),
+    actualAmount: requiredAmount("actualAmount"),
+    workOrderNumber: requiredText("workOrderNumber"),
+    compensationAmount: z
+      .string()
+      .regex(REFUND_AMOUNT_PATTERN, "compensationAmount 格式不正确")
+      .optional(),
+    remark: optionalText("remark"),
+    operator: optionalText("operator"),
+  },
+  "回调明文必须是 JSON 对象",
+);
+export type CallbackPlaintext = z.infer<typeof callbackPlaintextSchema>;
+
 export const WORK_ORDER_PUSH_OPTIONAL_FIELDS = [
   "holderName",
   "holderPhone",

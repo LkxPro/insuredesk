@@ -14,6 +14,7 @@ export const envSchema = z.object({
   // Only consulted in production, where the API serves the SPA via @fastify/static.
   // Left empty in dev — Vite owns the dev server, so no static serving is wired up.
   WEB_DIST_PATH: z.string().optional(),
+  OPENAPI_WORKORDER_PATH: z.string().optional(),
   // Release tag baked into the image at build time (Docker build-arg), never a
   // server-side config knob. The literal "dev" marks an un-injected build —
   // seeing it in production means the injection pipeline broke.

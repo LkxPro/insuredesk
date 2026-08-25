@@ -20,6 +20,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.4",
     "@insuredesk/shared": "workspace:*",
+    "@seriousme/openapi-schema-validator": "^2.9.1",
     "@types/node": "^24.13.3",
     "playwright": "^1.62.1",
     "typescript": "^7.0.2",

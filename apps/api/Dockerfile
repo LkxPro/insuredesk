@@ -77,6 +77,7 @@ RUN retry pnpm install --prod --frozen-lockfile --filter "@insuredesk/api..."
 COPY apps/api/src ./apps/api/src
 COPY apps/api/prisma ./apps/api/prisma
 COPY apps/api/tsconfig.json apps/api/prisma.config.ts apps/api/docker-entrypoint.sh ./apps/api/
+COPY docs/退费异常类工单/workorder-api.openapi.yaml ./docs/退费异常类工单/
 COPY packages/shared/src ./packages/shared/src
 COPY packages/shared/tsconfig.json ./packages/shared/
 
