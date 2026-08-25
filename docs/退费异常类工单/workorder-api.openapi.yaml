@@ -108,6 +108,12 @@ webhooks:
         - 固定 IV：`8765432112345678`（ASCII）
         - 明文编码 UTF-8；`channel` 固定 `WORK-ORDER`
 
+        **加解密自测向量**（联调用，验证实现是否正确）：
+        - secret: `dev-test-secret`
+        - 明文: `{"sysOrderId":"TEST001","endorNo":"TEST001_NO1_001","actualAmount":"100.00","workOrderNumber":"WO100001"}`
+        - 密文: `ad24504c3b0216d2863bcb404c78446e19f9c153e19d8b3156df3eca02fa4b9775c4f4a163907111d6e0d5f505757fb4bce7a0a189c2f85dbc6c9ef9d21dcb5abf3d755d4c0ae1bdcbf896fda39077160e882fed32843e6d8567d40aeb5ac406c819ff646a5edef134e21c46d91874b4`
+        - 用你的实现对该密文解密，得到上面的明文即为正确
+
         **重试语义**（平台响应决定工单系统行为）：
         - `code=0000, data=true`：已处理（含幂等重复回调），不再发送
         - `code=9999, data=false`：业务处理失败，工单系统稍后重试（退避 5m → 30m → 2h，24h 封顶转人工）
