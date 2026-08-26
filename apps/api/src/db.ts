@@ -10,16 +10,17 @@ function initClient(): PrismaClient {
       "DATABASE_URL is not set — put it in process.env (apps/api/.env in dev) before using the database",
     );
   }
-  return new PrismaClient({ adapter: new PrismaPg(url) });
+  // adapter-pg 把 DateTime 序列化为无偏移的 UTC 墙钟串、交给会话时区解析（读路径
+  // 再把偏移改写为 +00:00）——会话必须钉死 UTC，否则写入偏移。连接级 options 是
+  // 保险丝：库级 timezone 已由迁移 20260826000000 归正，但换库/新库忘设时这里兜底。
+  return new PrismaClient({
+    adapter: new PrismaPg({ connectionString: url, options: "-c timezone=UTC" }),
+  });
 }
 
 /**
- * Canonical Prisma client for the API. Repositories and DB-backed procedures
- * import this single instance; the integration tests drive it against a real
- * Postgres. Constructed lazily on first property access so importing this
- * module never depends on env-loading order, and a missing DATABASE_URL fails
- * with a clear error here instead of a SASL failure on the first query (pg
- * silently falls back to libpq defaults when given an empty string).
+ * 惰性构造：import 本模块不依赖 env 加载顺序。pg 拿到空连接串会静默回落
+ * libpq 默认，缺 DATABASE_URL 必须在 initClient 里显式报错。
  */
 export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
   get(_target, prop) {

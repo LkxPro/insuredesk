@@ -51,7 +51,12 @@ const {
   seedTicketCategories,
   seedTicketKinds,
 } = await import("./seed-data.ts");
-const prisma = new PrismaClient({ adapter: new PrismaPg(process.env.DATABASE_URL ?? "") });
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString: process.env.DATABASE_URL ?? "",
+    options: "-c timezone=UTC",
+  }),
+});
 await seedTicketKinds(prisma);
 console.log("✓ Ticket kinds: 2 (inserted if missing)");
 await seedRefundDefaultSlaPolicy(prisma);
