@@ -386,4 +386,90 @@ describe("callback-delivery tick (Testcontainers)", () => {
     const after = await prisma.callbackDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.status).toBe("delivered");
   });
+
+  it("tick 摘要日志：有活动或 disabled 时打 info，空转保持安静", async () => {
+    const logs: string[] = [];
+    const log = { info: (msg: string) => logs.push(msg), error: () => {} };
+
+    const quiet = startCallbackDeliveryWorker({
+      prisma,
+      clock: fixedClock(NOW),
+      config: { callbackUrl: CALLBACK_URL, callbackSecret: SECRET },
+      fetch: stubFetch(okPlatform).fetchImpl,
+      intervalMs: 3_600_000,
+      log,
+    });
+    await quiet.tickNow();
+    quiet.stop();
+    expect(logs).toHaveLength(0);
+
+    await createDelivery();
+    const active = startCallbackDeliveryWorker({
+      prisma,
+      clock: fixedClock(NOW),
+      config: { callbackUrl: CALLBACK_URL, callbackSecret: SECRET },
+      fetch: stubFetch(okPlatform).fetchImpl,
+      intervalMs: 3_600_000,
+      log,
+    });
+    await active.tickNow();
+    active.stop();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('"delivered":1');
+
+    const disabled = startCallbackDeliveryWorker({
+      prisma,
+      clock: fixedClock(NOW),
+      config: {},
+      fetch: stubFetch(okPlatform).fetchImpl,
+      intervalMs: 3_600_000,
+      log,
+    });
+    await disabled.tickNow();
+    disabled.stop();
+    expect(logs.some((msg) => msg.includes('"disabled":true'))).toBe(true);
+  });
+
+  it("看门狗：在途 tick 挂死超 stuckAfterMs 后强制放锁，后续 tick 继续投递", async () => {
+    const row = await createDelivery();
+    const errors: string[] = [];
+    const log = { info: () => {}, error: (_err: unknown, msg: string) => errors.push(msg) };
+    let gate!: () => void;
+    const hang = new Promise<void>((resolve) => {
+      gate = resolve;
+    });
+    let call = 0;
+    const fetchImpl: CallbackFetch = async () => {
+      call += 1;
+      if (call === 1) {
+        await hang;
+      }
+      return { status: 200, text: async () => okPlatform.body };
+    };
+
+    const worker = startCallbackDeliveryWorker({
+      prisma,
+      clock: fixedClock(NOW),
+      config: { callbackUrl: CALLBACK_URL, callbackSecret: SECRET },
+      fetch: fetchImpl,
+      intervalMs: 3_600_000,
+      stuckAfterMs: 50,
+      log,
+    });
+    try {
+      const first = worker.tickNow();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const second = worker.tickNow();
+      expect(second).not.toBe(first);
+      await second;
+
+      expect(errors.some((msg) => msg.includes("强制放锁"))).toBe(true);
+      const after = await prisma.callbackDelivery.findUniqueOrThrow({ where: { id: row.id } });
+      expect(after.status).toBe("delivered");
+      expect(after.attempts).toBe(1);
+    } finally {
+      gate();
+      worker.stop();
+    }
+  });
 });

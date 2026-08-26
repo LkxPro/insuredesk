@@ -18,15 +18,12 @@ if (existsSync(".env")) {
   process.loadEnvFile(".env");
 }
 
-const prisma = new PrismaClient({ adapter: new PrismaPg(process.env.DATABASE_URL ?? "") });
-
-/**
- * Seed script for development and testing.
- * Creates the factory roles (first initialization only) and one demo user per
- * role. The actual fixture lives in seed-data.ts, shared with the auth tests.
- *
- * Invoked by dev-init.ts on `pnpm dev` when the users table is empty.
- */
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString: process.env.DATABASE_URL ?? "",
+    options: "-c timezone=UTC",
+  }),
+});
 
 async function main() {
   console.log("🌱 Seeding database...");

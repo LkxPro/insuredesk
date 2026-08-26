@@ -241,22 +241,47 @@ export interface CallbackDeliveryWorker {
 export function startCallbackDeliveryWorker(
   deps: CallbackDeliveryDeps & {
     intervalMs?: number;
+    stuckAfterMs?: number;
     log?: { info(msg: string): void; error(err: unknown, msg: string): void };
   },
 ): CallbackDeliveryWorker {
   const intervalMs = deps.intervalMs ?? 60_000;
-  let current: Promise<void> | null = null;
+  const stuckAfterMs = deps.stuckAfterMs ?? 10 * 60_000;
+  // 装箱而非裸 let：finally 闭包里读槽位时 TS 会把裸变量窄化成 null（误报 never）。
+  const box: { current: { promise: Promise<void>; startedAt: number } | null } = {
+    current: null,
+  };
   const tickNow = () => {
-    current ??= (async () => {
+    let slot = box.current;
+    if (slot && Date.now() - slot.startedAt > stuckAfterMs) {
+      // prisma 查询无超时，在途 tick 可能永久挂死——强制放锁让后续 tick 继续。
+      // 挂死的旧 promise 之后落地时不得清掉新锁：靠 startedAt 比对识别旧主。
+      deps.log?.error(
+        new Error(`callback delivery tick 超过 ${stuckAfterMs}ms 未完成`),
+        "callback delivery tick stuck，强制放锁",
+      );
+      slot = null;
+    }
+    if (slot) {
+      return slot.promise;
+    }
+    const startedAt = Date.now();
+    const promise = (async () => {
       try {
-        await tickCallbackDeliveries(deps);
+        const summary = await tickCallbackDeliveries(deps);
+        if (summary.disabled || summary.attempted > 0) {
+          deps.log?.info(`callback delivery tick: ${JSON.stringify(summary)}`);
+        }
       } catch (error) {
         deps.log?.error(error, "callback delivery tick failed");
       } finally {
-        current = null;
+        if (box.current?.startedAt === startedAt) {
+          box.current = null;
+        }
       }
     })();
-    return current;
+    box.current = { promise, startedAt };
+    return promise;
   };
   void tickNow();
   const timer = setInterval(() => void tickNow(), intervalMs);

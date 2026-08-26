@@ -29,10 +29,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      # Store timestamps in UTC; the app converts to Asia/Shanghai at the edge.
-      # TZ here keeps container-local logs readable.
-      TZ: Asia/Shanghai
-      PGTZ: Asia/Shanghai
+      # 不设 TZ/PGTZ：会话时区的权威来源是迁移 20260826000000 的 ALTER DATABASE
+      # （adapter-pg 无偏移序列化要求会话为 UTC）；TZ/PGTZ 只在 initdb 时生效一次，
+      # 设了反而让新卷带上非 UTC 默认、且误导人以为它是生效途径。
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
