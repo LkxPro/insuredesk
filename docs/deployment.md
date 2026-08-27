@@ -119,6 +119,16 @@ git pull && make upgrade-test
 `make upgrade-test` = pull `:test` + `up -d` + 就绪等待(超时打印日志)。更新
 时机由人控制(联调中重启会断对方会话),不上自动滚动。
 
+### 改了 .env.test
+
+```bash
+make restart-test
+```
+
+= `up -d`(不拉镜像) + 就绪等待。compose 只重建配置有变化的容器。注意必须
+recreate 而非 `docker compose restart`——restart 复用旧容器配置,新 env 不
+生效。
+
 ### 联调未合并的分支(本地 build 逃生舱)
 
 ```bash

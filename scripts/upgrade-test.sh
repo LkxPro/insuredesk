@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # 测试环境更新:拉 :test 通道镜像并重启测试栈。与 prod 的 upgrade.sh 不同:
 # 不解析 CalVer(可变 tag)、不做迁前备份(测试库可弃,见 docs/deployment.md)。
+# --no-pull 供 make restart-test 用:改了 .env.test 时 recreate 即生效,无需拉镜像。
 set -euo pipefail
+
+PULL=1
+if [ "${1:-}" = "--no-pull" ]; then
+  PULL=0
+fi
 
 COMPOSE=(docker compose --env-file .env.test -f docker-compose.test.yml)
 READY_URL="${READY_URL:-http://127.0.0.1:3001/healthz}"
@@ -14,7 +20,9 @@ if [ ! -f .env.test ]; then
   exit 1
 fi
 
-"${COMPOSE[@]}" pull insuredesk-api-test
+if [ "$PULL" = "1" ]; then
+  "${COMPOSE[@]}" pull insuredesk-api-test
+fi
 "${COMPOSE[@]}" up -d
 
 for ((attempt = 1; attempt <= WAIT_ATTEMPTS; attempt++)); do
