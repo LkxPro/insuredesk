@@ -1,5 +1,4 @@
 import {
-  REFUND_PUSHED_TICKET_FIELDS,
   TICKET_FIELDS,
   TICKET_SOURCE_LABELS,
   type TicketCreateFieldKey,
@@ -12,11 +11,37 @@ import { DetailItem as Item, DetailSection as Section } from "@/pages/ticket-sur
 import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
 import { RefundModule } from "./RefundModule";
 import { SubmissionTextCollapse } from "./SubmissionTextCollapse";
-import { TicketDetailField } from "./TicketDetailFields";
-import type { TicketFormValues } from "./TicketFormFields";
+import { RefundDetailField, TicketDetailField } from "./TicketDetailFields";
+import type { RefundEditFormValues, TicketFormValues } from "./TicketFormFields";
 import type { TicketDetail } from "./ticket-detail";
 
-export function TicketInfoColumn({
+function StatusSections({ ticket }: { ticket: TicketDetail }) {
+  return (
+    <>
+      <Section title="处理状态">
+        <Item label="工单状态">
+          <StatusBadge status={ticket.displayStatus} />
+        </Item>
+        <Item label="责任人">{ticket.assigneeName}</Item>
+        <Item label="分配时间">{formatDateTime(ticket.assignedAt)}</Item>
+        <Item label="处理时限">
+          {ticket.dueAt ? formatDateTime(ticket.dueAt) : ticket.slaPolicyId ? "不设时限" : null}
+        </Item>
+        <Item label="下次联系时间">{formatDateTime(ticket.nextContactTime)}</Item>
+        <Item label="联系次数">{ticket.contactCount}</Item>
+      </Section>
+
+      {(ticket.completionTime || ticket.completionStatus) && (
+        <Section title="完结信息">
+          <Item label="完结时间">{formatDateTime(ticket.completionTime)}</Item>
+          <Item label={TICKET_FIELDS.completionStatusId.label}>{ticket.completionStatus}</Item>
+        </Section>
+      )}
+    </>
+  );
+}
+
+function RefundInfoColumn({
   ticket,
   editing,
   form,
@@ -24,26 +49,82 @@ export function TicketInfoColumn({
 }: {
   ticket: TicketDetail;
   editing: boolean;
-  form: UseFormReturn<TicketFormValues>;
+  form: UseFormReturn<RefundEditFormValues>;
   fieldAddon?: (name: TicketCreateFieldKey) => ReactNode;
 }) {
   const { dirtyFields, errors } = form.formState;
-  const lockedFields = new Set(
-    (ticket.refundDetail?.pushedFields ?? [])
-      .map((field) => REFUND_PUSHED_TICKET_FIELDS[field])
-      .filter((key) => key !== undefined),
+  const field = (name: "contactPhone" | "slaPolicyId") => (
+    <RefundDetailField
+      name={name}
+      ticket={ticket}
+      editing={editing}
+      form={form}
+      dirty={!!dirtyFields[name]}
+      error={errors[name]?.message}
+      addon={fieldAddon?.(name)}
+    />
   );
+
+  return (
+    <div className="flex flex-col gap-6">
+      <Section title="基本信息">
+        <Item label="创建时间">{formatDateTime(ticket.createdAt)}</Item>
+        <Item label="更新时间">{formatDateTime(ticket.updatedAt)}</Item>
+        <Item label="工单来源">{TICKET_SOURCE_LABELS[ticket.source]}</Item>
+        <Item label="创建人">{ticket.createdBy}</Item>
+      </Section>
+
+      <RefundModule ticket={ticket} />
+
+      <Section title="客户信息">{field("contactPhone")}</Section>
+
+      <Section title="分类与等级">
+        {field("slaPolicyId")}
+        <Item label="跟进频次要求">{ticket.followUpFrequency}</Item>
+        <Item label="首响要求">{ticket.firstResponseRequirement}</Item>
+      </Section>
+
+      <StatusSections ticket={ticket} />
+    </div>
+  );
+}
+
+export function TicketInfoColumn({
+  ticket,
+  editing,
+  form,
+  refundForm,
+  fieldAddon,
+}: {
+  ticket: TicketDetail;
+  editing: boolean;
+  form: UseFormReturn<TicketFormValues>;
+  refundForm: UseFormReturn<RefundEditFormValues>;
+  fieldAddon?: (name: TicketCreateFieldKey) => ReactNode;
+}) {
+  const { dirtyFields, errors } = form.formState;
   const field = (name: TicketCreateFieldKey) => (
     <TicketDetailField
       name={name}
       ticket={ticket}
-      editing={editing && !lockedFields.has(name)}
+      editing={editing}
       form={form}
       dirty={!!dirtyFields[name] || (name === "policyNumbers" && !!dirtyFields.noPolicyNumber)}
       error={errors[name]?.message}
       addon={fieldAddon?.(name)}
     />
   );
+
+  if (ticket.kindKey === TicketKindKey.RefundException) {
+    return (
+      <RefundInfoColumn
+        ticket={ticket}
+        editing={editing}
+        form={refundForm}
+        fieldAddon={fieldAddon}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -55,8 +136,6 @@ export function TicketInfoColumn({
         <Item label="工单来源">{TICKET_SOURCE_LABELS[ticket.source]}</Item>
         <Item label="创建人">{ticket.createdBy}</Item>
       </Section>
-
-      {ticket.kindKey === TicketKindKey.RefundException && <RefundModule ticket={ticket} />}
 
       <Section title="业务信息">
         {field("channelId")}
@@ -93,26 +172,7 @@ export function TicketInfoColumn({
         <Item label="首响要求">{ticket.firstResponseRequirement}</Item>
       </Section>
 
-      <Section title="处理状态">
-        <Item label="工单状态">
-          <StatusBadge status={ticket.displayStatus} />
-        </Item>
-        <Item label="责任人">{ticket.assigneeName}</Item>
-        <Item label="分配时间">{formatDateTime(ticket.assignedAt)}</Item>
-        <Item label="处理时限">
-          {/* dueAt null = 策略不设时限（如出厂特急行）when a policy exists, 未指定策略 otherwise */}
-          {ticket.dueAt ? formatDateTime(ticket.dueAt) : ticket.slaPolicyId ? "不设时限" : null}
-        </Item>
-        <Item label="下次联系时间">{formatDateTime(ticket.nextContactTime)}</Item>
-        <Item label="联系次数">{ticket.contactCount}</Item>
-      </Section>
-
-      {(ticket.completionTime || ticket.completionStatus) && (
-        <Section title="完结信息">
-          <Item label="完结时间">{formatDateTime(ticket.completionTime)}</Item>
-          <Item label={TICKET_FIELDS.completionStatusId.label}>{ticket.completionStatus}</Item>
-        </Section>
-      )}
+      <StatusSections ticket={ticket} />
     </div>
   );
 }

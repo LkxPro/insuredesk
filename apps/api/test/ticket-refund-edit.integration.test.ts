@@ -162,45 +162,27 @@ describe("退费异常工单编辑契约与补偿金 (Testcontainers)", () => {
       expect(result.changedFields).toEqual(["slaPolicyId"]);
     });
 
-    it("旧端点 ticket.edit 分流：退费携带下沉字段报墓碑，仅携带共享键正常服务", async () => {
-      const ticket = await createRefundTicket();
-
-      const tombstone = await manager()
-        .ticket.edit({ ticketId: ticket.id, customerName: "张三" })
-        .catch((e: unknown) => e);
-      expect(tombstone).toMatchObject({
-        code: "BAD_REQUEST",
-        message: expect.stringContaining("退费工单仅可编辑联系人电话与时效策略"),
-      });
-
-      const flagOnly = await manager()
-        .ticket.edit({ ticketId: ticket.id, noPolicyNumber: true })
-        .catch((e: unknown) => e);
-      expect(flagOnly).toMatchObject({
-        code: "BAD_REQUEST",
-        message: expect.stringContaining("退费工单仅可编辑联系人电话与时效策略"),
-      });
-
-      const ok = await manager().ticket.edit({
-        ticketId: ticket.id,
-        contactPhone: "13600003333",
-        slaPolicyId: refundPolicyId,
-      });
-      expect(ok.changedFields).toEqual(expect.arrayContaining(["contactPhone", "slaPolicyId"]));
-    });
-
-    it("旧端点 ticket.edit 分流：投诉单走 editComplaint 逻辑", async () => {
-      const created = await manager().ticket.create({
+    it("旧端点 ticket.edit 墓碑：退费/投诉任何调用一律报客户端版本过旧", async () => {
+      const refund = await createRefundTicket();
+      const complaint = await manager().ticket.create({
         customerName: "投诉客户甲",
         slaPolicyId: harness.slaPolicyId("一般投诉"),
         allowDuplicate: true,
       });
-      const result = await manager().ticket.edit({
-        ticketId: created.id,
-        customerName: "改名客户",
-        slaPolicyId: harness.slaPolicyId("一般投诉"),
-      });
-      expect(result.changedFields).toEqual(["customerName"]);
+
+      for (const input of [
+        { ticketId: refund.id, contactPhone: "13600003333", slaPolicyId: refundPolicyId },
+        { ticketId: refund.id, customerName: "张三" },
+        { ticketId: complaint.id, customerName: "改名客户" },
+      ]) {
+        const error = await manager()
+          .ticket.edit(input)
+          .catch((e: unknown) => e);
+        expect(error).toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringContaining("客户端版本过旧，请刷新"),
+        });
+      }
     });
 
     it("editComplaint 对缺 detail 行的存量投诉单 upsert 补齐", async () => {

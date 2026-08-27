@@ -68,13 +68,6 @@ const EDITABLE_FIELD_KEYS: readonly DiffFieldKey[] = TICKET_CREATE_FIELD_KEYS.fi
 
 type EditableValue = string | string[] | boolean | Date | null;
 
-export class RefundEditRetiredFieldsError extends Error {
-  constructor() {
-    super("退费工单仅可编辑联系人电话与时效策略，请刷新客户端后重试");
-    this.name = "RefundEditRetiredFieldsError";
-  }
-}
-
 export class EditKindMismatchError extends Error {
   constructor(endpoint: "editComplaint" | "editRefund") {
     super(
@@ -215,10 +208,9 @@ async function writeEditLog(
 }
 
 /**
- * Guarded upstream by ticket.editComplaint / ticket.edit；the lookup
- * carries the viewer data scope, so an editor without ticket.view_all stays
- * on their own tickets — anything else surfaces as not-found (no existence
- * leak). Returns the fields that actually changed.
+ * The lookup carries the viewer data scope, so an editor without
+ * ticket.view_all stays on their own tickets — anything else surfaces as
+ * not-found (no existence leak).
  * 缺 detail 行的存量工单由 upsert 兜底补齐（防御漏建行）。
  */
 export async function editComplaint(
@@ -473,44 +465,6 @@ export async function editRefund(
       ] as EditableFieldKey[],
     };
   });
-}
-
-const REFUND_RETIRED_EDIT_KEYS: ReadonlySet<string> = new Set<DetailFieldKey>([
-  ...EDITABLE_FIELD_KEYS.filter((key) => key !== "contactPhone"),
-  "noPolicyNumber",
-]);
-
-/** kind 建单盖章后不可改——事务外探针按 kind 分流无竞态。 */
-export async function editTicket(
-  deps: TicketServiceDeps,
-  actor: AuthenticatedUser,
-  input: TicketEditData,
-  options?: { allowDuplicate?: boolean; presentKeys?: readonly string[] },
-) {
-  const probe = await deps.prisma.ticket.findFirst({
-    where: { id: input.ticketId, deletedAt: null, ...applyTicketDataScope(actor) },
-    select: { kind: { select: { key: true } } },
-  });
-  if (!probe) {
-    throw new TicketNotFoundError();
-  }
-  if (probe.kind.key === TicketKindKey.RefundException) {
-    const retired = (options?.presentKeys ?? []).filter((key) => REFUND_RETIRED_EDIT_KEYS.has(key));
-    if (retired.length > 0) {
-      throw new RefundEditRetiredFieldsError();
-    }
-    return editRefund(
-      deps,
-      actor,
-      {
-        ticketId: input.ticketId,
-        contactPhone: input.contactPhone,
-        slaPolicyId: input.slaPolicyId,
-      },
-      options,
-    );
-  }
-  return editComplaint(deps, actor, input, options);
 }
 
 export class RefundCompensationNotApplicableError extends Error {

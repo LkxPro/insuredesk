@@ -631,7 +631,7 @@ describe("external ticket API (Testcontainers)", () => {
         where: { name: "加急投诉" },
       });
       const internal = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
-      await internal.ticket.edit({ ticketId: ticket.id, slaPolicyId: policy.id });
+      await internal.ticket.editComplaint({ ticketId: ticket.id, slaPolicyId: policy.id });
 
       const detail = await caller.externalTicket.detail({ ticketId: ticket.id });
       expect(detail.ticket.slaPolicyName).toBe("加急投诉");

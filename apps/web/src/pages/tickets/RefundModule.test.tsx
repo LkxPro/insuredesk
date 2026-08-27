@@ -8,6 +8,7 @@ import {
   detailPayload,
   listItem,
   refundDetailPayload,
+  slaPolicyOptions,
 } from "./detail-pane-fixtures";
 
 function renderDetail(
@@ -20,6 +21,12 @@ function renderDetail(
     trpc: {
       "ticket.list": { items: [listItem()], total: 1, page: 1, pageSize: 20 },
       "ticket.detail": detailPayload(overrides),
+      "ticket.editRefund": () => ({
+        id: "t1",
+        workOrderNumber: "WO100001",
+        changedFields: ["contactPhone"],
+      }),
+      "sla.options": slaPolicyOptions,
       "ticket.updateRefundCompensation": () => ({
         id: "t1",
         workOrderNumber: "WO100001",
@@ -78,8 +85,85 @@ describe("退费模块渲染", () => {
     const pane = await findPane();
     expect(within(pane).queryByText("退费信息")).not.toBeInTheDocument();
   });
+});
 
-  it("主表单编辑态下，推送盖章的标准字段只读、未盖章字段可编辑", async () => {
+describe("退费详情布局收敛", () => {
+  it("只读：投诉字段整块消失，投保人三元组/保单号/系统订单号只在退费模块出现一次", async () => {
+    renderDetail(refundTicket({ contactPhone: "13900001111" }));
+    const pane = await findPane();
+
+    expect(within(pane).getByText("退费信息")).toBeInTheDocument();
+    expect(within(pane).getByText("联系人电话（备用）")).toBeInTheDocument();
+    expect(within(pane).getByText("13900001111")).toBeInTheDocument();
+    expect(within(pane).getByText("时效策略")).toBeInTheDocument();
+    expect(within(pane).getByText("一般投诉")).toBeInTheDocument();
+
+    for (const label of [
+      "反馈时间",
+      "反馈渠道",
+      "项目（保司）",
+      "经纪主体",
+      "支付渠道",
+      "内部订单号",
+      "用户反馈渠道",
+      "反馈信息接收渠道",
+      "客户姓名",
+      "客户电话（投保人）",
+      "保司侧是否核身",
+      "客户诉求",
+      "客户曾进线",
+      "进线时间",
+      "进线ID",
+      "客诉类别",
+      "优先级",
+    ]) {
+      expect(within(pane).queryByText(label)).not.toBeInTheDocument();
+    }
+
+    expect(within(pane).getAllByText("张三")).toHaveLength(1);
+    expect(within(pane).getAllByText("13800000001")).toHaveLength(1);
+    expect(within(pane).getAllByText("P20260818000123")).toHaveLength(1);
+    expect(within(pane).getAllByText("SO-20260818")).toHaveLength(1);
+    expect(within(pane).queryByText("P2026070900123")).not.toBeInTheDocument();
+  });
+
+  it("编辑：仅联系人电话与时效策略可改，保存走 editRefund 且只带裁后键", async () => {
+    renderDetail(refundTicket({ contactPhone: "13900001111" }));
+    const pane = await findPane();
+    fireEvent.click(within(pane).getByRole("button", { name: "编辑" }));
+    await waitFor(() =>
+      expect(within(pane).getByRole("button", { name: "保存修改" })).toBeInTheDocument(),
+    );
+
+    expect(within(pane).getByLabelText("联系人电话（备用）")).toHaveValue("13900001111");
+    expect(within(pane).getByRole("combobox", { name: /^时效策略/ })).toBeInTheDocument();
+    for (const label of [
+      "客户姓名",
+      "项目（保司）",
+      "保单号",
+      "客户电话（投保人）",
+      "内部订单号",
+    ]) {
+      expect(within(pane).queryByLabelText(label)).not.toBeInTheDocument();
+    }
+    expect(within(pane).getByText("张三")).toBeInTheDocument();
+
+    fireEvent.change(within(pane).getByLabelText("联系人电话（备用）"), {
+      target: { value: "13911112222" },
+    });
+    fireEvent.click(within(pane).getByRole("button", { name: "保存修改" }));
+
+    await waitFor(() => expect(callsTo("ticket.editRefund")).toHaveLength(1));
+    expect(callsTo("ticket.editRefund")[0]?.input).toEqual({
+      ticketId: "t1",
+      contactPhone: "13911112222",
+      slaPolicyId: "pol-normal",
+    });
+    expect(callsTo("ticket.edit")).toHaveLength(0);
+    expect(callsTo("ticket.editComplaint")).toHaveLength(0);
+  });
+
+  it("时效策略下拉按退费组取数，不带投诉组请求", async () => {
     renderDetail(refundTicket());
     const pane = await findPane();
     fireEvent.click(within(pane).getByRole("button", { name: "编辑" }));
@@ -87,11 +171,68 @@ describe("退费模块渲染", () => {
       expect(within(pane).getByRole("button", { name: "保存修改" })).toBeInTheDocument(),
     );
 
-    expect(within(pane).queryByLabelText("客户姓名")).not.toBeInTheDocument();
-    expect(within(pane).queryByLabelText("客户电话（投保人）")).not.toBeInTheDocument();
-    expect(within(pane).queryByLabelText("内部订单号")).not.toBeInTheDocument();
-    expect(within(pane).getByText("张三")).toBeInTheDocument();
-    expect(within(pane).getByLabelText("项目（保司）")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        callsTo("sla.options").some(
+          (call) =>
+            (call.input as { kindKey?: string } | undefined)?.kindKey === "refund_exception",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      callsTo("sla.options").every(
+        (call) => (call.input as { kindKey?: string } | undefined)?.kindKey !== "complaint",
+      ),
+    ).toBe(true);
+  });
+
+  it("保存命中查重 409：确认后带 allowDuplicate 重发 editRefund", async () => {
+    renderApp({
+      path: "/tickets/t1",
+      role: TEST_ROLES.CS_MANAGER,
+      trpc: {
+        "ticket.list": { items: [listItem()], total: 1, page: 1, pageSize: 20 },
+        "ticket.detail": detailPayload(refundTicket({ contactPhone: "13900001111" })),
+        "sla.options": slaPolicyOptions,
+        "ticket.findDuplicates": () => [
+          {
+            id: "dup-1",
+            workOrderNumber: "WO100090",
+            customerName: "王秀英",
+            createdAt: "2026-08-12T06:32:00.000Z",
+            displayStatus: "processing",
+            matchedFields: ["contactPhone"],
+            activityAt: "2026-08-12T09:05:00.000Z",
+            activityText: "客户补充提交了缴费凭证，待核身",
+          },
+        ],
+        "ticket.editRefund": (input: unknown) => {
+          if ((input as { allowDuplicate?: boolean }).allowDuplicate) {
+            return { id: "t1", workOrderNumber: "WO100001", changedFields: ["contactPhone"] };
+          }
+          throw Object.assign(new Error("发现 1 个可能重复的工单"), { trpcCode: "CONFLICT" });
+        },
+      },
+    });
+    const pane = await findPane();
+    fireEvent.click(within(pane).getByRole("button", { name: "编辑" }));
+    await waitFor(() =>
+      expect(within(pane).getByRole("button", { name: "保存修改" })).toBeInTheDocument(),
+    );
+
+    fireEvent.change(within(pane).getByLabelText("联系人电话（备用）"), {
+      target: { value: "13911112222" },
+    });
+    fireEvent.click(within(pane).getByRole("button", { name: "保存修改" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "仍要保存" }));
+    await waitFor(() => expect(callsTo("ticket.editRefund")).toHaveLength(2));
+    expect(callsTo("ticket.editRefund")[1]?.input).toEqual({
+      ticketId: "t1",
+      contactPhone: "13911112222",
+      slaPolicyId: "pol-normal",
+      allowDuplicate: true,
+    });
   });
 });
 

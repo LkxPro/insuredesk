@@ -1,4 +1,5 @@
 import {
+  editRefundInputSchema,
   NUCLEAR_BODY_STATUSES,
   PRIORITIES,
   PRIORITY_LABELS,
@@ -166,6 +167,13 @@ export function ticketFormValuesToInput(values: TicketFormValues): TicketCreateI
     policyNumbers: splitPolicyNumbers(values.policyNumbers),
   };
 }
+
+export const refundEditFormSchema = editRefundInputSchema.pick({
+  contactPhone: true,
+  slaPolicyId: true,
+});
+
+export type RefundEditFormValues = z.input<typeof refundEditFormSchema>;
 
 /** Radix Select forbids `value=""` items; stand-in for the "未设置" choice. */
 export const UNSET = "__unset__";
@@ -338,7 +346,6 @@ export function TicketFormFields({
   const userFeedbackChannelOptions = trpc.userFeedbackChannel.options.useQuery().data ?? [];
   const feedbackReceiveChannelOptions = trpc.feedbackReceiveChannel.options.useQuery().data ?? [];
 
-  // 建单即时查重：命中提示贴身挂在保单号/手机号字段下（编辑面走 TicketDetailField 的 addon）
   const duplicates = useTicketDuplicates(form);
 
   return (

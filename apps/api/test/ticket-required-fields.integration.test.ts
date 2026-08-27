@@ -368,7 +368,7 @@ describe("role required ticket fields (Testcontainers)", () => {
     it("allows editing to clear a required field", async () => {
       const created = await requiredUser().ticket.create(validInput());
 
-      const edited = await requiredUser().ticket.edit({
+      const edited = await requiredUser().ticket.editComplaint({
         ticketId: created.id,
         customerName: null,
         phone: null,
@@ -388,7 +388,7 @@ describe("role required ticket fields (Testcontainers)", () => {
         ...Object.fromEntries(TICKET_CREATE_FIELD_KEYS.map((key) => [key, null])),
       } as TicketEditInput;
 
-      const edited = await requiredUser().ticket.edit(allNull);
+      const edited = await requiredUser().ticket.editComplaint(allNull);
       expect(edited).toBeDefined();
     });
   });

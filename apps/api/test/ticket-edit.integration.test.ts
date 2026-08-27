@@ -106,7 +106,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("edits multiple fields and writes one edit log with the before→after diff, from/to empty", async () => {
       const ticketId = await createTicket();
 
-      const result = await manager().ticket.edit(
+      const result = await manager().ticket.editComplaint(
         editInput(ticketId, {
           customerName: "张三丰",
           internalOrderNumber: "IO-20260710-01",
@@ -160,7 +160,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         feedbackReceiveChannelId: harness.feedbackReceiveChannelId("（微信）私发"),
       });
 
-      const result = await manager().ticket.edit(
+      const result = await manager().ticket.editComplaint(
         editInput(ticketId, {
           contactTime: null,
           feedbackReceiveChannelId: null,
@@ -181,7 +181,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("edits 保单号 multi values with space-joined remark; clearing logs （空）; 等值提交不留痕", async () => {
       const ticketId = await createTicket();
 
-      const changed = await manager().ticket.edit(
+      const changed = await manager().ticket.editComplaint(
         editInput(ticketId, { policyNumbers: ["P-A", "P-B"] }),
       );
       expect(changed.changedFields).toEqual(["policyNumbers"]);
@@ -190,12 +190,14 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       expect(detail.processLogs.at(-1)?.remark).toBe("保单号: P2026071000829→P-A P-B");
 
       // 重复项在契约层去重，去重后与现值相同＝无改动
-      const noop = await manager().ticket.edit(
+      const noop = await manager().ticket.editComplaint(
         editInput(ticketId, { policyNumbers: ["P-A", "P-B", "P-A"] }),
       );
       expect(noop.changedFields).toEqual([]);
 
-      const cleared = await manager().ticket.edit(editInput(ticketId, { policyNumbers: [] }));
+      const cleared = await manager().ticket.editComplaint(
+        editInput(ticketId, { policyNumbers: [] }),
+      );
       expect(cleared.changedFields).toEqual(["policyNumbers"]);
       detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.policyNumbers).toEqual([]);
@@ -206,7 +208,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const ticketId = await createCompletedTicket();
       const before = await manager().ticket.detail({ id: ticketId });
 
-      await manager().ticket.edit(editInput(ticketId, { customerName: "李四" }));
+      await manager().ticket.editComplaint(editInput(ticketId, { customerName: "李四" }));
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.customerName).toBe("李四");
@@ -220,7 +222,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("ignores a smuggled status field: not editable, completed stays completed", async () => {
       const ticketId = await createCompletedTicket();
 
-      await manager().ticket.edit({
+      await manager().ticket.editComplaint({
         ...editInput(ticketId, { customerName: "王五" }),
         // Not part of the contract — Zod strips unknown keys, nothing reopens
         status: "processing",
@@ -234,7 +236,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("a no-change edit succeeds but leaves no trace (no empty-remark log)", async () => {
       const ticketId = await createTicket();
 
-      const result = await manager().ticket.edit(editInput(ticketId));
+      const result = await manager().ticket.editComplaint(editInput(ticketId));
       expect(result.changedFields).toEqual([]);
 
       const detail = await manager().ticket.detail({ id: ticketId });
@@ -246,7 +248,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("已填 → 无：数组清空、flag 置位，留痕 保单号: P…→无", async () => {
       const ticketId = await createTicket();
 
-      const result = await manager().ticket.edit(
+      const result = await manager().ticket.editComplaint(
         editInput(ticketId, { policyNumbers: [], noPolicyNumber: true }),
       );
       expect(result.changedFields).toEqual(["policyNumbers"]);
@@ -260,7 +262,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("留空 → 无：数组两侧都是 [] 仍留痕 （空）→无", async () => {
       const ticketId = await createTicket({ policyNumbers: [] });
 
-      const result = await manager().ticket.edit(
+      const result = await manager().ticket.editComplaint(
         editInput(ticketId, { policyNumbers: [], noPolicyNumber: true }),
       );
       expect(result.changedFields).toEqual(["policyNumbers"]);
@@ -273,7 +275,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("无 → 留空：取消勾选，留痕 无→（空）", async () => {
       const ticketId = await createTicket({ policyNumbers: [], noPolicyNumber: true });
 
-      const result = await manager().ticket.edit(
+      const result = await manager().ticket.editComplaint(
         editInput(ticketId, { policyNumbers: [], noPolicyNumber: false }),
       );
       expect(result.changedFields).toEqual(["policyNumbers"]);
@@ -286,7 +288,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("无 → 已填：取消勾选并填值，留痕 无→P…", async () => {
       const ticketId = await createTicket({ policyNumbers: [], noPolicyNumber: true });
 
-      await manager().ticket.edit(
+      await manager().ticket.editComplaint(
         editInput(ticketId, { policyNumbers: ["P-9"], noPolicyNumber: false }),
       );
 
@@ -299,7 +301,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("同传 noPolicyNumber=true 与值时 flag 优先，数组清空", async () => {
       const ticketId = await createTicket();
 
-      await manager().ticket.edit(editInput(ticketId, { noPolicyNumber: true }));
+      await manager().ticket.editComplaint(editInput(ticketId, { noPolicyNumber: true }));
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.noPolicyNumber).toBe(true);
@@ -318,7 +320,9 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         data: { createdAt, slaAnchorAt: createdAt },
       });
 
-      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("一般投诉") }));
+      await manager().ticket.editComplaint(
+        editInput(ticketId, { slaPolicyId: policyId("一般投诉") }),
+      );
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.dueAt).toBe(new Date(createdAt.getTime() + 48 * HOUR_MS).toISOString());
@@ -345,7 +349,9 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       });
       expect((await manager().ticket.detail({ id: ticketId })).displayStatus).toBe("overdue");
 
-      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("特急投诉") }));
+      await manager().ticket.editComplaint(
+        editInput(ticketId, { slaPolicyId: policyId("特急投诉") }),
+      );
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.dueAt).toBeNull();
@@ -362,7 +368,9 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         data: { createdAt, slaAnchorAt: createdAt },
       });
 
-      const result = await manager().ticket.edit(editInput(ticketId, { slaPolicyId: rushId }));
+      const result = await manager().ticket.editComplaint(
+        editInput(ticketId, { slaPolicyId: rushId }),
+      );
       expect(result.changedFields).toContain("slaPolicyId");
 
       const detail = await manager().ticket.detail({ id: ticketId });
@@ -376,7 +384,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
 
     it("清除策略引用清空全部盖章，from/to 落 名→null", async () => {
       const ticketId = await createTicket();
-      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: null }));
+      await manager().ticket.editComplaint(editInput(ticketId, { slaPolicyId: null }));
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.slaPolicyId).toBeNull();
       expect(detail.dueAt).toBeNull();
@@ -392,7 +400,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       await admin().sla.setActive({ id: rushId, active: false });
       try {
         const before = await manager().ticket.detail({ id: ticketId });
-        const result = await manager().ticket.edit(
+        const result = await manager().ticket.editComplaint(
           editInput(ticketId, { customerName: "引用未动", slaPolicyId: rushId }),
         );
         expect(result.changedFields).toEqual(["customerName"]);
@@ -402,7 +410,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
 
         const otherId = await createTicket();
         await expect(
-          manager().ticket.edit(editInput(otherId, { slaPolicyId: rushId })),
+          manager().ticket.editComplaint(editInput(otherId, { slaPolicyId: rushId })),
         ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
       } finally {
         await admin().sla.setActive({ id: rushId, active: true });
@@ -412,7 +420,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("旧 complaintLevel 文本轨编辑输入返回明确校验错误", async () => {
       const ticketId = await createTicket();
       const error = await manager()
-        .ticket.edit(editInput(ticketId, { complaintLevel: "加急投诉" } as never))
+        .ticket.editComplaint(editInput(ticketId, { complaintLevel: "加急投诉" } as never))
         .catch((e: unknown) => e);
       expect(error).toMatchObject({ code: "BAD_REQUEST" });
       expect((error as Error).message).toContain("投诉等级文本轨已下线");
@@ -424,7 +432,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const ticketId = await createTicket();
       const before = await manager().ticket.detail({ id: ticketId });
 
-      await manager().ticket.edit(editInput(ticketId, { priority: "urgent" }));
+      await manager().ticket.editComplaint(editInput(ticketId, { priority: "urgent" }));
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.priority).toBe("urgent");
@@ -439,7 +447,9 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const anchor = new Date(new Date(createdAtIso).getTime() - 12 * HOUR_MS);
       await prisma.ticket.update({ where: { id: ticketId }, data: { slaAnchorAt: anchor } });
 
-      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("加急投诉") }));
+      await manager().ticket.editComplaint(
+        editInput(ticketId, { slaPolicyId: policyId("加急投诉") }),
+      );
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.dueAt).toBe(new Date(anchor.getTime() + 72 * HOUR_MS).toISOString());
@@ -450,7 +460,9 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const before = await manager().ticket.detail({ id: ticketId });
       expect(before.dueAt).not.toBeNull();
 
-      await manager().ticket.edit(editInput(ticketId, { slaPolicyId: policyId("加急投诉") }));
+      await manager().ticket.editComplaint(
+        editInput(ticketId, { slaPolicyId: policyId("加急投诉") }),
+      );
 
       const detail = await manager().ticket.detail({ id: ticketId });
       expect(detail.slaPolicyId).toBe(policyId("加急投诉"));
@@ -492,7 +504,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         code: "NOT_FOUND",
       });
       await expect(
-        admin().ticket.edit(editInput(ticketId, { customerName: "删后编辑" })),
+        admin().ticket.editComplaint(editInput(ticketId, { customerName: "删后编辑" })),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(
         frontline().ticket.addComment({ ticketId, remark: "删后跟进" }),
@@ -522,10 +534,10 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       const ticketId = await createTicket();
 
       await expect(
-        frontline().ticket.edit(editInput(ticketId, { customerName: "无权编辑" })),
+        frontline().ticket.editComplaint(editInput(ticketId, { customerName: "无权编辑" })),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(
-        observer().ticket.edit(editInput(ticketId, { customerName: "无权编辑" })),
+        observer().ticket.editComplaint(editInput(ticketId, { customerName: "无权编辑" })),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
       // 客服主管 deliberately lacks the dangerous ticket.delete
       await expect(manager().ticket.delete({ ticketId })).rejects.toMatchObject({
@@ -543,10 +555,10 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         callerWith(seeded.users.cs1, "scoped-editor", ["ticket.view", "ticket.edit"]);
 
       await expect(
-        scopedEditor().ticket.edit(editInput(othersTicketId, { customerName: "越权" })),
+        scopedEditor().ticket.editComplaint(editInput(othersTicketId, { customerName: "越权" })),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
 
-      const result = await scopedEditor().ticket.edit(
+      const result = await scopedEditor().ticket.editComplaint(
         editInput(ownTicketId, { customerName: "本人工单" }),
       );
       expect(result.changedFields).toEqual(["customerName"]);
@@ -569,13 +581,13 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
         callerWith(seeded.users.cs1, "受限创建人", ["ticket.view", "ticket.create", "ticket.edit"]);
       const created = await creatorEditor().ticket.create(baseInput());
 
-      const whileUnassigned = await creatorEditor().ticket.edit(
+      const whileUnassigned = await creatorEditor().ticket.editComplaint(
         editInput(created.id, { customerName: "创建人未指派时改" }),
       );
       expect(whileUnassigned.changedFields).toEqual(["customerName"]);
 
       await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
-      const afterHandoff = await creatorEditor().ticket.edit(
+      const afterHandoff = await creatorEditor().ticket.editComplaint(
         editInput(created.id, { customerName: "创建人他人处理时改" }),
       );
       expect(afterHandoff.changedFields).toEqual(["customerName"]);
