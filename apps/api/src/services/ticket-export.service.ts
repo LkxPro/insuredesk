@@ -31,14 +31,18 @@ import {
 const exportInclude = {
   // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
-  // Catalog references render their CURRENT names — a rename shows through
-  category: { select: { name: true } },
-  channel: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
-  userFeedbackChannel: { select: { name: true } },
-  feedbackReceiveChannel: { select: { name: true } },
   kind: { select: { name: true } },
+  complaintDetail: {
+    include: {
+      // Catalog references render their CURRENT names — a rename shows through
+      category: { select: { name: true } },
+      channel: { select: { name: true } },
+      userFeedbackChannel: { select: { name: true } },
+      feedbackReceiveChannel: { select: { name: true } },
+    },
+  },
   refundDetail: { select: { failureReason: true, expectedAmount: true, compensationAmount: true } },
   // internalOnly 不过滤：内部导出照常包含
   processLogs: {
@@ -63,48 +67,81 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
     value: (t, { now }) =>
       TICKET_STATUS_LABELS[deriveDisplayStatus(ticketStatusSchema.parse(t.status), t.dueAt, now)],
   },
-  { header: ticketExportHeader("customerName"), value: (t) => t.customerName ?? "" },
-  { header: ticketExportHeader("phone"), value: (t) => t.phone ?? "" },
+  {
+    header: ticketExportHeader("customerName"),
+    value: (t) => t.complaintDetail?.customerName ?? "",
+  },
+  { header: ticketExportHeader("phone"), value: (t) => t.complaintDetail?.phone ?? "" },
   { header: ticketExportHeader("contactPhone"), value: (t) => t.contactPhone ?? "" },
   {
     header: ticketExportHeader("policyNumbers"),
-    value: (t) => (t.noPolicyNumber ? "无" : joinPolicyNumbers(t.policyNumbers)),
+    value: (t) =>
+      t.complaintDetail?.noPolicyNumber
+        ? "无"
+        : joinPolicyNumbers(t.complaintDetail?.policyNumbers ?? []),
   },
-  { header: ticketExportHeader("channelId"), value: (t) => t.channel?.name ?? "" },
+  {
+    header: ticketExportHeader("channelId"),
+    value: (t) => t.complaintDetail?.channel?.name ?? "",
+  },
   { header: ticketExportHeader("slaPolicyId"), value: (t) => t.slaPolicy?.name ?? "" },
-  { header: ticketExportHeader("categoryId"), value: (t) => t.category?.name ?? "" },
+  {
+    header: ticketExportHeader("categoryId"),
+    value: (t) => t.complaintDetail?.category?.name ?? "",
+  },
   {
     header: ticketExportHeader("priority"),
-    value: (t) => (t.priority === null ? "" : PRIORITY_LABELS[prioritySchema.parse(t.priority)]),
+    value: (t) => {
+      const priority = t.complaintDetail?.priority ?? null;
+      return priority === null ? "" : PRIORITY_LABELS[prioritySchema.parse(priority)];
+    },
   },
   { header: "来源", value: (t) => TICKET_SOURCE_LABELS[ticketSourceSchema.parse(t.source)] },
-  { header: ticketExportHeader("project"), value: (t) => t.project ?? "" },
-  { header: ticketExportHeader("brokerageEntity"), value: (t) => t.brokerageEntity ?? "" },
-  { header: ticketExportHeader("paymentChannel"), value: (t) => t.paymentChannel ?? "" },
-  { header: ticketExportHeader("internalOrderNumber"), value: (t) => t.internalOrderNumber ?? "" },
+  { header: ticketExportHeader("project"), value: (t) => t.complaintDetail?.project ?? "" },
+  {
+    header: ticketExportHeader("brokerageEntity"),
+    value: (t) => t.complaintDetail?.brokerageEntity ?? "",
+  },
+  {
+    header: ticketExportHeader("paymentChannel"),
+    value: (t) => t.complaintDetail?.paymentChannel ?? "",
+  },
+  {
+    header: ticketExportHeader("internalOrderNumber"),
+    value: (t) => t.complaintDetail?.internalOrderNumber ?? "",
+  },
   {
     header: ticketExportHeader("userFeedbackChannelId"),
-    value: (t) => t.userFeedbackChannel?.name ?? "",
+    value: (t) => t.complaintDetail?.userFeedbackChannel?.name ?? "",
   },
   {
     header: ticketExportHeader("feedbackReceiveChannelId"),
-    value: (t) => t.feedbackReceiveChannel?.name ?? "",
+    value: (t) => t.complaintDetail?.feedbackReceiveChannel?.name ?? "",
   },
-  { header: ticketExportHeader("customerRequest"), value: (t) => t.customerRequest ?? "" },
-  { header: ticketExportHeader("nuclearBodyStatus"), value: (t) => t.nuclearBodyStatus ?? "" },
+  {
+    header: ticketExportHeader("customerRequest"),
+    value: (t) => t.complaintDetail?.customerRequest ?? "",
+  },
+  {
+    header: ticketExportHeader("nuclearBodyStatus"),
+    value: (t) => t.complaintDetail?.nuclearBodyStatus ?? "",
+  },
   {
     header: ticketExportHeader("hasContacted"),
-    value: (t) => (t.hasContacted === null ? "" : t.hasContacted ? "是" : "否"),
+    value: (t) => {
+      const hasContacted = t.complaintDetail?.hasContacted ?? null;
+      return hasContacted === null ? "" : hasContacted ? "是" : "否";
+    },
   },
   {
     header: ticketExportHeader("contactTime"),
-    value: (t, { formatDate }) => formatDate(t.contactTime),
+    value: (t, { formatDate }) => formatDate(t.complaintDetail?.contactTime ?? null),
   },
-  { header: ticketExportHeader("contactId"), value: (t) => t.contactId ?? "" },
+  { header: ticketExportHeader("contactId"), value: (t) => t.complaintDetail?.contactId ?? "" },
   { header: "责任人", value: (t) => t.assignee?.name ?? "" },
   {
     header: ticketExportHeader("feedbackTime"),
-    value: (t, { formatDate }) => formatDate(t.feedbackTime),
+    value: (t, { formatDate }) => formatDate(t.complaintDetail?.feedbackTime ?? null),
   },
   { header: "创建时间", value: (t, { formatDate }) => formatDate(t.createdAt) },
   { header: "分配时间", value: (t, { formatDate }) => formatDate(t.assignedAt) },

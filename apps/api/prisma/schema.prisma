@@ -9,46 +9,46 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  username     String    @unique
+  id           String   @id @default(cuid())
+  username     String   @unique
   passwordHash String?
   name         String
-  email        String?   @unique
-  feishuUserId String?   @unique
+  email        String?  @unique
+  feishuUserId String?  @unique
   team         String?
-  active       Boolean   @default(true)
-  createdAt    DateTime  @default(now()) @db.Timestamptz
-  updatedAt    DateTime  @updatedAt @db.Timestamptz
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
 
-  roleId        String
-  role          Role         @relation(fields: [roleId], references: [id])
-  sessions      Session[]
+  roleId   String
+  role     Role      @relation(fields: [roleId], references: [id])
+  sessions Session[]
 
   // 外部账号预填（内部账号恒为 null）：提交时服务端静默快照进工单字段。
   // 文本列的长度上限与对应工单字段一致，由 Zod 在 API 边界执法。
   /// 预填：反馈渠道引用; null = 未配置. 被预填引用的渠道只能停用不能删除 —
   /// Restrict is the DB backstop behind the service's refusal.
-  prefillChannelId String?
-  prefillProject String?
-  prefillBrokerageEntity String?
-  prefillPaymentChannel String?
+  prefillChannelId                String?
+  prefillProject                  String?
+  prefillBrokerageEntity          String?
+  prefillPaymentChannel           String?
   /// 预填：用户反馈渠道引用; null = 未配置. 被预填引用的目录项只能停用不能删除 —
   /// Restrict is the DB backstop behind the service's refusal.
-  prefillUserFeedbackChannelId String?
+  prefillUserFeedbackChannelId    String?
   /// 预填：反馈信息接收渠道引用; null = 未配置. Referenced rows can only be 停用,
   /// never deleted — Restrict is the DB backstop.
   prefillFeedbackReceiveChannelId String?
 
-  prefillChannel                Channel?                 @relation(fields: [prefillChannelId], references: [id], onDelete: Restrict)
-  prefillUserFeedbackChannel    UserFeedbackChannel?     @relation(fields: [prefillUserFeedbackChannelId], references: [id], onDelete: Restrict)
-  prefillFeedbackReceiveChannel FeedbackReceiveChannel?  @relation(fields: [prefillFeedbackReceiveChannelId], references: [id], onDelete: Restrict)
+  prefillChannel                Channel?                @relation(fields: [prefillChannelId], references: [id], onDelete: Restrict)
+  prefillUserFeedbackChannel    UserFeedbackChannel?    @relation(fields: [prefillUserFeedbackChannelId], references: [id], onDelete: Restrict)
+  prefillFeedbackReceiveChannel FeedbackReceiveChannel? @relation(fields: [prefillFeedbackReceiveChannelId], references: [id], onDelete: Restrict)
 
-  assignedTickets Ticket[] @relation("TicketAssignee")
-  createdTickets  Ticket[] @relation("TicketCreator")
-  importBatches   TicketImportBatch[] @relation("TicketImportBatchImporter")
+  assignedTickets      Ticket[]            @relation("TicketAssignee")
+  createdTickets       Ticket[]            @relation("TicketCreator")
+  importBatches        TicketImportBatch[] @relation("TicketImportBatchImporter")
   revokedImportBatches TicketImportBatch[] @relation("TicketImportBatchRevoker")
-  notifications   AppNotification[]
-  schedules       Schedule[]
+  notifications        AppNotification[]
+  schedules            Schedule[]
 
   @@index([roleId])
   @@index([prefillChannelId])
@@ -58,15 +58,15 @@ model User {
 }
 
 model Role {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  permissions String[]
+  id                   String   @id @default(cuid())
+  name                 String   @unique
+  permissions          String[]
   /// 系统角色（仅管理员）：名称、权限、删除全锁
-  system      Boolean  @default(false)
+  system               Boolean  @default(false)
   /// 建单必填字段集（数组每项属于 TICKET_CREATE_FIELD_KEYS）；空 = 全非必填
   requiredTicketFields String[] @default([])
-  createdAt   DateTime @default(now()) @db.Timestamptz
-  updatedAt   DateTime @updatedAt @db.Timestamptz
+  createdAt            DateTime @default(now()) @db.Timestamptz
+  updatedAt            DateTime @updatedAt @db.Timestamptz
 
   users User[]
 
@@ -90,59 +90,24 @@ model Ticket {
   /// Prisma treating equivalent Postgres-rendered expressions as schema drift.
   workOrderNumber String @unique @default(dbgenerated())
 
-  createdAt    DateTime  @default(now()) @db.Timestamptz
-  updatedAt    DateTime  @updatedAt @db.Timestamptz
-  feedbackTime DateTime? @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
 
-  source  String
+  source      String
   /// 工单种类目录引用（行为按种类 key 绑代码）. Referenced rows can only be
   /// 停用, never deleted — Restrict is the DB backstop.
-  kindId  String
+  kindId      String
   /// SLA 计时锚盖章列：一切 SLA 计时（首响/检查点/超时）自它起算 —— 投诉单 =
   /// createdAt，退费异常单 = 平台推送的 refundCreateTime。建单时写入，此后不改。
   slaAnchorAt DateTime @db.Timestamptz
-  /// 反馈渠道目录引用; null = 未填写. Referenced rows can only be 停用, never
-  /// deleted — Restrict is the DB backstop behind the service's refusal.
-  channelId String?
 
-  // all nullable: unfilled means unknown
-  project              String?
-  brokerageEntity      String?
-  paymentChannel       String?
-  internalOrderNumber  String?
-  /// 多值保单号；[] = 未填写（数组字段无 null 态）
-  policyNumbers        String[] @default([])
-  /// true = 明确没有保单号（区别于未填写的 []）; true 时 policyNumbers 必为 []
-  noPolicyNumber       Boolean @default(false)
-  /// 用户反馈渠道目录引用（客户发起侧）; null = 未填写. Referenced rows can only
-  /// be 停用, never deleted — Restrict is the DB backstop behind the service's refusal.
-  userFeedbackChannelId String?
-  /// 反馈信息接收渠道目录引用（我方收到反馈的途径，区别于客户发起侧的用户反馈渠道）;
-  /// null = 未填写. Referenced rows can only be 停用, never deleted — Restrict is
-  /// the DB backstop.
-  feedbackReceiveChannelId String?
+  contactPhone String?
 
-  // all nullable: unfilled means unknown
-  customerName      String?
-  phone             String?
-  contactPhone      String?
-  customerRequest   String?
-  nuclearBodyStatus String?
-  /// Tri-state: null = 未知, deliberately not false
-  hasContacted      Boolean?
-  contactTime       DateTime? @db.Timestamptz
-  contactId         String?
-
-  /// 客诉类别目录引用; null = 未填写. Referenced rows can only be 停用, never
-  /// deleted — Restrict is the DB backstop behind the service's refusal.
-  categoryId     String?
   /// 时效策略目录引用; null = 未指定: no dueAt, no 首响/跟进 requirements, no
   /// SLA time alerts until a later edit sets it (SLA then counts from the
   /// original slaAnchorAt). Referenced rows can only be 停用, never deleted —
   /// Restrict is the DB backstop.
-  slaPolicyId    String?
-  /// Independent free label (low/medium/high/urgent), default empty, no SLA role
-  priority       String?
+  slaPolicyId              String?
   /// 跟进频次要求, stamped from the level's SLA config; null while 未定级
   followUpFrequency        String?
   /// 首响要求, stamped from the level's SLA config; null while 未定级
@@ -150,22 +115,22 @@ model Ticket {
 
   // only the 4 base statuses are stored;
   // pending_timeout/overdue are derived at read time
-  status           String    @default("unassigned")
-  assigneeId       String?
+  status          String    @default("unassigned")
+  assigneeId      String?
   /// First-assignment time, audit only — never used to compute dueAt
-  assignedAt       DateTime? @db.Timestamptz
+  assignedAt      DateTime? @db.Timestamptz
   /// Fixed at creation: slaAnchorAt + level's overdueHours; null for 特急
-  dueAt            DateTime? @db.Timestamptz
-  nextContactTime  DateTime? @db.Timestamptz
+  dueAt           DateTime? @db.Timestamptz
+  nextContactTime DateTime? @db.Timestamptz
   /// Maintained solely by addComment (+1 per follow-up)
-  contactCount     Int       @default(0)
+  contactCount    Int       @default(0)
 
-  completionTime   DateTime? @db.Timestamptz
+  completionTime     DateTime? @db.Timestamptz
   /// 完结状态目录引用; null = 未完结. Referenced rows can only be 停用, never
   /// deleted — Restrict is the DB backstop behind the service's refusal.
   completionStatusId String?
   /// Soft delete: non-null rows are excluded from default lists and statistics
-  deletedAt        DateTime? @db.Timestamptz
+  deletedAt          DateTime? @db.Timestamptz
 
   /// Creator (FK→User), set for creator-backed sources (manual 建单人 /
   /// file_import 导入者); external sources leave it null and "由谁创建"
@@ -179,31 +144,24 @@ model Ticket {
   /// 外部提交原文; source=external_channel 时必填，创建后不可编辑
   submissionText String?
 
-  assignee         User?              @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  creator          User?              @relation("TicketCreator", fields: [creatorId], references: [id])
-  kind             TicketKind         @relation(fields: [kindId], references: [id], onDelete: Restrict)
-  category         TicketCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  channel          Channel?           @relation(fields: [channelId], references: [id], onDelete: Restrict)
-  completionStatus CompletionStatus?  @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
-  slaPolicy        SlaPolicy?         @relation(fields: [slaPolicyId], references: [id], onDelete: Restrict)
-  userFeedbackChannel    UserFeedbackChannel?     @relation(fields: [userFeedbackChannelId], references: [id], onDelete: Restrict)
-  feedbackReceiveChannel FeedbackReceiveChannel?  @relation(fields: [feedbackReceiveChannelId], references: [id], onDelete: Restrict)
-  importBatch      TicketImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
-  refundDetail     TicketRefundDetail?
+  assignee           User?                  @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  creator            User?                  @relation("TicketCreator", fields: [creatorId], references: [id])
+  kind               TicketKind             @relation(fields: [kindId], references: [id], onDelete: Restrict)
+  completionStatus   CompletionStatus?      @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
+  slaPolicy          SlaPolicy?             @relation(fields: [slaPolicyId], references: [id], onDelete: Restrict)
+  importBatch        TicketImportBatch?     @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  complaintDetail    TicketComplaintDetail?
+  refundDetail       TicketRefundDetail?
   callbackDeliveries CallbackDelivery[]
-  processLogs      ProcessLog[]
+  processLogs        ProcessLog[]
 
   @@index([assigneeId])
   /// The non-view_all data scope ORs assigneeId with creatorId
   @@index([creatorId])
   @@index([kindId])
   @@index([slaAnchorAt])
-  @@index([categoryId])
-  @@index([channelId])
   @@index([completionStatusId])
   @@index([slaPolicyId])
-  @@index([userFeedbackChannelId])
-  @@index([feedbackReceiveChannelId])
   @@index([status])
   @@index([createdAt])
   /// Computed-status predicates (pending_timeout/overdue) and 处理时限 sorting
@@ -214,17 +172,76 @@ model Ticket {
   @@map("tickets")
 }
 
+/// 投诉类工单（一切非 refund_exception 种类）的专属字段；退费单必无 detail
+/// 行。存量投诉单可能缺行（防御），编辑路径 upsert 兜底补齐。
+model TicketComplaintDetail {
+  ticketId     String    @id
+  feedbackTime DateTime? @db.Timestamptz
+
+  /// 反馈渠道目录引用; null = 未填写. Referenced rows can only be 停用, never
+  /// deleted — Restrict is the DB backstop behind the service's refusal.
+  channelId String?
+
+  // all nullable: unfilled means unknown
+  project                  String?
+  brokerageEntity          String?
+  paymentChannel           String?
+  internalOrderNumber      String?
+  /// 多值保单号；[] = 未填写（数组字段无 null 态）
+  policyNumbers            String[] @default([])
+  /// true = 明确没有保单号（区别于未填写的 []）; true 时 policyNumbers 必为 []
+  noPolicyNumber           Boolean  @default(false)
+  /// 用户反馈渠道目录引用（客户发起侧）; null = 未填写. Referenced rows can only
+  /// be 停用, never deleted — Restrict is the DB backstop behind the service's refusal.
+  userFeedbackChannelId    String?
+  /// 反馈信息接收渠道目录引用（我方收到反馈的途径，区别于客户发起侧的用户反馈渠道）;
+  /// null = 未填写. Referenced rows can only be 停用, never deleted — Restrict is
+  /// the DB backstop.
+  feedbackReceiveChannelId String?
+
+  // all nullable: unfilled means unknown
+  customerName      String?
+  phone             String?
+  customerRequest   String?
+  nuclearBodyStatus String?
+  /// Tri-state: null = 未知, deliberately not false
+  hasContacted      Boolean?
+  contactTime       DateTime? @db.Timestamptz
+  contactId         String?
+
+  /// 客诉类别目录引用; null = 未填写. Referenced rows can only be 停用, never
+  /// deleted — Restrict is the DB backstop behind the service's refusal.
+  categoryId String?
+  /// Independent free label (low/medium/high/urgent), default empty, no SLA role
+  priority   String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  ticket                 Ticket                  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  channel                Channel?                @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  category               TicketCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  userFeedbackChannel    UserFeedbackChannel?    @relation(fields: [userFeedbackChannelId], references: [id], onDelete: Restrict)
+  feedbackReceiveChannel FeedbackReceiveChannel? @relation(fields: [feedbackReceiveChannelId], references: [id], onDelete: Restrict)
+
+  @@index([channelId])
+  @@index([categoryId])
+  @@index([userFeedbackChannelId])
+  @@index([feedbackReceiveChannelId])
+  @@map("ticket_complaint_details")
+}
+
 /// One row per 批量导入上传 that reached the database — who imported, when,
 /// how many rows, from which file. Doubles as the 撤销 unit: a clean batch
 /// (no ticket processed or individually deleted) can be revoked whole —
 /// every ticket soft-deleted and revokedAt/revokedById stamped here.
 model TicketImportBatch {
-  id         String   @id @default(cuid())
-  importerId String
-  importedAt DateTime @db.Timestamptz
-  rowCount   Int
+  id          String    @id @default(cuid())
+  importerId  String
+  importedAt  DateTime  @db.Timestamptz
+  rowCount    Int
   /// Uploaded filename as the client sent it, for human recognition only.
-  filename   String
+  filename    String
   /// 整批撤销时刻; null = 未撤销. Set once — a revoked batch is final (no
   /// restore) and can never be revoked again.
   revokedAt   DateTime? @db.Timestamptz
@@ -316,32 +333,32 @@ model TicketKind {
 /// 平台推送的实收清单，此后一律只读；金额一律 String 原样存取（系统不做数值
 /// 运算）。(platform, endorNo) 是推送幂等键 —— 重复推送命中即返回首个工单。
 model TicketRefundDetail {
-  id               String   @id @default(cuid())
-  ticketId         String   @unique
-  platform         String
-  endorNo          String
-  sysOrderId       String
+  id                 String   @id @default(cuid())
+  ticketId           String   @unique
+  platform           String
+  endorNo            String
+  sysOrderId         String
   /// 纯展示文本，不做枚举校验 —— 平台新增类型不应被己方拒收
-  workOrderType    String
-  expectedAmount   String
+  workOrderType      String
+  expectedAmount     String
   /// 平台推送的退费申请时刻；工单 slaAnchorAt 的盖章来源（可早于录入 12h）
-  refundCreateTime DateTime @db.Timestamptz
+  refundCreateTime   DateTime @db.Timestamptz
   /// 期次明细，平台推送原文
-  refundTrades     Json
-  holderName       String?
-  holderPhone      String?
-  companyName      String?
-  productId        String?
-  productName      String?
-  policyNo         String?
-  failureReason    String?
+  refundTrades       Json
+  holderName         String?
+  holderPhone        String?
+  companyName        String?
+  productId          String?
+  productName        String?
+  policyNo           String?
+  failureReason      String?
   /// 推送实收字段清单（合同字段名）——实收字段此后一律只读；缺省的可选字段
   /// 不在清单内，客服可后补
-  pushedFields     String[] @default([])
+  pushedFields       String[] @default([])
   /// 补偿金（诚意金）; null = 无补偿。客服可编辑，完结后随回调载荷快照锁定
   compensationAmount String?
-  createdAt        DateTime @default(now()) @db.Timestamptz
-  updatedAt        DateTime @updatedAt @db.Timestamptz
+  createdAt          DateTime @default(now()) @db.Timestamptz
+  updatedAt          DateTime @updatedAt @db.Timestamptz
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
@@ -353,19 +370,19 @@ model TicketRefundDetail {
 /// 状态机 pending → delivered | dead：退避 5m→30m→2h，自首试 24h 或平台
 /// 9998 转 dead 并告警管理员。
 model CallbackDelivery {
-  id               String    @id @default(cuid())
-  ticketId         String
+  id       String @id @default(cuid())
+  ticketId String
   /// pending | delivered | dead — 取值清单在 packages/shared/src/ticket-kind.ts
-  status           String    @default("pending")
+  status   String @default("pending")
 
   // 回调明文载荷快照（完结时刻锁定，此后一切字段不再回读工单）
-  sysOrderId       String
-  endorNo          String
-  workOrderNumber  String
-  actualAmount     String
+  sysOrderId         String
+  endorNo            String
+  workOrderNumber    String
+  actualAmount       String
   compensationAmount String?
-  remark           String?
-  operator         String?
+  remark             String?
+  operator           String?
 
   attempts       Int       @default(0)
   firstAttemptAt DateTime? @db.Timestamptz
@@ -392,7 +409,7 @@ model TicketCategory {
   createdAt    DateTime @default(now()) @db.Timestamptz
   updatedAt    DateTime @updatedAt @db.Timestamptz
 
-  tickets Ticket[]
+  complaintDetails TicketComplaintDetail[]
 
   @@map("ticket_categories")
 }
@@ -407,8 +424,8 @@ model Channel {
   createdAt    DateTime @default(now()) @db.Timestamptz
   updatedAt    DateTime @updatedAt @db.Timestamptz
 
-  tickets         Ticket[]
-  prefillingUsers User[]
+  complaintDetails TicketComplaintDetail[]
+  prefillingUsers  User[]
 
   @@map("channels")
 }
@@ -440,8 +457,8 @@ model UserFeedbackChannel {
   createdAt    DateTime @default(now()) @db.Timestamptz
   updatedAt    DateTime @updatedAt @db.Timestamptz
 
-  tickets         Ticket[]
-  prefillingUsers User[]
+  complaintDetails TicketComplaintDetail[]
+  prefillingUsers  User[]
 
   @@map("user_feedback_channels")
 }
@@ -457,8 +474,8 @@ model FeedbackReceiveChannel {
   createdAt    DateTime @default(now()) @db.Timestamptz
   updatedAt    DateTime @updatedAt @db.Timestamptz
 
-  tickets         Ticket[]
-  prefillingUsers User[]
+  complaintDetails TicketComplaintDetail[]
+  prefillingUsers  User[]
 
   @@map("feedback_receive_channels")
 }
@@ -480,11 +497,11 @@ model ShiftType {
 
 /// 日期与班次时段均按墙钟字符串解释。
 model Schedule {
-  id      String @id @default(cuid())
-  date    String
-  userId  String
-  shiftId String
-  remark  String? @db.VarChar(200)
+  id        String   @id @default(cuid())
+  date      String
+  userId    String
+  shiftId   String
+  remark    String?  @db.VarChar(200)
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
@@ -501,9 +518,9 @@ model Schedule {
 /// assignment transaction, no cron. Time-derived alerts (overdue/due_soon/待首响
 /// …) are 轨 2 "我的待办": computed at read time, NEVER stored here.
 model AppNotification {
-  id    String @id @default(cuid())
-  type  String
-  title String
+  id      String @id @default(cuid())
+  type    String
+  title   String
   /// Human-readable body; a 改派 notification annotates the remaining time
   content String
 

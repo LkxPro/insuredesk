@@ -117,9 +117,9 @@ export async function getDashboardStats(
       ? Promise.resolve(0)
       : prisma.ticket.count({ where: and({ slaPolicyId: urgentPolicy.id }) }),
     prisma.channel.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }),
-    prisma.ticket.groupBy({
+    prisma.ticketComplaintDetail.groupBy({
       by: ["channelId"],
-      where: base,
+      where: { ticket: base },
       _count: { _all: true },
       orderBy: { channelId: "asc" },
     }),

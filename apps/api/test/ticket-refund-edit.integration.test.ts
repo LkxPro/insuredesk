@@ -3,7 +3,7 @@ import { seedRefundDefaultSlaPolicy } from "../prisma/seed-data.ts";
 import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-describe("退费异常工单编辑锁定与补偿金 (Testcontainers)", () => {
+describe("退费异常工单编辑契约与补偿金 (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let refundKindId: string;
@@ -36,29 +36,18 @@ describe("退费异常工单编辑锁定与补偿金 (Testcontainers)", () => {
 
   async function createRefundTicket(
     overrides: {
-      pushedFields?: string[];
       status?: string;
-      stamped?: {
-        customerName?: string | null;
-        phone?: string | null;
-        policyNumbers?: string[];
-        internalOrderNumber?: string | null;
-      };
       compensationAmount?: string | null;
+      pushedFields?: string[];
     } = {},
   ) {
     seq += 1;
-    const stamped = overrides.stamped ?? {};
     const ticket = await prisma.ticket.create({
       data: {
         source: "jb-insurance",
         kindId: refundKindId,
         slaAnchorAt: new Date("2026-08-24T08:40:00.000Z"),
         status: overrides.status ?? "processing",
-        customerName: stamped.customerName ?? null,
-        phone: stamped.phone ?? null,
-        policyNumbers: stamped.policyNumbers ?? [],
-        internalOrderNumber: stamped.internalOrderNumber ?? `SO-${seq}`,
       },
     });
     await prisma.ticketRefundDetail.create({
@@ -78,77 +67,131 @@ describe("退费异常工单编辑锁定与补偿金 (Testcontainers)", () => {
     return ticket;
   }
 
-  function editPayload(
-    ticket: { id: string; internalOrderNumber: string | null },
-    overrides: Record<string, unknown> = {},
-  ) {
-    return {
-      ticketId: ticket.id,
-      internalOrderNumber: ticket.internalOrderNumber,
-      slaPolicyId: refundPolicyId,
-      ...overrides,
-    };
-  }
+  describe("editRefund 契约", () => {
+    it("裁键：仅联系人电话与时效策略可改，其余键缺席正常落库", async () => {
+      const ticket = await createRefundTicket();
 
-  describe("推送实收字段只读", () => {
-    it("修改 pushedFields 盖章的标准字段被拒（客户姓名/客户电话/保单号/内部订单号）", async () => {
-      const ticket = await createRefundTicket({
-        pushedFields: ["holderName", "holderPhone", "policyNo", "sysOrderId"],
-        stamped: {
-          customerName: "张三",
-          phone: "13800000001",
-          policyNumbers: ["P-1"],
-        },
+      const result = await manager().ticket.editRefund({
+        ticketId: ticket.id,
+        contactPhone: "13911112222",
+        slaPolicyId: refundPolicyId,
       });
+      expect(result.changedFields).toEqual(expect.arrayContaining(["contactPhone", "slaPolicyId"]));
 
-      const attempts: Array<[string, Record<string, unknown>]> = [
-        ["客户姓名", { customerName: "张四" }],
-        ["客户电话", { phone: "13800000002" }],
-        ["保单号", { policyNumbers: ["P-2"] }],
-        ["内部订单号", { internalOrderNumber: "SO-OTHER" }],
-      ];
-      for (const [label, patch] of attempts) {
+      const row = await prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id } });
+      expect(row.contactPhone).toBe("13911112222");
+      expect(row.slaPolicyId).toBe(refundPolicyId);
+      expect(row.dueAt).not.toBeNull();
+
+      const log = await prisma.processLog.findFirstOrThrow({
+        where: { ticketId: ticket.id, action: "edit" },
+      });
+      expect(log.remark).toContain("联系人电话: （空）→13911112222");
+      expect(log.remark).toContain("时效策略: （空）→退费异常默认策略");
+      expect(log.from).toBeNull();
+      expect(log.to).toBe("退费异常默认策略");
+    });
+
+    it("墓碑：携带任一下沉键即报错（含 null 值）", async () => {
+      const ticket = await createRefundTicket();
+      for (const key of ["customerName", "feedbackTime", "policyNumbers", "priority"]) {
         const error = await manager()
-          .ticket.edit(editPayload(ticket, patch))
+          .ticket.editRefund({ ticketId: ticket.id, [key]: null })
           .catch((e: unknown) => e);
-        expect(error, `${label} 应被拒绝`).toMatchObject({
+        expect(error, key).toMatchObject({
           code: "BAD_REQUEST",
-          message: expect.stringContaining(label),
+          message: expect.stringContaining("退费工单仅可编辑联系人电话与时效策略"),
         });
       }
     });
 
-    it("推送缺省的可选字段不在 pushedFields 内，可正常后补", async () => {
-      const ticket = await createRefundTicket({ pushedFields: ["sysOrderId"] });
-
-      const result = await manager().ticket.edit(
-        editPayload(ticket, { customerName: "后补客户", phone: "13800000003", project: "融盛" }),
-      );
-      expect(result.changedFields).toEqual(
-        expect.arrayContaining(["customerName", "phone", "project"]),
-      );
-
-      const detail = await manager().ticket.detail({ id: ticket.id });
-      expect(detail.customerName).toBe("后补客户");
-      expect(detail.phone).toBe("13800000003");
-    });
-
-    it("实收字段原值重写不算修改，同编辑其他字段可正常通过", async () => {
-      const ticket = await createRefundTicket({
-        pushedFields: ["holderName"],
-        stamped: { customerName: "张三" },
+    it("kind 核对：editRefund 拒投诉单，editComplaint 拒退费单", async () => {
+      const refund = await createRefundTicket();
+      await manager().ticket.create({ customerName: "投诉客户", allowDuplicate: true });
+      const complaint = await prisma.ticket.findFirstOrThrow({
+        where: { complaintDetail: { customerName: "投诉客户" } },
       });
 
-      const result = await manager().ticket.edit(
-        editPayload(ticket, { customerName: "张三", project: "融盛" }),
-      );
-      expect(result.changedFields).toContain("project");
-      expect(result.changedFields).not.toContain("customerName");
+      await expect(
+        manager().ticket.editRefund({ ticketId: complaint.id, contactPhone: "13800000000" }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("editComplaint"),
+      });
+      await expect(
+        manager().ticket.editComplaint({ ticketId: refund.id, contactPhone: "13800000000" }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("editRefund"),
+      });
     });
 
-    it("投诉单不受 pushedFields 语义影响（无扩展行），正常编辑", async () => {
+    it("contactPhone 改动触发提交兜底查重；allowDuplicate 放行", async () => {
+      const blocker = await manager().ticket.create({
+        customerName: "占位客户",
+        contactPhone: "13700001111",
+        allowDuplicate: true,
+      });
+      expect(blocker.id).toBeDefined();
+      const ticket = await createRefundTicket();
+
+      await expect(
+        manager().ticket.editRefund({ ticketId: ticket.id, contactPhone: "13700001111" }),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+
+      const forced = await manager().ticket.editRefund({
+        ticketId: ticket.id,
+        contactPhone: "13700001111",
+        allowDuplicate: true,
+      });
+      expect(forced.changedFields).toContain("contactPhone");
+    });
+
+    it("contactPhone 未改不查重：编辑无关字段不被存量重复阻塞", async () => {
+      const ticket = await createRefundTicket();
+      await manager().ticket.editRefund({
+        ticketId: ticket.id,
+        contactPhone: "13700002222",
+        allowDuplicate: true,
+      });
+      const result = await manager().ticket.editRefund({
+        ticketId: ticket.id,
+        contactPhone: "13700002222",
+        slaPolicyId: refundPolicyId,
+      });
+      expect(result.changedFields).toEqual(["slaPolicyId"]);
+    });
+
+    it("旧端点 ticket.edit 分流：退费携带下沉字段报墓碑，仅携带共享键正常服务", async () => {
+      const ticket = await createRefundTicket();
+
+      const tombstone = await manager()
+        .ticket.edit({ ticketId: ticket.id, customerName: "张三" })
+        .catch((e: unknown) => e);
+      expect(tombstone).toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("退费工单仅可编辑联系人电话与时效策略"),
+      });
+
+      const flagOnly = await manager()
+        .ticket.edit({ ticketId: ticket.id, noPolicyNumber: true })
+        .catch((e: unknown) => e);
+      expect(flagOnly).toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("退费工单仅可编辑联系人电话与时效策略"),
+      });
+
+      const ok = await manager().ticket.edit({
+        ticketId: ticket.id,
+        contactPhone: "13600003333",
+        slaPolicyId: refundPolicyId,
+      });
+      expect(ok.changedFields).toEqual(expect.arrayContaining(["contactPhone", "slaPolicyId"]));
+    });
+
+    it("旧端点 ticket.edit 分流：投诉单走 editComplaint 逻辑", async () => {
       const created = await manager().ticket.create({
-        customerName: "投诉客户",
+        customerName: "投诉客户甲",
         slaPolicyId: harness.slaPolicyId("一般投诉"),
         allowDuplicate: true,
       });
@@ -158,6 +201,33 @@ describe("退费异常工单编辑锁定与补偿金 (Testcontainers)", () => {
         slaPolicyId: harness.slaPolicyId("一般投诉"),
       });
       expect(result.changedFields).toEqual(["customerName"]);
+    });
+
+    it("editComplaint 对缺 detail 行的存量投诉单 upsert 补齐", async () => {
+      const legacy = await prisma.ticket.create({
+        data: {
+          source: "manual",
+          kindId: complaintKindId,
+          slaAnchorAt: new Date("2026-08-01T00:00:00.000Z"),
+          status: "processing",
+        },
+      });
+
+      const result = await manager().ticket.editComplaint({
+        ticketId: legacy.id,
+        customerName: "补齐客户",
+      });
+      expect(result.changedFields).toContain("customerName");
+
+      const detail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: legacy.id },
+      });
+      expect(detail.customerName).toBe("补齐客户");
+
+      const log = await prisma.processLog.findFirstOrThrow({
+        where: { ticketId: legacy.id, action: "edit" },
+      });
+      expect(log.remark).toContain("客户姓名: （空）→补齐客户");
     });
   });
 
@@ -290,10 +360,9 @@ describe("退费异常工单编辑锁定与补偿金 (Testcontainers)", () => {
   });
 
   describe("退费详情读出口", () => {
-    it("detail 带 refundDetail 全字段与最新回调投递；投诉单为 null", async () => {
+    it("detail 带 refundDetail 全字段与最新回调投递；下沉字段键保留、值恒为 null", async () => {
       const ticket = await createRefundTicket({
         pushedFields: ["holderName", "sysOrderId"],
-        stamped: { customerName: "张三" },
         compensationAmount: "20",
       });
       await prisma.ticketRefundDetail.update({
@@ -343,6 +412,19 @@ describe("退费异常工单编辑锁定与补偿金 (Testcontainers)", () => {
         lastError: "平台 HTTP 500",
       });
 
+      expect(detail).toMatchObject({
+        feedbackTime: null,
+        channel: null,
+        project: null,
+        customerName: null,
+        phone: null,
+        policyNumbers: [],
+        noPolicyNumber: false,
+        category: null,
+        priority: null,
+        contactTime: null,
+      });
+
       const complaint = await manager().ticket.create({
         customerName: "投诉客户",
         slaPolicyId: harness.slaPolicyId("一般投诉"),
@@ -351,6 +433,7 @@ describe("退费异常工单编辑锁定与补偿金 (Testcontainers)", () => {
       const complaintDetail = await manager().ticket.detail({ id: complaint.id });
       expect(complaintDetail.refundDetail).toBeNull();
       expect(complaintDetail.callbackDelivery).toBeNull();
+      expect(complaintDetail.customerName).toBe("投诉客户");
     });
   });
 });

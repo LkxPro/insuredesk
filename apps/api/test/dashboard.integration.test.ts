@@ -4,7 +4,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Prisma, PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
 import { appRouter } from "../src/routers/index.ts";
 import { getDashboardStats } from "../src/services/dashboard.service.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type ComplaintCoreInput,
+  type ComplaintDetailInput,
+  createComplaintTickets,
+  type IntegrationHarness,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -122,28 +128,34 @@ describe("dashboard stats (Testcontainers)", () => {
   }
 
   function bulkRow(
-    overrides: Partial<Prisma.TicketCreateManyInput> = {},
-  ): Prisma.TicketCreateManyInput {
+    coreOverrides: Partial<Prisma.TicketCreateManyInput> = {},
+    detailOverrides: ComplaintDetailInput = {},
+  ): { core: ComplaintCoreInput; detail: ComplaintDetailInput } {
     return {
-      feedbackTime: new Date("2026-07-09T02:00:00.000Z"),
-      source: "manual",
-      kindId: complaintKindId,
-      slaAnchorAt: new Date("2026-07-09T02:00:00.000Z"),
-      channelId: channelId("保司"),
-      project: "融盛",
-      brokerageEntity: "东方大地",
-      paymentChannel: "连连支付",
-      policyNumbers: ["BULK"],
-      userFeedbackChannelId: null,
-      customerName: "批量客户",
-      phone: "13800000000",
-      customerRequest: "批量数据",
-      nuclearBodyStatus: "待核实",
-      hasContacted: false,
-      slaPolicyId: harness.slaPolicyId("一般投诉"),
-      followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
-      firstResponseRequirement: "120分钟内完成首次响应",
-      ...overrides,
+      core: {
+        source: "manual",
+        kindId: complaintKindId,
+        createdAt: new Date("2026-07-09T02:00:00.000Z"),
+        slaPolicyId: harness.slaPolicyId("一般投诉"),
+        followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
+        firstResponseRequirement: "120分钟内完成首次响应",
+        ...coreOverrides,
+      },
+      detail: {
+        feedbackTime: new Date("2026-07-09T02:00:00.000Z"),
+        channelId: channelId("保司"),
+        project: "融盛",
+        brokerageEntity: "东方大地",
+        paymentChannel: "连连支付",
+        policyNumbers: ["BULK"],
+        userFeedbackChannelId: null,
+        customerName: "批量客户",
+        phone: "13800000000",
+        customerRequest: "批量数据",
+        nuclearBodyStatus: "待核实",
+        hasContacted: false,
+        ...detailOverrides,
+      },
     };
   }
 
@@ -597,7 +609,7 @@ describe("dashboard stats (Testcontainers)", () => {
       });
 
       const now = Date.now();
-      const rows: Prisma.TicketCreateManyInput[] = [];
+      const rows: { core: ComplaintCoreInput; detail: ComplaintDetailInput }[] = [];
       for (const user of users) {
         const completions = Number(user.username.replace("perf-cs-", ""));
         for (let i = 0; i < completions; i++) {
@@ -611,7 +623,7 @@ describe("dashboard stats (Testcontainers)", () => {
           );
         }
       }
-      await prisma.ticket.createMany({ data: rows });
+      await createComplaintTickets(prisma, rows);
 
       const stats = await manager().dashboard.stats({});
 
@@ -735,22 +747,25 @@ describe("dashboard stats (Testcontainers)", () => {
         null,
       ];
       const statuses = ["unassigned", "assigned", "processing", "completed"] as const;
-      await prisma.ticket.createMany({
-        data: Array.from({ length: 3000 }, (_, i) => {
+      await createComplaintTickets(
+        prisma,
+        Array.from({ length: 3000 }, (_, i) => {
           const status = statuses[i % statuses.length] ?? "unassigned";
           const assigneeId = status === "unassigned" ? null : (assignees[i % 4] ?? null);
           const completed = status === "completed";
-          return bulkRow({
-            channelId: channelRows[i % channelRows.length]?.id,
-            slaPolicyId: harness.slaPolicyId(i % 11 === 0 ? "特急投诉" : "一般投诉"),
-            status,
-            assigneeId,
-            createdAt: new Date(now - (i % 96) * HOUR_MS),
-            dueAt: i % 11 === 0 ? null : new Date(now + ((i % 96) - 48) * HOUR_MS),
-            completionTime: completed ? new Date(now - (i % 24) * HOUR_MS) : null,
-          });
+          return bulkRow(
+            {
+              slaPolicyId: harness.slaPolicyId(i % 11 === 0 ? "特急投诉" : "一般投诉"),
+              status,
+              assigneeId,
+              createdAt: new Date(now - (i % 96) * HOUR_MS),
+              dueAt: i % 11 === 0 ? null : new Date(now + ((i % 96) - 48) * HOUR_MS),
+              completionTime: completed ? new Date(now - (i % 24) * HOUR_MS) : null,
+            },
+            { channelId: channelRows[i % channelRows.length]?.id },
+          );
         }),
-      });
+      );
 
       const startedAt = performance.now();
       const stats = await manager().dashboard.stats({});

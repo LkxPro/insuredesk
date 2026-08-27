@@ -86,7 +86,9 @@ describe("四个建单点的 kindId/slaAnchorAt 盖章 (Testcontainers)", () => 
     );
     expect(imported).toBe(1);
 
-    const rows = await prisma.ticket.findMany({ where: { customerName: "导入客户" } });
+    const rows = await prisma.ticket.findMany({
+      where: { complaintDetail: { customerName: "导入客户" } },
+    });
     await expectComplaintStamp(rows.map((row) => row.id));
   });
 

@@ -3,7 +3,7 @@ import {
   joinPolicyNumbers,
   ticketExportHeader,
 } from "@insuredesk/shared";
-import { Prisma, type Ticket } from "../generated/prisma/client.ts";
+import { Prisma } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
 import { type ExportColumn, type ExportFile, renderExportFile } from "./export-file.ts";
 import { buildExternalTicketConditions } from "./external-ticket-query.ts";
@@ -14,10 +14,20 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
  * Excel 会污染筛选）。只读：导出不写 ProcessLog。
  */
 
-const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<Ticket>> = [
-  { header: ticketExportHeader("policyNumbers"), value: (t) => joinPolicyNumbers(t.policyNumbers) },
-  { header: ticketExportHeader("customerName"), value: (t) => t.customerName ?? "" },
-  { header: ticketExportHeader("phone"), value: (t) => t.phone ?? "" },
+type ExternalExportRow = Prisma.TicketGetPayload<{
+  include: { complaintDetail: true };
+}>;
+
+const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<ExternalExportRow>> = [
+  {
+    header: ticketExportHeader("policyNumbers"),
+    value: (t) => joinPolicyNumbers(t.complaintDetail?.policyNumbers ?? []),
+  },
+  {
+    header: ticketExportHeader("customerName"),
+    value: (t) => t.complaintDetail?.customerName ?? "",
+  },
+  { header: ticketExportHeader("phone"), value: (t) => t.complaintDetail?.phone ?? "" },
   { header: ticketExportHeader("contactPhone"), value: (t) => t.contactPhone ?? "" },
   { header: "工单原文", value: (t) => t.submissionText ?? "" },
 ];
@@ -40,11 +50,12 @@ export async function exportExternalTickets(
   `;
   const rows = await prisma.ticket.findMany({
     where: { id: { in: idRows.map((row) => row.id) } },
+    include: { complaintDetail: true },
   });
   const rowById = new Map(rows.map((row) => [row.id, row]));
   const ordered = idRows
     .map((row) => rowById.get(row.id))
-    .filter((row): row is Ticket => row !== undefined);
+    .filter((row): row is ExternalExportRow => row !== undefined);
 
   return renderExportFile({
     baseName: "external-tickets",

@@ -295,11 +295,14 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           message: cfg.labels.inUseMessage(2),
         });
 
-        const kept = await prisma.ticket.findUniqueOrThrow({ where: { id: firstTicketId } });
         if (cfg.referencedViaResolve) {
+          const kept = await prisma.ticket.findUniqueOrThrow({ where: { id: firstTicketId } });
           expect(kept.completionStatusId).toBe(referenced.id);
         } else {
           if (!cfg.ticketFieldId) throw new Error("ticketFieldId required");
+          const kept = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+            where: { ticketId: firstTicketId },
+          });
           expect(kept[cfg.ticketFieldId]).toBe(referenced.id);
         }
       });

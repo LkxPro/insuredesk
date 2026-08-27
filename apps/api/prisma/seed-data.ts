@@ -1,5 +1,6 @@
 import type { Permission, TicketCreateData } from "@insuredesk/shared";
 import {
+  applyNoPolicyNumber,
   DEFAULT_REFUND_SLA_POLICY,
   DEFAULT_SLA_POLICIES,
   DEFAULT_TICKET_KINDS,
@@ -20,7 +21,11 @@ import type {
   User,
 } from "../src/generated/prisma/client.ts";
 import { type AuthenticatedUser, hashPassword } from "../src/services/auth.service.ts";
-import { computeSlaStamp, createTicket } from "../src/services/ticket.service.ts";
+import {
+  complaintDetailData,
+  computeSlaStamp,
+  createTicket,
+} from "../src/services/ticket.service.ts";
 import { assignTicket } from "../src/services/ticket-assign.service.ts";
 import { requireTicketKindId } from "../src/services/ticket-kind.service.ts";
 
@@ -788,7 +793,9 @@ const demoTicketSpecs: DemoTicketSpec[] = [
 
 async function deleteExistingDemoTickets(prisma: PrismaClient): Promise<number> {
   const existing = await prisma.ticket.findMany({
-    where: { policyNumbers: { hasSome: [...DEMO_TICKET_POLICY_NUMBERS] } },
+    where: {
+      complaintDetail: { policyNumbers: { hasSome: [...DEMO_TICKET_POLICY_NUMBERS] } },
+    },
     select: { id: true, workOrderNumber: true },
   });
   if (existing.length === 0) {
@@ -817,17 +824,24 @@ async function createExternalTicket(
 ): Promise<Ticket> {
   const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
   const slaStamp = await computeSlaStamp(prisma, input.slaPolicyId, createdAt, kindId);
+  const detail = complaintDetailData(applyNoPolicyNumber(input));
 
   const ticket = await prisma.ticket.create({
     data: {
-      ...input,
-      feedbackTime: input.feedbackTime === null ? null : new Date(input.feedbackTime),
+      contactPhone: input.contactPhone,
       createdAt,
       slaAnchorAt: createdAt,
       kindId,
       source: spec.source ?? "manual",
       creatorId: null,
       ...slaStamp,
+      complaintDetail: {
+        create: {
+          ...detail,
+          feedbackTime: detail.feedbackTime === null ? null : new Date(detail.feedbackTime),
+          contactTime: detail.contactTime === null ? null : new Date(detail.contactTime),
+        },
+      },
     },
   });
 

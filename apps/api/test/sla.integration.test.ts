@@ -661,15 +661,13 @@ describe("SLA 策略配置 (Testcontainers)", () => {
         data: { kindId: refundKindId, slaPolicyId: null },
       });
       await expect(
-        manager().ticket.edit({
-          ...baseInput(),
+        manager().ticket.editRefund({
           ticketId: created.id,
           slaPolicyId: policyId("一般投诉"),
         }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
-      await manager().ticket.edit({
-        ...baseInput(),
+      await manager().ticket.editRefund({
         ticketId: created.id,
         slaPolicyId: refundPolicy?.id ?? "",
       });

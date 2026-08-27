@@ -176,6 +176,18 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
   }
 }
 
+export function complaintDetailData(
+  data: TicketCreateData,
+): Omit<TicketCreateData, "contactPhone" | "slaPolicyId" | "complaintLevel"> {
+  const {
+    contactPhone: _corePhone,
+    slaPolicyId: _corePolicy,
+    complaintLevel: _legacy,
+    ...detail
+  } = data;
+  return detail;
+}
+
 /**
  * Create a manually-entered ticket:
  *
@@ -197,7 +209,7 @@ export async function createTicket(
   input: TicketCreateData,
   options?: { allowDuplicate?: boolean },
 ) {
-  const { complaintLevel: _legacy, ...data } = applyNoPolicyNumber(input);
+  const data = applyNoPolicyNumber(input);
   const role = await prisma.role.findUnique({
     where: { id: creator.roleId },
     select: { requiredTicketFields: true },
@@ -209,6 +221,7 @@ export async function createTicket(
   const now = clock.now();
   const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
   const slaStamp = await computeSlaStamp(prisma, data.slaPolicyId, now, kindId);
+  const detail = complaintDetailData(data);
 
   return prisma.$transaction(async (tx) => {
     // 提交兜底查重：与插入同事务，命中即整体回滚；批量导入不经此路，天然豁免
@@ -230,9 +243,7 @@ export async function createTicket(
 
     const ticket = await tx.ticket.create({
       data: {
-        ...data,
-        feedbackTime: toDateOrNull(data.feedbackTime),
-        contactTime: toDateOrNull(data.contactTime),
+        contactPhone: data.contactPhone,
         createdAt: now,
         slaAnchorAt: now,
         kindId,
@@ -240,6 +251,13 @@ export async function createTicket(
         creatorId: creator.id,
         status: TicketStatus.Unassigned,
         ...slaStamp,
+        complaintDetail: {
+          create: {
+            ...detail,
+            feedbackTime: toDateOrNull(detail.feedbackTime),
+            contactTime: toDateOrNull(detail.contactTime),
+          },
+        },
       },
     });
 
@@ -263,10 +281,17 @@ export async function createTicket(
 const listInclude = {
   // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
-  // Catalog references render their CURRENT names — a rename shows through
-  category: { select: { name: true } },
-  channel: { select: { name: true } },
   slaPolicy: { select: { name: true } },
+  complaintDetail: {
+    select: {
+      customerName: true,
+      policyNumbers: true,
+      noPolicyNumber: true,
+      // Catalog references render their CURRENT names — a rename shows through
+      category: { select: { name: true } },
+      channel: { select: { name: true } },
+    },
+  },
 } satisfies Prisma.TicketInclude;
 
 type TicketListRow = Prisma.TicketGetPayload<{ include: typeof listInclude }>;
@@ -297,10 +322,10 @@ async function searchPolicyNumbersTicketIds(
   prisma: PrismaClient,
   search: string,
 ): Promise<string[]> {
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM tickets WHERE array_to_string("policyNumbers", ' ') ILIKE ${substringSearchPattern(search)}
+  const rows = await prisma.$queryRaw<Array<{ ticketId: string }>>`
+    SELECT "ticketId" FROM ticket_complaint_details WHERE array_to_string("policyNumbers", ' ') ILIKE ${substringSearchPattern(search)}
   `;
-  return rows.map((row) => row.id);
+  return rows.map((row) => row.ticketId);
 }
 
 /**
@@ -324,10 +349,11 @@ export async function buildTicketListWhere(
   // predicate, search) can never collide.
   const filters: Prisma.TicketWhereInput[] = [];
   if (query.channelId && query.channelId.length > 0) {
-    filters.push({ channelId: { in: query.channelId } });
+    // 退费行无 detail：渠道/类别筛选对退费恒不命中（故意）
+    filters.push({ complaintDetail: { channelId: { in: query.channelId } } });
   }
   if (query.categoryId && query.categoryId.length > 0) {
-    filters.push({ categoryId: { in: query.categoryId } });
+    filters.push({ complaintDetail: { categoryId: { in: query.categoryId } } });
   }
   if (query.completionStatusId && query.completionStatusId.length > 0) {
     filters.push({ completionStatusId: { in: query.completionStatusId } });
@@ -336,7 +362,7 @@ export async function buildTicketListWhere(
     filters.push({ slaPolicyId: { in: query.slaPolicyId } });
   }
   if (query.policyNumberState?.includes("none")) {
-    filters.push({ noPolicyNumber: true });
+    filters.push({ complaintDetail: { noPolicyNumber: true } });
   }
   if (query.source && query.source.length > 0) {
     filters.push({ source: { in: query.source } });
@@ -356,9 +382,15 @@ export async function buildTicketListWhere(
         filters.push({
           OR: [
             { workOrderNumber: { contains: condition.term, mode: "insensitive" } },
-            { customerName: { contains: condition.term, mode: "insensitive" } },
+            {
+              complaintDetail: {
+                customerName: { contains: condition.term, mode: "insensitive" },
+              },
+            },
             { id: { in: await searchPolicyNumbersTicketIds(prisma, condition.term) } },
-            { phone: { contains: condition.term, mode: "insensitive" } },
+            {
+              complaintDetail: { phone: { contains: condition.term, mode: "insensitive" } },
+            },
             { contactPhone: { contains: condition.term, mode: "insensitive" } },
           ],
         });
@@ -437,19 +469,20 @@ function parseNullable<T>(
 function serializeTicketListItem(ticket: TicketListRow, now: Date) {
   const source = ticketSourceSchema.parse(ticket.source);
   const status = ticketStatusSchema.parse(ticket.status);
+  const detail = ticket.complaintDetail;
 
   return {
     id: ticket.id,
     workOrderNumber: ticket.workOrderNumber,
     createdAt: ticket.createdAt.toISOString(),
     source,
-    channel: ticket.channel?.name ?? null,
-    category: ticket.category?.name ?? null,
+    channel: detail?.channel?.name ?? null,
+    category: detail?.category?.name ?? null,
     slaPolicyId: ticket.slaPolicyId,
     slaPolicyName: ticket.slaPolicy?.name ?? null,
-    customerName: ticket.customerName,
-    policyNumbers: ticket.policyNumbers,
-    noPolicyNumber: ticket.noPolicyNumber,
+    customerName: detail?.customerName ?? null,
+    policyNumbers: detail?.policyNumbers ?? [],
+    noPolicyNumber: detail?.noPolicyNumber ?? false,
     status,
     displayStatus: deriveDisplayStatus(status, ticket.dueAt, now),
     assigneeId: ticket.assigneeId,
@@ -461,16 +494,21 @@ function serializeTicketListItem(ticket: TicketListRow, now: Date) {
 const detailInclude = {
   creator: { select: { name: true } },
   assignee: { select: { name: true } },
-  // id/active ride along for the edit form: a disabled current value stays
-  // selectable (labelled 已停用) while other disabled options never appear
-  category: { select: { id: true, name: true, active: true } },
-  channel: { select: { id: true, name: true, active: true } },
-  userFeedbackChannel: { select: { id: true, name: true, active: true } },
-  feedbackReceiveChannel: { select: { id: true, name: true, active: true } },
   slaPolicy: { select: { id: true, name: true, active: true } },
   kind: { select: { key: true } },
   // 完结状态 is display-only on the detail page — the CURRENT name suffices
   completionStatus: { select: { name: true } },
+  // 退费行无 detail：详情 DTO 的下沉字段键保留、值恒为 null（web 形状契约）
+  complaintDetail: {
+    include: {
+      // id/active ride along for the edit form: a disabled current value stays
+      // selectable (labelled 已停用) while other disabled options never appear
+      category: { select: { id: true, name: true, active: true } },
+      channel: { select: { id: true, name: true, active: true } },
+      userFeedbackChannel: { select: { id: true, name: true, active: true } },
+      feedbackReceiveChannel: { select: { id: true, name: true, active: true } },
+    },
+  },
   refundDetail: true,
   // 详情页只展示最新一次投递（完结一次 = 至多一条业务投递，重投复位同一行）
   callbackDeliveries: { orderBy: [{ createdAt: "desc" as const }], take: 1 },
@@ -509,14 +547,15 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
   // columns (未填写) pass null through untouched.
   const source = ticketSourceSchema.parse(ticket.source);
   const status = ticketStatusSchema.parse(ticket.status);
-  const priority = parseNullable(prioritySchema, ticket.priority);
+  const detail = ticket.complaintDetail;
+  const priority = parseNullable(prioritySchema, detail?.priority ?? null);
 
   return {
     id: ticket.id,
     workOrderNumber: ticket.workOrderNumber,
     createdAt: ticket.createdAt.toISOString(),
     updatedAt: ticket.updatedAt.toISOString(),
-    feedbackTime: ticket.feedbackTime?.toISOString() ?? null,
+    feedbackTime: detail?.feedbackTime?.toISOString() ?? null,
     source,
     // 由谁创建 is derived at read time, never snapshotted onto the ticket:
     // creator-backed tickets show the creator's *current* name, external ones
@@ -524,25 +563,25 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     createdBy: isCreatorBackedSource(source)
       ? (ticket.creator?.name ?? null)
       : TICKET_SOURCE_LABELS[source],
-    channel: ticket.channel,
-    project: ticket.project,
-    brokerageEntity: ticket.brokerageEntity,
-    paymentChannel: ticket.paymentChannel,
-    internalOrderNumber: ticket.internalOrderNumber,
-    policyNumbers: ticket.policyNumbers,
-    noPolicyNumber: ticket.noPolicyNumber,
-    userFeedbackChannel: ticket.userFeedbackChannel,
-    feedbackReceiveChannel: ticket.feedbackReceiveChannel,
-    customerName: ticket.customerName,
-    phone: ticket.phone,
+    channel: detail?.channel ?? null,
+    project: detail?.project ?? null,
+    brokerageEntity: detail?.brokerageEntity ?? null,
+    paymentChannel: detail?.paymentChannel ?? null,
+    internalOrderNumber: detail?.internalOrderNumber ?? null,
+    policyNumbers: detail?.policyNumbers ?? [],
+    noPolicyNumber: detail?.noPolicyNumber ?? false,
+    userFeedbackChannel: detail?.userFeedbackChannel ?? null,
+    feedbackReceiveChannel: detail?.feedbackReceiveChannel ?? null,
+    customerName: detail?.customerName ?? null,
+    phone: detail?.phone ?? null,
     contactPhone: ticket.contactPhone,
-    customerRequest: ticket.customerRequest,
+    customerRequest: detail?.customerRequest ?? null,
     submissionText: ticket.submissionText,
-    nuclearBodyStatus: parseNullable(nuclearBodyStatusSchema, ticket.nuclearBodyStatus),
-    hasContacted: ticket.hasContacted,
-    contactTime: ticket.contactTime?.toISOString() ?? null,
-    contactId: ticket.contactId,
-    category: ticket.category,
+    nuclearBodyStatus: parseNullable(nuclearBodyStatusSchema, detail?.nuclearBodyStatus ?? null),
+    hasContacted: detail?.hasContacted ?? null,
+    contactTime: detail?.contactTime?.toISOString() ?? null,
+    contactId: detail?.contactId ?? null,
+    category: detail?.category ?? null,
     slaPolicyId: ticket.slaPolicyId,
     slaPolicy: ticket.slaPolicy,
     kindKey: ticket.kind.key,
