@@ -1,10 +1,32 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-describe("complaint_details_side_table migration (Testcontainers)", () => {
+const LEGACY_COLUMNS = [
+  "feedbackTime",
+  "channelId",
+  "project",
+  "brokerageEntity",
+  "paymentChannel",
+  "internalOrderNumber",
+  "policyNumbers",
+  "noPolicyNumber",
+  "userFeedbackChannelId",
+  "feedbackReceiveChannelId",
+  "customerName",
+  "phone",
+  "customerRequest",
+  "nuclearBodyStatus",
+  "hasContacted",
+  "contactTime",
+  "contactId",
+  "categoryId",
+  "priority",
+] as const;
+
+describe("drop_complaint_legacy_columns migration (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let migrationSql: string;
@@ -18,7 +40,7 @@ describe("complaint_details_side_table migration (Testcontainers)", () => {
     migrationSql = readFileSync(
       fileURLToPath(
         new URL(
-          "../prisma/migrations/20260827000000_complaint_details_side_table/migration.sql",
+          "../prisma/migrations/20260827120000_drop_complaint_legacy_columns/migration.sql",
           import.meta.url,
         ),
       ),
@@ -36,6 +58,33 @@ describe("complaint_details_side_table migration (Testcontainers)", () => {
 
   afterAll(async () => {
     await harness?.stop();
+  });
+
+  // template 库已全量迁移（旧列不存在）：补回旧列模拟迁移前状态。
+  beforeEach(async () => {
+    await prisma.ticket.deleteMany();
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "tickets"
+        ADD COLUMN IF NOT EXISTS "feedbackTime" TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS "channelId" TEXT,
+        ADD COLUMN IF NOT EXISTS "project" TEXT,
+        ADD COLUMN IF NOT EXISTS "brokerageEntity" TEXT,
+        ADD COLUMN IF NOT EXISTS "paymentChannel" TEXT,
+        ADD COLUMN IF NOT EXISTS "internalOrderNumber" TEXT,
+        ADD COLUMN IF NOT EXISTS "policyNumbers" TEXT[] DEFAULT ARRAY[]::TEXT[],
+        ADD COLUMN IF NOT EXISTS "noPolicyNumber" BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS "userFeedbackChannelId" TEXT,
+        ADD COLUMN IF NOT EXISTS "feedbackReceiveChannelId" TEXT,
+        ADD COLUMN IF NOT EXISTS "customerName" TEXT,
+        ADD COLUMN IF NOT EXISTS "phone" TEXT,
+        ADD COLUMN IF NOT EXISTS "customerRequest" TEXT,
+        ADD COLUMN IF NOT EXISTS "nuclearBodyStatus" TEXT,
+        ADD COLUMN IF NOT EXISTS "hasContacted" BOOLEAN,
+        ADD COLUMN IF NOT EXISTS "contactTime" TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS "contactId" TEXT,
+        ADD COLUMN IF NOT EXISTS "categoryId" TEXT,
+        ADD COLUMN IF NOT EXISTS "priority" TEXT
+    `);
   });
 
   async function legacyTicket(kindId: string, opts: { deleted?: boolean } = {}) {
@@ -74,11 +123,29 @@ describe("complaint_details_side_table migration (Testcontainers)", () => {
     return ticket;
   }
 
-  it("回填覆盖全部非 refund_exception 行（含软删/第三种类），退费行不建 detail", async () => {
+  async function survivingLegacyColumns(): Promise<string[]> {
+    const rows = await prisma.$queryRaw<{ column_name: string }[]>`
+      SELECT column_name FROM information_schema.columns WHERE table_name = 'tickets'
+    `;
+    return rows
+      .map((row) => row.column_name)
+      .filter((name) => (LEGACY_COLUMNS as readonly string[]).includes(name))
+      .sort();
+  }
+
+  it("兜底回填覆盖全部非 refund_exception 行（含软删/第三种类/空白单），退费行不建 detail，DROP 后旧列不存在", async () => {
     const complaint = await legacyTicket(complaintKindId);
     const softDeleted = await legacyTicket(complaintKindId, { deleted: true });
     const thirdKind = await legacyTicket(thirdKindId);
     const refund = await legacyTicket(refundKindId);
+    const blank = await prisma.ticket.create({
+      data: {
+        source: "manual",
+        kindId: complaintKindId,
+        slaAnchorAt: new Date("2026-08-01T00:00:00.000Z"),
+        status: "unassigned",
+      },
+    });
 
     await prisma.$executeRawUnsafe(migrationSql);
 
@@ -113,34 +180,39 @@ describe("complaint_details_side_table migration (Testcontainers)", () => {
       await prisma.ticketComplaintDetail.findUnique({ where: { ticketId: thirdKind.id } }),
     ).not.toBeNull();
     expect(
+      (await prisma.ticketComplaintDetail.findUniqueOrThrow({ where: { ticketId: blank.id } }))
+        .policyNumbers,
+    ).toEqual([]);
+    expect(
       await prisma.ticketComplaintDetail.findUnique({ where: { ticketId: refund.id } }),
     ).toBeNull();
+    expect(await survivingLegacyColumns()).toEqual([]);
   });
 
-  it("幂等重放：不覆盖已存在 detail 行，重跑行数不变", async () => {
+  it("逐列值不一致：断言拦截且整体回滚，旧列与既有 detail 行原样保留", async () => {
     const ticket = await legacyTicket(complaintKindId);
     await prisma.ticketComplaintDetail.create({
-      data: { ticketId: ticket.id, customerName: "已存在" },
+      data: { ticketId: ticket.id, customerName: "编辑后的值" },
     });
 
-    await prisma.$executeRawUnsafe(migrationSql);
-    const afterFirst = await prisma.ticketComplaintDetail.count();
-    expect(
-      (
-        await prisma.ticketComplaintDetail.findUniqueOrThrow({
-          where: { ticketId: ticket.id },
-        })
-      ).customerName,
-    ).toBe("已存在");
+    await expect(prisma.$executeRawUnsafe(migrationSql)).rejects.toThrow(/不一致/);
 
-    await prisma.$executeRawUnsafe(migrationSql);
-    expect(await prisma.ticketComplaintDetail.count()).toBe(afterFirst);
+    expect(await survivingLegacyColumns()).toEqual([...LEGACY_COLUMNS].sort());
     expect(
       (
         await prisma.ticketComplaintDetail.findUniqueOrThrow({
           where: { ticketId: ticket.id },
         })
       ).customerName,
-    ).toBe("已存在");
+    ).toBe("编辑后的值");
+  });
+
+  it("退费单混入侧表行：行集断言拦截且整体回滚", async () => {
+    const refund = await legacyTicket(refundKindId);
+    await prisma.ticketComplaintDetail.create({ data: { ticketId: refund.id } });
+
+    await expect(prisma.$executeRawUnsafe(migrationSql)).rejects.toThrow(/不一致/);
+
+    expect(await survivingLegacyColumns()).toEqual([...LEGACY_COLUMNS].sort());
   });
 });
