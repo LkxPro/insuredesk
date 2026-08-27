@@ -194,7 +194,7 @@ describe("ticket 查重（Testcontainers）", () => {
     });
 
     await expect(
-      manager().ticket.edit({
+      manager().ticket.editComplaint({
         ticketId: mine.id,
         customerName: "编辑-我",
         phone: "13211112222",
@@ -202,7 +202,7 @@ describe("ticket 查重（Testcontainers）", () => {
       }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
 
-    const forced = await manager().ticket.edit({
+    const forced = await manager().ticket.editComplaint({
       ticketId: mine.id,
       customerName: "编辑-我",
       phone: "13211112222",
@@ -212,7 +212,7 @@ describe("ticket 查重（Testcontainers）", () => {
     expect(forced.changedFields).toEqual(["phone"]);
 
     // 查重字段未动的编辑不被存量重复阻塞（此刻 mine.phone 与他人相同）
-    const unrelated = await manager().ticket.edit({
+    const unrelated = await manager().ticket.editComplaint({
       ticketId: mine.id,
       customerName: "编辑-我2",
       phone: "13211112222",
@@ -225,7 +225,7 @@ describe("ticket 查重（Testcontainers）", () => {
       phone: "13255556666",
       policyNumbers: ["PXD600"],
     });
-    const selfEdit = await manager().ticket.edit({
+    const selfEdit = await manager().ticket.editComplaint({
       ticketId: solo.id,
       customerName: "编辑-独",
       phone: "13255556666",

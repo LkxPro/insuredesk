@@ -54,7 +54,11 @@ function renderAt(path = "/tickets/t1") {
     trpc: {
       "ticket.list": { items: rows, total: rows.length, page: 1, pageSize: 20 },
       "ticket.detail": (input: unknown) => details[(input as { id: string }).id],
-      "ticket.edit": () => ({ id: "t1", workOrderNumber: "WO100001", status: "processing" }),
+      "ticket.editComplaint": () => ({
+        id: "t1",
+        workOrderNumber: "WO100001",
+        status: "processing",
+      }),
       "channel.options": channelOptions,
       "ticketCategory.options": categoryOptions,
     },

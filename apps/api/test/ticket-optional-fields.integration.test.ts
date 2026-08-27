@@ -168,7 +168,7 @@ describe("optional business fields (Testcontainers)", () => {
         data: { createdAt, slaAnchorAt: createdAt },
       });
 
-      await manager().ticket.edit(
+      await manager().ticket.editComplaint(
         blankEditInput(created.id, { slaPolicyId: harness.slaPolicyId("一般投诉") }),
       );
 
@@ -184,7 +184,7 @@ describe("optional business fields (Testcontainers)", () => {
       } as TicketCreateInput);
       expect((await manager().ticket.detail({ id: created.id })).dueAt).not.toBeNull();
 
-      await manager().ticket.edit(blankEditInput(created.id));
+      await manager().ticket.editComplaint(blankEditInput(created.id));
 
       const detail = await manager().ticket.detail({ id: created.id });
       expect(detail.slaPolicyId).toBeNull();
@@ -198,12 +198,12 @@ describe("optional business fields (Testcontainers)", () => {
     it("edits one field at a time without demanding the other blanks", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
 
-      const first = await manager().ticket.edit(
+      const first = await manager().ticket.editComplaint(
         blankEditInput(created.id, { customerName: "陈晓" }),
       );
       expect(first.changedFields).toEqual(["customerName"]);
 
-      const second = await manager().ticket.edit(
+      const second = await manager().ticket.editComplaint(
         blankEditInput(created.id, { customerName: "陈晓", phone: "13800001234" }),
       );
       expect(second.changedFields).toEqual(["phone"]);

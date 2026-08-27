@@ -1,15 +1,12 @@
 import {
   editComplaintInputSchema,
   editRefundInputSchema,
-  type TicketEditData,
-  type TicketEditInput,
   ticketAddCommentInputSchema,
   ticketAssignInputSchema,
   ticketAutoAssignInputSchema,
   ticketBatchAssignInputSchema,
   ticketCreateInputSchema,
   ticketDeleteInputSchema,
-  ticketEditInputSchema,
   ticketFindDuplicatesInputSchema,
   ticketImportBatchListInputSchema,
   ticketImportRevokeInputSchema,
@@ -54,10 +51,8 @@ import {
   EditKindMismatchError,
   editComplaint,
   editRefund,
-  editTicket,
   RefundCompensationLockedError,
   RefundCompensationNotApplicableError,
-  RefundEditRetiredFieldsError,
   updateRefundCompensation,
 } from "../services/ticket-edit.service.ts";
 import {
@@ -96,11 +91,7 @@ function mapEditError(error: unknown): never {
   if (error instanceof TicketNotFoundError) {
     throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
   }
-  if (
-    error instanceof RefundEditRetiredFieldsError ||
-    error instanceof EditKindMismatchError ||
-    error instanceof CatalogUnavailableError
-  ) {
+  if (error instanceof EditKindMismatchError || error instanceof CatalogUnavailableError) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
   if (error instanceof SlaPolicyNotConfiguredError) {
@@ -112,26 +103,6 @@ function mapEditError(error: unknown): never {
   }
   mapDuplicateError(error);
 }
-
-/**
- * 旧统一端点的退役键检测：zod 解析后「键缺席」与「键值为 null」无法区分，
- * 故 preprocess 先截获原始键集。preprocess 的 input 推断为 unknown，显式
- * 标注 ZodType 保住客户端入参类型。
- */
-type LegacyEditPayload = TicketEditInput & { allowDuplicate?: boolean };
-const legacyTicketEditInputSchema = z.preprocess(
-  (raw) => ({
-    data: raw,
-    presentKeys: raw !== null && typeof raw === "object" ? Object.keys(raw) : [],
-  }),
-  z.object({
-    data: ticketEditInputSchema.extend({ allowDuplicate: z.boolean().optional() }),
-    presentKeys: z.array(z.string()),
-  }),
-) as unknown as z.ZodType<
-  { data: TicketEditData & { allowDuplicate?: boolean }; presentKeys: string[] },
-  LegacyEditPayload
->;
 
 export const ticketRouter = router({
   create: requirePermission("ticket.create")
@@ -255,18 +226,11 @@ export const ticketRouter = router({
       }
     }),
 
+  // 墓碑路由：拆端点前构建的旧 bundle 仍在调它，一律拒绝逼刷新
   edit: requirePermission("ticket.edit")
-    .input(legacyTicketEditInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        const { allowDuplicate, ...data } = input.data;
-        return await editTicket(deps, ctx.user, data, {
-          allowDuplicate,
-          presentKeys: input.presentKeys,
-        });
-      } catch (error) {
-        mapEditError(error);
-      }
+    .input(z.unknown())
+    .mutation(() => {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "客户端版本过旧，请刷新" });
     }),
 
   editComplaint: requirePermission("ticket.edit")

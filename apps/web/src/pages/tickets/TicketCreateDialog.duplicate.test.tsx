@@ -219,7 +219,7 @@ describe("编辑查重", () => {
       trpc: {
         "ticket.detail": detailPayload(),
         "ticket.findDuplicates": dupResolver,
-        "ticket.edit": (input: unknown) => {
+        "ticket.editComplaint": (input: unknown) => {
           if ((input as { allowDuplicate?: boolean }).allowDuplicate) {
             return { id: "t1", workOrderNumber: "WO100001", changedFields: ["phone"] };
           }
@@ -252,8 +252,8 @@ describe("编辑查重", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "仍要保存" }));
-    await waitFor(() => expect(callsTo("ticket.edit")).toHaveLength(2));
-    expect(callsTo("ticket.edit")[1]?.input).toMatchObject({
+    await waitFor(() => expect(callsTo("ticket.editComplaint")).toHaveLength(2));
+    expect(callsTo("ticket.editComplaint")[1]?.input).toMatchObject({
       ticketId: "t1",
       phone: "13900009999",
       allowDuplicate: true,

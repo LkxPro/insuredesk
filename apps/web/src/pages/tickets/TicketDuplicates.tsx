@@ -4,7 +4,6 @@ import { keepPreviousData } from "@tanstack/react-query";
 import type { inferRouterOutputs } from "@trpc/server";
 import { ChevronDown, ChevronUp, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { UseFormReturn } from "react-hook-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +18,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
-import type { TicketFormValues } from "./TicketFormFields";
 import type { TicketDetail } from "./ticket-detail";
 
 /**
@@ -44,8 +42,14 @@ function phoneQueryable(value: string | null | undefined, touched: boolean | und
   return trimmed.length >= PHONE_READY_LENGTH || (touched === true && trimmed.length > 0);
 }
 
+/** RHF watch 未注册键返回 undefined：裁键表单缺的查重字段按未填处理。 */
+interface DuplicatesWatchForm {
+  watch: (name: TicketDuplicateMatchField) => unknown;
+  formState: { touchedFields: Partial<Record<"phone" | "contactPhone", boolean>> };
+}
+
 export function useTicketDuplicates(
-  form: UseFormReturn<TicketFormValues>,
+  form: DuplicatesWatchForm,
   options?: { excludeTicketId?: string; enabled?: boolean },
 ) {
   const policyNumbersText = form.watch("policyNumbers");
@@ -56,11 +60,21 @@ export function useTicketDuplicates(
 
   const input = useMemo(
     () => ({
-      policyNumbers: splitPolicyNumbers(policyNumbersText ?? ""),
-      phone: phoneQueryable(phone, phoneTouched) ? (phone ?? "").trim() : null,
-      contactPhone: phoneQueryable(contactPhone, contactPhoneTouched)
-        ? (contactPhone ?? "").trim()
-        : null,
+      policyNumbers: splitPolicyNumbers(
+        typeof policyNumbersText === "string" ? policyNumbersText : "",
+      ),
+      phone:
+        typeof phone === "string" || phone === null
+          ? phoneQueryable(phone, phoneTouched)
+            ? (phone ?? "").trim()
+            : null
+          : null,
+      contactPhone:
+        typeof contactPhone === "string" || contactPhone === null
+          ? phoneQueryable(contactPhone, contactPhoneTouched)
+            ? (contactPhone ?? "").trim()
+            : null
+          : null,
     }),
     [policyNumbersText, phone, contactPhone, phoneTouched, contactPhoneTouched],
   );

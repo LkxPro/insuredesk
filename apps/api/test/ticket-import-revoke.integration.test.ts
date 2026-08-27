@@ -200,7 +200,10 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
       const batchId = await importBatchOf(importer, IMPORTER_PERMISSIONS, ["张三"]);
       const ticket = await prisma.ticket.findFirstOrThrow();
 
-      await supervisorCaller().ticket.edit({ ticketId: ticket.id, customerName: "张三改" });
+      await supervisorCaller().ticket.editComplaint({
+        ticketId: ticket.id,
+        customerName: "张三改",
+      });
       await expect(supervisorCaller().ticket.revokeImportBatch({ batchId })).rejects.toMatchObject({
         code: "PRECONDITION_FAILED",
       });
