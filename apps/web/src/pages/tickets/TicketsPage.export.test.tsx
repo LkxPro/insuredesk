@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildTicketExportUrl } from "@/pages/ticket-surface/ticket-export";
 import { auth, renderApp, restFetch, toastSpies, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
@@ -96,6 +96,34 @@ describe("按列表当前筛选条件导出", () => {
     await waitFor(() => expect(restFetch).toHaveBeenCalledTimes(1));
     const url = new URL(String(restFetch.mock.calls[0]?.[0]), "http://localhost");
     expect(url.searchParams.get("format")).toBe("xlsx");
+  });
+
+  it("下载文件名取服务端 Content-Disposition，不拼本地扩展名（csv 未锁定种类时服务端出 .zip）", async () => {
+    restFetch.mockResolvedValue(
+      new Response("zip-bytes", {
+        status: 200,
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition": 'attachment; filename="tickets-20260827-120000.zip"',
+        },
+      }),
+    );
+    const downloads: string[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloads.push(this.download);
+    });
+    try {
+      renderAt("/tickets");
+
+      await pickExport(/CSV/);
+
+      await waitFor(() => expect(downloads).toHaveLength(1));
+      expect(downloads[0]).toBe("tickets-20260827-120000.zip");
+    } finally {
+      clickSpy.mockRestore();
+    }
   });
 
   it("surfaces a server rejection as a toast", async () => {

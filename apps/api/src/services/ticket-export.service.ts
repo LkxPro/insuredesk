@@ -6,34 +6,35 @@ import {
   TICKET_SOURCE_LABELS,
   TICKET_STATUS_LABELS,
   type TicketExportQuery,
+  TicketKindKey,
   ticketExportHeader,
   ticketSourceSchema,
   ticketStatusSchema,
 } from "@insuredesk/shared";
 import type { Prisma } from "../generated/prisma/client.ts";
 import type { AuthenticatedUser } from "./auth.service.ts";
-import { type ExportColumn, type ExportFile, renderExportFile } from "./export-file.ts";
+import {
+  type ExportColumn,
+  type ExportFile,
+  type ExportSheet,
+  renderExportFile,
+  renderSplitExportFile,
+} from "./export-file.ts";
 import {
   buildTicketListOrderBy,
   buildTicketListWhere,
   type TicketServiceDeps,
 } from "./ticket.service.ts";
+import { TicketKindNotConfiguredError } from "./ticket-kind.service.ts";
 
-/**
- * 导出工单: the viewer's *filtered list*, as a file. Reuses the list's
- * WHERE/ORDER builders verbatim, so filters, soft-delete exclusion, and the
- * RBAC data scope (个人档只能导出指派给我或我创建的单) can never drift from
- * what the list page shows. Read-only by design: an export writes no
- * ProcessLog — it is a list-level batch read, not a per-ticket timeline
- * event.
- */
+/** 导出不写 ProcessLog：列表级批量读，不是单票时间线事件。 */
 
 const exportInclude = {
   // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
-  kind: { select: { name: true } },
+  kind: { select: { key: true } },
   complaintDetail: {
     include: {
       // Catalog references render their CURRENT names — a rename shows through
@@ -54,13 +55,8 @@ const exportInclude = {
 
 type TicketExportRow = Prisma.TicketGetPayload<{ include: typeof exportInclude }>;
 
-/**
- * 导出列：工单关键字段, in the detail page's reading order — 列序与系统列
- * 表头是对外契约，手写维持现状；用户字段列头从描述表取词。状态 is the
- * computed display status at export time (导出时刻口径) — same derivation as
- * the list, labelled in Chinese like every other enum column.
- */
-const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
+/** 共有列集：列序与系统列表头是对外契约，手写维持现状。 */
+const COMMON_EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: "工单号", value: (t) => t.workOrderNumber },
   {
     header: "状态",
@@ -159,16 +155,17 @@ const EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   },
   { header: "完结时间", value: (t, { formatDate }) => formatDate(t.completionTime) },
   { header: "完结状态", value: (t) => t.completionStatus?.name ?? "" },
-  { header: "种类", value: (t) => t.kind.name },
+];
+
+const REFUND_ONLY_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: "退费异常原因", value: (t) => t.refundDetail?.failureReason ?? "" },
   { header: "应退金额", value: (t) => t.refundDetail?.expectedAmount ?? "" },
   { header: "补偿金", value: (t) => t.refundDetail?.compensationAmount ?? "" },
 ];
 
 /**
- * Export every ticket the viewer's current filters match. One `clock.now()`
- * serves the WHERE predicates *and* the 状态 column, so a row selected as
- * overdue can never serialize as anything else (导出时刻口径).
+ * One `clock.now()` serves the WHERE predicates *and* the 状态 column, so a
+ * row selected as overdue can never serialize as anything else (导出时刻口径).
  */
 export async function exportTickets(
   { prisma, clock }: TicketServiceDeps,
@@ -176,18 +173,54 @@ export async function exportTickets(
   query: TicketExportQuery,
 ): Promise<ExportFile> {
   const now = clock.now();
-  const rows = await prisma.ticket.findMany({
-    where: await buildTicketListWhere(prisma, viewer, query, now),
-    include: exportInclude,
-    orderBy: buildTicketListOrderBy(query),
-  });
+  const where = await buildTicketListWhere(prisma, viewer, query, now);
+  const [rows, complaintKind, refundKind] = await Promise.all([
+    prisma.ticket.findMany({
+      where,
+      include: exportInclude,
+      orderBy: buildTicketListOrderBy(query),
+    }),
+    prisma.ticketKind.findUnique({ where: { key: TicketKindKey.Complaint } }),
+    prisma.ticketKind.findUnique({ where: { key: TicketKindKey.RefundException } }),
+  ]);
+  if (!complaintKind) {
+    throw new TicketKindNotConfiguredError(TicketKindKey.Complaint);
+  }
+  if (!refundKind) {
+    throw new TicketKindNotConfiguredError(TicketKindKey.RefundException);
+  }
 
-  return renderExportFile({
+  const complaintSheet: ExportSheet<TicketExportRow> = {
+    name: complaintKind.name,
+    columns: COMMON_EXPORT_COLUMNS,
+    rows: rows.filter((row) => row.kind.key !== TicketKindKey.RefundException),
+  };
+  const refundSheet: ExportSheet<TicketExportRow> = {
+    name: refundKind.name,
+    columns: [...COMMON_EXPORT_COLUMNS, ...REFUND_ONLY_COLUMNS],
+    rows: rows.filter((row) => row.kind.key === TicketKindKey.RefundException),
+  };
+
+  const lockedKindId = query.kindId?.length === 1 ? query.kindId[0] : undefined;
+  if (lockedKindId !== undefined) {
+    const lockedKind = await prisma.ticketKind.findUnique({ where: { id: lockedKindId } });
+    const sheet = lockedKind?.key === TicketKindKey.RefundException ? refundSheet : complaintSheet;
+    return renderExportFile({
+      baseName: "tickets",
+      format: query.format,
+      timeZone: query.timeZone,
+      now,
+      columns: sheet.columns,
+      rows: sheet.rows,
+      sheetName: sheet.name,
+    });
+  }
+
+  return renderSplitExportFile({
     baseName: "tickets",
     format: query.format,
     timeZone: query.timeZone,
     now,
-    columns: EXPORT_COLUMNS,
-    rows,
+    sheets: [complaintSheet, refundSheet],
   });
 }
