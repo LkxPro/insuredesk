@@ -1,4 +1,4 @@
-.PHONY: help dev open down db-reset test typecheck lint check upgrade upgrade-test release-prepare release agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-daemon-start agent-loop-status
+.PHONY: help dev open down db-reset test typecheck lint check upgrade upgrade-test restart-test release-prepare release agent-loop-queue agent-loop-dispatch agent-loop-daemon agent-loop-daemon-start agent-loop-status
 
 help:
 	@echo "InsureDesk development commands:"
@@ -19,6 +19,7 @@ help:
 	@echo "  make agent-loop-status   - Watch live worker status (phase, last event, stalls)"
 	@echo "  make upgrade   - Upgrade production to the latest release"
 	@echo "  make upgrade-test - Update the staging stack to the latest :test image (on the server)"
+	@echo "  make restart-test - Recreate the staging stack to reload .env.test (on the server)"
 
 dev:
 	@./scripts/dev-up.sh
@@ -82,3 +83,6 @@ upgrade:
 # 跑在服务器部署目录（需 .env.test）。
 upgrade-test:
 	@./scripts/upgrade-test.sh
+
+restart-test:
+	@./scripts/upgrade-test.sh --no-pull
