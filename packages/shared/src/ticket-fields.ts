@@ -35,9 +35,13 @@ const CATALOG_NOUNS: Record<TicketCatalogKind, string> = {
   feedbackReceiveChannel: "反馈信息接收渠道",
 };
 
+export const TICKET_FIELD_KINDS = ["complaintLike", "refund", "shared"] as const;
+export type TicketFieldKind = (typeof TICKET_FIELD_KINDS)[number];
+
 type TicketFieldSpec = {
   readonly key: string;
   readonly label: string;
+  readonly kind: TicketFieldKind;
   readonly overrides?: TicketFieldOverrides;
   readonly importOnly?: true;
 } & (
@@ -68,11 +72,12 @@ type TicketFieldSpec = {
 
 /** 行序＝表单呈现顺序；导入列序＝表序，完结迁移对固定收尾。 */
 export const TICKET_FIELD_DESCRIPTORS = [
-  { type: "date", key: "feedbackTime", label: "反馈时间" },
+  { type: "date", key: "feedbackTime", label: "反馈时间", kind: "complaintLike" },
   {
     type: "catalog",
     key: "channelId",
     label: "反馈渠道",
+    kind: "complaintLike",
     catalog: "channel",
     maxLength: 100,
     overrides: { exportHeader: "渠道", listLabel: "渠道" },
@@ -81,6 +86,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "text",
     key: "project",
     label: "项目（保司）",
+    kind: "complaintLike",
     maxLength: 100,
     importNoteSuffix: "如：融盛、泰康（填写简称即可）",
     overrides: { exportHeader: "项目" },
@@ -89,6 +95,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "text",
     key: "brokerageEntity",
     label: "经纪主体",
+    kind: "complaintLike",
     maxLength: 100,
     importNoteSuffix: "如：凯森、东方大地（填写简称即可）",
   },
@@ -96,15 +103,30 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "text",
     key: "paymentChannel",
     label: "支付渠道",
+    kind: "complaintLike",
     maxLength: 100,
     importNoteSuffix: "如：连连、银商、易宝、京东",
   },
-  { type: "text", key: "internalOrderNumber", label: "内部订单号", maxLength: 200 },
-  { type: "textList", key: "policyNumbers", label: "保单号", maxItemLength: 100, maxItems: 50 },
+  {
+    type: "text",
+    key: "internalOrderNumber",
+    label: "内部订单号",
+    maxLength: 200,
+    kind: "complaintLike",
+  },
+  {
+    type: "textList",
+    key: "policyNumbers",
+    label: "保单号",
+    kind: "complaintLike",
+    maxItemLength: 100,
+    maxItems: 50,
+  },
   {
     type: "catalog",
     key: "userFeedbackChannelId",
     label: "用户反馈渠道",
+    kind: "complaintLike",
     catalog: "userFeedbackChannel",
     maxLength: 100,
   },
@@ -112,14 +134,16 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "catalog",
     key: "feedbackReceiveChannelId",
     label: "反馈信息接收渠道",
+    kind: "complaintLike",
     catalog: "feedbackReceiveChannel",
     maxLength: 100,
   },
-  { type: "text", key: "customerName", label: "客户姓名", maxLength: 100 },
+  { type: "text", key: "customerName", label: "客户姓名", maxLength: 100, kind: "complaintLike" },
   {
     type: "text",
     key: "phone",
     label: "客户电话（投保人）",
+    kind: "complaintLike",
     maxLength: 50,
     overrides: { exportHeader: "客户电话", processLogLabel: "客户电话" },
   },
@@ -127,6 +151,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "text",
     key: "contactPhone",
     label: "联系人电话",
+    kind: "shared",
     maxLength: 200,
     overrides: { exportHeader: "联系电话", detailLabel: "联系人电话（备用）" },
   },
@@ -134,15 +159,23 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "enum",
     key: "nuclearBodyStatus",
     label: "保司侧是否核身",
+    kind: "complaintLike",
     options: NUCLEAR_BODY_STATUSES.map((status) => ({ label: status, value: status })),
     emptyMeaning: "未填写",
     overrides: { exportHeader: "核体状态" },
   },
-  { type: "text", key: "customerRequest", label: "客户诉求", maxLength: 2000 },
+  {
+    type: "text",
+    key: "customerRequest",
+    label: "客户诉求",
+    maxLength: 2000,
+    kind: "complaintLike",
+  },
   {
     type: "enum",
     key: "hasContacted",
     label: "客户曾进线",
+    kind: "complaintLike",
     options: [
       { label: "是", value: true },
       { label: "否", value: false },
@@ -150,11 +183,12 @@ export const TICKET_FIELD_DESCRIPTORS = [
     emptyMeaning: "未知",
     overrides: { exportHeader: "是否已联系" },
   },
-  { type: "date", key: "contactTime", label: "进线时间" },
+  { type: "date", key: "contactTime", label: "进线时间", kind: "complaintLike" },
   {
     type: "text",
     key: "contactId",
     label: "进线ID",
+    kind: "complaintLike",
     maxLength: 200,
     overrides: { exportHeader: "联系ID" },
   },
@@ -162,6 +196,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "catalog",
     key: "categoryId",
     label: "客诉类别",
+    kind: "complaintLike",
     catalog: "category",
     maxLength: 100,
     overrides: { exportHeader: "分类", listLabel: "类别" },
@@ -170,6 +205,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "catalog",
     key: "slaPolicyId",
     label: "时效策略",
+    kind: "shared",
     catalog: "slaPolicy",
     maxLength: 100,
     importNoteTail: "留空=未定级（无处理时限与 SLA 告警）",
@@ -178,6 +214,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "enum",
     key: "priority",
     label: "优先级",
+    kind: "complaintLike",
     options: PRIORITIES.map((priority) => ({ label: PRIORITY_LABELS[priority], value: priority })),
     emptyMeaning: "未设置",
   },
@@ -185,6 +222,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "catalog",
     key: "completionStatusId",
     label: "完结状态",
+    kind: "complaintLike",
     catalog: "completionStatus",
     maxLength: 100,
     importOnly: true,
@@ -194,6 +232,7 @@ export const TICKET_FIELD_DESCRIPTORS = [
     type: "text",
     key: "completionRemark",
     label: "完结备注",
+    kind: "complaintLike",
     maxLength: 2000,
     importOnly: true,
     importNoteSuffix: "须与「完结状态」同时填写或同时留空",

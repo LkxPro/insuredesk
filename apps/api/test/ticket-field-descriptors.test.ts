@@ -11,21 +11,17 @@ import {
 import { describe, expect, it } from "vitest";
 
 /**
- * 全仓唯一的字段清单字面量金样：逐字钉住描述表整体（key、标准名、行序、
- * 类型约束、枚举取值、导入说明素材、override 槽位）。其余测试的字段清单/
- * 表头/label 断言一律参数化取自描述表——描述表被误改时只有这里报警，
- * 加字段时也只有这里和新字段自身的行为测试需要改动。
- *
  * override 值是既成契约（导出列头下游按名取数、留痕短名已写入历史日志），
  * 改动必须显式过这里。
  */
 
 const GOLDEN_DESCRIPTORS = [
-  { type: "date", key: "feedbackTime", label: "反馈时间" },
+  { type: "date", key: "feedbackTime", label: "反馈时间", kind: "complaintLike" },
   {
     type: "catalog",
     key: "channelId",
     label: "反馈渠道",
+    kind: "complaintLike",
     catalog: "channel",
     maxLength: 100,
     overrides: { exportHeader: "渠道", listLabel: "渠道" },
@@ -34,6 +30,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "text",
     key: "project",
     label: "项目（保司）",
+    kind: "complaintLike",
     maxLength: 100,
     importNoteSuffix: "如：融盛、泰康（填写简称即可）",
     overrides: { exportHeader: "项目" },
@@ -42,6 +39,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "text",
     key: "brokerageEntity",
     label: "经纪主体",
+    kind: "complaintLike",
     maxLength: 100,
     importNoteSuffix: "如：凯森、东方大地（填写简称即可）",
   },
@@ -49,15 +47,30 @@ const GOLDEN_DESCRIPTORS = [
     type: "text",
     key: "paymentChannel",
     label: "支付渠道",
+    kind: "complaintLike",
     maxLength: 100,
     importNoteSuffix: "如：连连、银商、易宝、京东",
   },
-  { type: "text", key: "internalOrderNumber", label: "内部订单号", maxLength: 200 },
-  { type: "textList", key: "policyNumbers", label: "保单号", maxItemLength: 100, maxItems: 50 },
+  {
+    type: "text",
+    key: "internalOrderNumber",
+    label: "内部订单号",
+    maxLength: 200,
+    kind: "complaintLike",
+  },
+  {
+    type: "textList",
+    key: "policyNumbers",
+    label: "保单号",
+    kind: "complaintLike",
+    maxItemLength: 100,
+    maxItems: 50,
+  },
   {
     type: "catalog",
     key: "userFeedbackChannelId",
     label: "用户反馈渠道",
+    kind: "complaintLike",
     catalog: "userFeedbackChannel",
     maxLength: 100,
   },
@@ -65,14 +78,16 @@ const GOLDEN_DESCRIPTORS = [
     type: "catalog",
     key: "feedbackReceiveChannelId",
     label: "反馈信息接收渠道",
+    kind: "complaintLike",
     catalog: "feedbackReceiveChannel",
     maxLength: 100,
   },
-  { type: "text", key: "customerName", label: "客户姓名", maxLength: 100 },
+  { type: "text", key: "customerName", label: "客户姓名", maxLength: 100, kind: "complaintLike" },
   {
     type: "text",
     key: "phone",
     label: "客户电话（投保人）",
+    kind: "complaintLike",
     maxLength: 50,
     overrides: { exportHeader: "客户电话", processLogLabel: "客户电话" },
   },
@@ -80,6 +95,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "text",
     key: "contactPhone",
     label: "联系人电话",
+    kind: "shared",
     maxLength: 200,
     overrides: { exportHeader: "联系电话", detailLabel: "联系人电话（备用）" },
   },
@@ -87,6 +103,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "enum",
     key: "nuclearBodyStatus",
     label: "保司侧是否核身",
+    kind: "complaintLike",
     options: [
       { label: "是", value: "是" },
       { label: "否", value: "否" },
@@ -95,11 +112,18 @@ const GOLDEN_DESCRIPTORS = [
     emptyMeaning: "未填写",
     overrides: { exportHeader: "核体状态" },
   },
-  { type: "text", key: "customerRequest", label: "客户诉求", maxLength: 2000 },
+  {
+    type: "text",
+    key: "customerRequest",
+    label: "客户诉求",
+    maxLength: 2000,
+    kind: "complaintLike",
+  },
   {
     type: "enum",
     key: "hasContacted",
     label: "客户曾进线",
+    kind: "complaintLike",
     options: [
       { label: "是", value: true },
       { label: "否", value: false },
@@ -107,11 +131,12 @@ const GOLDEN_DESCRIPTORS = [
     emptyMeaning: "未知",
     overrides: { exportHeader: "是否已联系" },
   },
-  { type: "date", key: "contactTime", label: "进线时间" },
+  { type: "date", key: "contactTime", label: "进线时间", kind: "complaintLike" },
   {
     type: "text",
     key: "contactId",
     label: "进线ID",
+    kind: "complaintLike",
     maxLength: 200,
     overrides: { exportHeader: "联系ID" },
   },
@@ -119,6 +144,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "catalog",
     key: "categoryId",
     label: "客诉类别",
+    kind: "complaintLike",
     catalog: "category",
     maxLength: 100,
     overrides: { exportHeader: "分类", listLabel: "类别" },
@@ -127,6 +153,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "catalog",
     key: "slaPolicyId",
     label: "时效策略",
+    kind: "shared",
     catalog: "slaPolicy",
     maxLength: 100,
     importNoteTail: "留空=未定级（无处理时限与 SLA 告警）",
@@ -135,6 +162,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "enum",
     key: "priority",
     label: "优先级",
+    kind: "complaintLike",
     options: [
       { label: "低", value: "low" },
       { label: "中", value: "medium" },
@@ -147,6 +175,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "catalog",
     key: "completionStatusId",
     label: "完结状态",
+    kind: "complaintLike",
     catalog: "completionStatus",
     maxLength: 100,
     importOnly: true,
@@ -156,6 +185,7 @@ const GOLDEN_DESCRIPTORS = [
     type: "text",
     key: "completionRemark",
     label: "完结备注",
+    kind: "complaintLike",
     maxLength: 2000,
     importOnly: true,
     importNoteSuffix: "须与「完结状态」同时填写或同时留空",
@@ -165,6 +195,16 @@ const GOLDEN_DESCRIPTORS = [
 describe("ticket field descriptors (golden)", () => {
   it("描述表逐行逐字对齐金样", () => {
     expect(TICKET_FIELD_DESCRIPTORS).toEqual(GOLDEN_DESCRIPTORS);
+  });
+
+  it("kind 维度：投诉字段集（complaintLike∪shared）＝现状全集，shared 恰为退费可编辑两键", () => {
+    const complaintKeys = TICKET_FIELD_DESCRIPTORS.filter(
+      (row) => row.kind === "complaintLike" || row.kind === "shared",
+    ).map((row) => row.key);
+    expect(complaintKeys).toEqual(GOLDEN_DESCRIPTORS.map((row) => row.key));
+    expect(
+      TICKET_FIELD_DESCRIPTORS.filter((row) => row.kind === "shared").map((row) => row.key),
+    ).toEqual(["contactPhone", "slaPolicyId"]);
   });
 
   it("建单字段 key 清单＝金样去掉导入专属列，保持表单呈现顺序", () => {

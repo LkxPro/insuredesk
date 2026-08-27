@@ -120,6 +120,50 @@ export const ticketEditInputSchema = ticketCreateInputSchema.extend({
 export type TicketEditInput = z.input<typeof ticketEditInputSchema>;
 export type TicketEditData = z.output<typeof ticketEditInputSchema>;
 
+export const editComplaintInputSchema = ticketEditInputSchema;
+export type EditComplaintInput = z.input<typeof editComplaintInputSchema>;
+export type EditComplaintData = z.output<typeof editComplaintInputSchema>;
+
+/**
+ * 拆表后仍跑旧 bundle 的客户端会携带拆分前全集提交退费编辑；裸 strict 的
+ * unrecognized key 文案不引导刷新，故退役键逐个立墓碑替代。
+ */
+const retiredRefundEditFieldSchema = z
+  .undefined({ error: "退费工单仅可编辑联系人电话与时效策略，请刷新客户端后重试" })
+  .optional();
+
+export const editRefundInputSchema = z
+  .object({
+    ticketId: z.string().min(1),
+    contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
+    /** 时效策略目录引用；null = 未定级（无处理时限与 SLA 告警）。 */
+    slaPolicyId: optionalText(100),
+    feedbackTime: retiredRefundEditFieldSchema,
+    channelId: retiredRefundEditFieldSchema,
+    project: retiredRefundEditFieldSchema,
+    brokerageEntity: retiredRefundEditFieldSchema,
+    paymentChannel: retiredRefundEditFieldSchema,
+    internalOrderNumber: retiredRefundEditFieldSchema,
+    policyNumbers: retiredRefundEditFieldSchema,
+    noPolicyNumber: retiredRefundEditFieldSchema,
+    userFeedbackChannelId: retiredRefundEditFieldSchema,
+    feedbackReceiveChannelId: retiredRefundEditFieldSchema,
+    customerName: retiredRefundEditFieldSchema,
+    phone: retiredRefundEditFieldSchema,
+    customerRequest: retiredRefundEditFieldSchema,
+    nuclearBodyStatus: retiredRefundEditFieldSchema,
+    hasContacted: retiredRefundEditFieldSchema,
+    contactTime: retiredRefundEditFieldSchema,
+    contactId: retiredRefundEditFieldSchema,
+    categoryId: retiredRefundEditFieldSchema,
+    complaintLevel: retiredRefundEditFieldSchema,
+    priority: retiredRefundEditFieldSchema,
+  })
+  .strict();
+
+export type EditRefundInput = z.input<typeof editRefundInputSchema>;
+export type EditRefundData = z.output<typeof editRefundInputSchema>;
+
 export const ticketUpdateRefundCompensationInputSchema = z.object({
   ticketId: z.string().min(1),
   compensationAmount: z
