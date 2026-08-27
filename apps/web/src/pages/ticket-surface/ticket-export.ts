@@ -53,8 +53,10 @@ export async function downloadTicketExport(
   query: TicketListQuery,
   format: TicketExportFormat,
 ): Promise<void> {
+  // 实际容器（xlsx/zip/csv）由服务端按筛选决定，文件名只能取 Content-Disposition
   await downloadFile(
     buildTicketExportUrl(query, format),
-    `工单导出-${formatDate(new Date(), "yyyyMMdd-HHmm")}.${format}`,
+    `工单导出-${formatDate(new Date(), "yyyyMMdd-HHmm")}`,
+    { preferServerFilename: true },
   );
 }

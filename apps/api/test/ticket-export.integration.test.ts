@@ -1,6 +1,7 @@
 import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
+import JSZip from "jszip";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { DEMO_PASSWORD } from "../prisma/seed-data.ts";
 import { parseEnv } from "../src/env.ts";
@@ -19,6 +20,7 @@ describe("ticket export (Testcontainers)", () => {
   let seeded: IntegrationHarness["seeded"];
   let channelIds: Map<string, string>;
   let scopedExporter: User;
+  let complaintKindId: string;
   let refundKindId: string;
 
   beforeAll(async () => {
@@ -27,6 +29,8 @@ describe("ticket export (Testcontainers)", () => {
     });
     prisma = harness.prisma;
     seeded = harness.seeded;
+    complaintKindId = (await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } }))
+      .id;
     refundKindId = (
       await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
     ).id;
@@ -181,6 +185,22 @@ describe("ticket export (Testcontainers)", () => {
     });
   }
 
+  async function splitCsvTexts(payload: Buffer): Promise<Map<string, string>> {
+    const zip = await JSZip.loadAsync(payload);
+    const texts = new Map<string, string>();
+    for (const [name, file] of Object.entries(zip.files)) {
+      texts.set(name.replace(/\.csv$/, ""), await file.async("string"));
+    }
+    return texts;
+  }
+
+  async function complaintCsvText(payload: Buffer): Promise<string> {
+    const texts = await splitCsvTexts(payload);
+    const text = texts.get("投诉");
+    expect(text, "zip 内含投诉.csv").toBeDefined();
+    return text ?? "";
+  }
+
   describe("权限校验 (UI 无入口之外，API 也拒绝)", () => {
     it("401 without a session, 403 without ticket.export, and neither writes a file", async () => {
       const anonymous = await exportRequest(null, { format: "csv" });
@@ -224,9 +244,10 @@ describe("ticket export (Testcontainers)", () => {
         channelId: `${channelId("支付")},${channelId("监管")}`,
       });
       expect(res.statusCode).toBe(200);
-      expect(res.body).toContain("支付客户");
-      expect(res.body).toContain("监管客户");
-      expect(res.body).not.toContain("保司客户");
+      const complaint = await complaintCsvText(res.rawPayload);
+      expect(complaint).toContain("支付客户");
+      expect(complaint).toContain("监管客户");
+      expect(complaint).not.toContain("保司客户");
     });
 
     it("source 缺省排除归档单；空值参数 = 不过滤、归档单随导出", async () => {
@@ -236,18 +257,20 @@ describe("ticket export (Testcontainers)", () => {
       const session = await sessionFor("manager");
       const defaulted = await exportRequest(session, { format: "csv" });
       expect(defaulted.statusCode).toBe(200);
-      expect(defaulted.body).toContain("活跃客户");
-      expect(defaulted.body).not.toContain("归档客户");
+      const defaultedText = await complaintCsvText(defaulted.rawPayload);
+      expect(defaultedText).toContain("活跃客户");
+      expect(defaultedText).not.toContain("归档客户");
 
       // 与列表页"清空来源筛选"下传的标记一致：空值覆盖缺省
       const cleared = await exportRequest(session, { format: "csv", source: "" });
       expect(cleared.statusCode).toBe(200);
-      expect(cleared.body).toContain("归档客户");
+      expect(await complaintCsvText(cleared.rawPayload)).toContain("归档客户");
 
       const explicit = await exportRequest(session, { format: "csv", source: "file_import" });
       expect(explicit.statusCode).toBe(200);
-      expect(explicit.body).toContain("归档客户");
-      expect(explicit.body).not.toContain("活跃客户");
+      const explicitText = await complaintCsvText(explicit.rawPayload);
+      expect(explicitText).toContain("归档客户");
+      expect(explicitText).not.toContain("活跃客户");
     });
   });
 
@@ -267,10 +290,11 @@ describe("ticket export (Testcontainers)", () => {
         createdTo: to.toISOString(),
       });
       expect(res.statusCode).toBe(200);
-      expect(res.body).toContain("起边界");
-      expect(res.body).toContain("止边界");
-      expect(res.body).not.toContain("区间前");
-      expect(res.body).not.toContain("区间后");
+      const complaint = await complaintCsvText(res.rawPayload);
+      expect(complaint).toContain("起边界");
+      expect(complaint).toContain("止边界");
+      expect(complaint).not.toContain("区间前");
+      expect(complaint).not.toContain("区间后");
     });
 
     it("rejects a malformed range with 400 instead of exporting everything", async () => {
@@ -303,15 +327,16 @@ describe("ticket export (Testcontainers)", () => {
       const session = await sessionFor("manager");
       const res = await exportRequest(session, { format: "csv", channelId: channelId("支付") });
       expect(res.statusCode).toBe(200);
-      expect(res.headers["content-type"]).toContain("text/csv");
-      expect(res.headers["content-disposition"]).toMatch(/attachment; filename="tickets-.*\.csv"/);
+      expect(res.headers["content-type"]).toBe("application/zip");
+      expect(res.headers["content-disposition"]).toMatch(/attachment; filename="tickets-.*\.zip"/);
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const header = rows[0];
       expect(header?.[0]).toBe("工单号");
       expect(header).toContain("状态");
       expect(header).toContain("时效策略");
       expect(header).not.toContain("投诉等级");
+      expect(header).not.toContain("种类");
       expect(header).toContain("完结状态");
 
       const exportedNumbers = rows.slice(1).map((cells) => cells[0]);
@@ -319,7 +344,7 @@ describe("ticket export (Testcontainers)", () => {
       expect(exportedNumbers).toContain(payment1.workOrderNumber);
       expect(exportedNumbers).toContain(payment2.workOrderNumber);
 
-      const body = res.body;
+      const body = await complaintCsvText(res.rawPayload);
       expect(body).toContain("支付客户一");
       expect(body).not.toContain("保司客户");
       expect(body).not.toContain("已删除客户");
@@ -333,7 +358,7 @@ describe("ticket export (Testcontainers)", () => {
       const res = await exportRequest(session, { format: "csv" });
       expect(res.statusCode).toBe(200);
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const policyIndex = rows[0]?.indexOf("保单号") ?? -1;
       expect(policyIndex).toBeGreaterThan(-1);
       const cellByNumber = new Map(rows.slice(1).map((cells) => [cells[0], cells[policyIndex]]));
@@ -349,7 +374,7 @@ describe("ticket export (Testcontainers)", () => {
       const res = await exportRequest(session, { format: "csv" });
       expect(res.statusCode).toBe(200);
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const policyIndex = rows[0]?.indexOf("保单号") ?? -1;
       const cellByNumber = new Map(rows.slice(1).map((cells) => [cells[0], cells[policyIndex]]));
       expect(cellByNumber.get(none.workOrderNumber)).toBe("无");
@@ -362,7 +387,7 @@ describe("ticket export (Testcontainers)", () => {
       const session = await sessionFor("manager");
       const res = await exportRequest(session, { format: "csv" });
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const requestColumn = rows[0]?.indexOf("客户诉求") ?? -1;
       expect(rows[1]?.[requestColumn]).toBe('要求"全额退保", 并书面道歉');
     });
@@ -376,12 +401,12 @@ describe("ticket export (Testcontainers)", () => {
       const session = await sessionFor("manager");
       const res = await exportRequest(session, { format: "csv" });
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const statusColumn = rows[0]?.indexOf("状态") ?? -1;
       expect(rows[1]?.[statusColumn]).toBe("已超时");
 
       const filtered = await exportRequest(session, { format: "csv", status: "overdue" });
-      expect(parseCsv(filtered.body)).toHaveLength(2);
+      expect(parseCsv(await complaintCsvText(filtered.rawPayload))).toHaveLength(2);
     });
 
     it("formats date columns in the requested IANA zone", async () => {
@@ -393,14 +418,15 @@ describe("ticket export (Testcontainers)", () => {
         timeZone: "Asia/Shanghai",
       });
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const createdColumn = rows[0]?.indexOf("创建时间") ?? -1;
       expect(rows[1]?.[createdColumn]).toBe("2026-07-10 00:30");
 
       // An invalid zone degrades to UTC instead of failing the download
       const fallback = await exportRequest(session, { format: "csv", timeZone: "Not/AZone" });
       expect(fallback.statusCode).toBe(200);
-      expect(parseCsv(fallback.body)[1]?.[createdColumn]).toBe("2026-07-09 16:30");
+      const fallbackRows = parseCsv(await complaintCsvText(fallback.rawPayload));
+      expect(fallbackRows[1]?.[createdColumn]).toBe("2026-07-09 16:30");
     });
 
     it("进线时间/反馈信息接收渠道 columns sit in their detail-page positions, dates in the requested zone", async () => {
@@ -413,7 +439,7 @@ describe("ticket export (Testcontainers)", () => {
       const res = await exportRequest(session, { format: "csv", timeZone: "Asia/Shanghai" });
       expect(res.statusCode).toBe(200);
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const header = rows[0] ?? [];
       expect(header.indexOf("反馈信息接收渠道")).toBe(header.indexOf("用户反馈渠道") + 1);
       expect(header.indexOf("进线时间")).toBe(header.indexOf("是否已联系") + 1);
@@ -426,7 +452,7 @@ describe("ticket export (Testcontainers)", () => {
     });
   });
 
-  describe("退费列", () => {
+  describe("按种类拆分导出", () => {
     async function makeRefundTicket() {
       const created = await makeTicket(
         { customerName: "退费客户" },
@@ -450,44 +476,156 @@ describe("ticket export (Testcontainers)", () => {
       return created;
     }
 
-    it("退费单带种类/异常原因/应退金额/补偿金列；投诉单对应列为空", async () => {
+    it("csv 未锁定种类 → zip 双文件：共有列集 + 退费文件多 3 列，均无种类列", async () => {
       const complaint = await makeTicket({ customerName: "投诉客户" });
       const refund = await makeRefundTicket();
 
       const session = await sessionFor("manager");
       const res = await exportRequest(session, { format: "csv" });
       expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).toBe("application/zip");
+      expect(res.headers["content-disposition"]).toMatch(/attachment; filename="tickets-.*\.zip"/);
 
-      const rows = parseCsv(res.body);
-      const header = rows[0] ?? [];
-      const kindCol = header.indexOf("种类");
-      const reasonCol = header.indexOf("退费异常原因");
-      const amountCol = header.indexOf("应退金额");
-      const compensationCol = header.indexOf("补偿金");
-      expect(Math.min(kindCol, reasonCol, amountCol, compensationCol)).toBeGreaterThanOrEqual(0);
+      const files = await splitCsvTexts(res.rawPayload);
+      expect([...files.keys()].sort()).toEqual(["投诉", "退费异常"].sort());
 
-      const byNumber = new Map(rows.slice(1).map((cells) => [cells[0] ?? "", cells]));
-      const complaintRow = byNumber.get(complaint.workOrderNumber) ?? [];
-      const refundRow = byNumber.get(refund.workOrderNumber) ?? [];
-      expect(refundRow[kindCol]).toBe("退费异常");
-      expect(refundRow[reasonCol]).toBe("银行卡状态异常");
-      expect(refundRow[amountCol]).toBe("100.00");
-      expect(refundRow[compensationCol]).toBe("20.50");
-      expect(complaintRow[kindCol]).toBe("投诉");
-      expect(complaintRow[reasonCol]).toBe("");
-      expect(complaintRow[amountCol]).toBe("");
-      expect(complaintRow[compensationCol]).toBe("");
+      const complaintRows = parseCsv(files.get("投诉") ?? "");
+      const refundRows = parseCsv(files.get("退费异常") ?? "");
+      const complaintHeader = complaintRows[0] ?? [];
+      const refundHeader = refundRows[0] ?? [];
+      expect(complaintHeader).not.toContain("种类");
+      expect(refundHeader).not.toContain("种类");
+      expect(complaintHeader).not.toContain("退费异常原因");
+      expect(refundHeader).toEqual([...complaintHeader, "退费异常原因", "应退金额", "补偿金"]);
+
+      expect(complaintRows.slice(1).map((cells) => cells[0])).toEqual([complaint.workOrderNumber]);
+      expect(refundRows).toHaveLength(2);
+      const refundRow = refundRows[1] ?? [];
+      expect(refundRow[0]).toBe(refund.workOrderNumber);
+      expect(refundRow[refundHeader.indexOf("退费异常原因")]).toBe("银行卡状态异常");
+      expect(refundRow[refundHeader.indexOf("应退金额")]).toBe("100.00");
+      expect(refundRow[refundHeader.indexOf("补偿金")]).toBe("20.50");
     });
 
-    it("kindId 查询参数按种类过滤导出", async () => {
-      await makeTicket({ customerName: "投诉客户" });
+    it("未锁定种类时某一类为空仍输出双 sheet/双文件（拆分不依赖结果集）", async () => {
+      await makeTicket({ customerName: "只有投诉" });
+
+      const session = await sessionFor("manager");
+      const csv = await exportRequest(session, { format: "csv" });
+      const files = await splitCsvTexts(csv.rawPayload);
+      expect([...files.keys()].sort()).toEqual(["投诉", "退费异常"].sort());
+      expect(parseCsv(files.get("退费异常") ?? "")).toHaveLength(1);
+
+      const xlsx = await exportRequest(session, { format: "xlsx" });
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(xlsx.rawPayload as unknown as ArrayBuffer);
+      expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["投诉", "退费异常"]);
+      expect(workbook.getWorksheet("退费异常")?.rowCount).toBe(1);
+    });
+
+    it("无行为绑定的第三种类行归投诉 sheet", async () => {
+      const thirdKind = await prisma.ticketKind.create({
+        data: { key: `custom-${Date.now()}`, name: "自定义种类" },
+      });
+      const third = await makeTicket({ customerName: "三类客户" }, { kindId: thirdKind.id });
       await makeRefundTicket();
 
       const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "csv" });
+      const files = await splitCsvTexts(res.rawPayload);
+      const complaintText = files.get("投诉") ?? "";
+      expect(complaintText).toContain(third.workOrderNumber);
+      expect(files.get("退费异常")).not.toContain(third.workOrderNumber);
+      expect(parseCsv(complaintText)[0]).not.toContain("退费异常原因");
+    });
+
+    it("kindId 锁单一种类 → 直接出单文件：退费锁出退费列集，投诉锁出共有列集", async () => {
+      const complaint = await makeTicket({ customerName: "投诉客户" });
+      const refund = await makeRefundTicket();
+
+      const session = await sessionFor("manager");
+      const refundOnly = await exportRequest(session, { format: "csv", kindId: refundKindId });
+      expect(refundOnly.statusCode).toBe(200);
+      expect(refundOnly.headers["content-type"]).toContain("text/csv");
+      expect(refundOnly.headers["content-disposition"]).toMatch(
+        /attachment; filename="tickets-.*\.csv"/,
+      );
+      const refundRows = parseCsv(refundOnly.body);
+      const refundHeader = refundRows[0] ?? [];
+      expect(refundHeader).toContain("退费异常原因");
+      expect(refundHeader).toContain("应退金额");
+      expect(refundHeader).toContain("补偿金");
+      expect(refundHeader).not.toContain("种类");
+      expect(refundRows[1]?.[0]).toBe(refund.workOrderNumber);
+      expect(refundOnly.body).not.toContain("投诉客户");
+
+      const complaintOnly = await exportRequest(session, {
+        format: "csv",
+        kindId: complaintKindId,
+      });
+      expect(complaintOnly.headers["content-type"]).toContain("text/csv");
+      const complaintRows = parseCsv(complaintOnly.body);
+      expect(complaintRows[0]).not.toContain("退费异常原因");
+      expect(complaintRows[0]).not.toContain("种类");
+      expect(complaintRows[1]?.[0]).toBe(complaint.workOrderNumber);
+      expect(complaintOnly.body).not.toContain("退费客户");
+    });
+
+    it("单 kind 判定按请求 kindId 而非结果集：锁定退费但无退费行仍出退费单文件", async () => {
+      await makeTicket({ customerName: "投诉客户" });
+
+      const session = await sessionFor("manager");
       const res = await exportRequest(session, { format: "csv", kindId: refundKindId });
+      expect(res.headers["content-type"]).toContain("text/csv");
+      const rows = parseCsv(res.body);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toContain("应退金额");
+    });
+
+    it("kindId 多选 = 未锁定 → 仍 zip 双文件", async () => {
+      await makeTicket({ customerName: "投诉客户" });
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, {
+        format: "csv",
+        kindId: `${complaintKindId},${refundKindId}`,
+      });
+      expect(res.headers["content-type"]).toBe("application/zip");
+      const files = await splitCsvTexts(res.rawPayload);
+      expect([...files.keys()].sort()).toEqual(["投诉", "退费异常"].sort());
+    });
+
+    it("xlsx 锁单一种类 → 单 sheet 文件，sheet 名取种类名", async () => {
+      await makeRefundTicket();
+
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, { format: "xlsx", kindId: refundKindId });
       expect(res.statusCode).toBe(200);
-      expect(res.body).toContain("退费客户");
-      expect(res.body).not.toContain("投诉客户");
+      expect(res.headers["content-disposition"]).toMatch(/attachment; filename="tickets-.*\.xlsx"/);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(res.rawPayload as unknown as ArrayBuffer);
+      expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["退费异常"]);
+      const header =
+        (workbook.getWorksheet("退费异常")?.getRow(1).values as Array<string | undefined>) ?? [];
+      expect(header).toContain("应退金额");
+      expect(header).not.toContain("种类");
+    });
+
+    it("种类名被管理员改成 Excel 非法字符时，xlsx sheet 名消毒而非 500", async () => {
+      await prisma.ticketKind.update({
+        where: { id: complaintKindId },
+        data: { name: "投诉[旧]?" },
+      });
+      try {
+        const session = await sessionFor("manager");
+        const res = await exportRequest(session, { format: "xlsx" });
+        expect(res.statusCode).toBe(200);
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(res.rawPayload as unknown as ArrayBuffer);
+        expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["投诉旧", "退费异常"]);
+      } finally {
+        await prisma.ticketKind.update({ where: { id: complaintKindId }, data: { name: "投诉" } });
+      }
     });
   });
 
@@ -499,7 +637,7 @@ describe("ticket export (Testcontainers)", () => {
       const res = await exportRequest(session, { format: "csv" });
       expect(res.statusCode).toBe(200);
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const header = rows[0] ?? [];
       expect(header).not.toContain("处理结果");
       const followUpColumn = header.indexOf("跟进记录");
@@ -549,7 +687,7 @@ describe("ticket export (Testcontainers)", () => {
       });
       expect(res.statusCode).toBe(200);
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       const followUpColumn = (rows[0] ?? []).indexOf("跟进记录");
       expect(followUpColumn).toBeGreaterThan(-1);
       expect(rows[1]?.[followUpColumn]).toBe(
@@ -575,11 +713,12 @@ describe("ticket export (Testcontainers)", () => {
       const res = await exportRequest(session, { format: "csv" });
       expect(res.statusCode).toBe(200);
 
-      const rows = parseCsv(res.body);
+      const text = await complaintCsvText(res.rawPayload);
+      const rows = parseCsv(text);
       expect(rows).toHaveLength(2);
       expect(rows[1]?.[0]).toBe(own.workOrderNumber);
-      expect(res.body).not.toContain("无人认领");
-      expect(res.body).not.toContain("主管的单");
+      expect(text).not.toContain("无人认领");
+      expect(text).not.toContain("主管的单");
     });
 
     it("filters stay inside the exporter's scope, never widen it", async () => {
@@ -592,7 +731,7 @@ describe("ticket export (Testcontainers)", () => {
       const session = await sessionFor("scoped-exporter");
       const res = await exportRequest(session, { format: "csv", channelId: channelId("支付") });
 
-      const rows = parseCsv(res.body);
+      const rows = parseCsv(await complaintCsvText(res.rawPayload));
       expect(rows.slice(1).map((cells) => cells[0])).toEqual([own.workOrderNumber]);
     });
 
@@ -616,19 +755,20 @@ describe("ticket export (Testcontainers)", () => {
       const res = await exportRequest(session, { format: "csv" });
       expect(res.statusCode).toBe(200);
 
-      const rows = parseCsv(res.body);
+      const text = await complaintCsvText(res.rawPayload);
+      const rows = parseCsv(text);
       expect(
         rows
           .slice(1)
           .map((cells) => cells[0])
           .sort(),
       ).toEqual([createdUnassigned.workOrderNumber, createdHandedOff.workOrderNumber].sort());
-      expect(res.body).not.toContain("别人的单");
+      expect(text).not.toContain("别人的单");
     });
   });
 
   describe("Excel (xlsx)", () => {
-    it("round-trips through exceljs with the same rows the list returns", async () => {
+    it("双 sheet 各自列集：投诉 sheet 与列表同序，退费 sheet 多 3 列", async () => {
       const urgent = await makeTicket({
         slaPolicyId: harness.slaPolicyId("特急投诉"),
         customerName: "特急客户",
@@ -645,7 +785,9 @@ describe("ticket export (Testcontainers)", () => {
 
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(res.rawPayload as unknown as ArrayBuffer);
-      const sheet = workbook.getWorksheet("工单");
+      expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["投诉", "退费异常"]);
+
+      const sheet = workbook.getWorksheet("投诉");
       expect(sheet).toBeDefined();
       expect(sheet?.rowCount).toBe(3);
 
@@ -656,12 +798,23 @@ describe("ticket export (Testcontainers)", () => {
       const headerCells = (sheet?.getRow(1).values as Array<string | undefined>) ?? [];
       expect(headerCells).toContain("跟进记录");
       expect(headerCells).not.toContain("处理结果");
+      expect(headerCells).not.toContain("种类");
+      expect(headerCells).not.toContain("退费异常原因");
       const policyColumn = headerCells.indexOf("时效策略");
       expect(policyColumn).toBeGreaterThan(-1);
       expect(sheet?.getRow(3).getCell(policyColumn).value).toBe("特急投诉");
       expect(sheet?.getRow(2).getCell(policyColumn).value).toBe("一般投诉");
       const dueColumn = headerCells.indexOf("处理时限");
       expect(sheet?.getRow(3).getCell(dueColumn).value ?? "").toBe("");
+
+      const refundHeader =
+        (workbook.getWorksheet("退费异常")?.getRow(1).values as Array<string | undefined>) ?? [];
+      expect(refundHeader.slice(1)).toEqual([
+        ...headerCells.slice(1),
+        "退费异常原因",
+        "应退金额",
+        "补偿金",
+      ]);
     });
   });
 

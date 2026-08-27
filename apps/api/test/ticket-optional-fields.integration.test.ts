@@ -257,9 +257,10 @@ describe("optional business fields (Testcontainers)", () => {
     it("export renders unfilled fields as empty cells", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
 
-      // The export is an HTTP route; exercise its service with the same
-      // viewer identity the route would resolve.
       const { exportTickets } = await import("../src/services/ticket-export.service.ts");
+      const complaintKindId = (
+        await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } })
+      ).id;
       const file = await exportTickets(
         { prisma, clock: { now: () => new Date() } },
         {
@@ -276,6 +277,7 @@ describe("optional business fields (Testcontainers)", () => {
         },
         {
           format: "csv",
+          kindId: [complaintKindId],
           source: [...TICKET_SOURCES],
           search: created.workOrderNumber,
           sortBy: "createdAt",
