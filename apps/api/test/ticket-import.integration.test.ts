@@ -197,23 +197,31 @@ describe("ticket import upload (Testcontainers)", () => {
     }
     expect(leveled.createdAt.getTime()).toBe(unleveled.createdAt.getTime());
 
-    expect(leveled.feedbackTime?.toISOString()).toBe("2026-07-01T02:00:00.000Z");
-    expect(leveled.contactTime?.toISOString()).toBe("2026-06-30T13:15:00.000Z");
+    const details = await prisma.ticketComplaintDetail.findMany({
+      where: { ticketId: { in: tickets.map((ticket) => ticket.id) } },
+    });
+    const detailByTicketId = new Map(details.map((detail) => [detail.ticketId, detail]));
+    const leveledDetail = detailByTicketId.get(leveled.id);
+    const unleveledDetail = detailByTicketId.get(unleveled.id);
+    if (!leveledDetail || !unleveledDetail) throw new Error("导入行缺 detail");
+
+    expect(leveledDetail.feedbackTime?.toISOString()).toBe("2026-07-01T02:00:00.000Z");
+    expect(leveledDetail.contactTime?.toISOString()).toBe("2026-06-30T13:15:00.000Z");
     const expectedReceiveChannel = await prisma.feedbackReceiveChannel.findUniqueOrThrow({
       where: { name: "内部客服热线" },
     });
     const expectedUserChannel = await prisma.userFeedbackChannel.findUniqueOrThrow({
       where: { name: "保司400热线" },
     });
-    expect(leveled.feedbackReceiveChannelId).toBe(expectedReceiveChannel.id);
-    expect(leveled.userFeedbackChannelId).toBe(expectedUserChannel.id);
-    expect(leveled.policyNumbers).toEqual(["P202607010001"]);
-    expect(unleveled.policyNumbers).toEqual(["P202607010002"]);
-    expect(leveled.nuclearBodyStatus).toBe("待核实");
-    expect(leveled.hasContacted).toBe(true);
-    expect(leveled.priority).toBe("urgent");
-    expect(leveled.channelId).not.toBeNull();
-    expect(leveled.categoryId).not.toBeNull();
+    expect(leveledDetail.feedbackReceiveChannelId).toBe(expectedReceiveChannel.id);
+    expect(leveledDetail.userFeedbackChannelId).toBe(expectedUserChannel.id);
+    expect(leveledDetail.policyNumbers).toEqual(["P202607010001"]);
+    expect(unleveledDetail.policyNumbers).toEqual(["P202607010002"]);
+    expect(leveledDetail.nuclearBodyStatus).toBe("待核实");
+    expect(leveledDetail.hasContacted).toBe(true);
+    expect(leveledDetail.priority).toBe("urgent");
+    expect(leveledDetail.channelId).not.toBeNull();
+    expect(leveledDetail.categoryId).not.toBeNull();
 
     const policy = await prisma.slaPolicy.findUniqueOrThrow({
       where: { name: "高级投诉" },
@@ -257,9 +265,12 @@ describe("ticket import upload (Testcontainers)", () => {
     );
     expect(ok.statusCode).toBe(200);
     const ticket = await prisma.ticket.findFirstOrThrow({
-      where: { customerName: "多保单客户" },
+      where: { complaintDetail: { customerName: "多保单客户" } },
     });
-    expect(ticket.policyNumbers).toEqual(["PA1", "PB2"]);
+    const ticketDetail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+      where: { ticketId: ticket.id },
+    });
+    expect(ticketDetail.policyNumbers).toEqual(["PA1", "PB2"]);
 
     const offending = "9".repeat(101);
     const tooLong = await uploadRequest(
@@ -313,7 +324,7 @@ describe("ticket import upload (Testcontainers)", () => {
     );
     expect(ok.statusCode).toBe(200);
     const landed = await prisma.ticket.findFirstOrThrow({
-      where: { customerName: "专线客户" },
+      where: { complaintDetail: { customerName: "专线客户" } },
     });
     expect(landed.slaPolicyId).toBe(custom.id);
     expect(landed.dueAt?.getTime()).toBe(landed.createdAt.getTime() + 12 * HOUR_MS);
@@ -336,7 +347,9 @@ describe("ticket import upload (Testcontainers)", () => {
     } finally {
       await prisma.slaPolicy.update({ where: { id: custom.id }, data: { active: true } });
     }
-    expect(await prisma.ticket.count({ where: { customerName: "停用策略客户" } })).toBe(0);
+    expect(
+      await prisma.ticket.count({ where: { complaintDetail: { customerName: "停用策略客户" } } }),
+    ).toBe(0);
   });
 
   it("按名匹配仅命中投诉组：导入行写退费组策略名报错误行", async () => {
@@ -400,10 +413,10 @@ describe("ticket import upload (Testcontainers)", () => {
 
     const batch = await prisma.ticketImportBatch.findFirstOrThrow();
     const completed = await prisma.ticket.findFirstOrThrow({
-      where: { customerName: "迁移客户" },
+      where: { complaintDetail: { customerName: "迁移客户" } },
     });
     const unassigned = await prisma.ticket.findFirstOrThrow({
-      where: { customerName: "新客户" },
+      where: { complaintDetail: { customerName: "新客户" } },
     });
 
     expect(completed.status).toBe("completed");
@@ -426,7 +439,7 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(unassigned.completionStatusId).toBeNull();
 
     const otherCompleted = await prisma.ticket.findFirstOrThrow({
-      where: { customerName: "迁移客户乙" },
+      where: { complaintDetail: { customerName: "迁移客户乙" } },
     });
     expect(otherCompleted.status).toBe("completed");
     expect(otherCompleted.completionStatusId).toBe(otherStatus.id);
@@ -644,14 +657,17 @@ describe("ticket import upload (Testcontainers)", () => {
     expect(res.json()).toEqual({ imported: 1 });
 
     const ticket = await prisma.ticket.findFirstOrThrow();
+    const ticketDetail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+      where: { ticketId: ticket?.id },
+    });
     const expectedUserChannel = await prisma.userFeedbackChannel.findUniqueOrThrow({
       where: { name: "保司400热线" },
     });
     const expectedReceiveChannel = await prisma.feedbackReceiveChannel.findUniqueOrThrow({
       where: { name: "内部客服热线" },
     });
-    expect(ticket.userFeedbackChannelId).toBe(expectedUserChannel.id);
-    expect(ticket.feedbackReceiveChannelId).toBe(expectedReceiveChannel.id);
+    expect(ticketDetail.userFeedbackChannelId).toBe(expectedUserChannel.id);
+    expect(ticketDetail.feedbackReceiveChannelId).toBe(expectedReceiveChannel.id);
   });
 
   it("imports the full 2000-row limit in one transaction", async () => {

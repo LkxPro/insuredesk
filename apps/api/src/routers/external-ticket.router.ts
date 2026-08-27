@@ -24,49 +24,58 @@ import { requirePermission, router } from "../trpc.ts";
 const deps = { prisma, clock: systemClock };
 
 const catalogInclude = {
-  channel: { select: { name: true } },
-  category: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
-  userFeedbackChannel: { select: { name: true } },
-  feedbackReceiveChannel: { select: { name: true } },
+  complaintDetail: {
+    include: {
+      channel: { select: { name: true } },
+      category: { select: { name: true } },
+      userFeedbackChannel: { select: { name: true } },
+      feedbackReceiveChannel: { select: { name: true } },
+    },
+  },
 } as const;
 
 type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclude }>;
 
 /**
  * Wire shape for the external surface: dates as ISO-8601 strings (no
- * transformer on the tRPC link).
+ * transformer on the tRPC link). 外部口子只服务投诉单（提交入口只产投诉单），
+ * detail 缺行防御性置空。
  */
 function serializeExternalTicket(ticket: TicketWithCatalogs) {
+  const detail = ticket.complaintDetail;
   return {
     id: ticket.id,
     workOrderNumber: ticket.workOrderNumber,
     status: ticketStatusSchema.parse(ticket.status),
     submissionText: ticket.submissionText,
     createdAt: ticket.createdAt.toISOString(),
-    feedbackTime: ticket.feedbackTime?.toISOString() ?? null,
-    channelId: ticket.channelId,
-    channelName: ticket.channel?.name ?? null,
-    project: ticket.project,
-    brokerageEntity: ticket.brokerageEntity,
-    paymentChannel: ticket.paymentChannel,
-    internalOrderNumber: ticket.internalOrderNumber,
-    policyNumbers: ticket.policyNumbers,
-    userFeedbackChannel: ticket.userFeedbackChannel?.name ?? null,
-    feedbackReceiveChannel: ticket.feedbackReceiveChannel?.name ?? null,
-    customerName: ticket.customerName,
-    phone: ticket.phone,
+    feedbackTime: detail?.feedbackTime?.toISOString() ?? null,
+    channelId: detail?.channelId ?? null,
+    channelName: detail?.channel?.name ?? null,
+    project: detail?.project ?? null,
+    brokerageEntity: detail?.brokerageEntity ?? null,
+    paymentChannel: detail?.paymentChannel ?? null,
+    internalOrderNumber: detail?.internalOrderNumber ?? null,
+    policyNumbers: detail?.policyNumbers ?? [],
+    userFeedbackChannel: detail?.userFeedbackChannel?.name ?? null,
+    feedbackReceiveChannel: detail?.feedbackReceiveChannel?.name ?? null,
+    customerName: detail?.customerName ?? null,
+    phone: detail?.phone ?? null,
     contactPhone: ticket.contactPhone,
-    nuclearBodyStatus: ticket.nuclearBodyStatus,
-    customerRequest: ticket.customerRequest,
-    hasContacted: ticket.hasContacted,
-    contactTime: ticket.contactTime?.toISOString() ?? null,
-    contactId: ticket.contactId,
-    categoryId: ticket.categoryId,
-    categoryName: ticket.category?.name ?? null,
+    nuclearBodyStatus: detail?.nuclearBodyStatus ?? null,
+    customerRequest: detail?.customerRequest ?? null,
+    hasContacted: detail?.hasContacted ?? null,
+    contactTime: detail?.contactTime?.toISOString() ?? null,
+    contactId: detail?.contactId ?? null,
+    categoryId: detail?.categoryId ?? null,
+    categoryName: detail?.category?.name ?? null,
     slaPolicyName: ticket.slaPolicy?.name ?? null,
-    priority: ticket.priority === null ? null : prioritySchema.parse(ticket.priority),
+    priority:
+      detail?.priority === null || detail?.priority === undefined
+        ? null
+        : prioritySchema.parse(detail.priority),
     completionStatusId: ticket.completionStatusId,
     completionStatusName: ticket.completionStatus?.name ?? null,
     completionTime: ticket.completionTime?.toISOString() ?? null,
@@ -129,16 +138,20 @@ export const externalTicketRouter = router({
             slaAnchorAt: now,
             submissionText: input.submissionText,
             creatorId: user.id,
-            channelId: account.prefillChannelId,
-            project: account.prefillProject,
-            brokerageEntity: account.prefillBrokerageEntity,
-            paymentChannel: account.prefillPaymentChannel,
-            userFeedbackChannelId: account.prefillUserFeedbackChannelId,
-            feedbackReceiveChannelId: account.prefillFeedbackReceiveChannelId,
             status: "unassigned",
-            feedbackTime: now,
             createdAt: now,
             updatedAt: now,
+            complaintDetail: {
+              create: {
+                feedbackTime: now,
+                channelId: account.prefillChannelId,
+                project: account.prefillProject,
+                brokerageEntity: account.prefillBrokerageEntity,
+                paymentChannel: account.prefillPaymentChannel,
+                userFeedbackChannelId: account.prefillUserFeedbackChannelId,
+                feedbackReceiveChannelId: account.prefillFeedbackReceiveChannelId,
+              },
+            },
           },
         });
 

@@ -48,7 +48,10 @@ describe("optional business fields (Testcontainers)", () => {
 
   const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
 
-  /** Create-field keys double as ticket column names; a blank submission must persist each as NULL. */
+  const DETAIL_COLUMNS = TICKET_CREATE_FIELD_KEYS.filter(
+    (key) => key !== "contactPhone" && key !== "slaPolicyId",
+  );
+  const CORE_COLUMNS = ["contactPhone", "slaPolicyId"] as const;
   const NULLABLE_COLUMNS = TICKET_CREATE_FIELD_KEYS;
 
   function blankEditInput(ticketId: string, overrides: Partial<TicketEditInput> = {}) {
@@ -62,13 +65,19 @@ describe("optional business fields (Testcontainers)", () => {
       expect(created.workOrderNumber).toMatch(/^WO\d{6,}$/);
 
       const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
-      for (const column of NULLABLE_COLUMNS) {
+      const detail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: created.id },
+      });
+      for (const column of DETAIL_COLUMNS) {
         if (column === "policyNumbers") {
           // 多值字段没有 null 态：未填写＝空数组
-          expect(row[column], column).toEqual([]);
+          expect(detail[column], column).toEqual([]);
         } else {
-          expect(row[column], column).toBeNull();
+          expect(detail[column], column).toBeNull();
         }
+      }
+      for (const column of CORE_COLUMNS) {
+        expect(row[column], column).toBeNull();
       }
       expect(row.source).toBe("manual");
       expect(row.creatorId).toBe(seeded.users.manager.id);
@@ -90,20 +99,26 @@ describe("optional business fields (Testcontainers)", () => {
         priority: "",
       } as TicketCreateInput);
 
-      const row = await prisma.ticket.findUniqueOrThrow({ where: { id: created.id } });
-      expect(row.feedbackTime).toBeNull();
-      expect(row.channelId).toBeNull();
-      expect(row.project).toBeNull();
-      expect(row.customerName).toBeNull();
-      expect(row.priority).toBeNull();
+      const detail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: created.id },
+      });
+      expect(detail.feedbackTime).toBeNull();
+      expect(detail.channelId).toBeNull();
+      expect(detail.project).toBeNull();
+      expect(detail.customerName).toBeNull();
+      expect(detail.priority).toBeNull();
     });
 
     it("hasContacted unfilled is unknown (null), explicitly false stays false", async () => {
       const unknown = await manager().ticket.create({} as TicketCreateInput);
       const explicit = await manager().ticket.create({ hasContacted: false } as TicketCreateInput);
 
-      const unknownRow = await prisma.ticket.findUniqueOrThrow({ where: { id: unknown.id } });
-      const explicitRow = await prisma.ticket.findUniqueOrThrow({ where: { id: explicit.id } });
+      const unknownRow = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: unknown.id },
+      });
+      const explicitRow = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: explicit.id },
+      });
       expect(unknownRow.hasContacted).toBeNull();
       expect(explicitRow.hasContacted).toBe(false);
     });
@@ -153,7 +168,7 @@ describe("optional business fields (Testcontainers)", () => {
         data: { createdAt, slaAnchorAt: createdAt },
       });
 
-      await manager().ticket.edit(
+      await manager().ticket.editComplaint(
         blankEditInput(created.id, { slaPolicyId: harness.slaPolicyId("一般投诉") }),
       );
 
@@ -169,7 +184,7 @@ describe("optional business fields (Testcontainers)", () => {
       } as TicketCreateInput);
       expect((await manager().ticket.detail({ id: created.id })).dueAt).not.toBeNull();
 
-      await manager().ticket.edit(blankEditInput(created.id));
+      await manager().ticket.editComplaint(blankEditInput(created.id));
 
       const detail = await manager().ticket.detail({ id: created.id });
       expect(detail.slaPolicyId).toBeNull();
@@ -183,12 +198,12 @@ describe("optional business fields (Testcontainers)", () => {
     it("edits one field at a time without demanding the other blanks", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
 
-      const first = await manager().ticket.edit(
+      const first = await manager().ticket.editComplaint(
         blankEditInput(created.id, { customerName: "陈晓" }),
       );
       expect(first.changedFields).toEqual(["customerName"]);
 
-      const second = await manager().ticket.edit(
+      const second = await manager().ticket.editComplaint(
         blankEditInput(created.id, { customerName: "陈晓", phone: "13800001234" }),
       );
       expect(second.changedFields).toEqual(["phone"]);
@@ -242,9 +257,10 @@ describe("optional business fields (Testcontainers)", () => {
     it("export renders unfilled fields as empty cells", async () => {
       const created = await manager().ticket.create({} as TicketCreateInput);
 
-      // The export is an HTTP route; exercise its service with the same
-      // viewer identity the route would resolve.
       const { exportTickets } = await import("../src/services/ticket-export.service.ts");
+      const complaintKindId = (
+        await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } })
+      ).id;
       const file = await exportTickets(
         { prisma, clock: { now: () => new Date() } },
         {
@@ -261,6 +277,7 @@ describe("optional business fields (Testcontainers)", () => {
         },
         {
           format: "csv",
+          kindId: [complaintKindId],
           source: [...TICKET_SOURCES],
           search: created.workOrderNumber,
           sortBy: "createdAt",

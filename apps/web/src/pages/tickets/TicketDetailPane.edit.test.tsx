@@ -30,7 +30,7 @@ function renderAt(path = "/tickets/t1", editResult: unknown = undefined) {
     trpc: {
       "ticket.list": { items: rows, total: rows.length, page: 1, pageSize: 20 },
       "ticket.detail": (input: unknown) => details[(input as { id: string }).id],
-      "ticket.edit":
+      "ticket.editComplaint":
         editResult ?? (() => ({ id: "t1", workOrderNumber: "WO100001", status: "processing" })),
       "channel.options": channelOptions,
       "ticketCategory.options": categoryOptions,
@@ -53,7 +53,7 @@ async function enterEditing() {
 }
 
 function editInputs() {
-  return callsTo("ticket.edit").map((call) => call.input as Record<string, unknown>);
+  return callsTo("ticket.editComplaint").map((call) => call.input as Record<string, unknown>);
 }
 
 beforeEach(() => {
@@ -90,7 +90,7 @@ describe("编辑态的进入与退出", () => {
 });
 
 describe("保存", () => {
-  it("一次保存 = 一次 ticket.edit，带整单字段与工单 id", async () => {
+  it("一次保存 = 一次 ticket.editComplaint，带整单字段与工单 id", async () => {
     const pane = await enterEditing();
 
     fireEvent.change(within(pane).getByLabelText("客户姓名"), { target: { value: "王大明" } });
@@ -138,7 +138,7 @@ describe("保存", () => {
         "ticket.detail": details.t1,
         "channel.options": channelOptions,
         "ticketCategory.options": categoryOptions,
-        "ticket.edit": () => {
+        "ticket.editComplaint": () => {
           throw new Error("工单已被他人修改，请刷新后重试");
         },
       },
@@ -232,7 +232,7 @@ describe("目录停用项", () => {
         // 服务端 options 只给启用项，停用的当前值不在里面
         "channel.options": channelOptions,
         "ticketCategory.options": categoryOptions,
-        "ticket.edit": { id: "t1", workOrderNumber: "WO100001", status: "processing" },
+        "ticket.editComplaint": { id: "t1", workOrderNumber: "WO100001", status: "processing" },
       },
     });
     const pane = await findPane();

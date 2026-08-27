@@ -295,11 +295,14 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           message: cfg.labels.inUseMessage(2),
         });
 
-        const kept = await prisma.ticket.findUniqueOrThrow({ where: { id: firstTicketId } });
         if (cfg.referencedViaResolve) {
+          const kept = await prisma.ticket.findUniqueOrThrow({ where: { id: firstTicketId } });
           expect(kept.completionStatusId).toBe(referenced.id);
         } else {
           if (!cfg.ticketFieldId) throw new Error("ticketFieldId required");
+          const kept = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+            where: { ticketId: firstTicketId },
+          });
           expect(kept[cfg.ticketFieldId]).toBe(referenced.id);
         }
       });
@@ -465,7 +468,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           });
           await router.setActive({ id: oldItem.id, active: false });
 
-          const kept = await manager().ticket.edit({
+          const kept = await manager().ticket.editComplaint({
             ...blankTicketInput(),
             ticketId: ticket.id,
             [cfg.ticketFieldId]: oldItem.id,
@@ -476,14 +479,14 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           const otherDisabled = await router.create({ name: "另一停用", displayOrder: 242 });
           await router.setActive({ id: otherDisabled.id, active: false });
           await expect(
-            manager().ticket.edit({
+            manager().ticket.editComplaint({
               ...blankTicketInput(),
               ticketId: ticket.id,
               [cfg.ticketFieldId]: otherDisabled.id,
             }),
           ).rejects.toMatchObject({ code: "BAD_REQUEST", message: cfg.labels.disabledMessage });
 
-          await manager().ticket.edit({
+          await manager().ticket.editComplaint({
             ...blankTicketInput(),
             ticketId: ticket.id,
             [cfg.ticketFieldId]: newItem.id,
@@ -498,7 +501,7 @@ describe("Dictionary catalog lifecycle (parameterized, Testcontainers)", () => {
           const displayField = detail[cfg.ticketFieldDisplay] as { name: string } | null;
           expect(displayField?.name).toBe("新项改名");
 
-          const cleared = await manager().ticket.edit({
+          const cleared = await manager().ticket.editComplaint({
             ...blankTicketInput(),
             ticketId: ticket.id,
             [cfg.ticketFieldId]: null,

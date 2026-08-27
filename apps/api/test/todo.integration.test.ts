@@ -389,7 +389,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const owner = await createAssignee();
       const ticket = await createTicket(); // born 一般投诉 (dueAt 48h, 红线 120min)
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
-      await manager().ticket.edit({
+      await manager().ticket.editComplaint({
         ...baseInput,
         ticketId: ticket.id,
         slaPolicyId: harness.slaPolicyId("加急投诉"),

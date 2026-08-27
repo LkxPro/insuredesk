@@ -29,6 +29,7 @@ import {
   type CurrentCatalogOption,
   HAS_CONTACTED_OPTIONS,
   PolicyNumbersControl,
+  type RefundEditFormValues,
   SlaPolicySelect,
   type TicketFormValues,
   UNSET,
@@ -99,6 +100,13 @@ export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
     categoryId: ticket?.category?.id ?? "",
     slaPolicyId: ticket?.slaPolicy?.id ?? "",
     priority: ticket?.priority ?? "",
+  };
+}
+
+export function refundFormDefaults(ticket: EditableTicket | null): RefundEditFormValues {
+  return {
+    contactPhone: ticket?.contactPhone ?? "",
+    slaPolicyId: ticket?.slaPolicy?.id ?? "",
   };
 }
 
@@ -394,6 +402,48 @@ function EditControl({
   }
 }
 
+function DetailFieldShell({
+  label,
+  editing,
+  dirty,
+  controlId,
+  error,
+  addon,
+  children,
+}: {
+  label: string;
+  editing: boolean;
+  dirty: boolean;
+  controlId: string;
+  error?: string;
+  addon?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className={cn("text-xs text-muted-foreground", editing && "flex items-center gap-1.5")}>
+        {editing ? <label htmlFor={controlId}>{label}</label> : label}
+        {editing && dirty && (
+          <span className="rounded-sm bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+            已修改
+          </span>
+        )}
+      </dt>
+      <dd className="m-0 text-sm">
+        {editing ? (
+          <div className="flex flex-col gap-1">
+            {children}
+            {error && <p className="m-0 text-xs text-destructive">{error}</p>}
+            {addon}
+          </div>
+        ) : (
+          children
+        )}
+      </dd>
+    </div>
+  );
+}
+
 export function TicketDetailField({
   name,
   ticket,
@@ -419,26 +469,76 @@ export function TicketDetailField({
   const controlId = descriptor.type === "date" ? `${name}-date` : name;
 
   return (
-    <div className="flex flex-col gap-0.5">
-      <dt className={cn("text-xs text-muted-foreground", editing && "flex items-center gap-1.5")}>
-        {editing ? <label htmlFor={controlId}>{label}</label> : label}
-        {editing && dirty && (
-          <span className="rounded-sm bg-amber-100 px-1 text-[10px] font-medium text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
-            已修改
-          </span>
-        )}
-      </dt>
-      <dd className="m-0 text-sm">
-        {editing ? (
-          <div className="flex flex-col gap-1">
-            <EditControl name={name} ticket={ticket} form={form} invalid={!!error} />
-            {error && <p className="m-0 text-xs text-destructive">{error}</p>}
-            {addon}
-          </div>
+    <DetailFieldShell
+      label={label}
+      editing={editing}
+      dirty={dirty}
+      controlId={controlId}
+      error={error}
+      addon={addon}
+    >
+      {editing ? (
+        <EditControl name={name} ticket={ticket} form={form} invalid={!!error} />
+      ) : (
+        (readValue(name, ticket) ?? "—")
+      )}
+    </DetailFieldShell>
+  );
+}
+
+export function RefundDetailField({
+  name,
+  ticket,
+  editing,
+  form,
+  dirty,
+  error,
+  addon,
+}: {
+  name: "contactPhone" | "slaPolicyId";
+  ticket: EditableTicket;
+  editing: boolean;
+  form: UseFormReturn<RefundEditFormValues>;
+  dirty: boolean;
+  error?: string;
+  addon?: ReactNode;
+}) {
+  const descriptor = TICKET_FIELDS[name];
+  const overrides: TicketFieldOverrides | undefined =
+    "overrides" in descriptor ? descriptor.overrides : undefined;
+  const label = overrides?.detailLabel ?? descriptor.label;
+
+  return (
+    <DetailFieldShell
+      label={label}
+      editing={editing}
+      dirty={dirty}
+      controlId={name}
+      error={error}
+      addon={addon}
+    >
+      {editing ? (
+        name === "contactPhone" ? (
+          <Input id={name} type="tel" aria-invalid={!!error} {...form.register("contactPhone")} />
         ) : (
-          (readValue(name, ticket) ?? "—")
-        )}
-      </dd>
-    </div>
+          <Controller
+            control={form.control}
+            name="slaPolicyId"
+            render={({ field }) => (
+              <SlaPolicySelect
+                id="slaPolicyId"
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                invalid={!!error}
+                current={ticket.slaPolicy}
+                kindKey={ticket.kindKey}
+              />
+            )}
+          />
+        )
+      ) : (
+        (readValue(name, ticket) ?? "—")
+      )}
+    </DetailFieldShell>
   );
 }

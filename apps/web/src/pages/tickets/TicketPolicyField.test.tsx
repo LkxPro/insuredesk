@@ -89,7 +89,7 @@ describe("详情编辑的策略下拉", () => {
         "ticket.list": { items: [listItem()], total: 1, page: 1, pageSize: 20 },
         "ticket.detail": detail,
         "sla.options": slaPolicyOptions,
-        "ticket.edit": { id: "t1", workOrderNumber: "WO100001", status: "processing" },
+        "ticket.editComplaint": { id: "t1", workOrderNumber: "WO100001", status: "processing" },
       },
     });
   }
@@ -121,8 +121,8 @@ describe("详情编辑的策略下拉", () => {
     fireEvent.change(within(pane).getByLabelText("客户姓名"), { target: { value: "王大明" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
 
-    await waitFor(() => expect(callsTo("ticket.edit")).toHaveLength(1));
-    expect(callsTo("ticket.edit")[0]?.input).toMatchObject({ slaPolicyId: "pol-legacy" });
+    await waitFor(() => expect(callsTo("ticket.editComplaint")).toHaveLength(1));
+    expect(callsTo("ticket.editComplaint")[0]?.input).toMatchObject({ slaPolicyId: "pol-legacy" });
   });
 
   it("改选其他启用策略：提交新的 slaPolicyId", async () => {
@@ -133,8 +133,8 @@ describe("详情编辑的策略下拉", () => {
     fireEvent.click(await screen.findByRole("option", { name: /特急投诉/ }));
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
 
-    await waitFor(() => expect(callsTo("ticket.edit")).toHaveLength(1));
-    expect(callsTo("ticket.edit")[0]?.input).toMatchObject({ slaPolicyId: "pol-urgent" });
+    await waitFor(() => expect(callsTo("ticket.editComplaint")).toHaveLength(1));
+    expect(callsTo("ticket.editComplaint")[0]?.input).toMatchObject({ slaPolicyId: "pol-urgent" });
   });
 
   it("清空策略（未设置）：提交 slaPolicyId 为 null", async () => {
@@ -145,8 +145,8 @@ describe("详情编辑的策略下拉", () => {
     fireEvent.click(await screen.findByRole("option", { name: "未设置" }));
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
 
-    await waitFor(() => expect(callsTo("ticket.edit")).toHaveLength(1));
-    expect(callsTo("ticket.edit")[0]?.input).toMatchObject({ slaPolicyId: null });
+    await waitFor(() => expect(callsTo("ticket.editComplaint")).toHaveLength(1));
+    expect(callsTo("ticket.editComplaint")[0]?.input).toMatchObject({ slaPolicyId: null });
   });
 
   it("编辑下拉按工单的种类取数：kindKey 随详情下发", async () => {

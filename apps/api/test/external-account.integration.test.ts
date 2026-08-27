@@ -384,7 +384,9 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
       expect(detail.ticket.workOrderNumber).toBe(ticket.workOrderNumber);
       expect(detail.processLogs.some((log) => log.remark === "补充说明")).toBe(true);
 
-      const row = await prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id } });
+      const row = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: ticket.id },
+      });
       expect(row).toMatchObject({ channelId, project: "盖章项目" });
     });
   });

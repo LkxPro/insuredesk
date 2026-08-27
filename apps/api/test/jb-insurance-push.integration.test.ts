@@ -94,12 +94,12 @@ describe("jb-insurance push API (Testcontainers)", () => {
         source: "jb-insurance",
         kindId: refundKindId,
         status: "unassigned",
-        customerName: "张三",
-        phone: "13888888888",
-        policyNumbers: ["P20260818000123"],
-        internalOrderNumber: "SYS1",
         slaPolicyId: refundPolicy.id,
       });
+      // 不变量：退费行必无投诉 detail（持有人信息只落 refundDetail）
+      expect(
+        await prisma.ticketComplaintDetail.findUnique({ where: { ticketId: ticket.id } }),
+      ).toBeNull();
 
       const anchor = new Date("2026-08-18T16:40:00+08:00");
       expect(ticket.slaAnchorAt.getTime()).toBe(anchor.getTime());
@@ -192,8 +192,12 @@ describe("jb-insurance push API (Testcontainers)", () => {
           "refundTrade",
         ].sort(),
       );
-      expect(detail.ticket.customerName).toBeNull();
-      expect(detail.ticket.policyNumbers).toEqual([]);
+      // 不变量：退费行必无投诉 detail
+      expect(
+        await prisma.ticketComplaintDetail.findUnique({
+          where: { ticketId: detail.ticket.id },
+        }),
+      ).toBeNull();
     });
 
     it("空白串可选字段按缺省处理，不进 pushedFields", async () => {
@@ -204,7 +208,11 @@ describe("jb-insurance push API (Testcontainers)", () => {
         include: { ticket: true },
       });
       expect(detail.holderPhone).toBeNull();
-      expect(detail.ticket.phone).toBeNull();
+      expect(
+        await prisma.ticketComplaintDetail.findUnique({
+          where: { ticketId: detail.ticket.id },
+        }),
+      ).toBeNull();
       expect(detail.pushedFields).not.toContain("holderPhone");
     });
 
@@ -239,7 +247,7 @@ describe("jb-insurance push API (Testcontainers)", () => {
       const res = await push(validPush());
       expect(res.json().code).toBe("0000");
       const ticket = await prisma.ticket.findFirstOrThrow({
-        where: { internalOrderNumber: `SYS${pushSeq}` },
+        where: { refundDetail: { sysOrderId: `SYS${pushSeq}` } },
       });
 
       const notifications = await prisma.appNotification.findMany({
@@ -276,7 +284,10 @@ describe("jb-insurance push API (Testcontainers)", () => {
       const res = await push(payload);
       expect(res.json().code).toBe("0000");
 
-      expect(await prisma.ticket.count({ where: { phone: "13800000001" } })).toBe(2);
+      expect(await prisma.ticketComplaintDetail.count({ where: { phone: "13800000001" } })).toBe(1);
+      expect(await prisma.ticketRefundDetail.count({ where: { holderPhone: "13800000001" } })).toBe(
+        1,
+      );
     });
   });
 
@@ -293,7 +304,7 @@ describe("jb-insurance push API (Testcontainers)", () => {
         1,
       );
       expect(
-        await prisma.ticket.count({ where: { internalOrderNumber: payload.sysOrderId } }),
+        await prisma.ticketRefundDetail.count({ where: { sysOrderId: payload.sysOrderId } }),
       ).toBe(1);
     });
 
@@ -310,7 +321,7 @@ describe("jb-insurance push API (Testcontainers)", () => {
         1,
       );
       expect(
-        await prisma.ticket.count({ where: { internalOrderNumber: payload.sysOrderId } }),
+        await prisma.ticketRefundDetail.count({ where: { sysOrderId: payload.sysOrderId } }),
       ).toBe(1);
     });
   });

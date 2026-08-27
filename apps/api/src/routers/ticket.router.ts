@@ -1,11 +1,12 @@
 import {
+  editComplaintInputSchema,
+  editRefundInputSchema,
   ticketAddCommentInputSchema,
   ticketAssignInputSchema,
   ticketAutoAssignInputSchema,
   ticketBatchAssignInputSchema,
   ticketCreateInputSchema,
   ticketDeleteInputSchema,
-  ticketEditInputSchema,
   ticketFindDuplicatesInputSchema,
   ticketImportBatchListInputSchema,
   ticketImportRevokeInputSchema,
@@ -47,8 +48,9 @@ import {
   findDuplicateTickets,
 } from "../services/ticket-duplicate.service.ts";
 import {
-  editTicket,
-  PushedFieldsReadOnlyError,
+  EditKindMismatchError,
+  editComplaint,
+  editRefund,
   RefundCompensationLockedError,
   RefundCompensationNotApplicableError,
   updateRefundCompensation,
@@ -83,6 +85,23 @@ function mapDuplicateError(error: unknown): never {
     throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
   }
   throw error;
+}
+
+function mapEditError(error: unknown): never {
+  if (error instanceof TicketNotFoundError) {
+    throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+  }
+  if (error instanceof EditKindMismatchError || error instanceof CatalogUnavailableError) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  if (error instanceof SlaPolicyNotConfiguredError) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: error.message,
+      cause: error,
+    });
+  }
+  mapDuplicateError(error);
 }
 
 export const ticketRouter = router({
@@ -207,30 +226,32 @@ export const ticketRouter = router({
       }
     }),
 
+  // 墓碑路由：拆端点前构建的旧 bundle 仍在调它，一律拒绝逼刷新
   edit: requirePermission("ticket.edit")
-    .input(ticketEditInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
+    .input(z.unknown())
+    .mutation(() => {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "客户端版本过旧，请刷新" });
+    }),
+
+  editComplaint: requirePermission("ticket.edit")
+    .input(editComplaintInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       try {
         const { allowDuplicate, ...data } = input;
-        return await editTicket(deps, ctx.user, data, { allowDuplicate });
+        return await editComplaint(deps, ctx.user, data, { allowDuplicate });
       } catch (error) {
-        if (error instanceof TicketNotFoundError) {
-          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
-        }
-        if (error instanceof PushedFieldsReadOnlyError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
-        }
-        if (error instanceof SlaPolicyNotConfiguredError) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: error.message,
-            cause: error,
-          });
-        }
-        if (error instanceof CatalogUnavailableError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
-        }
-        mapDuplicateError(error);
+        mapEditError(error);
+      }
+    }),
+
+  editRefund: requirePermission("ticket.edit")
+    .input(editRefundInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { allowDuplicate, ...data } = input;
+        return await editRefund(deps, ctx.user, data, { allowDuplicate });
+      } catch (error) {
+        mapEditError(error);
       }
     }),
 

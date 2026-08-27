@@ -1,5 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { isTicketInFlight, type TicketEditData, type TicketEditInput } from "@insuredesk/shared";
+import {
+  type EditComplaintInput,
+  type EditRefundInput,
+  isTicketInFlight,
+  TicketKindKey,
+} from "@insuredesk/shared";
 import { AlertCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -24,7 +29,7 @@ import { AssignTicketDialog } from "./AssignTicketDialog";
 import { DeleteTicketDialog } from "./DeleteTicketDialog";
 import { ResolveTicketDialog } from "./ResolveTicketDialog";
 import { SubmissionTextPane } from "./SubmissionTextPane";
-import { formDefaults } from "./TicketDetailFields";
+import { formDefaults, refundFormDefaults } from "./TicketDetailFields";
 import {
   DuplicateConfirmDialog,
   DuplicateFieldHint,
@@ -32,6 +37,8 @@ import {
   useTicketDuplicates,
 } from "./TicketDuplicates";
 import {
+  type RefundEditFormValues,
+  refundEditFormSchema,
   type TicketFormValues,
   ticketFormSchema,
   ticketFormValuesToInput,
@@ -43,6 +50,10 @@ type PendingExit =
   | { kind: "switch"; ticketId: string }
   | { kind: "crossPage"; direction: CrossPageDirection }
   | { kind: "read" };
+
+type DuplicateConflict =
+  | { kind: "complaint"; payload: EditComplaintInput & { allowDuplicate?: boolean } }
+  | { kind: "refund"; payload: EditRefundInput & { allowDuplicate?: boolean } };
 
 export function TicketDetailPane({
   ticketId,
@@ -64,40 +75,61 @@ export function TicketDetailPane({
   const [assignOpen, setAssignOpen] = useState(false);
   const [resolveOpen, setResolveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [duplicateConflict, setDuplicateConflict] = useState<{
-    payload: TicketEditInput & { allowDuplicate?: boolean };
-  } | null>(null);
+  const [duplicateConflict, setDuplicateConflict] = useState<DuplicateConflict | null>(null);
 
   const detailQuery = trpc.ticket.detail.useQuery({ id: ticketId }, { enabled: !!ticketId });
   const ticket = detailQuery.data ?? null;
+  const isRefund = ticket?.kindKey === TicketKindKey.RefundException;
 
   const form = useForm<TicketFormValues>({
     resolver: zodResolver(ticketFormSchema),
     defaultValues: formDefaults(null),
   });
-
-  const duplicates = useTicketDuplicates(form, {
-    excludeTicketId: ticketId,
-    enabled: editing,
+  const refundForm = useForm<RefundEditFormValues>({
+    resolver: zodResolver(refundEditFormSchema),
+    defaultValues: refundFormDefaults(null),
   });
 
-  const edit = trpc.ticket.edit.useMutation({
-    onSuccess: (result) => {
-      toast.success(`工单 ${result.workOrderNumber} 已更新`);
-      setEditing(false);
-      setDuplicateConflict(null);
-      // 字段、SLA 派生与时间线都在服务端变，回读而非本地拼
-      utils.ticket.detail.invalidate();
-      utils.ticket.list.invalidate();
-    },
+  const complaintDuplicates = useTicketDuplicates(form, {
+    excludeTicketId: ticketId,
+    enabled: editing && !isRefund,
+  });
+  const refundDuplicates = useTicketDuplicates(refundForm, {
+    excludeTicketId: ticketId,
+    enabled: editing && isRefund,
+  });
+  const duplicates = isRefund ? refundDuplicates : complaintDuplicates;
+
+  // 字段、SLA 派生与时间线都在服务端变，回读而非本地拼
+  function onEditSuccess(result: { workOrderNumber: string }) {
+    toast.success(`工单 ${result.workOrderNumber} 已更新`);
+    setEditing(false);
+    setDuplicateConflict(null);
+    utils.ticket.detail.invalidate();
+    utils.ticket.list.invalidate();
+  }
+
+  const editComplaint = trpc.ticket.editComplaint.useMutation({
+    onSuccess: onEditSuccess,
     onError: (error, variables) => {
       // 409 = 服务端兜底查重命中：拦下保存，弹阻断确认框；其余错误走顶部 Alert
       if (error.data?.code === "CONFLICT") {
-        edit.reset();
-        setDuplicateConflict({ payload: variables });
+        editComplaint.reset();
+        setDuplicateConflict({ kind: "complaint", payload: variables });
       }
     },
   });
+  const editRefund = trpc.ticket.editRefund.useMutation({
+    onSuccess: onEditSuccess,
+    onError: (error, variables) => {
+      if (error.data?.code === "CONFLICT") {
+        editRefund.reset();
+        setDuplicateConflict({ kind: "refund", payload: variables });
+      }
+    },
+  });
+  const editPending = editComplaint.isPending || editRefund.isPending;
+  const editError = editComplaint.error ?? editRefund.error;
 
   // 切单要落回只读：翻单是浏览动作，不该把上一单的编辑态带过去
   // biome-ignore lint/correctness/useExhaustiveDependencies: ticketId 是触发重置的信号，不在 effect 体内使用
@@ -106,11 +138,15 @@ export function TicketDetailPane({
     setPendingExit(null);
   }, [ticketId]);
 
-  const dirty = editing && form.formState.isDirty;
+  const dirty = editing && (isRefund ? refundForm.formState.isDirty : form.formState.isDirty);
 
   function startEditing() {
     if (!ticket) return;
-    form.reset(formDefaults(ticket));
+    if (ticket.kindKey === TicketKindKey.RefundException) {
+      refundForm.reset(refundFormDefaults(ticket));
+    } else {
+      form.reset(formDefaults(ticket));
+    }
     setEditing(true);
   }
 
@@ -142,15 +178,26 @@ export function TicketDetailPane({
     );
   }
 
-  function save(values: TicketFormValues) {
-    if (!ticket) return;
-    if (!form.formState.isDirty) {
-      // 服务端也会把空 diff 判成无效编辑，这里省一次往返并说清楚
-      toast.warning("未修改任何字段");
-      setEditing(false);
-      return;
-    }
-    edit.mutate({ ticketId: ticket.id, ...ticketFormValuesToInput(values) } as TicketEditData);
+  function guardEmptyDiff(isDirty: boolean): boolean {
+    // 服务端也会把空 diff 判成无效编辑，这里省一次往返并说清楚
+    if (isDirty) return false;
+    toast.warning("未修改任何字段");
+    setEditing(false);
+    return true;
+  }
+
+  function saveComplaint(values: TicketFormValues) {
+    if (!ticket || guardEmptyDiff(form.formState.isDirty)) return;
+    editComplaint.mutate({ ticketId: ticket.id, ...ticketFormValuesToInput(values) });
+  }
+
+  function saveRefund(values: RefundEditFormValues) {
+    if (!ticket || guardEmptyDiff(refundForm.formState.isDirty)) return;
+    editRefund.mutate({
+      ticketId: ticket.id,
+      contactPhone: values.contactPhone,
+      slaPolicyId: values.slaPolicyId,
+    });
   }
 
   return (
@@ -170,18 +217,22 @@ export function TicketDetailPane({
                   variant="outline"
                   size="sm"
                   onClick={() => requestExit({ kind: "read" })}
-                  disabled={edit.isPending}
+                  disabled={editPending}
                 >
                   取消
                 </Button>
                 <Button
                   type="button"
                   size="sm"
-                  onClick={form.handleSubmit(save)}
-                  disabled={edit.isPending}
+                  onClick={
+                    isRefund
+                      ? refundForm.handleSubmit(saveRefund)
+                      : form.handleSubmit(saveComplaint)
+                  }
+                  disabled={editPending}
                 >
-                  {edit.isPending && <Spinner data-icon="inline-start" />}
-                  {edit.isPending ? "保存中…" : "保存修改"}
+                  {editPending && <Spinner data-icon="inline-start" />}
+                  {editPending ? "保存中…" : "保存修改"}
                 </Button>
               </>
             )}
@@ -250,17 +301,18 @@ export function TicketDetailPane({
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <div className="overflow-y-auto p-4 xl:min-h-0 xl:border-r">
-            {edit.error && (
+            {editError && (
               <Alert variant="destructive" className="mb-4">
                 <AlertCircle />
                 <AlertTitle>保存失败</AlertTitle>
-                <AlertDescription>{edit.error.message}</AlertDescription>
+                <AlertDescription>{editError.message}</AlertDescription>
               </Alert>
             )}
             <TicketInfoColumn
               ticket={ticket}
               editing={editing}
               form={form}
+              refundForm={refundForm}
               fieldAddon={(name) =>
                 name === "policyNumbers" || name === "phone" || name === "contactPhone" ? (
                   <DuplicateFieldHint field={name} duplicates={duplicates} />
@@ -327,19 +379,30 @@ export function TicketDetailPane({
       <DuplicateConfirmDialog
         values={
           duplicateConflict
-            ? {
-                policyNumbers: duplicateConflict.payload.policyNumbers ?? [],
-                phone: duplicateConflict.payload.phone ?? null,
-                contactPhone: duplicateConflict.payload.contactPhone ?? null,
-              }
+            ? duplicateConflict.kind === "refund"
+              ? {
+                  policyNumbers: [],
+                  phone: null,
+                  contactPhone: duplicateConflict.payload.contactPhone ?? null,
+                }
+              : {
+                  policyNumbers: duplicateConflict.payload.policyNumbers ?? [],
+                  phone: duplicateConflict.payload.phone ?? null,
+                  contactPhone: duplicateConflict.payload.contactPhone ?? null,
+                }
             : null
         }
         excludeTicketId={ticketId}
         confirmLabel="仍要保存"
-        confirming={edit.isPending}
-        onConfirm={() =>
-          duplicateConflict && edit.mutate({ ...duplicateConflict.payload, allowDuplicate: true })
-        }
+        confirming={editPending}
+        onConfirm={() => {
+          if (!duplicateConflict) return;
+          if (duplicateConflict.kind === "refund") {
+            editRefund.mutate({ ...duplicateConflict.payload, allowDuplicate: true });
+          } else {
+            editComplaint.mutate({ ...duplicateConflict.payload, allowDuplicate: true });
+          }
+        }}
         onCancel={() => setDuplicateConflict(null)}
       />
     </DetailPaneShell>

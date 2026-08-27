@@ -212,7 +212,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
       });
 
       const created = await manager().ticket.create(baseInput());
-      await manager().ticket.edit({
+      await manager().ticket.editComplaint({
         ...baseInput(),
         ticketId: created.id,
         slaPolicyId: policyId("加急投诉"),
@@ -649,7 +649,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
 
       const created = await manager().ticket.create(baseInput());
       await expect(
-        manager().ticket.edit({
+        manager().ticket.editComplaint({
           ...baseInput(),
           ticketId: created.id,
           slaPolicyId: refundPolicy?.id ?? "",
@@ -661,15 +661,13 @@ describe("SLA 策略配置 (Testcontainers)", () => {
         data: { kindId: refundKindId, slaPolicyId: null },
       });
       await expect(
-        manager().ticket.edit({
-          ...baseInput(),
+        manager().ticket.editRefund({
           ticketId: created.id,
           slaPolicyId: policyId("一般投诉"),
         }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
-      await manager().ticket.edit({
-        ...baseInput(),
+      await manager().ticket.editRefund({
         ticketId: created.id,
         slaPolicyId: refundPolicy?.id ?? "",
       });
@@ -688,7 +686,7 @@ describe("SLA 策略配置 (Testcontainers)", () => {
 
       const created = await manager().ticket.create(baseInput());
       await expect(
-        manager().ticket.edit({
+        manager().ticket.editComplaint({
           ...baseInput(),
           ticketId: created.id,
           complaintLevel: "加急投诉",

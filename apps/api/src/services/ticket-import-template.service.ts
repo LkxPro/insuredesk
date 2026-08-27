@@ -3,6 +3,7 @@ import {
   TICKET_IMPORT_ROW_LIMIT,
   type TicketCatalogKind,
   type TicketFieldDescriptor,
+  TicketKindKey,
   ticketImportFieldNote,
 } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
@@ -11,6 +12,7 @@ import { channelCatalog } from "./channel.service.ts";
 import { completionStatusCatalog } from "./completion-status.service.ts";
 import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
+import { requireTicketKindId } from "./ticket-kind.service.ts";
 import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 /**
@@ -92,6 +94,8 @@ function columnLetter(column: number): string {
 export async function buildTicketImportTemplate(
   prisma: PrismaClient,
 ): Promise<TicketImportTemplateFile> {
+  // 导入只产投诉单：时效策略下拉只给投诉组
+  const complaintKindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
   const [
     channels,
     categories,
@@ -104,7 +108,7 @@ export async function buildTicketImportTemplate(
     ticketCategoryCatalog.listOptions(prisma),
     completionStatusCatalog.listOptions(prisma),
     prisma.slaPolicy.findMany({
-      where: { active: true },
+      where: { active: true, kindId: complaintKindId },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: { name: true },
     }),

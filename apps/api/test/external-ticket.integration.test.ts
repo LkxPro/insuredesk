@@ -80,15 +80,20 @@ describe("external ticket API (Testcontainers)", () => {
         source: "external_channel",
         submissionText: "客户反馈无法登录系统，需要重置密码",
         creatorId: externalUser1.id,
+        status: "unassigned",
+      });
+      const detail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: result.id },
+      });
+      expect(detail).toMatchObject({
         channelId,
         project: "融盛",
         brokerageEntity: "东方大地",
         paymentChannel: "连连",
         userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
         feedbackReceiveChannelId: harness.feedbackReceiveChannelId("（微信）凯森&骏伯客诉对接群"),
-        status: "unassigned",
       });
-      expect(ticket?.feedbackTime).toEqual(ticket?.createdAt);
+      expect(detail.feedbackTime).toEqual(ticket?.createdAt);
     });
 
     it("无预填账号提交 → 六字段全 null", async () => {
@@ -96,8 +101,11 @@ describe("external ticket API (Testcontainers)", () => {
       const result = await caller.externalTicket.submit({ submissionText: "裸提交" });
 
       const ticket = await prisma.ticket.findUnique({ where: { id: result.id } });
-      expect(ticket).toMatchObject({
-        creatorId: externalUser2.id,
+      expect(ticket).toMatchObject({ creatorId: externalUser2.id });
+      const detail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: result.id },
+      });
+      expect(detail).toMatchObject({
         channelId: null,
         project: null,
         brokerageEntity: null,
@@ -127,8 +135,10 @@ describe("external ticket API (Testcontainers)", () => {
         .callerFor(account, externalRole)
         .externalTicket.submit({ submissionText: "停用渠道照样进单" });
 
-      const ticket = await prisma.ticket.findUnique({ where: { id: result.id } });
-      expect(ticket?.channelId).toBe(disabled.id);
+      const detail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: result.id },
+      });
+      expect(detail.channelId).toBe(disabled.id);
     });
 
     it("writes action=create ProcessLog", async () => {
@@ -215,10 +225,13 @@ describe("external ticket API (Testcontainers)", () => {
 
       await prisma.ticket.update({
         where: { id: result.id },
+        data: { contactPhone: "13900139000" },
+      });
+      await prisma.ticketComplaintDetail.update({
+        where: { ticketId: result.id },
         data: {
           customerName: "张三",
           phone: "13800138000",
-          contactPhone: "13900139000",
           internalOrderNumber: "ORD123456",
           policyNumbers: ["POL001", "POL002"],
           contactId: "CONTACT789",
@@ -247,8 +260,8 @@ describe("external ticket API (Testcontainers)", () => {
         submissionText: "测试全量字段",
       });
 
-      await prisma.ticket.update({
-        where: { id: result.id },
+      await prisma.ticketComplaintDetail.update({
+        where: { ticketId: result.id },
         data: {
           customerName: "李四",
           phone: "13700137000",
@@ -363,8 +376,8 @@ describe("external ticket API (Testcontainers)", () => {
     it("搜索命中保单号", async () => {
       const caller = externalCaller1();
       const hit = await caller.externalTicket.submit({ submissionText: "带保单号的单" });
-      await prisma.ticket.update({
-        where: { id: hit.id },
+      await prisma.ticketComplaintDetail.update({
+        where: { ticketId: hit.id },
         data: { policyNumbers: ["PX-2026-0001", "PX-2026-0002"] },
       });
       const miss = await caller.externalTicket.submit({ submissionText: "不带保单号的单" });
@@ -579,10 +592,13 @@ describe("external ticket API (Testcontainers)", () => {
 
       await prisma.ticket.update({
         where: { id: ticket.id },
+        data: { contactPhone: "13500135000" },
+      });
+      await prisma.ticketComplaintDetail.update({
+        where: { ticketId: ticket.id },
         data: {
           customerName: "王五",
           phone: "13600136000",
-          contactPhone: "13500135000",
           internalOrderNumber: "ORD999",
           policyNumbers: ["POL100", "POL200", "POL300"],
           contactId: "CONTACT456",
@@ -615,7 +631,7 @@ describe("external ticket API (Testcontainers)", () => {
         where: { name: "加急投诉" },
       });
       const internal = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
-      await internal.ticket.edit({ ticketId: ticket.id, slaPolicyId: policy.id });
+      await internal.ticket.editComplaint({ ticketId: ticket.id, slaPolicyId: policy.id });
 
       const detail = await caller.externalTicket.detail({ ticketId: ticket.id });
       expect(detail.ticket.slaPolicyName).toBe("加急投诉");

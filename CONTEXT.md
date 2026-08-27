@@ -24,6 +24,9 @@ _Avoid_: 与 source 混用——source 是录入方式（manual/feishu_form/comm
 **Category（客诉类别）**：
 字典目录之一。首次初始化播种 17 个类别。工单引用可空（= 未填写），也是工单列表筛选维度（含停用项）。
 
+**contactPhone（联系人电话）**：
+客户电话（phone = 投保人电话）之外的备用联系号码，两个用途：客户换号后改走此号联系；投保人 ≠ 被保人时后补另一方的电话。投诉单与退费单共有的字段，故留在 tickets 核心列、不随投诉专有字段下沉 ticket_complaint_details 侧表。查重与 phone 2×2 交叉命中（任一号码撞上既有工单即判重）。
+
 **Status（工单状态）**：
 数据库只存 4 个基础状态（unassigned/assigned/processing/completed）；pending_timeout 与 overdue 是**计算状态**，查询时按 deadlineWarningAt / dueAt 实时算、仅覆盖显示。状态只能经生命周期动作流转，不可直接编辑；completed 是终态，不可重开。
 

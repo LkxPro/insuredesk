@@ -1,6 +1,6 @@
 import { TICKET_CREATE_FIELD_KEYS, TICKET_FIELDS, TICKET_TEXT_LIMITS } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
-import { buildTicketFormSchema } from "./TicketFormFields";
+import { buildTicketFormSchema, refundEditFormSchema } from "./TicketFormFields";
 
 const BLANK_FORM = {
   feedbackTime: "",
@@ -18,6 +18,39 @@ function requiredMessage(field: string): string | undefined {
   }
   return result.error.issues.find((issue) => issue.path[0] === field)?.message;
 }
+
+describe("refundEditFormSchema 退费编辑裁键", () => {
+  it("空串序列化为 null，取值 trim 后保留", () => {
+    const blank = refundEditFormSchema.safeParse({ contactPhone: "", slaPolicyId: "" });
+    expect(blank.success).toBe(true);
+    if (blank.success) {
+      expect(blank.data).toEqual({ contactPhone: null, slaPolicyId: null });
+    }
+
+    const filled = refundEditFormSchema.safeParse({
+      contactPhone: " 13800000000 ",
+      slaPolicyId: "pol-1",
+    });
+    expect(filled.success).toBe(true);
+    if (filled.success) {
+      expect(filled.data).toEqual({ contactPhone: "13800000000", slaPolicyId: "pol-1" });
+    }
+  });
+
+  it("退役键出现在表单值里即被拒", () => {
+    for (const key of ["customerName", "policyNumbers", "priority"]) {
+      expect(refundEditFormSchema.safeParse({ contactPhone: "1", [key]: "x" }).success).toBe(false);
+    }
+  });
+
+  it("联系人电话限长与建单一致", () => {
+    const limit = TICKET_TEXT_LIMITS.contactPhone;
+    expect(refundEditFormSchema.safeParse({ contactPhone: "1".repeat(limit) }).success).toBe(true);
+    expect(refundEditFormSchema.safeParse({ contactPhone: "1".repeat(limit + 1) }).success).toBe(
+      false,
+    );
+  });
+});
 
 describe("buildTicketFormSchema 必填消息（描述表派生）", () => {
   it("每个建单字段的红字都是「标准名为必填项」", () => {
