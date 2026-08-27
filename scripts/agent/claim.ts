@@ -275,26 +275,43 @@ export async function fenceClaim(
   await writeClaimFile(claimFile, { ...claim, sha: fenced });
 }
 
-// 两次 ls-remote 之间 heartbeat 可能推进 sha 造成假丢失，退避复查再定性。
-// 传输层故障证明不了丢租约（此时真丢了也会被 fence CAS 拦住），同样退避复查；
-// 不走 fast 路径：发布窗口要的是扛住分钟级网络风暴，不是省几秒。
+// 只有 ls-remote 成功且 sha 不符才算丢租约证据:claim 文件每轮重读,心跳推进的 sha 下轮认回;
+// 失配计次耗尽才判丢。传输故障证明不了租约状态(真丢了 fence CAS 也拦得住),不计次、
+// 指数退避到 stormCap 后放行——预检误杀的代价是重跑整个 worker,远超一次无效 fence。
 export async function claimOwned(worktree: string, claimFile: string): Promise<boolean> {
-  const claim = await readClaimFile(claimFile);
-  if (claim === null) return false;
-  const max = Number.parseInt(process.env.AGENT_CLAIM_VERIFY_ATTEMPTS ?? "3", 10) || 3;
-  const delaySeconds = Number.parseInt(process.env.AGENT_CLAIM_VERIFY_DELAY ?? "2", 10) || 2;
-  for (let attempt = 1; ; attempt += 1) {
+  const maxMismatches = Number.parseInt(process.env.AGENT_CLAIM_VERIFY_ATTEMPTS ?? "3", 10) || 3;
+  const mismatchDelayMs =
+    (Number.parseInt(process.env.AGENT_CLAIM_VERIFY_DELAY ?? "2", 10) || 2) * 1000;
+  const stormCapMs =
+    (Number.parseInt(process.env.AGENT_CLAIM_VERIFY_STORM_CAP_SECONDS ?? "600", 10) || 600) * 1000;
+  const stormDeadline = Date.now() + stormCapMs;
+  let mismatches = 0;
+  let stormDelayMs = 2000;
+  for (;;) {
+    const claim = await readClaimFile(claimFile);
+    if (claim === null) return false;
     let current = "";
     let slotCurrent = "";
+    let reachable = true;
     try {
       [current, slotCurrent] = await Promise.all([
         lsRemoteSha(worktree, claim.claimRef),
         lsRemoteSha(worktree, claim.slotRef),
       ]);
-    } catch {}
-    if (claim.sha && current === claim.sha && slotCurrent === claim.sha) return true;
-    if (attempt >= max) return false;
-    await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+    } catch {
+      reachable = false;
+    }
+    if (reachable && current === claim.sha && slotCurrent === claim.sha) return true;
+    if (reachable) {
+      mismatches += 1;
+      if (mismatches >= maxMismatches) return false;
+      await new Promise((resolve) => setTimeout(resolve, mismatchDelayMs));
+    } else {
+      const remaining = stormDeadline - Date.now();
+      if (remaining <= 0) return true;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(stormDelayMs, remaining)));
+      stormDelayMs = Math.min(stormDelayMs * 2, 30_000);
+    }
   }
 }
 

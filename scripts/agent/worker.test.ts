@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { promisify } from "node:util";
-import { claimIssue, claimRefOf } from "./claim.ts";
+import { claimIssue, claimRefOf, dropLocalClaimIfRemoteGone } from "./claim.ts";
 import { readStatus } from "./status.ts";
 import { runWorker } from "./worker.ts";
 
@@ -558,7 +558,7 @@ done`;
   assert.ok(calls.includes("pr create"));
 });
 
-test("发布前 claim 丢失 → process 失败,自动重排队一次", async () => {
+test("发布前 claim 丢失 → process 失败,自动重排队;commit 与 pending 标记保留,重领取续跑发布", async () => {
   const sandbox = await makeSandbox(CLAUDE_HAPPY, MAKE_OK);
   await withEnv(sandboxEnv(sandbox), async () => {
     assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
@@ -569,6 +569,26 @@ test("发布前 claim 丢失 → process 失败,自动重排队一次", async ()
   const calls = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
   assert.ok(calls.includes("agent-requeue:1"));
   assert.ok(calls.includes("--add-label agent:queued"));
+  // commit 先于 claimOwned 落地:丢租约不再丢工作。
+  const publishSha = await git(sandbox.repo, ["rev-parse", "HEAD"]);
+  assert.equal(await git(sandbox.repo, ["log", "-1", "--format=%s"]), "feat: 实现工单");
+  assert.equal(await git(sandbox.repo, ["rev-list", "--count", "origin/main..HEAD"]), "1");
+  assert.equal(
+    (await readFile(join(sandbox.worktrees, "issue-7.publish-pending"), "utf8")).trim(),
+    publishSha,
+  );
+
+  // 远端 ref 已删,本地 claim 文件是残留;按 dispatcher 的恢复原语摘掉再重领。
+  assert.equal(await dropLocalClaimIfRemoteGone(sandbox.repo, sandbox.worktrees, 7), true);
+  await rm(join(sandbox.dir, "claude-stdin"), { force: true });
+  await withEnv(sandboxEnv(sandbox), async () => {
+    assert.equal(await claimIssue(sandbox.repo, sandbox.worktrees, 7, 1), true);
+    assert.equal(await runWorker(sandbox.repo, sandbox.repo, 7), 0);
+  });
+  await assert.rejects(readFile(join(sandbox.dir, "claude-stdin"), "utf8"));
+  const calls2 = await readFile(join(sandbox.dir, "gh-calls"), "utf8");
+  assert.ok(calls2.includes("pr create"));
+  await assert.rejects(readFile(join(sandbox.worktrees, "issue-7.publish-pending"), "utf8"));
 });
 
 test("publish 相 push 失败保留本地 commit,重领取跳过实现直接从 publish 续跑", async () => {

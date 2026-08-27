@@ -642,10 +642,29 @@ async function runPipeline(
       implHolder.session = null;
     }
   }
+  await ctx.timer.transition(worktrees, issue, "publish");
+  // publish-pending 续跑要求 HEAD 已含全部工作:commit 必须先于 claimOwned/fence 这些可失败的网络门。
+  const authored = await readFile(join(worktree, messageFile), "utf8")
+    .then((text) => text.trim())
+    .catch(() => "");
+  const fallback = `chore: ${parsed.title}\n\nRefs #${issue}`;
+  const messagePath = join(runDir, "commit-message.txt");
+  await writeFile(messagePath, authored || fallback);
+  // 越界清单读未提交态,必须在 commit 前收集。
+  const outside = await collectOutsideTouchSet();
+  await git(worktree, ["config", "user.name", "insuredesk-agent"]);
+  await git(worktree, ["config", "user.email", "insuredesk-agent@users.noreply.github.com"]);
+  if (!resumePublish) {
+    await git(worktree, ["add", "--all"]);
+    // repair 复跑改写已推送的 commit,顺带覆盖修复内容。
+    await git(worktree, ["commit", ...(repair ? ["--amend"] : []), "-F", messagePath]);
+    ctx.publishCommitted = true;
+    await writeFile(publishPendingFile, `${(await git(worktree, ["rev-parse", "HEAD"])).trim()}\n`);
+  }
+
   if (!(await claimOwned(worktree, ctx.claimFile)))
     throw new WorkerFailure("Agent lost its distributed claim before publication.", "process");
 
-  await ctx.timer.transition(worktrees, issue, "publish");
   // fence 与 heartbeat 并发:lease 被拒或传输抖动都按可重试处理。
   const fenceMax = num("AGENT_FENCE_ATTEMPTS", 3);
   for (let attempt = 1; ; attempt += 1) {
@@ -662,22 +681,6 @@ async function runPipeline(
     }
   }
 
-  const outside = await collectOutsideTouchSet();
-  const authored = await readFile(join(worktree, messageFile), "utf8")
-    .then((text) => text.trim())
-    .catch(() => "");
-  const fallback = `chore: ${parsed.title}\n\nRefs #${issue}`;
-  const messagePath = join(runDir, "commit-message.txt");
-  await writeFile(messagePath, authored || fallback);
-  await git(worktree, ["config", "user.name", "insuredesk-agent"]);
-  await git(worktree, ["config", "user.email", "insuredesk-agent@users.noreply.github.com"]);
-  if (!resumePublish) {
-    await git(worktree, ["add", "--all"]);
-    // repair 复跑改写已推送的 commit,顺带覆盖修复内容。
-    await git(worktree, ["commit", ...(repair ? ["--amend"] : []), "-F", messagePath]);
-    ctx.publishCommitted = true;
-    await writeFile(publishPendingFile, `${(await git(worktree, ["rev-parse", "HEAD"])).trim()}\n`);
-  }
   try {
     // amend 后远端已有旧 commit,必须 lease 覆盖。
     await git(worktree, ["push", "--set-upstream", "--force-with-lease", "origin", "HEAD"]);
