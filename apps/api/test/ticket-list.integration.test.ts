@@ -3,7 +3,11 @@ import { TICKET_SOURCES } from "@insuredesk/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Prisma, PrismaClient, User } from "../src/generated/prisma/client.ts";
 import { listTickets } from "../src/services/ticket.service.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  createComplaintTickets,
+  type IntegrationHarness,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -820,29 +824,33 @@ describe("ticket list (Testcontainers)", () => {
   describe("performance", () => {
     it("loads 100 rows in under 1 second", async () => {
       const now = Date.now();
-      await prisma.ticket.createMany({
-        data: Array.from({ length: 120 }, (_, i) => ({
-          feedbackTime: new Date(now - i * 60_000),
-          source: "manual",
-          kindId: complaintKindId,
-          slaAnchorAt: new Date(now - i * 60_000),
-          channelId: channelId("保司"),
-          project: "融盛",
-          brokerageEntity: "东方大地",
-          paymentChannel: "连连支付",
-          policyNumbers: [`P-${i}`],
-          userFeedbackChannelId: null,
-          customerName: `压测客户${i}`,
-          phone: "13800000000",
-          customerRequest: "压测数据",
-          nuclearBodyStatus: "待核实",
-          hasContacted: false,
-          slaPolicyId: policyId("一般投诉"),
-          dueAt: new Date(now + (i - 60) * HOUR_MS),
-          followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
-          firstResponseRequirement: "120分钟内完成首次响应",
+      await createComplaintTickets(
+        prisma,
+        Array.from({ length: 120 }, (_, i) => ({
+          core: {
+            kindId: complaintKindId,
+            createdAt: new Date(now - i * 60_000),
+            slaPolicyId: policyId("一般投诉"),
+            dueAt: new Date(now + (i - 60) * HOUR_MS),
+            followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
+            firstResponseRequirement: "120分钟内完成首次响应",
+          },
+          detail: {
+            feedbackTime: new Date(now - i * 60_000),
+            channelId: channelId("保司"),
+            project: "融盛",
+            brokerageEntity: "东方大地",
+            paymentChannel: "连连支付",
+            policyNumbers: [`P-${i}`],
+            userFeedbackChannelId: null,
+            customerName: `压测客户${i}`,
+            phone: "13800000000",
+            customerRequest: "压测数据",
+            nuclearBodyStatus: "待核实",
+            hasContacted: false,
+          },
         })),
-      });
+      );
 
       const startedAt = performance.now();
       const result = await manager().ticket.list({ pageSize: 100 });

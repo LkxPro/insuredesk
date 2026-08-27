@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { DEMO_PASSWORD } from "../prisma/seed-data.ts";
 import { parseEnv } from "../src/env.ts";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import type { Prisma, PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
 import { buildServer } from "../src/server.ts";
 import { hashPassword } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
@@ -83,6 +83,23 @@ describe("external ticket export (Testcontainers)", () => {
     return String(cookie?.value);
   }
 
+  const CORE_ROW_KEYS = new Set([
+    "createdAt",
+    "deletedAt",
+    "status",
+    "completionTime",
+    "completionStatusId",
+    "assigneeId",
+    "assignedAt",
+    "contactPhone",
+    "contactCount",
+    "nextContactTime",
+    "slaPolicyId",
+    "dueAt",
+    "followUpFrequency",
+    "firstResponseRequirement",
+  ]);
+
   function exportRequest(session: string | null, query: Record<string, string>) {
     return app.inject({
       method: "GET",
@@ -99,8 +116,22 @@ describe("external ticket export (Testcontainers)", () => {
     row: Record<string, unknown> = {},
   ) {
     const result = await harness.callerFor(user, role).externalTicket.submit({ submissionText });
-    if (Object.keys(row).length > 0) {
-      await prisma.ticket.update({ where: { id: result.id }, data: row });
+    const core: Record<string, unknown> = {};
+    const detail: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row)) {
+      (CORE_ROW_KEYS.has(key) ? core : detail)[key] = value;
+    }
+    if (Object.keys(core).length > 0) {
+      await prisma.ticket.update({
+        where: { id: result.id },
+        data: core as Prisma.TicketUpdateInput,
+      });
+    }
+    if (Object.keys(detail).length > 0) {
+      await prisma.ticketComplaintDetail.update({
+        where: { ticketId: result.id },
+        data: detail as Prisma.TicketComplaintDetailUpdateInput,
+      });
     }
     return result;
   }

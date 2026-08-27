@@ -18,7 +18,12 @@ import {
   type CatalogNameIndex,
   resolveCatalogNameRef,
 } from "./dictionary-catalog.service.ts";
-import { computeSlaStamp, type TicketServiceDeps, toDateOrNull } from "./ticket.service.ts";
+import {
+  complaintDetailData,
+  computeSlaStamp,
+  type TicketServiceDeps,
+  toDateOrNull,
+} from "./ticket.service.ts";
 import { requireTicketKindId } from "./ticket-kind.service.ts";
 import { resolveTimeZone } from "./time-zone.ts";
 
@@ -578,9 +583,7 @@ export async function importTickets(
 
       const created = await tx.ticket.createManyAndReturn({
         data: tickets.map(({ completionStatusId, completionRemark: _, ...ticket }) => ({
-          ...ticket,
-          feedbackTime: toDateOrNull(ticket.feedbackTime),
-          contactTime: toDateOrNull(ticket.contactTime),
+          contactPhone: ticket.contactPhone,
           createdAt: now,
           slaAnchorAt: now,
           kindId,
@@ -593,6 +596,25 @@ export async function importTickets(
           ...slaStamps.get(ticket.slaPolicyId),
         })),
         select: { id: true },
+      });
+
+      // Postgres returns INSERT … RETURNING rows in insertion order, so
+      // created[i] is tickets[i] — the detail rows ride on that pairing.
+      await tx.ticketComplaintDetail.createMany({
+        data: created.map(({ id }, index) => {
+          const {
+            completionStatusId: _s,
+            completionRemark: _r,
+            ...ticket
+          } = tickets[index] as (typeof tickets)[number];
+          const detail = complaintDetailData(ticket);
+          return {
+            ticketId: id,
+            ...detail,
+            feedbackTime: toDateOrNull(detail.feedbackTime),
+            contactTime: toDateOrNull(detail.contactTime),
+          };
+        }),
       });
 
       const operator = { operatorId: importer.id, operatorName: importer.name, at: now };

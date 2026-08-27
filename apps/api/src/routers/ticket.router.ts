@@ -1,4 +1,8 @@
 import {
+  editComplaintInputSchema,
+  editRefundInputSchema,
+  type TicketEditData,
+  type TicketEditInput,
   ticketAddCommentInputSchema,
   ticketAssignInputSchema,
   ticketAutoAssignInputSchema,
@@ -47,10 +51,13 @@ import {
   findDuplicateTickets,
 } from "../services/ticket-duplicate.service.ts";
 import {
+  EditKindMismatchError,
+  editComplaint,
+  editRefund,
   editTicket,
-  PushedFieldsReadOnlyError,
   RefundCompensationLockedError,
   RefundCompensationNotApplicableError,
+  RefundEditRetiredFieldsError,
   updateRefundCompensation,
 } from "../services/ticket-edit.service.ts";
 import {
@@ -84,6 +91,47 @@ function mapDuplicateError(error: unknown): never {
   }
   throw error;
 }
+
+function mapEditError(error: unknown): never {
+  if (error instanceof TicketNotFoundError) {
+    throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
+  }
+  if (
+    error instanceof RefundEditRetiredFieldsError ||
+    error instanceof EditKindMismatchError ||
+    error instanceof CatalogUnavailableError
+  ) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+  }
+  if (error instanceof SlaPolicyNotConfiguredError) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: error.message,
+      cause: error,
+    });
+  }
+  mapDuplicateError(error);
+}
+
+/**
+ * 旧统一端点的退役键检测：zod 解析后「键缺席」与「键值为 null」无法区分，
+ * 故 preprocess 先截获原始键集。preprocess 的 input 推断为 unknown，显式
+ * 标注 ZodType 保住客户端入参类型。
+ */
+type LegacyEditPayload = TicketEditInput & { allowDuplicate?: boolean };
+const legacyTicketEditInputSchema = z.preprocess(
+  (raw) => ({
+    data: raw,
+    presentKeys: raw !== null && typeof raw === "object" ? Object.keys(raw) : [],
+  }),
+  z.object({
+    data: ticketEditInputSchema.extend({ allowDuplicate: z.boolean().optional() }),
+    presentKeys: z.array(z.string()),
+  }),
+) as unknown as z.ZodType<
+  { data: TicketEditData & { allowDuplicate?: boolean }; presentKeys: string[] },
+  LegacyEditPayload
+>;
 
 export const ticketRouter = router({
   create: requirePermission("ticket.create")
@@ -208,29 +256,38 @@ export const ticketRouter = router({
     }),
 
   edit: requirePermission("ticket.edit")
-    .input(ticketEditInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
+    .input(legacyTicketEditInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { allowDuplicate, ...data } = input.data;
+        return await editTicket(deps, ctx.user, data, {
+          allowDuplicate,
+          presentKeys: input.presentKeys,
+        });
+      } catch (error) {
+        mapEditError(error);
+      }
+    }),
+
+  editComplaint: requirePermission("ticket.edit")
+    .input(editComplaintInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       try {
         const { allowDuplicate, ...data } = input;
-        return await editTicket(deps, ctx.user, data, { allowDuplicate });
+        return await editComplaint(deps, ctx.user, data, { allowDuplicate });
       } catch (error) {
-        if (error instanceof TicketNotFoundError) {
-          throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
-        }
-        if (error instanceof PushedFieldsReadOnlyError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
-        }
-        if (error instanceof SlaPolicyNotConfiguredError) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message: error.message,
-            cause: error,
-          });
-        }
-        if (error instanceof CatalogUnavailableError) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
-        }
-        mapDuplicateError(error);
+        mapEditError(error);
+      }
+    }),
+
+  editRefund: requirePermission("ticket.edit")
+    .input(editRefundInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { allowDuplicate, ...data } = input;
+        return await editRefund(deps, ctx.user, data, { allowDuplicate });
+      } catch (error) {
+        mapEditError(error);
       }
     }),
 

@@ -63,7 +63,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
       select: {
         id: true,
         workOrderNumber: true,
-        customerName: true,
+        complaintDetail: { select: { customerName: true } },
         slaPolicyId: true,
         slaPolicy: { select: { name: true } },
         status: true,
@@ -162,7 +162,7 @@ export async function listMyTodos({ prisma, clock }: TicketServiceDeps, viewer: 
     .map(({ ticket, alerts }) => ({
       ticketId: ticket.id,
       workOrderNumber: ticket.workOrderNumber,
-      customerName: ticket.customerName,
+      customerName: ticket.complaintDetail?.customerName ?? null,
       slaPolicyName: ticket.slaPolicy?.name ?? null,
       createdAt: ticket.createdAt.toISOString(),
       dueAt: ticket.dueAt?.toISOString() ?? null,

@@ -29,7 +29,10 @@ export function buildExternalTicketConditions(
       case "search": {
         const pattern = substringSearchPattern(condition.term);
         conditions.push(
-          Prisma.sql`(t."workOrderNumber" ILIKE ${pattern} OR t."submissionText" ILIKE ${pattern} OR array_to_string(t."policyNumbers", ' ') ILIKE ${pattern})`,
+          Prisma.sql`(t."workOrderNumber" ILIKE ${pattern} OR t."submissionText" ILIKE ${pattern} OR EXISTS (
+            SELECT 1 FROM ticket_complaint_details cd
+            WHERE cd."ticketId" = t.id AND array_to_string(cd."policyNumbers", ' ') ILIKE ${pattern}
+          ))`,
         );
         break;
       }

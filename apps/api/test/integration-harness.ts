@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { isExternalRole, type Permission } from "@insuredesk/shared";
+import { isExternalRole, type Permission, TicketKindKey } from "@insuredesk/shared";
 import { inject } from "vitest";
 import {
   seedChannels,
@@ -13,10 +13,62 @@ import { type Clock, fixedClock, systemClock } from "../src/clock.ts";
 // DATABASE_URL（lazy Proxy），而 start 在任何查询与播种之前已把它指向容器。
 // 若 db 客户端失去惰性，这里必须退回「先设 env、再动态 import」的时序。
 import { prisma } from "../src/db.ts";
-import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
+import type { Prisma, PrismaClient, Role, Ticket, User } from "../src/generated/prisma/client.ts";
 import { appRouter } from "../src/routers/index.ts";
 import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service.ts";
+import { requireTicketKindId } from "../src/services/ticket-kind.service.ts";
 import { migrateDeploy, runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres.ts";
+
+export type ComplaintCoreInput = Omit<
+  Prisma.TicketCreateManyInput,
+  "kindId" | "slaAnchorAt" | "source"
+> & {
+  kindId?: string;
+  slaAnchorAt?: Date | string;
+  source?: string;
+};
+
+export type ComplaintDetailInput = Partial<
+  Omit<Prisma.TicketComplaintDetailCreateManyInput, "ticketId">
+>;
+
+export async function createComplaintTicket(
+  prisma: PrismaClient,
+  core: ComplaintCoreInput = {},
+  detail: ComplaintDetailInput = {},
+): Promise<Ticket> {
+  const kindId = core.kindId ?? (await requireTicketKindId(prisma, TicketKindKey.Complaint));
+  return prisma.ticket.create({
+    data: {
+      source: "manual",
+      ...core,
+      kindId,
+      slaAnchorAt: core.slaAnchorAt ?? core.createdAt ?? new Date(),
+      complaintDetail: { create: detail },
+    },
+  });
+}
+
+/** core/detail 批量 helper：RETURNING 保序配对（与导入路径同一依据）。 */
+export async function createComplaintTickets(
+  prisma: PrismaClient,
+  rows: { core: ComplaintCoreInput; detail?: ComplaintDetailInput }[],
+): Promise<string[]> {
+  const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
+  const created = await prisma.ticket.createManyAndReturn({
+    data: rows.map(({ core }) => ({
+      source: "manual",
+      ...core,
+      kindId: core.kindId ?? kindId,
+      slaAnchorAt: core.slaAnchorAt ?? core.createdAt ?? new Date(),
+    })),
+    select: { id: true },
+  });
+  await prisma.ticketComplaintDetail.createMany({
+    data: created.map(({ id }, index) => ({ ticketId: id, ...rows[index]?.detail })),
+  });
+  return created.map((row) => row.id);
+}
 
 /**
  * real-migrations：保证每次真跑 `prisma migrate deploy`（在共享容器的全新

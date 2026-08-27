@@ -89,10 +89,6 @@ export async function pushRefundWorkOrder(
           createdAt: now,
           slaAnchorAt: anchor,
           status: TicketStatus.Unassigned,
-          customerName: input.holderName ?? null,
-          phone: input.holderPhone ?? null,
-          policyNumbers: input.policyNo ? [input.policyNo] : [],
-          internalOrderNumber: input.sysOrderId,
           ...stampFromPolicy(policy, anchor),
         },
       });

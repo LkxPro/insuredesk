@@ -171,7 +171,9 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
 
     it("rejects the whole revoke once any ticket is processed, reporting the count", async () => {
       const batchId = await importBatchOf(importer, IMPORTER_PERMISSIONS, ["张三", "李四"]);
-      const tickets = await prisma.ticket.findMany({ orderBy: { customerName: "asc" } });
+      const tickets = await prisma.ticket.findMany({
+        orderBy: { complaintDetail: { customerName: "asc" } },
+      });
       const [first, second] = tickets as [(typeof tickets)[0], (typeof tickets)[0]];
 
       await supervisorCaller().ticket.assign({ ticketId: first.id, assigneeId: importer.id });
@@ -226,7 +228,7 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
         "新客户",
       ]);
       const unassigned = await prisma.ticket.findFirstOrThrow({
-        where: { customerName: "新客户" },
+        where: { complaintDetail: { customerName: "新客户" } },
       });
 
       await supervisorCaller().ticket.assign({ ticketId: unassigned.id, assigneeId: importer.id });

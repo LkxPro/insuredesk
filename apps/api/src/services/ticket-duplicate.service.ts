@@ -9,7 +9,8 @@ import type { Clock } from "../clock.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 /**
- * 建单/编辑查重：对全部未软删工单做保单号 + 手机号精确匹配。
+ * 建单/编辑查重：对全部未软删工单做保单号 + 手机号精确匹配。退费单无投诉
+ * detail，仅核心的 contactPhone 参与命中。
  *
  * 数据范围故意不加 applyTicketDataScope —— 查重的价值恰恰在于看见别的客服
  * 名下的工单，收窄到「指派给我/我创建」会让重复单恰恰漏掉。权限边界在路由层
@@ -71,10 +72,10 @@ export async function findDuplicateTickets(
   );
   const branches: Prisma.TicketWhereInput[] = [];
   if (policyNumbers.length > 0) {
-    branches.push({ policyNumbers: { hasSome: policyNumbers } });
+    branches.push({ complaintDetail: { policyNumbers: { hasSome: policyNumbers } } });
   }
   if (phones.length > 0) {
-    branches.push({ phone: { in: phones } }, { contactPhone: { in: phones } });
+    branches.push({ complaintDetail: { phone: { in: phones } } }, { contactPhone: { in: phones } });
   }
   if (branches.length === 0) {
     return [];
@@ -91,11 +92,9 @@ export async function findDuplicateTickets(
       workOrderNumber: true,
       status: true,
       dueAt: true,
-      customerName: true,
       createdAt: true,
-      policyNumbers: true,
-      phone: true,
       contactPhone: true,
+      complaintDetail: { select: { customerName: true, policyNumbers: true, phone: true } },
       // 完结单的沟通止于 resolve（完结后不可再跟进/留言），取到的必是完结备注
       processLogs: {
         select: { at: true, remark: true },
@@ -107,16 +106,23 @@ export async function findDuplicateTickets(
   });
 
   const now = clock.now();
-  const mapped = rows.map((row) => ({
-    id: row.id,
-    workOrderNumber: row.workOrderNumber,
-    customerName: row.customerName,
-    createdAt: row.createdAt,
-    displayStatus: deriveDisplayStatus(ticketStatusSchema.parse(row.status), row.dueAt, now),
-    matchedFields: matchedFieldsOf(row, query, policyNumbers),
-    activityAt: row.processLogs[0]?.at ?? row.createdAt,
-    activityText: row.processLogs[0]?.remark ?? "暂无处理记录",
-  }));
+  const mapped = rows.map((row) => {
+    const candidate: CandidateRow = {
+      policyNumbers: row.complaintDetail?.policyNumbers ?? [],
+      phone: row.complaintDetail?.phone ?? null,
+      contactPhone: row.contactPhone,
+    };
+    return {
+      id: row.id,
+      workOrderNumber: row.workOrderNumber,
+      customerName: row.complaintDetail?.customerName ?? null,
+      createdAt: row.createdAt,
+      displayStatus: deriveDisplayStatus(ticketStatusSchema.parse(row.status), row.dueAt, now),
+      matchedFields: matchedFieldsOf(candidate, query, policyNumbers),
+      activityAt: row.processLogs[0]?.at ?? row.createdAt,
+      activityText: row.processLogs[0]?.remark ?? "暂无处理记录",
+    };
+  });
   // Prisma 无法按 take-1 关联排序，只能全量取出后在内存按展示时间排序、再截上限
   mapped.sort(
     (a, b) =>
