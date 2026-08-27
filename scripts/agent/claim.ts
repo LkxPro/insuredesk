@@ -279,8 +279,7 @@ export async function fenceClaim(
 // 失配计次耗尽才判丢。传输故障证明不了租约状态(真丢了 fence CAS 也拦得住),不计次、
 // 指数退避到 stormCap 后放行——预检误杀的代价是重跑整个 worker,远超一次无效 fence。
 export async function claimOwned(worktree: string, claimFile: string): Promise<boolean> {
-  const maxMismatches =
-    Number.parseInt(process.env.AGENT_CLAIM_VERIFY_ATTEMPTS ?? "3", 10) || 3;
+  const maxMismatches = Number.parseInt(process.env.AGENT_CLAIM_VERIFY_ATTEMPTS ?? "3", 10) || 3;
   const mismatchDelayMs =
     (Number.parseInt(process.env.AGENT_CLAIM_VERIFY_DELAY ?? "2", 10) || 2) * 1000;
   const stormCapMs =
