@@ -230,3 +230,59 @@ test("dropLocalClaimIfRemoteGone: 远端活着不动,远端没了摘本地文件
   assert.equal(await claimIssue(root, worktrees, issue, 1), true);
   await releaseClaim(root, worktrees, issue);
 });
+
+async function withStormEnv<T>(fn: () => Promise<T>): Promise<T> {
+  const saved = {
+    AGENT_CLAIM_VERIFY_STORM_CAP_SECONDS: process.env.AGENT_CLAIM_VERIFY_STORM_CAP_SECONDS,
+    AGENT_NET_CALL_ATTEMPTS: process.env.AGENT_NET_CALL_ATTEMPTS,
+    AGENT_NET_CALL_TIMEOUT_SECONDS: process.env.AGENT_NET_CALL_TIMEOUT_SECONDS,
+  };
+  process.env.AGENT_NET_CALL_ATTEMPTS = "1";
+  process.env.AGENT_NET_CALL_TIMEOUT_SECONDS = "3";
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test("claimOwned 全程传输故障:不计失配,退避到 storm cap 后放行", async () => {
+  const issue = 109;
+  await claimIssue(root, worktrees, issue, 1);
+  const goodUrl = await git(root, ["remote", "get-url", "origin"]);
+  await git(root, ["remote", "set-url", "origin", join(base, "gone.git")]);
+  try {
+    await withStormEnv(async () => {
+      process.env.AGENT_CLAIM_VERIFY_STORM_CAP_SECONDS = "1";
+      // 旧逻辑 3 次计次后判丢;新逻辑到顶放行,让 fence CAS 做终极裁决。
+      assert.equal(await claimOwned(root, claimFileOf(worktrees, issue)), true);
+    });
+  } finally {
+    await git(root, ["remote", "set-url", "origin", goodUrl]);
+  }
+  await releaseClaim(root, worktrees, issue);
+});
+
+test("claimOwned 传输恢复后认回租约:故障轮不消耗失配计次", async () => {
+  const issue = 110;
+  await claimIssue(root, worktrees, issue, 1);
+  const goodUrl = await git(root, ["remote", "get-url", "origin"]);
+  await git(root, ["remote", "set-url", "origin", join(base, "gone.git")]);
+  const restore = setTimeout(() => {
+    void git(root, ["remote", "set-url", "origin", goodUrl]).catch(() => {});
+  }, 1000);
+  try {
+    await withStormEnv(async () => {
+      process.env.AGENT_CLAIM_VERIFY_STORM_CAP_SECONDS = "30";
+      process.env.AGENT_CLAIM_VERIFY_ATTEMPTS = "1";
+      assert.equal(await claimOwned(root, claimFileOf(worktrees, issue)), true);
+    });
+  } finally {
+    clearTimeout(restore);
+    await git(root, ["remote", "set-url", "origin", goodUrl]);
+  }
+  await releaseClaim(root, worktrees, issue);
+});
