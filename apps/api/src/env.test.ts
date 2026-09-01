@@ -15,6 +15,13 @@ describe("parseEnv", () => {
     expect(env.NODE_ENV).toBe("development");
     expect(env.LOG_LEVEL).toBe("info");
     expect(env.SESSION_MAX_AGE_SECONDS).toBe(86400);
+    expect(env.OPEN_API_ENABLED).toBe(false);
+  });
+
+  it("OPEN_API_ENABLED 只认字面 true/false", () => {
+    expect(parseEnv({ ...minimal, OPEN_API_ENABLED: "true" }).OPEN_API_ENABLED).toBe(true);
+    expect(parseEnv({ ...minimal, OPEN_API_ENABLED: "false" }).OPEN_API_ENABLED).toBe(false);
+    expect(() => parseEnv({ ...minimal, OPEN_API_ENABLED: "yes" })).toThrow(/OPEN_API_ENABLED/);
   });
 
   it("crashes when DATABASE_URL is missing", () => {

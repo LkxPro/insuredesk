@@ -18,14 +18,41 @@ function initClient(): PrismaClient {
   });
 }
 
-/**
- * 惰性构造：import 本模块不依赖 env 加载顺序。pg 拿到空连接串会静默回落
- * libpq 默认，缺 DATABASE_URL 必须在 initClient 里显式报错。
- */
+// pg 拿到空连接串会静默回落 libpq 默认，缺 DATABASE_URL 必须在 initClient
+// 里显式报错。
 export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
   get(_target, prop) {
     client ??= initClient();
     const value = Reflect.get(client, prop, client);
     return typeof value === "function" ? value.bind(client) : value;
+  },
+});
+
+let apiClient: PrismaClient | undefined;
+
+function initApiClient(): PrismaClient {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is not set — put it in process.env (apps/api/.env in dev) before using the database",
+    );
+  }
+  // pg 池默认无限排队：max 4 + connectionTimeoutMillis 才是 /api/v1 的并发闸
+  // （取连接超时映射 503），statement_timeout 是慢查询闸（映射 504）。
+  return new PrismaClient({
+    adapter: new PrismaPg({
+      connectionString: url,
+      max: 4,
+      connectionTimeoutMillis: 2000,
+      options: "-c timezone=UTC -c statement_timeout=15000",
+    }),
+  });
+}
+
+export const apiDb: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    apiClient ??= initApiClient();
+    const value = Reflect.get(apiClient, prop, apiClient);
+    return typeof value === "function" ? value.bind(apiClient) : value;
   },
 });
