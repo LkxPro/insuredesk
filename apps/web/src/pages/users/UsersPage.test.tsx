@@ -109,6 +109,9 @@ function respond(path: string, input: unknown): unknown {
   if (path === "user.assignRole") {
     return { id: "u-zhang", name: "张客服", roleName: "质检专员" };
   }
+  if (path === "apiKey.revokeAllForUser") {
+    return { revoked: 2 };
+  }
   throw new Error(`Unexpected tRPC path: ${path}`);
 }
 
@@ -270,6 +273,34 @@ describe("operations", () => {
         roleId: "r-custom",
       }),
     );
+  });
+
+  it("吊销 API key asks for confirmation before firing apiKey.revokeAllForUser", async () => {
+    canned.users = [row()];
+    renderUsersPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "吊销 API key" }));
+    expect(calls.some((call) => call.path === "apiKey.revokeAllForUser")).toBe(false);
+    expect(await screen.findByRole("heading", { name: "吊销全部 API key" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认吊销" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path === "apiKey.revokeAllForUser")?.input).toEqual({
+        userId: "u-zhang",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "吊销全部 API key" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("吊销 API key is gated by user.edit", async () => {
+    auth.user = userWith({ name: "仅看用户", permissions: ["user.view"] });
+    canned.users = [row()];
+    renderUsersPage();
+
+    await screen.findByText("张客服");
+    expect(screen.queryByRole("button", { name: "吊销 API key" })).not.toBeInTheDocument();
   });
 });
 
