@@ -60,7 +60,7 @@ export function computeNextVersion(tags: string[], now: Date): string {
   return `${prefix}${max + 1}`;
 }
 
-// CalVer 序号段不补零（v2026.08.10 > v2026.08.9）
+// CalVer 序号段不补零，版本须按数值比较
 export function latestVersionTag(tags: string[]): string | null {
   let best: string | null = null;
   for (const tag of tags) {
@@ -143,14 +143,18 @@ function git(repoRoot: string, args: string[]): string {
 }
 
 // GitHub GraphQL 网关偶发 5xx/EOF，隔几秒重试通常即恢复
-const GH_TRANSIENT = /HTTP 5\d\d|\bEOF\b|timed out|connection reset/i;
+const GH_TRANSIENT = /HTTP 5\d\d|\bEOF\b|timed out|timeout|connection reset/i;
+
+export function isTransientGhError(message: string): boolean {
+  return GH_TRANSIENT.test(message);
+}
 
 function gh(repoRoot: string, args: string[]): string {
   for (let attempt = 1; ; attempt++) {
     try {
       return execFileSync("gh", args, { cwd: repoRoot, encoding: "utf8" });
     } catch (err) {
-      if (attempt >= 4 || !GH_TRANSIENT.test((err as Error).message)) throw err;
+      if (attempt >= 4 || !isTransientGhError((err as Error).message)) throw err;
       execFileSync("sleep", [String(2 ** (attempt - 1))]);
     }
   }
@@ -196,6 +200,11 @@ function routeDiff(repoRoot: string, lastTag: string | null): string {
 
 function collect(repoRoot: string, version: string, tags: string[], now: Date): number {
   const lastTag = latestVersionTag(tags);
+  try {
+    git(repoRoot, ["fetch", "--tags", "origin"]);
+  } catch {
+    // routeDiff 靠本地 tag ref，worktree/浅克隆常缺；拉不到按既有缺 tag 逻辑降级为空
+  }
   const since = lastTag ? releasePublishedAt(repoRoot, lastTag).slice(0, 10) : "1970-01-01";
   const prs = JSON.parse(
     gh(repoRoot, [
