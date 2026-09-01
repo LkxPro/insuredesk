@@ -20,6 +20,7 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { AssignRoleDialog } from "./AssignRoleDialog";
 import { DisableUserDialog } from "./DisableUserDialog";
+import { RevokeApiKeysDialog } from "./RevokeApiKeysDialog";
 import { UserCreateDialog } from "./UserCreateDialog";
 import { UserEditDialog } from "./UserEditDialog";
 
@@ -44,6 +45,7 @@ export function UsersPage() {
   const [editTarget, setEditTarget] = useState<UserRow | null>(null);
   const [assignTarget, setAssignTarget] = useState<UserRow | null>(null);
   const [disableTarget, setDisableTarget] = useState<UserRow | null>(null);
+  const [revokeKeysTarget, setRevokeKeysTarget] = useState<UserRow | null>(null);
 
   const enable = trpc.user.setActive.useMutation({
     onSuccess: (result) => {
@@ -149,6 +151,11 @@ export function UsersPage() {
                           分配角色
                         </Button>
                       )}
+                      {canEdit && (
+                        <Button variant="ghost" size="sm" onClick={() => setRevokeKeysTarget(user)}>
+                          吊销 API key
+                        </Button>
+                      )}
                       {/* 自禁用会当场锁死操作者，服务端同样拒绝 */}
                       {canToggleActive &&
                         user.id !== me?.id &&
@@ -202,6 +209,14 @@ export function UsersPage() {
           user={disableTarget}
           onOpenChange={(open) => {
             if (!open) setDisableTarget(null);
+          }}
+        />
+      )}
+      {canEdit && (
+        <RevokeApiKeysDialog
+          user={revokeKeysTarget}
+          onOpenChange={(open) => {
+            if (!open) setRevokeKeysTarget(null);
           }}
         />
       )}

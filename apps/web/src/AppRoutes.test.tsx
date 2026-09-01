@@ -46,6 +46,10 @@ vi.mock("@/pages/profile/ChangePasswordCard", () => ({
   ChangePasswordCard: () => null,
 }));
 
+vi.mock("@/pages/profile/ApiKeysCard", () => ({
+  ApiKeysCard: () => null,
+}));
+
 vi.mock("@/pages/users/UsersPage", () => ({
   UsersPage: () => <h1>用户管理</h1>,
 }));

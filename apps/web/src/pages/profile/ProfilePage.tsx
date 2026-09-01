@@ -1,5 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
+import { ApiKeysCard } from "./ApiKeysCard";
 import { ChangePasswordCard } from "./ChangePasswordCard";
 
 export function ProfilePage() {
@@ -30,6 +31,7 @@ export function ProfilePage() {
         </CardContent>
       </Card>
       <ChangePasswordCard />
+      <ApiKeysCard />
     </div>
   );
 }
