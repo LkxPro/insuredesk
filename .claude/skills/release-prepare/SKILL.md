@@ -1,6 +1,6 @@
 ---
 name: release-prepare
-description: 起草本版本 changelog 条目并完成发版准备（素材 → 条目 → 截图 → changelog PR）。在 make release-prepare 产出素材包与草稿 yaml 后使用。
+description: 起草本版本 changelog 条目并完成发版准备（素材 → 条目 → 截图 → 人工过目 → changelog PR）。在 make release-prepare 产出素材包与草稿 yaml 后使用。
 ---
 
 # 起草 changelog 并完成发版准备
@@ -34,6 +34,9 @@ description: 起草本版本 changelog 条目并完成发版准备（素材 → 
    `changelog/fixtures/screenshot/v2099.06.0/tickets-list.setup.ts`。
    mock 数据要贴合条目语境——截筛选器就先造出可筛出差异的多渠道工单，空页面
    截图没有信息量。
+   不假设 dev 库 seed 状态：截图所需数据一律由 setup 钩子幂等自建（固定 id
+   查找-创建或 upsert），seed 历史残缺的库也要产出同一画面；样例见
+   `changelog/v2026.09.0/sla-kind-groups.setup.ts`。
    静态页面呈现不出的状态（如展开的下拉），另写同名 `.page.ts` 交互钩子，
    默认导出 `async (page: Page) => Promise<void>`，截图器在 goto 之后、截图
    之前把 Playwright 页面交给它；样例见
@@ -42,12 +45,22 @@ description: 起草本版本 changelog 条目并完成发版准备（素材 → 
 
 ## 完成
 
-1. 自验：`node scripts/changelog/validate.ts changelog/v<版本>.yaml`
-2. 确认本地 dev 栈在跑（`make dev`），然后重跑 `make release-prepare`：
-   校验 → 调截图器产出 PNG → 以 PR 形式提交 yaml + PNG。
-   注意：vite 的 eager glob 不热更 `changelog/` 下新增文件——dev 栈若起在
-   yaml 创建之前，页面拿不到新版本（截图会截出旧状态甚至空态），先重启 dev 栈再截。
-3. 报告 PR 链接，提醒：人工过目 merge 后，在 main 上 `make release` 触发发布
+1. 自验：`node scripts/changelog/validate.ts changelog/v<版本>.yaml` 与
+   `pnpm exec biome check changelog/`（钩子文件随 PR 提交，CI static 会查）。
+2. 确认 dev 栈在跑（`make dev`；后台任务结束会回收进程组，用
+   `nohup make dev … & disown` 之类 detached 起法）。vite 的 eager glob 不热更
+   `changelog/` 下新增文件：dev 栈若起在 yaml 或 PNG 创建之前，页面拿不到
+   新版本（截图截出旧状态/空态、日志页图片 404），先重启 dev 栈再截。
+3. 钩子调试期直跑 `node scripts/release/screenshot.ts changelog/v<版本>.yaml`
+   （只出截图，不碰 PR），不要每次改动都走完整 `make release-prepare`。
+4. 定稿后 `DRY_RUN=1 make release-prepare`（校验+截图全做，不开 PR），然后
+   停在检查点请人工过目：报告 entries 全文与渲染页 URL
+   （`http://localhost:<web 端口>/changelog`，端口用
+   `sh scripts/dev-ports.sh --web-port` 查）。用户起手明示「直接开 PR」才可
+   跳过检查点。
+5. 过目意见：文案改动只改 yaml 重报（截图与文案无关，不用重截）；page/钩子
+   改动回第 3 步。确认后跑 `make release-prepare` 开 PR。
+6. 报告 PR 链接，提醒：人工过目 merge 后，在 main 上 `make release` 触发发布
 
 ## 边界
 

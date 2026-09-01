@@ -12,7 +12,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { computeNextVersion, latestVersionTag, renderMaterials } from "./prepare.ts";
+import {
+  computeNextVersion,
+  isTransientGhError,
+  latestVersionTag,
+  renderMaterials,
+} from "./prepare.ts";
 
 const prepareEntry = join(import.meta.dirname, "prepare.ts");
 
@@ -43,6 +48,14 @@ test("latestVersionTag：跨月取最新，序号按数值比较", () => {
   assert.equal(latestVersionTag(["v2026.07.3", "v2026.08.1", "v2026.08.10"]), "v2026.08.10");
   assert.equal(latestVersionTag([]), null);
   assert.equal(latestVersionTag(["latest", "v1.2.3"]), null);
+});
+
+test("isTransientGhError：5xx/EOF/超时/连接重置可重试，其余不可", () => {
+  assert.ok(isTransientGhError("HTTP 502"));
+  assert.ok(isTransientGhError("Post https://api.github.com/graphql: EOF"));
+  assert.ok(isTransientGhError("net/http: TLS handshake timeout"));
+  assert.ok(isTransientGhError("connection reset by peer"));
+  assert.ok(!isTransientGhError("a pull request for branch already exists"));
 });
 
 test("renderMaterials：含上一版本、PR/issue 清单、路由 diff 与下一步指引", () => {
