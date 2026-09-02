@@ -267,15 +267,25 @@ docker compose -f docker-compose.prod.yml up -d
 ```
 
 验证:无 key 请求 `curl -i https://<域名>/api/v1/meta` 应得 401;带有效 key
-(`-H "Authorization: Bearer sk_live_…"`)应得 200。
+(`-H "Authorization: Bearer sk_…"`)应得 200。
 
 ### 关闭(回滚)
 
 `.env` 删掉该行(或改 `"false"`)再 `up -d`,`/api/v1/*` 整面下线(404),全部 key
 即刻不可用。`api_keys` 表数据保留,重新开启即恢复可用,无需重新发卡。
 
+### 升级注意(权限收紧)
+
+吊销他人全部 key 的门禁由 `user.edit` 收紧为独立权限点 `api_key.revoke_all`。
+升级后,此前靠 `user.edit` 执行该操作的角色一律 403,需在角色管理里人工补授
+`api_key.revoke_all`;管理员经系统角色展开自动持有,无需动作。
+
 ### nginx checklist
 
+- `/api/v1` 必须置于反向代理之后:失败认证按来源 IP 限流,来源 IP 取自
+  `X-Forwarded-For`(trustProxy 信任一跳)。直连部署时该头可被客户端任意伪造,
+  轮换伪造 IP 即绕过失败限流、污染审计归因;经反代时伪造段被代理追加的真实对端
+  地址顶到链尾之外,不参与取信。
 - `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` 必须在(上文模板已含)
   ——限流与 `api_access_logs` 的来源 IP 取自该头,缺失则全部记成回环地址。
 - access log 不得包含 Authorization 头:自定义 `log_format` 时排查 `$http_authorization`,

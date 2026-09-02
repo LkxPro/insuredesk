@@ -1,9 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { type ApiKeyCreated, apiKeyCreateInputSchema } from "@insuredesk/shared";
-import { addDays, addYears, format } from "date-fns";
+import { addDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -18,24 +18,32 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { isCompleteLocalDate } from "@/lib/local-date-time";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
+const EXPIRY_OPTIONS = [
+  { value: "30", label: "30 天" },
+  { value: "90", label: "90 天" },
+  { value: "180", label: "180 天" },
+  { value: "365", label: "365 天" },
+  { value: "never", label: "永不过期" },
+] as const;
+
 const formSchema = z.object({
   name: apiKeyCreateInputSchema.shape.name,
-  expiresAt: z
-    .string()
-    .refine(isCompleteLocalDate, "请选择过期时间")
-    .refine((date) => new Date(`${date}T23:59:59`) > new Date(), "过期时间必须晚于现在")
-    .refine((date) => date <= format(addYears(new Date(), 1), "yyyy-MM-dd"), "过期时间最长为 1 年"),
+  expiry: z.enum(["30", "90", "180", "365", "never"]),
 });
 type FormValues = z.infer<typeof formSchema>;
 
-function defaultExpiryDate(): string {
-  return format(addDays(new Date(), 90), "yyyy-MM-dd");
-}
+const DEFAULT_VALUES: FormValues = { name: "", expiry: "90" };
 
 export function CreateApiKeyDialog({
   open,
@@ -49,15 +57,8 @@ export function CreateApiKeyDialog({
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", expiresAt: defaultExpiryDate() },
+    defaultValues: DEFAULT_VALUES,
   });
-
-  useEffect(() => {
-    if (open) {
-      setCreated(null);
-      form.reset({ name: "", expiresAt: defaultExpiryDate() });
-    }
-  }, [open, form]);
 
   const create = trpc.apiKey.create.useMutation({
     onSuccess: (result) => {
@@ -65,11 +66,21 @@ export function CreateApiKeyDialog({
       utils.apiKey.list.invalidate();
     },
   });
+  const resetCreate = create.reset;
+
+  useEffect(() => {
+    if (open) {
+      setCreated(null);
+      resetCreate();
+      form.reset(DEFAULT_VALUES);
+    }
+  }, [open, form, resetCreate]);
 
   const onSubmit = form.handleSubmit((values) =>
     create.mutate({
       name: values.name,
-      expiresAt: new Date(`${values.expiresAt}T23:59:59`).toISOString(),
+      expiresAt:
+        values.expiry === "never" ? null : addDays(new Date(), Number(values.expiry)).toISOString(),
     }),
   );
   const busy = create.isPending;
@@ -119,24 +130,39 @@ export function CreateApiKeyDialog({
             </DialogFooter>
           </div>
         ) : (
-          <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
-            {/* noValidate：date 输入的 min/max 原生校验会抢先拦截提交，范围报错统一走 zod */}
+          <form className="flex flex-col gap-4" onSubmit={onSubmit}>
             <Field data-invalid={!!errors.name}>
               <FieldLabel htmlFor="api-key-name">名称</FieldLabel>
               <Input id="api-key-name" {...form.register("name")} placeholder="如：BI 报表同步" />
               {errors.name && <FieldError>{errors.name.message}</FieldError>}
             </Field>
 
-            <Field data-invalid={!!errors.expiresAt}>
-              <FieldLabel htmlFor="api-key-expires-at">过期时间</FieldLabel>
-              <Input
-                id="api-key-expires-at"
-                type="date"
-                min={format(new Date(), "yyyy-MM-dd")}
-                max={format(addYears(new Date(), 1), "yyyy-MM-dd")}
-                {...form.register("expiresAt")}
+            <Field data-invalid={!!errors.expiry}>
+              <FieldLabel htmlFor="api-key-expiry">有效期</FieldLabel>
+              <Controller
+                control={form.control}
+                name="expiry"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger id="api-key-expiry" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EXPIRY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               />
-              {errors.expiresAt && <FieldError>{errors.expiresAt.message}</FieldError>}
+              {errors.expiry && <FieldError>{errors.expiry.message}</FieldError>}
+              {form.watch("expiry") === "never" && (
+                <p className="text-sm text-destructive">
+                  永不过期的 key 泄露后长期有效，建议定期轮换。
+                </p>
+              )}
             </Field>
 
             {create.error && (

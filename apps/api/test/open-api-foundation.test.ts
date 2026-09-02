@@ -44,11 +44,12 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
 
   let seq = 0;
   async function issueKey(userId: string, overrides: Record<string, unknown> = {}) {
-    const token = `sk_live_test-${randomUUID()}`;
+    const token = `sk_test-${randomUUID()}`;
     const row = await prisma.apiKey.create({
       data: {
         name: `open-api-test-${++seq}`,
         keyHash: hashApiKey(token),
+        keyPreview: token.slice(-8),
         userId,
         expiresAt: new Date(Date.now() + 86_400_000),
         ...overrides,
@@ -155,7 +156,7 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
       const spec = await app.inject({
         method: "GET",
         url: "/api/v1/openapi.json",
-        headers: { authorization: "Bearer sk_live_garbage" },
+        headers: { authorization: "Bearer sk_garbage" },
       });
       expect(spec.statusCode).toBe(200);
       expect(spec.headers["cache-control"]).toBe("no-store");
@@ -167,12 +168,13 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
   });
 
   describe("401/403 映射与错误信封", () => {
-    it("无/畸形 Authorization → 401 unauthorized 信封", async () => {
+    it("无/畸形 Authorization → 401 unauthorized 信封 + WWW-Authenticate", async () => {
       const missing = await getMe(app);
       expect(missing.statusCode).toBe(401);
       expect(() => openApiErrorBodySchema.parse(missing.json())).not.toThrow();
       expect(missing.json().error.code).toBe("unauthorized");
       expect(missing.headers["cache-control"]).toBe("no-store");
+      expect(missing.headers["www-authenticate"]).toBe("Bearer");
 
       const wrongScheme = await app.inject({
         method: "GET",
@@ -180,18 +182,26 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
         headers: { authorization: "Token abc" },
       });
       expect(wrongScheme.statusCode).toBe(401);
+      expect(wrongScheme.headers["www-authenticate"]).toBe("Bearer");
     });
 
-    it("库中无此 key / 已吊销 / 已过期 → 401", async () => {
-      expect((await getMe(app, { token: "sk_live_not-in-db" })).statusCode).toBe(401);
+    it("库中无此 key / 已吊销 → 401 Invalid or revoked；已过期单列消息 API key expired", async () => {
+      const notInDb = await getMe(app, { token: "sk_not-in-db", remoteAddress: "10.7.7.1" });
+      expect(notInDb.statusCode).toBe(401);
+      expect(notInDb.json().error.message).toBe("Invalid or revoked API key");
+      expect(notInDb.headers["www-authenticate"]).toBe("Bearer");
 
       const revoked = await issueKey(seeded.users.cs1.id, { status: "revoked" });
-      expect((await getMe(app, { token: revoked.token })).statusCode).toBe(401);
+      const revokedRes = await getMe(app, { token: revoked.token, remoteAddress: "10.7.7.2" });
+      expect(revokedRes.statusCode).toBe(401);
+      expect(revokedRes.json().error.message).toBe("Invalid or revoked API key");
 
       const expired = await issueKey(seeded.users.cs1.id, {
         expiresAt: new Date(Date.now() - 1000),
       });
-      expect((await getMe(app, { token: expired.token })).statusCode).toBe(401);
+      const expiredRes = await getMe(app, { token: expired.token, remoteAddress: "10.7.7.3" });
+      expect(expiredRes.statusCode).toBe(401);
+      expect(expiredRes.json().error.message).toBe("API key expired");
     });
 
     it("external_role key → 403 forbidden 信封", async () => {
@@ -283,6 +293,43 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
         expect(res.statusCode).toBe(200);
       }
     });
+
+    it("失败认证按 IP 限流：同 IP 20 次无效 bearer 后第 21 次 429（查库前拦截），429 期间该 IP 连有效 key 也挡，别的 IP 不受影响", async () => {
+      const hot = { remoteAddress: "10.8.8.8" };
+      for (let i = 0; i < 20; i += 1) {
+        const res = await getMe(app, { token: `sk_probe-${i}`, ...hot });
+        expect(res.statusCode).toBe(401);
+      }
+      const limited = await getMe(app, { token: "sk_probe-21", ...hot });
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json()).toMatchObject({ error: { code: "rate_limited" } });
+      expect(Number(limited.headers["retry-after"])).toBeGreaterThanOrEqual(1);
+
+      const { token } = await issueKey(seeded.users.cs1.id);
+      expect((await getMe(app, { token, ...hot })).statusCode).toBe(429);
+      expect((await getMe(app, { token })).statusCode).toBe(200);
+    });
+
+    it("并发穿透：30 个并发无效 bearer 只有 20 个过闸（401），其余 429", async () => {
+      const hot = { remoteAddress: "10.9.9.9" };
+      const results = await Promise.all(
+        Array.from({ length: 30 }, (_, i) => getMe(app, { token: `sk_burst-${i}`, ...hot })),
+      );
+      const codes = results.map((res) => res.statusCode);
+      expect(codes.filter((code) => code === 401)).toHaveLength(20);
+      expect(codes.filter((code) => code === 429)).toHaveLength(10);
+    });
+
+    it("缺失/畸形 Authorization 同样计入 IP 失败限流：20 次裸请求后第 21 次 429", async () => {
+      const hot = { remoteAddress: "10.10.10.10" };
+      for (let i = 0; i < 20; i += 1) {
+        const res = await app.inject({ method: "GET", url: "/api/v1/me", ...hot });
+        expect(res.statusCode).toBe(401);
+      }
+      const limited = await app.inject({ method: "GET", url: "/api/v1/me", ...hot });
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json()).toMatchObject({ error: { code: "rate_limited" } });
+    });
   });
 
   describe("apiDb 并发闸与慢查询闸", () => {
@@ -292,8 +339,8 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
       expect(rows[0]?.statement_timeout).toBe("15s");
     });
 
-    it("池占满取连接超时 → 503 concurrency_limit 信封并落审计", async () => {
-      const { token, keyId } = await issueKey(seeded.users.cs1.id);
+    it("池占满取连接超时 → 503 concurrency_limit 信封 + Retry-After", async () => {
+      const { token } = await issueKey(seeded.users.cs1.id);
       const sleepers = Array.from({ length: 4 }, () =>
         apiDb.$queryRawUnsafe("SELECT pg_sleep(3)").catch(() => {}),
       );
@@ -302,11 +349,7 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
         const res = await getMe(app, { token });
         expect(res.statusCode).toBe(503);
         expect(res.json()).toMatchObject({ error: { code: "concurrency_limit" } });
-
-        const audit = await prisma.apiAccessLog.findFirst({
-          where: { keyId, statusCode: 503 },
-        });
-        expect(audit).not.toBeNull();
+        expect(res.headers["retry-after"]).toBe("1");
       } finally {
         await Promise.all(sleepers);
       }
@@ -387,9 +430,38 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
 
     it("401 仅 pino：无效 key 不落审计", async () => {
       const before = await prisma.apiAccessLog.count();
-      const res = await getMe(app, { token: "sk_live_pino-only" });
+      const res = await getMe(app, { token: "sk_pino-only" });
       expect(res.statusCode).toBe(401);
       expect(await prisma.apiAccessLog.count()).toBe(before);
+    });
+
+    it("已认证请求的 400/404 落审计：400 invalid_params 与 404 not_found 信封都留痕", async () => {
+      const { token, keyId } = await issueKey(seeded.users.admin.id);
+
+      const badParams = await app.inject({
+        method: "GET",
+        url: "/api/v1/tickets?limit=0",
+        headers: { authorization: `Bearer ${token}`, "x-request-id": "open-api-400-audit" },
+      });
+      expect(badParams.statusCode).toBe(400);
+      const badAudit = await prisma.apiAccessLog.findFirstOrThrow({
+        where: { keyId, requestId: "open-api-400-audit" },
+      });
+      expect(badAudit).toMatchObject({ endpoint: "GET /api/v1/tickets", statusCode: 400 });
+
+      const unknown = await app.inject({
+        method: "GET",
+        url: "/api/v1/nope",
+        headers: { authorization: `Bearer ${token}`, "x-request-id": "open-api-404-audit" },
+      });
+      expect(unknown.statusCode).toBe(404);
+      expect(() => openApiErrorBodySchema.parse(unknown.json())).not.toThrow();
+      expect(unknown.json()).toMatchObject({ error: { code: "not_found" } });
+      expect(unknown.headers["cache-control"]).toBe("no-store");
+      const notFoundAudit = await prisma.apiAccessLog.findFirstOrThrow({
+        where: { keyId, requestId: "open-api-404-audit" },
+      });
+      expect(notFoundAudit.statusCode).toBe(404);
     });
 
     it("审计 IP 取 trustProxy:1 语义：伪造的左侧 XFF 段不入库，无 XFF 取对端地址", async () => {
@@ -454,8 +526,8 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
         },
       });
       const probeLogger = pino(buildLoggerOptions(env), probeStream);
-      probeLogger.info({ req: { headers: { authorization: "Bearer sk_live_probe-token" } } });
-      expect(redactProbe).not.toContain("sk_live_probe-token");
+      probeLogger.info({ req: { headers: { authorization: "Bearer sk_probe-token" } } });
+      expect(redactProbe).not.toContain("sk_probe-token");
       expect(redactProbe).toContain("[Redacted]");
     });
   });

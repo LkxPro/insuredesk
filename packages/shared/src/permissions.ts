@@ -31,7 +31,7 @@ export const USER_PERMISSIONS = [
 
 export const EXTERNAL_ACCOUNT_PERMISSIONS = ["external_account.manage"] as const;
 
-export const OPEN_API_PERMISSIONS = ["api_key.manage"] as const;
+export const OPEN_API_PERMISSIONS = ["api_key.manage", "api_key.revoke_all"] as const;
 
 /**
  * Points that mark a role as belonging to an 外部账号 rather than an
@@ -136,6 +136,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "dictionary.manage": "管理字典目录",
   "external_account.manage": "管理外部账号",
   "api_key.manage": "管理自己的 API key",
+  "api_key.revoke_all": "吊销用户的全部 API key",
   "user.forbid_change_own_password": "禁止修改自己的密码",
 };
 

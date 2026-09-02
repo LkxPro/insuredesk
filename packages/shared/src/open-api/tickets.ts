@@ -160,6 +160,7 @@ export const openApiTicketsInputSchema = z
     createdTo: datetimeParam.optional(),
     fields: multiValue(z.string().min(1)),
   })
+  .strict()
   .superRefine((value, ctx) => {
     if (!value.fields) {
       return;

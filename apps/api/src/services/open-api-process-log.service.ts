@@ -33,7 +33,7 @@ export interface OpenApiProcessLogListResult {
 function computeFiltersHash(query: OpenApiProcessLogsQuery): string {
   const canonical = {
     ticketId: query.ticketId ?? null,
-    since: query.since ?? null,
+    updatedSince: query.updatedSince ?? null,
   };
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
@@ -83,7 +83,8 @@ export async function listOpenApiProcessLogs(
   viewer: AuthenticatedUser,
   query: OpenApiProcessLogsQuery,
 ): Promise<OpenApiProcessLogListResult> {
-  const mode: OpenApiProcessLogCursorMode = query.since !== undefined ? "incremental" : "adhoc";
+  const mode: OpenApiProcessLogCursorMode =
+    query.updatedSince !== undefined ? "incremental" : "adhoc";
   const sort = SORT_BY_MODE[mode];
   const filtersHash = computeFiltersHash(query);
 
@@ -97,7 +98,7 @@ export async function listOpenApiProcessLogs(
 
   const and: Prisma.ProcessLogWhereInput[] = [];
   if (mode === "incremental") {
-    and.push({ at: { gte: new Date(query.since as string) } });
+    and.push({ at: { gte: new Date(query.updatedSince as string) } });
   }
   if (cursor) {
     and.push(cursorWhere(mode, cursor.last));

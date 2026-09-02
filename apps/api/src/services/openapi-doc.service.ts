@@ -70,7 +70,8 @@ const ENDPOINTS: OpenApiEndpointSpec[] = [
       search: "模糊匹配工单号/客户姓名/客户电话/联系电话/保单号；最长 100 字符",
       createdFrom: "创建时间下界（含等于，ISO 8601 带时区）",
       createdTo: "创建时间上界（含等于，ISO 8601 带时区）",
-      fields: "响应字段白名单投影（逗号分隔，取值为响应 data 属性名）；tombstone 行不受投影影响",
+      fields:
+        "响应字段白名单投影（逗号分隔，取值为响应 data 属性名）；投影后响应只含所选字段——增量同步场景必须保留 updatedAt（游标排序键），否则无法续翻与对账；tombstone 行不受投影影响",
     },
     response: openApiTicketListResponseSchema,
     responseDescriptions: {
@@ -153,16 +154,16 @@ const ENDPOINTS: OpenApiEndpointSpec[] = [
   },
   {
     path: "/api/v1/process-logs",
-    summary: "处理日志流（at 倒序翻页 / since 增量同步双模式）",
+    summary: "处理日志流（at 倒序翻页 / updatedSince 增量同步双模式）",
     description:
       "全量 action 的处理日志（含 internalOnly=true 内部跟进，对齐内部导出口径）；父单软删后日志照常流出。" +
       "门禁 ticket.export；数据范围经 join 工单套用（无 ticket.view_all 仅见本人负责/创建工单的日志）。" +
-      "缺省 ad-hoc 模式按 (at desc, id desc) 翻页；传 since 切增量模式，按 (at asc, id asc) 翻页。",
+      "缺省 ad-hoc 模式按 (at desc, id desc) 翻页；传 updatedSince 切增量模式，按 (at asc, id asc) 翻页。",
     query: openApiProcessLogsInputSchema,
     queryDescriptions: {
       ...PAGINATION_QUERY_DESCRIPTIONS,
       ticketId: "按所属工单 id 过滤（仍受 key 持有人的工单数据范围约束）",
-      since:
+      updatedSince:
         "传入即切增量同步模式：返回 at >= 该时刻的日志（含等于，ISO 8601 带时区），按 (at asc, id asc) 翻页",
     },
     response: openApiProcessLogListResponseSchema,
@@ -344,7 +345,7 @@ function buildOperation(spec: OpenApiEndpointSpec): Json {
 export function buildOpenApiDocument(env: Env): Json {
   const infoDescription = [
     "InsureDesk 开放数据 API（/api/v1）：面向内部数据消费方与分析代理的只读接口。",
-    "认证：Authorization: Bearer sk_live_…（持有人的机器化身，权限与数据范围同人）；外部角色 key 一律 403。限流 20 次/分钟/key（429 + Retry-After）。错误一律 { error: { code, message } } 信封。",
+    "认证：Authorization: Bearer sk_…（持有人的机器化身，权限与数据范围同人）；外部角色 key 一律 403。限流：每 key 令牌桶 burst 20 + 2 次/秒回填（稳态 ≈120 次/分钟）；无效 key 探测另按来源 IP 限流 20 次/分钟，锁定期间同 IP 的有效 key 一并 429（fail-closed）。超限 429 + Retry-After。错误一律 { error: { code, message } } 信封；带 query 的端点拒绝本文档未列出的参数（400 invalid_params，拼错的参数名不会静默生效）。",
     "分页：keyset 游标——响应带 nextCursor/nextUrl，原样回传 cursor 续翻到底；游标钉死签发时的模式与筛选集，混用报 invalid_cursor。",
     OPEN_API_CONTRACT_EVOLUTION,
     `增量同步契约注意事项：\n${OPEN_API_INCREMENTAL_CAVEATS.map((caveat, index) => `${index + 1}. ${caveat}`).join("\n")}`,

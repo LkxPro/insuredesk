@@ -65,7 +65,10 @@ export function registerTicketsRoute(app: FastifyInstance) {
   app.get("/tickets", async (req, reply) => {
     const user = req.apiKeyAuth?.user;
     if (!user) {
-      return reply.code(401).send(openApiErrorBody("unauthorized", "Invalid API key"));
+      return reply
+        .code(401)
+        .header("WWW-Authenticate", "Bearer")
+        .send(openApiErrorBody("unauthorized", "Invalid API key"));
     }
     if (!user.permissions.includes("ticket.export")) {
       return reply

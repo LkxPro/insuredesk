@@ -21,6 +21,7 @@ describe("openApiErrorBody", () => {
       "invalid_cursor",
       "unauthorized",
       "forbidden",
+      "not_found",
       "rate_limited",
       "concurrency_limit",
       "query_timeout",

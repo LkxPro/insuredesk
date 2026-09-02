@@ -8,7 +8,7 @@ export function registerDiscoveryRoute(app: FastifyInstance, env: Env) {
     auth: {
       scheme: "bearer",
       header: "Authorization",
-      format: "Bearer sk_live_…",
+      format: "Bearer sk_…",
     },
     openapi: "/api/v1/openapi.json",
     meta: "/api/v1/meta",

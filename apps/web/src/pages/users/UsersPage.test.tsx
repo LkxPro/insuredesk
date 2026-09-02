@@ -294,12 +294,13 @@ describe("operations", () => {
     );
   });
 
-  it("吊销 API key is gated by user.edit", async () => {
-    auth.user = userWith({ name: "仅看用户", permissions: ["user.view"] });
+  it("吊销 API key is gated by api_key.revoke_all, not user.edit", async () => {
+    auth.user = userWith({ name: "仅编辑用户", permissions: ["user.view", "user.edit"] });
     canned.users = [row()];
     renderUsersPage();
 
     await screen.findByText("张客服");
+    expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "吊销 API key" })).not.toBeInTheDocument();
   });
 });

@@ -16,7 +16,7 @@ export const OPEN_API_CONTRACT_EVOLUTION =
   "契约演化承诺：/api/v1 内只加字段、不改类型、不删字段；任何 breaking 变更走 /api/v2。";
 
 export const OPEN_API_INCREMENTAL_CAVEATS = [
-  "重叠窗口：增量拉取应把 since/updatedSince 回拨一个重叠窗口（分钟级）并按 id 幂等去重——并发事务的可见顺序可能与 at/updatedAt 值序错位，重叠重拉兜底。",
+  "重叠窗口：增量拉取应把 updatedSince 回拨一个重叠窗口（分钟级）并按 id 幂等去重——并发事务的可见顺序可能与 at/updatedAt 值序错位，重叠重拉兜底。",
   "tombstone：软删工单在 /api/v1/tickets 增量流中以 tombstone 最小形状（id/workOrderNumber/deletedAt/updatedAt/tombstone）流出，下游据 deletedAt 抹除本地副本；/api/v1/process-logs 不出 tombstone，父单软删后其日志照常流出。",
   "displayStatus 是读时计算态：计算态跃迁不产生增量事件，下游不得等待推送，须按同一规则自行重算——status 为 completed 或 dueAt 为空时 displayStatus 等于 status；当前时刻已过 dueAt 为 overdue；距 dueAt 不足 2 小时为 pending_timeout。",
   "字典 name 是读时 join 的当前值、非历史快照：目录改名不产生工单或日志的增量事件，下游须以 id 为键缓存，并经 /api/v1/meta 刷新 name 映射。",
@@ -97,7 +97,10 @@ export function registerMetaRoute(app: FastifyInstance, env: Env) {
   app.get("/meta", async (req, reply) => {
     const auth = req.apiKeyAuth;
     if (!auth?.user) {
-      return reply.code(401).send(openApiErrorBody("unauthorized", "Invalid API key"));
+      return reply
+        .code(401)
+        .header("WWW-Authenticate", "Bearer")
+        .send(openApiErrorBody("unauthorized", "Invalid API key"));
     }
 
     const [

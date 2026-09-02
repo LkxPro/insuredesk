@@ -76,6 +76,12 @@ describe("openapi-doc.service 生成物契约", () => {
     expect(info.version).toBe(env.APP_VERSION);
   });
 
+  it("info.description 声明横切契约：未知 query 参数 400 invalid_params；失败认证 IP 锁定期同 IP 有效 key 一并 429（fail-closed）", () => {
+    const info = doc.info as { description: string };
+    expect(info.description).toContain("invalid_params");
+    expect(info.description).toContain("fail-closed");
+  });
+
   it("响应 schema 剥掉 describe 后与 zod 源逐一深等（zod 是契约唯一来源）", () => {
     const paths = doc.paths as Record<string, { get: unknown }>;
     const cases: Array<[string, unknown]> = [

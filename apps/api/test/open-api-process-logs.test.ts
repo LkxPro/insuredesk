@@ -57,11 +57,12 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
 
   let seq = 0;
   async function issueKey(userId: string, overrides: Record<string, unknown> = {}) {
-    const token = `sk_live_logs-${randomUUID()}`;
+    const token = `sk_logs-${randomUUID()}`;
     await prisma.apiKey.create({
       data: {
         name: `open-api-logs-${++seq}`,
         keyHash: hashApiKey(token),
+        keyPreview: token.slice(-8),
         userId,
         expiresAt: new Date(Date.now() + 86_400_000),
         ...overrides,
@@ -227,6 +228,15 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       }
     });
 
+    it("strict：未知 query 参数（含旧名 since、小写 updatedsince）→ 400 invalid_params", async () => {
+      const token = await issueKey(seeded.users.admin.id);
+      for (const bad of ["?since=2026-08-01T00:00:00Z", "?updatedsince=2026-08-01T00:00:00Z"]) {
+        const res = await getLogs(token, bad);
+        expect(res.statusCode).toBe(400);
+        expect(res.json().error.code).toBe("invalid_params");
+      }
+    });
+
     it("行形状：id/ticketId/workOrderNumber/action/operator/from/to/remark/internalOnly/at", async () => {
       const ticket = await createComplaintTicket(prisma);
       await seedLog(ticket.id, {
@@ -278,7 +288,7 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
           .sort(),
       ).toEqual([internal, visible].sort());
 
-      const incremental = await getLogs(token, "?since=2026-07-01T00:00:00Z");
+      const incremental = await getLogs(token, "?updatedSince=2026-07-01T00:00:00Z");
       expect(
         incremental
           .json()
@@ -299,7 +309,7 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       const adhoc = await getLogs(token);
       expect(adhoc.json().data.map((row: { id: string }) => row.id)).toEqual([logId]);
 
-      const incremental = await getLogs(token, "?since=2026-07-01T00:00:00Z");
+      const incremental = await getLogs(token, "?updatedSince=2026-07-01T00:00:00Z");
       expect(incremental.json().data.map((row: { id: string }) => row.id)).toEqual([logId]);
     });
   });
@@ -319,7 +329,7 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       expect(wrongShape.json().error.code).toBe("invalid_cursor");
     });
 
-    it("模式混用：ad-hoc 游标带 since 再请求 → 400 invalid_cursor；反向同样 400", async () => {
+    it("模式混用：ad-hoc 游标带 updatedSince 再请求 → 400 invalid_cursor；反向同样 400", async () => {
       const ticket = await createComplaintTicket(prisma);
       for (let i = 1; i <= 2; i += 1) {
         await seedLog(ticket.id, { at: new Date(`2026-08-0${i}T00:00:00Z`) });
@@ -331,12 +341,12 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       expect(adhocCursor).not.toBeNull();
       const mixedAdhoc = await getLogs(
         token,
-        `?limit=1&since=2026-07-01T00:00:00Z&cursor=${encodeURIComponent(adhocCursor)}`,
+        `?limit=1&updatedSince=2026-07-01T00:00:00Z&cursor=${encodeURIComponent(adhocCursor)}`,
       );
       expect(mixedAdhoc.statusCode).toBe(400);
       expect(mixedAdhoc.json().error.code).toBe("invalid_cursor");
 
-      const incrPage = await getLogs(token, "?limit=1&since=2026-07-01T00:00:00Z");
+      const incrPage = await getLogs(token, "?limit=1&updatedSince=2026-07-01T00:00:00Z");
       const incrCursor = incrPage.json().nextCursor;
       expect(incrCursor).not.toBeNull();
       const mixedIncr = await getLogs(token, `?limit=1&cursor=${encodeURIComponent(incrCursor)}`);
@@ -370,7 +380,7 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
     });
   });
 
-  describe("增量模式 (since)", () => {
+  describe("增量模式 (updatedSince)", () => {
     it("(at asc, id asc) 翻页：沿 nextUrl 到底不重不漏", async () => {
       const ticket = await createComplaintTicket(prisma);
       const l1 = await seedLog(ticket.id, { at: new Date("2026-08-10T00:00:00Z") });
@@ -378,13 +388,13 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       const l3 = await seedLog(ticket.id, { at: new Date("2026-08-12T00:00:00Z") });
       const token = await issueKey(seeded.users.admin.id);
 
-      const page1 = await getLogs(token, "?since=2026-08-01T00:00:00Z&limit=2");
+      const page1 = await getLogs(token, "?updatedSince=2026-08-01T00:00:00Z&limit=2");
       expect(page1.statusCode).toBe(200);
       const body1 = page1.json();
       expect(() => openApiProcessLogListResponseSchema.parse(body1)).not.toThrow();
       expect(body1.data.map((row: { id: string }) => row.id)).toEqual([l1, l2]);
       expect(body1.hasMore).toBe(true);
-      expect(body1.nextUrl).toContain("since=2026-08-01T00%3A00%3A00Z");
+      expect(body1.nextUrl).toContain("updatedSince=2026-08-01T00%3A00%3A00Z");
 
       const page2 = await app.inject({
         method: "GET",
@@ -399,12 +409,12 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       expect(body2.nextUrl).toBeNull();
     });
 
-    it("首页边界 inclusive：since 恰等于某行 at 时该行在列", async () => {
+    it("首页边界 inclusive：updatedSince 恰等于某行 at 时该行在列", async () => {
       const ticket = await createComplaintTicket(prisma);
       await seedLog(ticket.id, { at: new Date("2026-08-10T00:00:00Z") });
       const l2 = await seedLog(ticket.id, { at: new Date("2026-08-11T00:00:00Z") });
       const token = await issueKey(seeded.users.admin.id);
-      const res = await getLogs(token, "?since=2026-08-11T00:00:00Z");
+      const res = await getLogs(token, "?updatedSince=2026-08-11T00:00:00Z");
       expect(res.statusCode).toBe(200);
       expect(res.json().data.map((row: { id: string }) => row.id)).toEqual([l2]);
     });
@@ -417,7 +427,7 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       const [first, second] = [a, b].sort();
       const token = await issueKey(seeded.users.admin.id);
 
-      const page1 = await getLogs(token, "?since=2026-08-01T00:00:00Z&limit=1");
+      const page1 = await getLogs(token, "?updatedSince=2026-08-01T00:00:00Z&limit=1");
       expect(page1.json().data.map((row: { id: string }) => row.id)).toEqual([first]);
       const page2 = await app.inject({
         method: "GET",
@@ -439,7 +449,10 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       const adhoc = await getLogs(token, `?ticketId=${t1.id}`);
       expect(adhoc.json().data.map((row: { id: string }) => row.id)).toEqual([keep]);
 
-      const incremental = await getLogs(token, `?ticketId=${t1.id}&since=2026-07-01T00:00:00Z`);
+      const incremental = await getLogs(
+        token,
+        `?ticketId=${t1.id}&updatedSince=2026-07-01T00:00:00Z`,
+      );
       expect(incremental.json().data.map((row: { id: string }) => row.id)).toEqual([keep]);
     });
   });
@@ -467,7 +480,7 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       const token = await issueKey(seeded.users.admin.id);
 
       const encounterOrder: string[] = [];
-      let url: string | null = "/api/v1/process-logs?since=2026-05-01T00:00:00Z&limit=200";
+      let url: string | null = "/api/v1/process-logs?updatedSince=2026-05-01T00:00:00Z&limit=200";
       let pages = 0;
       while (url !== null) {
         pages += 1;
@@ -519,7 +532,7 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
       try {
         const firstPage = await listOpenApiProcessLogs({ prisma: probe }, viewer, {
           limit: 200,
-          since: "2026-05-01T00:00:00Z",
+          updatedSince: "2026-05-01T00:00:00Z",
         });
         const firstPageQuery = captured.find(
           (entry) => entry.text.includes('."process_logs"') && entry.text.includes("ORDER BY"),
@@ -531,7 +544,7 @@ describe("GET /api/v1/process-logs (Testcontainers)", () => {
         captured.length = 0;
         await listOpenApiProcessLogs({ prisma: probe }, viewer, {
           limit: 200,
-          since: "2026-05-01T00:00:00Z",
+          updatedSince: "2026-05-01T00:00:00Z",
           cursor: firstPage.nextCursor ?? undefined,
         });
         const cursorPageQuery = captured.find(

@@ -16,8 +16,8 @@ function buildNextUrl(path: string, query: OpenApiProcessLogsQuery, nextCursor: 
   if (query.ticketId !== undefined) {
     params.set("ticketId", query.ticketId);
   }
-  if (query.since !== undefined) {
-    params.set("since", query.since);
+  if (query.updatedSince !== undefined) {
+    params.set("updatedSince", query.updatedSince);
   }
   params.set("cursor", nextCursor);
   return `${path}?${params.toString()}`;
@@ -27,7 +27,10 @@ export function registerProcessLogsRoute(app: FastifyInstance) {
   app.get("/process-logs", async (req, reply) => {
     const user = req.apiKeyAuth?.user;
     if (!user) {
-      return reply.code(401).send(openApiErrorBody("unauthorized", "Invalid API key"));
+      return reply
+        .code(401)
+        .header("WWW-Authenticate", "Bearer")
+        .send(openApiErrorBody("unauthorized", "Invalid API key"));
     }
     if (!user.permissions.includes("ticket.export")) {
       return reply

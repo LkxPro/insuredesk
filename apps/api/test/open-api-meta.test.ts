@@ -47,11 +47,12 @@ describe("GET /api/v1/meta (Testcontainers)", () => {
 
   let seq = 0;
   async function issueKey(userId: string, overrides: Record<string, unknown> = {}) {
-    const token = `sk_live_meta-${randomUUID()}`;
+    const token = `sk_meta-${randomUUID()}`;
     await prisma.apiKey.create({
       data: {
         name: `open-api-meta-${++seq}`,
         keyHash: hashApiKey(token),
+        keyPreview: token.slice(-8),
         userId,
         expiresAt: new Date(Date.now() + 86_400_000),
         ...overrides,
@@ -75,7 +76,7 @@ describe("GET /api/v1/meta (Testcontainers)", () => {
       expect(() => openApiErrorBodySchema.parse(missing.json())).not.toThrow();
       expect(missing.json().error.code).toBe("unauthorized");
 
-      expect((await getMeta("sk_live_not-in-db")).statusCode).toBe(401);
+      expect((await getMeta("sk_not-in-db")).statusCode).toBe(401);
 
       const externalRole = await seedExternalUserRole(prisma);
       const external = await prisma.user.create({

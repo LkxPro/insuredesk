@@ -565,13 +565,15 @@ model Session {
 }
 
 /// 开放数据 API 的凭证。库内只存 sha256(keyHash) —— 明文仅创建时响应一次；
+/// keyPreview 存明文后 8 位供列表辨认；expiresAt 可空：null = 永不过期。
 /// status 取值在 packages/shared/src/open-api/api-keys.ts。
 model ApiKey {
   id         String    @id @default(cuid())
   name       String
   keyHash    String    @unique
+  keyPreview String
   userId     String
-  expiresAt  DateTime  @db.Timestamptz
+  expiresAt  DateTime? @db.Timestamptz
   lastUsedAt DateTime? @db.Timestamptz
   status     String    @default("active")
   createdAt  DateTime  @default(now()) @db.Timestamptz
@@ -602,4 +604,23 @@ model ApiAccessLog {
 
   @@index([keyId, at])
   @@map("api_access_logs")
+}
+
+/// key 生命周期审计（create/revoke/revoke_all）。纯追加、不落任何 FK：吊销后
+/// key 行仍在但属主账号可能被禁用/清理，审计不随对象存续而抹除。actorId/
+/// targetUserId/keyName/keyPreview 均为动作时刻快照。
+model ApiKeyAuditLog {
+  id           String   @id @default(cuid())
+  actorId      String
+  action       String
+  targetKeyId  String
+  targetUserId String
+  keyName      String
+  keyPreview   String
+  requestId    String?
+  createdAt    DateTime @default(now()) @db.Timestamptz
+
+  @@index([targetKeyId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@map("api_key_audit_logs")
 }

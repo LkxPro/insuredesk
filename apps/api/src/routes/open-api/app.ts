@@ -1,10 +1,19 @@
 import { type OpenApiErrorCode, openApiErrorBody } from "@insuredesk/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { prisma } from "../../db.ts";
+import { apiDb } from "../../db.ts";
 import type { Env } from "../../env.ts";
 import { writeApiAccessLog } from "../../services/api-access-log.service.ts";
-import { hashApiKey, validateApiKey } from "../../services/api-key.service.ts";
-import { ApiRateLimiter, OPEN_API_RATE_LIMIT } from "../../services/api-rate-limit.service.ts";
+import {
+  hashApiKey,
+  type ValidateApiKeyResult,
+  validateApiKey,
+} from "../../services/api-key.service.ts";
+import {
+  ApiRateLimiter,
+  FailedAuthAttempts,
+  OPEN_API_FAILED_AUTH_RATE_LIMIT,
+  OPEN_API_RATE_LIMIT,
+} from "../../services/api-rate-limit.service.ts";
 import type { AuthenticatedUser } from "../../services/auth.service.ts";
 import { registerDiscoveryRoute } from "./discovery.route.ts";
 import { registerMeRoute } from "./me.route.ts";
@@ -104,19 +113,57 @@ function endpointOf(req: FastifyRequest): string {
   return `${req.method} ${req.routeOptions.url ?? requestPath(req)}`;
 }
 
-async function bearerAuth(req: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+async function bearerAuth(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  failedAuthLimiter: ApiRateLimiter,
+  failedAuthAttempts: FailedAuthAttempts,
+): Promise<unknown> {
   if (isPublicRequest(req)) {
     return undefined;
   }
+  // 失败认证按来源 IP 限流，gate 先于 token 解析：缺失/畸形 Authorization 的 401
+  // 同样耗桶。扣减在同步调用内完成（Node 单线程），check/consume 分离会在
+  // 查库的 await 间隙被并发无效请求整体穿透。桶空直接 429（fail-closed：锁定期
+  // 同 IP 的有效 key 一并 429），无限探测打不到 api_keys 表。日志永不带 token 本身。
+  const gate = failedAuthLimiter.consume(req.ip);
+  if (!gate.allowed) {
+    req.log.warn(
+      {
+        endpoint: endpointOf(req),
+        ip: req.ip,
+        failedAttempts: failedAuthAttempts.peek(req.ip),
+      },
+      "open api rejected: failed auth rate limited",
+    );
+    return reply
+      .code(429)
+      .header("Retry-After", String(gate.retryAfterSeconds))
+      .send(openApiErrorBody("rate_limited", "Too many failed authentication attempts"));
+  }
   const token = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? "")?.[1];
   if (!token) {
-    req.log.warn({ endpoint: endpointOf(req) }, "open api rejected: no bearer token");
+    const failedAttempts = failedAuthAttempts.bump(req.ip);
+    req.log.warn(
+      { endpoint: endpointOf(req), ip: req.ip, failedAttempts },
+      "open api rejected: no bearer token",
+    );
     return reply
       .code(401)
+      .header("WWW-Authenticate", "Bearer")
       .send(openApiErrorBody("unauthorized", "Missing or malformed Authorization header"));
   }
-  const result = await validateApiKey(prisma, token);
+  // 预扣的 token 在认证通过（含 external_role 的有效 key）或查库异常时回补：
+  // 净效果只有认证失败耗桶。
+  let result: ValidateApiKeyResult;
+  try {
+    result = await validateApiKey(apiDb, token);
+  } catch (error) {
+    failedAuthLimiter.refund(req.ip);
+    throw error;
+  }
   if (result.ok) {
+    failedAuthLimiter.refund(req.ip);
     req.apiKeyAuth = {
       keyId: result.keyId,
       userId: result.user.id,
@@ -126,7 +173,8 @@ async function bearerAuth(req: FastifyRequest, reply: FastifyReply): Promise<unk
     return undefined;
   }
   if (result.reason === "external_role") {
-    const key = await prisma.apiKey.findUnique({
+    failedAuthLimiter.refund(req.ip);
+    const key = await apiDb.apiKey.findUnique({
       where: { keyHash: hashApiKey(token) },
       select: { id: true, userId: true },
     });
@@ -138,11 +186,20 @@ async function bearerAuth(req: FastifyRequest, reply: FastifyReply): Promise<unk
       .code(403)
       .send(openApiErrorBody("forbidden", "API key is not permitted on the open API"));
   }
+  const failedAttempts = failedAuthAttempts.bump(req.ip);
   req.log.warn(
-    { endpoint: endpointOf(req), reason: result.reason },
+    { endpoint: endpointOf(req), reason: result.reason, ip: req.ip, failedAttempts },
     "open api rejected: invalid key",
   );
-  return reply.code(401).send(openApiErrorBody("unauthorized", "Invalid or expired API key"));
+  return reply
+    .code(401)
+    .header("WWW-Authenticate", "Bearer")
+    .send(
+      openApiErrorBody(
+        "unauthorized",
+        result.reason === "expired" ? "API key expired" : "Invalid or revoked API key",
+      ),
+    );
 }
 
 async function rateLimitByKey(
@@ -170,11 +227,12 @@ async function auditOnSend(req: FastifyRequest, reply: FastifyReply): Promise<vo
     return;
   }
   const statusCode = reply.statusCode;
-  if (!(statusCode < 300 || statusCode === 403 || statusCode === 429 || statusCode >= 500)) {
+  // 401 不落库（认证失败无 key 可归因）；已认证请求的 400/404 同样留痕。
+  if (statusCode === 401) {
     return;
   }
   await writeApiAccessLog(
-    { prisma },
+    { prisma: apiDb },
     {
       keyId: auth.keyId,
       userId: auth.userId,
@@ -197,6 +255,8 @@ export function registerOpenApi(app: FastifyInstance, env: Env): void {
   app.register(
     async (scope) => {
       const rateLimiter = new ApiRateLimiter(OPEN_API_RATE_LIMIT);
+      const failedAuthLimiter = new ApiRateLimiter(OPEN_API_FAILED_AUTH_RATE_LIMIT);
+      const failedAuthAttempts = new FailedAuthAttempts();
 
       scope.setErrorHandler((error, req, reply) => {
         const mapped = mapOpenApiError(error);
@@ -204,10 +264,15 @@ export function registerOpenApi(app: FastifyInstance, env: Env): void {
           { err: error, code: mapped.code },
           "open api request failed",
         );
+        if (mapped.statusCode === 503) {
+          reply.header("Retry-After", "1");
+        }
         return reply.code(mapped.statusCode).send(openApiErrorBody(mapped.code, mapped.message));
       });
 
-      scope.addHook("onRequest", bearerAuth);
+      scope.addHook("onRequest", (req, reply) =>
+        bearerAuth(req, reply, failedAuthLimiter, failedAuthAttempts),
+      );
       scope.addHook("onRequest", (req, reply) => rateLimitByKey(req, reply, rateLimiter));
       // 审计挂在 onSend（发送前被 await）：onResponse 时客户端已拿到响应，
       // 异步写库与请求生命周期脱钩，审计会丢。
@@ -218,11 +283,9 @@ export function registerOpenApi(app: FastifyInstance, env: Env): void {
       // scope 级 setNotFoundHandler 是 hook 进入未命中路径的唯一入口：缺了它，
       // /api/v1/* 的 404 走根默认 handler，认证/no-store 全部旁路。
       scope.setNotFoundHandler((req, reply) =>
-        reply.code(404).send({
-          message: `Route ${req.method}:${req.url} not found`,
-          error: "Not Found",
-          statusCode: 404,
-        }),
+        reply
+          .code(404)
+          .send(openApiErrorBody("not_found", `Route ${req.method}:${req.url} not found`)),
       );
 
       registerDiscoveryRoute(scope, env);

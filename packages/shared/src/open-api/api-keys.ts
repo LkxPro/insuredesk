@@ -7,7 +7,13 @@ export type ApiKeyStatus = z.infer<typeof apiKeyStatusSchema>;
 
 export const apiKeyCreateInputSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空").max(100, "名称最长 100 字符"),
-  expiresAt: z.string().datetime({ offset: true, message: "过期时间格式不正确" }),
+  expiresAt: z
+    .string()
+    .datetime({ offset: true, message: "过期时间格式不正确" })
+    .nullable()
+    .refine((value) => value === null || new Date(value) > new Date(), {
+      message: "过期时间必须晚于当前时间",
+    }),
 });
 export type ApiKeyCreateInput = z.input<typeof apiKeyCreateInputSchema>;
 export type ApiKeyCreateData = z.output<typeof apiKeyCreateInputSchema>;
@@ -22,12 +28,21 @@ export const apiKeyRevokeAllInputSchema = z.object({
 });
 export type ApiKeyRevokeAllInput = z.infer<typeof apiKeyRevokeAllInputSchema>;
 
-/** 管理面列表行：永不含 keyHash，更不含明文。 */
+export const apiKeyListInputSchema = z.object({
+  includeRevoked: z.boolean().default(false),
+});
+export type ApiKeyListInput = z.input<typeof apiKeyListInputSchema>;
+
+/** expired 不进库（库内只有 active/revoked）：读时由 expiresAt 已过派生。 */
+export const API_KEY_LIST_STATUSES = [...API_KEY_STATUSES, "expired"] as const;
+
+/** 管理面列表行：永不含 keyHash，更不含明文；keyPreview 为明文后 8 位。 */
 export const apiKeyListItemSchema = z.object({
   id: z.string(),
   name: z.string(),
-  status: apiKeyStatusSchema,
-  expiresAt: z.string(),
+  status: z.enum(API_KEY_LIST_STATUSES),
+  keyPreview: z.string(),
+  expiresAt: z.string().nullable(),
   lastUsedAt: z.string().nullable(),
   createdAt: z.string(),
 });

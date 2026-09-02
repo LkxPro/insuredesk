@@ -5,6 +5,7 @@ export const OPEN_API_ERROR_CODES = [
   "invalid_cursor",
   "unauthorized",
   "forbidden",
+  "not_found",
   "rate_limited",
   "concurrency_limit",
   "query_timeout",

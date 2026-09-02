@@ -41,7 +41,10 @@ export async function deleteTicket(
     // rows to claim — same not-found as if we'd never seen the ticket.
     const { count } = await tx.ticket.updateMany({
       where: { id: ticket.id, deletedAt: null },
-      data: { deletedAt: now },
+      // updateMany does not fire @updatedAt: incremental sync (updatedAt >=
+      // updatedSince) discovers tombstones via updatedAt — an unstamped
+      // delete would silently never reach consumers.
+      data: { deletedAt: now, updatedAt: now },
     });
     if (count === 0) {
       throw new TicketNotFoundError();

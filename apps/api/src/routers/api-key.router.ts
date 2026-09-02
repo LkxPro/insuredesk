@@ -1,6 +1,7 @@
 import {
   apiKeyCreatedSchema,
   apiKeyCreateInputSchema,
+  apiKeyListInputSchema,
   apiKeyListItemSchema,
   apiKeyRevokeAllInputSchema,
   apiKeyRevokeInputSchema,
@@ -33,19 +34,26 @@ function toTRPCError(error: unknown): never {
 /** 自助管理面：list/create/revoke 全部钉死在 ctx.user 本人名下。 */
 export const apiKeyRouter = router({
   list: requirePermission("api_key.manage")
+    .input(apiKeyListInputSchema.optional())
     .output(z.array(apiKeyListItemSchema))
-    .query(({ ctx }) => listApiKeys(deps, ctx.user)),
+    .query(({ ctx, input }) => listApiKeys(deps, ctx.user, input?.includeRevoked)),
 
   create: requirePermission("api_key.manage")
     .input(apiKeyCreateInputSchema)
     .output(apiKeyCreatedSchema)
-    .mutation(({ ctx, input }) => createApiKey(deps, ctx.user, input).catch(toTRPCError)),
+    .mutation(({ ctx, input }) =>
+      createApiKey(deps, ctx.user, input, ctx.traceId).catch(toTRPCError),
+    ),
 
   revoke: requirePermission("api_key.manage")
     .input(apiKeyRevokeInputSchema)
-    .mutation(({ ctx, input }) => revokeApiKey(deps, ctx.user, input).catch(toTRPCError)),
+    .mutation(({ ctx, input }) =>
+      revokeApiKey(deps, ctx.user, input, ctx.traceId).catch(toTRPCError),
+    ),
 
-  revokeAllForUser: requirePermission("user.edit")
+  revokeAllForUser: requirePermission("api_key.revoke_all")
     .input(apiKeyRevokeAllInputSchema)
-    .mutation(({ input }) => revokeAllApiKeysForUser(deps, input).catch(toTRPCError)),
+    .mutation(({ ctx, input }) =>
+      revokeAllApiKeysForUser(deps, ctx.user.id, input, ctx.traceId).catch(toTRPCError),
+    ),
 });

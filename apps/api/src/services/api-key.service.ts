@@ -10,7 +10,7 @@ import {
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import { type AuthenticatedUser, effectivePermissions } from "./auth.service.ts";
 
-export const API_KEY_TOKEN_PREFIX = "sk_live_";
+export const API_KEY_TOKEN_PREFIX = "sk_";
 export const API_KEY_LIMIT_PER_USER = 10;
 const LAST_USED_THROTTLE_MS = 60_000;
 
@@ -40,15 +40,20 @@ function toListItem(row: {
   id: string;
   name: string;
   status: string;
-  expiresAt: Date;
+  keyPreview: string;
+  expiresAt: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
 }): ApiKeyListItem {
+  const now = new Date();
+  const derivedStatus =
+    row.status === "active" && row.expiresAt && row.expiresAt < now ? "expired" : row.status;
   return {
     id: row.id,
     name: row.name,
-    status: row.status as ApiKeyListItem["status"],
-    expiresAt: row.expiresAt.toISOString(),
+    status: derivedStatus as ApiKeyListItem["status"],
+    keyPreview: row.keyPreview,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
   };
@@ -57,10 +62,14 @@ function toListItem(row: {
 export async function listApiKeys(
   { prisma }: Deps,
   user: AuthenticatedUser,
+  includeRevoked = false,
 ): Promise<ApiKeyListItem[]> {
   const rows = await prisma.apiKey.findMany({
-    where: { userId: user.id },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    where: {
+      userId: user.id,
+      ...(includeRevoked ? {} : { status: { not: "revoked" } }),
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
   });
   return rows.map(toListItem);
 }
@@ -74,9 +83,11 @@ export async function createApiKey(
   { prisma }: Deps,
   user: AuthenticatedUser,
   input: ApiKeyCreateData,
+  requestId?: string,
 ): Promise<ApiKeyCreated> {
   const token = `${API_KEY_TOKEN_PREFIX}${randomBytes(32).toString("hex")}`;
   const keyHash = hashApiKey(token);
+  const keyPreview = token.slice(-8);
 
   const created = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${user.id}))`;
@@ -84,14 +95,27 @@ export async function createApiKey(
     if (existing >= API_KEY_LIMIT_PER_USER) {
       throw new ApiKeyLimitError();
     }
-    return tx.apiKey.create({
+    const row = await tx.apiKey.create({
       data: {
         name: input.name,
         keyHash,
+        keyPreview,
         userId: user.id,
-        expiresAt: new Date(input.expiresAt),
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
       },
     });
+    await tx.apiKeyAuditLog.create({
+      data: {
+        actorId: user.id,
+        action: "create",
+        targetKeyId: row.id,
+        targetUserId: user.id,
+        keyName: row.name,
+        keyPreview: row.keyPreview,
+        requestId,
+      },
+    });
+    return row;
   });
   return { ...toListItem(created), key: token };
 }
@@ -101,29 +125,77 @@ export async function revokeApiKey(
   { prisma }: Deps,
   user: AuthenticatedUser,
   input: ApiKeyRevokeInput,
+  requestId?: string,
 ): Promise<{ id: string }> {
   const key = await prisma.apiKey.findFirst({
     where: { id: input.id, userId: user.id },
-    select: { id: true, status: true },
+    select: { id: true, status: true, name: true, keyPreview: true },
   });
   if (!key) {
     throw new ApiKeyNotFoundError();
   }
   if (key.status === "active") {
-    await prisma.apiKey.update({ where: { id: key.id }, data: { status: "revoked" } });
+    await prisma.$transaction(async (tx) => {
+      // 并发重复吊销由条件更新兜住：只有把 active 翻成 revoked 的那次记审计。
+      const { count } = await tx.apiKey.updateMany({
+        where: { id: key.id, status: "active" },
+        data: { status: "revoked" },
+      });
+      if (count === 1) {
+        await tx.apiKeyAuditLog.create({
+          data: {
+            actorId: user.id,
+            action: "revoke",
+            targetKeyId: key.id,
+            targetUserId: user.id,
+            keyName: key.name,
+            keyPreview: key.keyPreview,
+            requestId,
+          },
+        });
+      }
+    });
   }
   return { id: key.id };
 }
 
 export async function revokeAllApiKeysForUser(
   { prisma }: Deps,
+  actorId: string,
   input: ApiKeyRevokeAllInput,
+  requestId?: string,
 ): Promise<{ revoked: number }> {
-  const result = await prisma.apiKey.updateMany({
-    where: { userId: input.userId, status: "active" },
-    data: { status: "revoked" },
+  const revoked = await prisma.$transaction(async (tx) => {
+    const keys = await tx.apiKey.findMany({
+      where: { userId: input.userId, status: "active" },
+      select: { id: true, name: true, keyPreview: true },
+    });
+    // 逐行条件更新：与并发 revoke/revokeAll 撞车时只有翻转成功的那方记审计，
+    // 返回计数也是实际翻转数。行数受 API_KEY_LIMIT_PER_USER 上界，循环可控。
+    let count = 0;
+    for (const key of keys) {
+      const updated = await tx.apiKey.updateMany({
+        where: { id: key.id, status: "active" },
+        data: { status: "revoked" },
+      });
+      if (updated.count === 1) {
+        count += 1;
+        await tx.apiKeyAuditLog.create({
+          data: {
+            actorId,
+            action: "revoke_all",
+            targetKeyId: key.id,
+            targetUserId: input.userId,
+            keyName: key.name,
+            keyPreview: key.keyPreview,
+            requestId,
+          },
+        });
+      }
+    }
+    return count;
   });
-  return { revoked: result.count };
+  return { revoked };
 }
 
 /**
@@ -149,13 +221,12 @@ export async function validateApiKey(
   if (key.status !== "active") {
     return { ok: false, reason: "revoked" };
   }
-  if (key.expiresAt < new Date()) {
+  if (key.expiresAt && key.expiresAt < new Date()) {
     return { ok: false, reason: "expired" };
   }
   if (!key.user.active) {
     return { ok: false, reason: "user_disabled" };
   }
-  // 读角色库中存的权限数组：管理员展开后含外部权限点却是内部账号
   if (isExternalRole(key.user.role)) {
     return { ok: false, reason: "external_role" };
   }

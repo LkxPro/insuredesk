@@ -20,6 +20,7 @@ describe("open_api_keys migration (Testcontainers, real-migrations)", () => {
       `SELECT column_name FROM information_schema.columns
        WHERE table_name = 'api_keys' ORDER BY ordinal_position`,
     );
+    // keyPreview 由后续迁移 ALTER 追加，序位置在 createdAt 之后
     expect(apiKeyColumns.map((c) => c.column_name)).toEqual([
       "id",
       "name",
@@ -29,7 +30,14 @@ describe("open_api_keys migration (Testcontainers, real-migrations)", () => {
       "lastUsedAt",
       "status",
       "createdAt",
+      "keyPreview",
     ]);
+
+    const nullable = await prisma.$queryRawUnsafe<{ is_nullable: string }[]>(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'api_keys' AND column_name = 'expiresAt'`,
+    );
+    expect(nullable[0]?.is_nullable).toBe("YES");
 
     const logColumns = await prisma.$queryRawUnsafe<{ column_name: string }[]>(
       `SELECT column_name FROM information_schema.columns
@@ -59,6 +67,37 @@ describe("open_api_keys migration (Testcontainers, real-migrations)", () => {
     expect(names).toContain("process_logs_at_id_idx");
   });
 
+  it("api_key_audit_logs：列齐、双索引、无任何外键（纯追加日志，不随对象级联抹除）", async () => {
+    const columns = await prisma.$queryRawUnsafe<{ column_name: string }[]>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'api_key_audit_logs' ORDER BY ordinal_position`,
+    );
+    expect(columns.map((c) => c.column_name)).toEqual([
+      "id",
+      "actorId",
+      "action",
+      "targetKeyId",
+      "targetUserId",
+      "keyName",
+      "keyPreview",
+      "requestId",
+      "createdAt",
+    ]);
+
+    const fks = await prisma.$queryRawUnsafe<{ conname: string }[]>(
+      `SELECT conname FROM pg_constraint
+       WHERE conrelid = 'api_key_audit_logs'::regclass AND contype = 'f'`,
+    );
+    expect(fks).toEqual([]);
+
+    const indexes = await prisma.$queryRawUnsafe<{ indexname: string }[]>(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'api_key_audit_logs'`,
+    );
+    const names = indexes.map((row) => row.indexname);
+    expect(names).toContain("api_key_audit_logs_targetKeyId_createdAt_idx");
+    expect(names).toContain("api_key_audit_logs_targetUserId_createdAt_idx");
+  });
+
   it("keyHash 唯一索引执法：同哈希拒绝", async () => {
     const role = await prisma.role.create({
       data: { name: "r", permissions: [], system: false, requiredTicketFields: [] },
@@ -69,11 +108,36 @@ describe("open_api_keys migration (Testcontainers, real-migrations)", () => {
     const data = {
       name: "k",
       keyHash: "deadbeef",
+      keyPreview: "adbeef12",
       userId: user.id,
       expiresAt: new Date(Date.now() + 86_400_000),
     };
     await prisma.apiKey.create({ data });
     await expect(prisma.apiKey.create({ data: { ...data, name: "k2" } })).rejects.toThrow();
+  });
+
+  it("keyPreview 保留 DEFAULT ''：旧版代码不带 keyPreview 的裸 INSERT 仍落地（回滚兼容）", async () => {
+    const defaults = await prisma.$queryRawUnsafe<{ column_default: string | null }[]>(
+      `SELECT column_default FROM information_schema.columns
+       WHERE table_name = 'api_keys' AND column_name = 'keyPreview'`,
+    );
+    expect(defaults[0]?.column_default).toBe("''::text");
+
+    const role = await prisma.role.create({
+      data: { name: "r-legacy", permissions: [], system: false, requiredTicketFields: [] },
+    });
+    const user = await prisma.user.create({
+      data: { username: "u-legacy", name: "u-legacy", roleId: role.id, active: true },
+    });
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO api_keys (id, name, "keyHash", "userId") VALUES ($1, $2, $3, $4)`,
+      "rollback-compat-key",
+      "legacy",
+      "cafebabe",
+      user.id,
+    );
+    const row = await prisma.apiKey.findUniqueOrThrow({ where: { id: "rollback-compat-key" } });
+    expect(row.keyPreview).toBe("");
   });
 
   it("增量游标复合索引被规划器采用（SET LOCAL enable_seqscan=off 防小表偏 seq scan）", async () => {

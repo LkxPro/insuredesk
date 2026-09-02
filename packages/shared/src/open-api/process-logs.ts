@@ -51,17 +51,19 @@ export const openApiProcessLogCursorSchema = z.object({
 });
 export type OpenApiProcessLogCursor = z.infer<typeof openApiProcessLogCursorSchema>;
 
-export const openApiProcessLogsInputSchema = z.object({
-  limit: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(OPEN_API_PROCESS_LOGS_LIMIT_MAX)
-    .default(OPEN_API_PROCESS_LOGS_LIMIT_MAX),
-  cursor: z.string().min(1).optional(),
-  ticketId: z.string().min(1).optional(),
-  since: z.string().datetime({ offset: true }).optional(),
-});
+export const openApiProcessLogsInputSchema = z
+  .object({
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(OPEN_API_PROCESS_LOGS_LIMIT_MAX)
+      .default(OPEN_API_PROCESS_LOGS_LIMIT_MAX),
+    cursor: z.string().min(1).optional(),
+    ticketId: z.string().min(1).optional(),
+    updatedSince: z.string().datetime({ offset: true }).optional(),
+  })
+  .strict();
 
 export type OpenApiProcessLogsInput = z.input<typeof openApiProcessLogsInputSchema>;
 export type OpenApiProcessLogsQuery = z.output<typeof openApiProcessLogsInputSchema>;

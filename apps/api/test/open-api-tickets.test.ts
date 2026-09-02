@@ -22,6 +22,8 @@ import {
 import { buildServer } from "../src/server.ts";
 import { hashApiKey } from "../src/services/api-key.service.ts";
 import { listOpenApiTickets } from "../src/services/open-api-ticket.service.ts";
+import { deleteTicket } from "../src/services/ticket-delete.service.ts";
+import { revokeImportBatch } from "../src/services/ticket-import-batch.service.ts";
 import {
   createComplaintTicket,
   createComplaintTickets,
@@ -64,11 +66,12 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
 
   let seq = 0;
   async function issueKey(userId: string, overrides: Record<string, unknown> = {}) {
-    const token = `sk_live_tickets-${randomUUID()}`;
+    const token = `sk_tickets-${randomUUID()}`;
     await prisma.apiKey.create({
       data: {
         name: `open-api-tickets-${++seq}`,
         keyHash: hashApiKey(token),
+        keyPreview: token.slice(-8),
         userId,
         expiresAt: new Date(Date.now() + 86_400_000),
         ...overrides,
@@ -207,6 +210,15 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
     it("limit 边界：0/201/非数字 → 400 invalid_params", async () => {
       const token = await issueKey(seeded.users.admin.id);
       for (const bad of ["?limit=0", "?limit=201", "?limit=abc"]) {
+        const res = await getTickets(token, bad);
+        expect(res.statusCode).toBe(400);
+        expect(res.json().error.code).toBe("invalid_params");
+      }
+    });
+
+    it("strict：未知 query 参数 → 400 invalid_params（小写 updatedsince 不静默切全量）", async () => {
+      const token = await issueKey(seeded.users.admin.id);
+      for (const bad of ["?updatedsince=2026-08-01T00:00:00Z", "?nope=1"]) {
         const res = await getTickets(token, bad);
         expect(res.statusCode).toBe(400);
         expect(res.json().error.code).toBe("invalid_params");
@@ -434,6 +446,91 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
       expect(Object.keys(projectedRows[1]).sort()).toEqual(
         ["deletedAt", "id", "tombstone", "updatedAt", "workOrderNumber"].sort(),
       );
+    });
+
+    it("真实 deleteTicket 路径：删除把 updatedAt 盖到删除时刻，updatedSince 卡在原值之后的消费者照样收到 tombstone", async () => {
+      const ticket = await createComplaintTicket(prisma, {
+        createdAt: new Date("2026-08-01T00:00:00Z"),
+        updatedAt: new Date("2026-08-01T00:00:00Z"),
+      });
+      const deletedAt = new Date("2026-08-05T00:00:00Z");
+      await deleteTicket(
+        harness.depsAt(deletedAt),
+        harness.authUserFor(seeded.users.admin, seeded.roles.admin),
+        { ticketId: ticket.id },
+      );
+
+      const row = await prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id } });
+      expect(row.deletedAt?.toISOString()).toBe(deletedAt.toISOString());
+      expect(row.updatedAt.toISOString()).toBe(deletedAt.toISOString());
+
+      const token = await issueKey(seeded.users.admin.id);
+      const res = await getTickets(token, "?updatedSince=2026-08-02T00:00:00Z");
+      expect(res.statusCode).toBe(200);
+      const rows = res.json().data;
+      expect(rows).toHaveLength(1);
+      expect(() => openApiTicketTombstoneSchema.parse(rows[0])).not.toThrow();
+      expect(rows[0]).toMatchObject({
+        id: ticket.id,
+        tombstone: true,
+        deletedAt: deletedAt.toISOString(),
+        updatedAt: deletedAt.toISOString(),
+      });
+    });
+
+    it("真实 revokeImportBatch 路径：整批撤销把批内 updatedAt 盖到撤销时刻，updatedSince 卡在原值之后的消费者收到全部 tombstone", async () => {
+      const importedAt = new Date("2026-08-01T00:00:00Z");
+      const batch = await prisma.ticketImportBatch.create({
+        data: {
+          filename: `开放API撤销-${++seq}.xlsx`,
+          importerId: seeded.users.admin.id,
+          importedAt,
+          rowCount: 2,
+        },
+      });
+      const first = await createComplaintTicket(prisma, {
+        source: "file_import",
+        importBatchId: batch.id,
+        createdAt: importedAt,
+        updatedAt: importedAt,
+      });
+      const second = await createComplaintTicket(prisma, {
+        source: "file_import",
+        importBatchId: batch.id,
+        createdAt: importedAt,
+        updatedAt: importedAt,
+      });
+
+      const revokedAt = new Date("2026-08-05T00:00:00Z");
+      await revokeImportBatch(
+        harness.depsAt(revokedAt),
+        harness.authUserFor(seeded.users.admin, seeded.roles.admin),
+        { batchId: batch.id },
+      );
+
+      const rows = await prisma.ticket.findMany({ where: { importBatchId: batch.id } });
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row.deletedAt?.toISOString()).toBe(revokedAt.toISOString());
+        expect(row.updatedAt.toISOString()).toBe(revokedAt.toISOString());
+      }
+
+      const token = await issueKey(seeded.users.admin.id);
+      const res = await getTickets(token, "?updatedSince=2026-08-02T00:00:00Z");
+      expect(res.statusCode).toBe(200);
+      const data = res.json().data;
+      expect(data).toHaveLength(2);
+      expect(data.map((row: { id: string }) => row.id).sort()).toEqual(
+        [first.id, second.id].sort(),
+      );
+      for (const row of data) {
+        expect(() => openApiTicketTombstoneSchema.parse(row)).not.toThrow();
+        expect(row).toMatchObject({
+          tombstone: true,
+          deletedAt: revokedAt.toISOString(),
+          updatedAt: revokedAt.toISOString(),
+        });
+      }
     });
   });
 

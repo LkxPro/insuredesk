@@ -7,14 +7,20 @@ export function registerMeRoute(app: FastifyInstance) {
   app.get("/me", async (req, reply) => {
     const auth = req.apiKeyAuth;
     if (!auth?.user) {
-      return reply.code(401).send(openApiErrorBody("unauthorized", "Invalid API key"));
+      return reply
+        .code(401)
+        .header("WWW-Authenticate", "Bearer")
+        .send(openApiErrorBody("unauthorized", "Invalid API key"));
     }
     const row = await apiDb.user.findUnique({
       where: { id: auth.user.id },
       include: { role: true },
     });
     if (!row?.active) {
-      return reply.code(401).send(openApiErrorBody("unauthorized", "Invalid API key"));
+      return reply
+        .code(401)
+        .header("WWW-Authenticate", "Bearer")
+        .send(openApiErrorBody("unauthorized", "Invalid API key"));
     }
     const permissions = effectivePermissions(row.role);
     req.apiRowCount = 1;

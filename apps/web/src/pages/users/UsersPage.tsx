@@ -37,6 +37,7 @@ export function UsersPage() {
   const canEdit = hasPermission("user.edit");
   const canToggleActive = hasPermission("user.delete");
   const canAssignRole = hasPermission("user.assign_role");
+  const canRevokeApiKeys = hasPermission("api_key.revoke_all");
 
   const utils = trpc.useUtils();
   const listQuery = trpc.user.list.useQuery();
@@ -151,7 +152,7 @@ export function UsersPage() {
                           分配角色
                         </Button>
                       )}
-                      {canEdit && (
+                      {canRevokeApiKeys && (
                         <Button variant="ghost" size="sm" onClick={() => setRevokeKeysTarget(user)}>
                           吊销 API key
                         </Button>
@@ -212,7 +213,7 @@ export function UsersPage() {
           }}
         />
       )}
-      {canEdit && (
+      {canRevokeApiKeys && (
         <RevokeApiKeysDialog
           user={revokeKeysTarget}
           onOpenChange={(open) => {

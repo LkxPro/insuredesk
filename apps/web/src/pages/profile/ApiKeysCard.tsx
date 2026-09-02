@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogClose,
@@ -41,7 +42,11 @@ export function ApiKeysCard() {
   const canManage = hasPermission("api_key.manage");
 
   const utils = trpc.useUtils();
-  const listQuery = trpc.apiKey.list.useQuery(undefined, { enabled: canManage });
+  const [showRevoked, setShowRevoked] = useState(false);
+  const listQuery = trpc.apiKey.list.useQuery(
+    { includeRevoked: showRevoked },
+    { enabled: canManage },
+  );
 
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyListItem | null>(null);
@@ -67,11 +72,21 @@ export function ApiKeysCard() {
         <CardDescription>
           供脚本与外部系统以你的身份调用开放 API。明文仅创建成功时展示一次。
         </CardDescription>
-        <div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus data-icon="inline-start" />
             新建 API key
           </Button>
+          <div className="flex items-center gap-2 text-sm">
+            <Checkbox
+              id="api-keys-show-revoked"
+              checked={showRevoked}
+              onCheckedChange={(checked) => setShowRevoked(checked === true)}
+            />
+            <label htmlFor="api-keys-show-revoked" className="cursor-pointer">
+              显示已吊销
+            </label>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -112,38 +127,57 @@ export function ApiKeysCard() {
                     </TableCell>
                   </TableRow>
                 )}
-                {keys.map((key) => (
-                  <TableRow
-                    key={key.id}
-                    className={key.status === "revoked" ? "opacity-60" : undefined}
-                  >
-                    <TableCell className="font-medium">
-                      {key.name}
-                      {key.status === "revoked" && (
-                        <Badge variant="destructive" className="ml-2">
-                          已吊销
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-muted-foreground">sk_live_…</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDateTime(key.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDateTime(key.lastUsedAt)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDateTime(key.expiresAt)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {key.status === "active" && (
-                        <Button variant="ghost" size="sm" onClick={() => setRevokeTarget(key)}>
-                          吊销
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {keys.map((key) => {
+                  const expired = key.status === "expired";
+                  return (
+                    <TableRow
+                      key={key.id}
+                      className={key.status === "revoked" ? "opacity-60" : undefined}
+                    >
+                      <TableCell className="font-medium">
+                        {key.name}
+                        {key.status === "revoked" && (
+                          <Badge variant="destructive" className="ml-2">
+                            已吊销
+                          </Badge>
+                        )}
+                        {expired && (
+                          <Badge variant="secondary" className="ml-2">
+                            已过期
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-muted-foreground">
+                        {key.keyPreview === "" ? (
+                          <span title="存量旧 key 未记录明文预览">—</span>
+                        ) : (
+                          `sk_…${key.keyPreview}`
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDateTime(key.createdAt)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDateTime(key.lastUsedAt)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {key.expiresAt === null ? "永不过期" : formatDateTime(key.expiresAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {key.status !== "revoked" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={expired}
+                            onClick={() => setRevokeTarget(key)}
+                          >
+                            吊销
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
