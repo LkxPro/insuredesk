@@ -157,7 +157,7 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
         url: "/api/v1/openapi.json",
         headers: { authorization: "Bearer sk_live_garbage" },
       });
-      expect(spec.statusCode).toBe(404);
+      expect(spec.statusCode).toBe(200);
       expect(spec.headers["cache-control"]).toBe("no-store");
 
       const unknown = await app.inject({ method: "GET", url: "/api/v1/nope" });

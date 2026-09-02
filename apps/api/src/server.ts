@@ -190,6 +190,17 @@ export function buildServer(env: Env, options?: BuildServerOptions) {
     },
   });
 
+  if (env.OPEN_API_ENABLED) {
+    app.register(fastifyApiReference, {
+      routePrefix: "/docs/analytics",
+      configuration: {
+        url: "/api/v1/openapi.json",
+        hideTestRequestButton: true,
+        hideClientButton: true,
+      },
+    });
+  }
+
   if (env.NODE_ENV === "production") {
     registerStaticFrontend(app, env);
   }
