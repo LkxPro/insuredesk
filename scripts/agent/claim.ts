@@ -166,7 +166,13 @@ export async function releaseClaim(root: string, worktrees: string, issue: numbe
       return;
     }
     if (attempt >= 3) throw new Error(`release claim failed for #${issue}`);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const delaySeconds = Number(process.env.AGENT_CLAIM_RELEASE_RETRY_DELAY ?? "1.5");
+    await new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        (Number.isFinite(delaySeconds) && delaySeconds > 0 ? delaySeconds : 1.5) * 1000,
+      ),
+    );
   }
 }
 

@@ -1,6 +1,13 @@
 ## Communication Language
 When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 
+## Conventions
+
+- Import 扩展名按目录分裂：`apps/api`、`packages/shared` 的相对 import 必须带 `.ts` 后缀；`apps/web` 必须不带。`pnpm lint:fix` 可自动修。
+- 测试两分法：`apps/api/src/**` 内 colocate 的是 unit 项目（不碰 Docker）；`apps/api/test/**` 是 integration 项目（testcontainers 共享 Postgres，需要 Docker 可用）。聚焦跑法：`pnpm --filter @insuredesk/api exec vitest run <file>`；web：`pnpm --filter web exec vitest run <file>`。
+- 新 migration 的非交互路径：`cp apps/api/.env.example apps/api/.env` → `docker compose up -d --wait db` → `cd apps/api && pnpm db:migrate`（migrate dev 需要 .env 与 dev db）。
+- 新 router：仿 `apps/api/src/routers/channel.router.ts`（shared zod IO + service + 注册进 `routers/index.ts` + 两套测试位）。新权限点：`packages/shared/src/permissions.ts` 数组 + PERMISSION_LABELS（Record 类型强制全量），限制类权限走 `requireNotForbidden`。新导航页：`apps/web/src/navigation.ts` NAV_ITEMS + AppRoutes。
+
 ## Pull Request
 
 - 提交 PR 前必须清注释：仅保留「外部系统隐含契约/怪癖、业务 invariant/负空间约束、workaround 的直接原因」，禁止 JSDoc 复述代码、章节 banner、变更历史、未来计划、教程式/散文式论证，其余一律删除。库的显性类型签名或文档已表达的信息不算隐含契约；含举例的注释一律删除

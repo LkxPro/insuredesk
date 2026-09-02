@@ -16,8 +16,10 @@ concurrency:
 jobs:
   # 同步等检查再 merge：GITHUB_TOKEN 触发的 auto-merge 完成事件不再触发 workflow,
   # 依赖 closed 事件的关单兜底永远不会执行,关单必须与 merge 同 job 完成。
+  # 事件 payload 的 labels 是事件时刻快照:concurrency 取消链里最后落地的可能是
+  # 带陈旧 payload 的 run(opened 取消 labeled),按 payload 判 if 会把本该跑的 run
+  # 跳过、把该 merge 的 PR 永久挂起——label/draft 必须运行时按当前状态自查。
   merge-and-close:
-    if: contains(github.event.pull_request.labels.*.name, 'agent:automerge') && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -38,6 +40,12 @@ jobs:
               sleep $((n * 20))
             done
           }
+          pr_json=$(retry gh pr view "$PR" --repo "$REPO" --json labels,isDraft)
+          if ! printf '%s' "$pr_json" | jq -e '[.labels[].name] | index("agent:automerge")' >/dev/null \
+            || [ "$(printf '%s' "$pr_json" | jq -r .isDraft)" = "true" ]; then
+            echo "no agent:automerge label or draft; skipping"
+            exit 0
+          fi
           # 本 job 自身就是 PR 上的一个 check,等全部 checks 等于等自己,必须排除。
           # synchronize 瞬间 CI 的 check-run 可能还没注册:空列表不是"全过",必须继续等。
           # gh api 传输失败按"还没好"处理:30 分钟 job 预算是天然上限,挂了重等比重跑省 CI。

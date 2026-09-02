@@ -100,9 +100,14 @@ export AGENT_CLAUDE_PERMISSION_MODE=bypassPermissions
 export AGENT_EXECUTOR_ATTEMPTS=4             # executor transient（provider/流断）同 run 内重试上限
 export AGENT_EXECUTOR_RETRY_DELAY=30         # executor 重试退避基数（指数翻倍,对抗分钟级网络风暴）
 export AGENT_NUDGE_AFTER_SECONDS=600         # claude 相无事件多久后注入卡死软干预 nudge
+export AGENT_NUDGE_BASH_AFTER_SECONDS=1800   # 最后事件是 Bash 时的 nudge 起点(长跑命令与楔死无法靠静默区分)
 export AGENT_NUDGE_GRACE_SECONDS=600         # nudge 后恢复宽限;超时未恢复按 process 级失败杀掉
 export AGENT_NUDGE_MAX_PER_RUN=2             # 单 run 软干预次数上限(跨相累计)
 export AGENT_NUDGE_WATCHDOG_SECONDS=15       # worker 内 stall 巡检间隔
+export AGENT_STALL_CLAUDE_BASH_SECONDS=1800  # daemon 判死同样 Bash 感知(默认与 nudge 起点一致)
+export AGENT_STALL_CHECK_WAIT_SECONDS=6000   # check 等锁相判死窗口:须盖住全部并发槽各跑满一次 check
+export AGENT_STALL_PUBLISH_SECONDS=1800      # publish 相判死窗口:须盖住风暴期合法网络重试总预算
+export AGENT_MERGE_STUCK_MINUTES=35          # PR 全绿滞留超此阈值,daemon 对账补 merge(须 > merge workflow 30min 预算)
 export AGENT_REQUEUE_MAX=2                   # 进程级失败自动重排队上限
 export AGENT_NET_CALL_ATTEMPTS=4             # gh/git 网络调用传输层错误重试上限
 export AGENT_NET_CALL_BASE_DELAY=2           # 网络重试退避基数（指数翻倍）
@@ -312,20 +317,21 @@ Daemon 只取 dependency-free frontier。每个 worker 使用：
 
 调度器对字面路径 vs glob 用真实 glob 语义判定（`*.md` 不会误拦 `docs/readme.md`）；glob vs glob 仍保守比较字面前缀：`**` 会与任何路径冲突。相同 logical lock 不并行。重叠票必须在 plan 中有依赖路径，否则 publisher 拒绝整个 DAG。
 
-领取使用原子远端 refs、heartbeat、超时恢复和发布前 CAS fence。多个 clone 不会重复领取；失去 lease 的 worker不能发布。`serial-only` 独占全部并发容量。
+领取使用原子远端 refs、heartbeat、超时恢复和发布前 CAS fence。多个 clone 不会重复领取；失去 lease 的 worker不能发布。`serial-only` 独占全部并发容量。分支被其他 worktree 占用（旧 clone 死 worker 残留）时，dispatch 确认占用路径符合 agent 命名且其姊妹 pid 文件无活进程后清尸体重试，不会卡死在无限重试里。
 
 ## 10. PR、CI、修复与合并
 
 Worker 顺序：
 
-1. Claude 只留下未提交 diff。
+1. Claude 只留下未提交 diff。模型被禁止任何 git 状态变更（add/commit/reset/rebase 等）；每个 executor 相结束后 controller 仍做一次 mixed reset 归一——已暂存改动会让变更检测全部漏检（#357 实证：误判零产出并销毁实现）。
 2. 独立 review agent 检查并可修正 diff；注释规范（AGENTS.md）是必须项，diff 新增与触碰文件内的违规存量注释都删。
 3. controller 收集超出 touch-set 的文件清单，发布时列入 Issue 评论供审计（touch-set 只是并行调度的冲突参考，越界不判失败）。
-4. 强制运行 `make check`（多 worker 间本地互斥串行）；失败把日志喂回**同一 implementation 会话**修复（fix 轮复用会话上下文，只注入失败日志与约束提醒；会话死亡优先 `--resume` 续跑保留 transcript，未 init 即死才退化为完整 prompt 冷启动），同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
+4. 强制运行 `make check`（多 worker 间本地互斥串行；等锁与执行分 check-wait/check 两相，phaseSince 从拿到锁才进 check，排队等锁不会被 stall 误判）；失败把日志喂回**同一 implementation 会话**修复（fix 轮复用会话上下文，只注入失败日志与约束提醒；会话死亡优先 `--resume` 续跑保留 transcript，未 init 即死才退化为完整 prompt 冷启动），同一 claim 内最多 `AGENT_FIX_MAX_ROUNDS`（默认 3）轮。
 5. `make check` 通过后跑注释清扫（`comment-sweep.md`，只准删注释、存疑保留）；review 与 sweep 都用独立会话，保持新鲜眼睛；有删除就重跑 `make check`，挂则回 fix 轮，直到单次清扫零改动（最多 `AGENT_SWEEP_MAX_ROUNDS` 轮，到顶在 check 绿态收束）。`AGENT_COMMENT_SWEEP_ENABLED=0` 可关。
 6. check 全过后实现会话先跑收尾 message 轮：按 conventional 格式（`<type>: <摘要>`，type ∈ feat/fix/refactor/chore/docs/test/perf，无 scope；2–3 行 body；`Refs #<issue>`；跟随 issue 语言）把 commit message 写进 `.agent-commit-message`（经 git exclude 对所有 git 检测隐身）；格式说明只出现在这个一次性 warm prompt 里，不占实现阶段注意力。
 7. 先把工作 commit 落本地并写 `publish-pending` 标记，再验证 claim（只在证实丢租约时判死；传输故障退避到 `AGENT_CLAIM_VERIFY_STORM_CAP_SECONDS` 到顶放行）并 fence 发布——发布窗口任何失败都保留 commit，重跑断点续跑。
-claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`）时 worker 先经 stdin 注入 `stuck-nudge.md` 软干预；宽限 `AGENT_NUDGE_GRACE_SECONDS` 内未恢复才按 process 级失败杀掉重排队。单 run 最多 nudge `AGENT_NUDGE_MAX_PER_RUN` 次。daemon 硬杀阈值相应推后到两者之和，作为 worker watchdog 失效的兜底；check/publish 相不让窗、卡即杀。nudge 只在 CLI 下一 tool round 生效：救得了慢/绕圈型 stall，救不了进程楔死。
+实现完成（含每次 fix 轮后）会把全量 diff 快照到 `issue-<n>.checkpoint/`（intent-to-add 让未跟踪文件也进补丁）；此后任何相的进程级失败重领取时，若 checkpoint 与本次 startHead 一致则按补丁恢复、直接从 review 续跑，不再烧毁数小时实现。失败 reset 销毁工作树前也会先留 `issue-<n>.failed-diff.patch` 全量补丁做事后恢复点。
+claude 相 stall（无事件超 `AGENT_NUDGE_AFTER_SECONDS`；最后事件是 Bash 时放宽到 `AGENT_NUDGE_BASH_AFTER_SECONDS`，长跑命令与楔死无法靠静默区分）时 worker 先经 stdin 注入 `stuck-nudge.md` 软干预；宽限 `AGENT_NUDGE_GRACE_SECONDS` 内未恢复才按 process 级失败杀掉重排队。单 run 最多 nudge `AGENT_NUDGE_MAX_PER_RUN` 次。daemon 硬杀阈值相应推后到两者之和，作为 worker watchdog 失效的兜底；check/publish 相不让窗、卡即杀，publish 相窗口（默认 1800s）必须盖住风暴期合法网络重试总预算。nudge 只在 CLI 下一 tool round 生效：救得了慢/绕圈型 stall，救不了进程楔死。
 8. controller 用 message 文件 `-F` commit（缺失则兜底 `chore: <issue 标题>` + `Refs #<issue>` 并在 Issue 评论留痕；repair 复跑 `--amend` 改写已推送的 commit），`--force-with-lease` push、创建 PR，添加 `agent:automerge`，同时摘除 `agent:running`/`agent:repair`/`ready-for-agent`（否则 unlabeled 事件触发的 transition 会把 Issue 重新入队，与 CI/merge 关单窗口竞态出重复 worker）。squash merge 时单 commit PR 的标题直接取该 message，即 main 上的最终记录。
 
 `Agent merge` 等 required checks 通过后 squash merge；merge 事件再由 `close-linked-issues` 兜底关闭 PR body 里 `Closes #<issue>` 引用的 child（auto-merge 异步执行时 GitHub 原生关键字关单不可靠）。下游 native blocker 随即解除，daemon 自动领取下一层。
@@ -334,7 +340,9 @@ Spec 收尾（仅 spec 子票；parentless 票随自身 PR 合入 main 即结束
 
 CI 失败时，`Agent PR health` 添加 `agent:repair` + `agent:queued` + `ready-for-agent`（frontier 要求后两者），并在 Issue 评论计 `agent-attempts` marker；超过 `AGENT_REPAIR_MAX_ATTEMPTS`（默认 3）次转 `agent:blocked` 叫人。Repair worker尝试下载最近 failed Actions log，复用同一 worktree/branch/PR 修复；下载失败时用本地复现和现有 Issue 内容继续。
 
-Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队（评论 `agent-requeue` marker 计数，上限 `AGENT_REQUEUE_MAX`，默认 2），超上限或行为类失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。非 publish 相的失败把工作树 reset 回 startHead 并清残留；publish 相 commit 落地后的进程级失败（push/PR 创建故障）保留该 commit 与 `.agent-commit-message`，并落 `issue-<n>.publish-pending` 标记（内容为 commit sha）——重排队再领取时 worker 核对标记 sha 与 HEAD 一致、分支领先 base ref（spec 子票为 `origin/agent/spec-<parent>`，否则 `origin/main`）且无 open PR，即跳过 implementation/review/check/sweep 与 add/commit，直接从 fence→push→PR 续跑（不重复 commit，message 复用 `.agent-commit-message`，缺失仍用兜底）；标记缺失、不符或已有 open PR 则忽略标记全量重跑。daemon 的 running 恢复（stale/孤儿/过期 claim 回收重排队）共用同一 `agent-requeue` 预算，耗尽同样转 blocked，坏票不会无限复活。claim 心跳只在证实丢租约（远端 sha 失配）时计 miss，传输层故障不计——网络风暴不会杀掉健康 worker，发布窗口由 fence CAS 兜底防双重发布。
+回队/关单/合并不只依赖一次性 GitHub 事件（workflow_run 只认 failure、merge workflow 30min 超时、贴标签前秒级窗口的失败都会丢）：daemon 每 tick 对账全部在途 agent PR——checks 红或被取消且 Issue 无 `agent:repair`/`agent:blocked` 标的按同一预算回队；全绿但滞留超 `AGENT_MERGE_STUCK_MINUTES`（默认 35，须大于 merge workflow 的 30min 预算）的直接补 squash merge，失败先确认 PR 仍 OPEN 再在 PR 评论 `agent-merge-stuck` marker 叫人；PR 已合并但 Issue 未关的补关单（先关后评防刷屏，spec 子票与 parentless 全覆盖）。
+
+Worker 自身失败分级：executor 崩溃/claim 丢失等进程级失败自动重排队（评论 `agent-requeue` marker 计数，上限 `AGENT_REQUEUE_MAX`，默认 2），超上限或行为类失败转 blocked；改 git 历史、零产出、修复预算耗尽直接 `agent:blocked`（macOS 上弹系统通知；零产出时评论附上模型的 blocker 说明）。非 publish 相的失败把工作树 reset 回 startHead 并清残留（reset 前先留 `issue-<n>.failed-diff.patch` 全量补丁；实现已完成则重领取时按 `issue-<n>.checkpoint/` 补丁恢复，直接从 review 续跑）；publish 相 commit 落地后的进程级失败（push/PR 创建故障）保留该 commit 与 `.agent-commit-message`，并落 `issue-<n>.publish-pending` 标记（内容为 commit sha）——重排队再领取时 worker 核对标记 sha 与 HEAD 一致、分支领先 base ref（spec 子票为 `origin/agent/spec-<parent>`，否则 `origin/main`），即跳过 implementation/review/check/sweep 与 add/commit，直接从 fence→push→PR 续跑（不重复 commit，message 复用 `.agent-commit-message`，缺失仍用兜底）；push/PR 创建/贴标/评论全部幂等，已有 open PR（崩溃发生在 PR 创建后）同样续跑收尾，只有标记缺失或与 HEAD 不符才忽略标记全量重跑。daemon 的 running 恢复（stale/孤儿/过期 claim 回收重排队）共用同一 `agent-requeue` 预算，耗尽同样转 blocked，坏票不会无限复活。claim 心跳只在证实丢租约（远端 sha 失配）时计 miss，传输层故障不计——网络风暴不会杀掉健康 worker，发布窗口由 fence CAS 兜底防双重发布。
 
 进程级失败判定前有两层就地吸收：executor 的 `error_during_execution`/CLI 崩溃按 `AGENT_EXECUTOR_ATTEMPTS` 在同 run 内退避重试；所有 gh/git 网络调用经 `scripts/agent/net.ts` 统一入口，传输层错误（connection reset、TLS、5xx 等）按 `AGENT_NET_CALL_*` 超时重试，确定性错误（lease 拒绝、4xx）立即回吐。daemon 单个 dispatch tick 失败不退出，下个 interval 继续。
 
@@ -368,6 +376,8 @@ gh issue list --label agent:blocked
 操作者通常只需处理：provider/网络/权限故障，或真正缺少新设计决策的 `agent:blocked`。不要手工合并 agent PR、改 dependency edges、复制 worktree，除非按故障恢复步骤定位到 controller 无法恢复。
 
 ## 13. 排障与可观测性
+
+daemon 每 tick 写 `.worktrees/daemon.heartbeat`（JSON 单行：ts/tick/ok/error）——log 静默期间靠它区分「idle 健康」与「挂死」；`make agent-loop-status` 逐 worker 打印相/最后事件/stall 判定。网络重试不再逐 attempt 刷 log：中途静默退避，只在终态落一行摘要。
 
 ### Ticket 不运行
 

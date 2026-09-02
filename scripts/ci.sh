@@ -13,6 +13,13 @@ export CI=true CHECKPOINT_DISABLE=1
 
 subset="${1:-all}"
 
+# 子 shell 继承父 shell 变量:all 模式分叉前装一次,层内跳过;单跑某层时层内自装。
+install_deps() {
+  [ "${_deps_installed:-0}" = "1" ] && return 0
+  pnpm install --frozen-lockfile
+  _deps_installed=1
+}
+
 run_static() {
   # Shell scripts aren't part of the pnpm workspace, so run their POSIX tests
   # here or they never execute in CI.
@@ -23,7 +30,7 @@ run_static() {
   node --test scripts/agent/*.test.ts
   node --test scripts/agent/*.test.mjs
 
-  pnpm install --frozen-lockfile
+  install_deps
 
   node --test scripts/changelog/*.test.ts
   node scripts/changelog/validate.ts
@@ -31,23 +38,56 @@ run_static() {
 
   pnpm lint
   pnpm typecheck
-  pnpm build
+  # api build 与 typecheck 同为 tsc --noEmit,增量价值只剩 vite 打包。
+  pnpm --filter @insuredesk/web exec vite build
 }
 
 run_api() {
-  pnpm install --frozen-lockfile
+  install_deps
+  . scripts/ensure-docker.sh
   pnpm --filter @insuredesk/shared --filter @insuredesk/api run test
 }
 
 run_web() {
-  pnpm install --frozen-lockfile
+  install_deps
   pnpm --filter @insuredesk/web run test "$@"
+}
+
+# 本地 all 三层并行;失败层日志完整打出,check.log 尾部即有效报错。
+run_all() {
+  install_deps
+  logs_dir="$(mktemp -d)"
+  run_static >"$logs_dir/static.log" 2>&1 &
+  p_static=$!
+  run_api >"$logs_dir/api.log" 2>&1 &
+  p_api=$!
+  run_web >"$logs_dir/web.log" 2>&1 &
+  p_web=$!
+  fail_static=0; fail_api=0; fail_web=0
+  wait "$p_static" || fail_static=1
+  wait "$p_api" || fail_api=1
+  wait "$p_web" || fail_web=1
+  failed=""
+  for layer in static api web; do
+    eval "failed_flag=\$fail_$layer"
+    if [ "$failed_flag" = "0" ]; then
+      echo "✓ $layer"
+    else
+      failed="$failed $layer"
+    fi
+  done
+  for layer in $failed; do
+    echo "===== ci.sh $layer failed; full log: ====="
+    cat "$logs_dir/$layer.log"
+  done
+  rm -rf "$logs_dir"
+  [ -z "$failed" ]
 }
 
 case "$subset" in
   static) run_static ;;
   api) run_api ;;
   web) shift; run_web "$@" ;;
-  all) run_static; run_api; run_web ;;
+  all) run_all ;;
   *) echo "usage: ci.sh [static|api|web] [extra vitest args for web]" >&2; exit 2 ;;
 esac

@@ -13,21 +13,36 @@ const base = (over: Partial<WorkerStatus>): WorkerStatus => ({
   ...over,
 });
 
-// 默认窗口:stall 600s(=AGENT_NUDGE_AFTER),daemon 杀边界 = 600+600=1200s。
+// 默认窗口:非 Bash stall 600s(=AGENT_NUDGE_AFTER),daemon 杀边界 = 600+600=1200s;
+// Bash 最后事件放宽到 1800+600=2400s(长跑命令与楔死无法靠静默区分)。
 test("daemonShouldKill: claude 相在软干预窗口内不杀,窗口耗尽才杀", () => {
   const now = 100_000_000;
-  const inWindow = base({ lastEvent: { ts: now - 610_000, kind: "Bash", summary: "" } });
+  const inWindow = base({ lastEvent: { ts: now - 610_000, kind: "Read", summary: "" } });
   assert.equal(daemonShouldKill(inWindow, now), false);
-  const expired = base({ lastEvent: { ts: now - 1210_000, kind: "Bash", summary: "" } });
+  const expired = base({ lastEvent: { ts: now - 1210_000, kind: "Read", summary: "" } });
   assert.equal(daemonShouldKill(expired, now), true);
 });
 
-test("daemonShouldKill: check/publish 相不让窗,卡即杀", () => {
+test("daemonShouldKill: Bash 最后事件用放宽窗口", () => {
+  const now = 100_000_000;
+  const inWindow = base({ lastEvent: { ts: now - 1210_000, kind: "Bash", summary: "" } });
+  assert.equal(daemonShouldKill(inWindow, now), false);
+  const expired = base({ lastEvent: { ts: now - 2410_000, kind: "Bash", summary: "" } });
+  assert.equal(daemonShouldKill(expired, now), true);
+});
+
+test("daemonShouldKill: check/check-wait/publish 相不让窗,卡即杀", () => {
   const now = 100_000_000;
   const check = base({ phase: "check", phaseSince: now - 1900_000 });
   assert.equal(daemonShouldKill(check, now), true);
-  const publish = base({ phase: "publish", phaseSince: now - 700_000 });
+  const checkWait = base({ phase: "check-wait", phaseSince: now - 6100_000 });
+  assert.equal(daemonShouldKill(checkWait, now), true);
+  const checkWaitYoung = base({ phase: "check-wait", phaseSince: now - 1900_000 });
+  assert.equal(daemonShouldKill(checkWaitYoung, now), false);
+  const publish = base({ phase: "publish", phaseSince: now - 1900_000 });
   assert.equal(daemonShouldKill(publish, now), true);
+  const publishYoung = base({ phase: "publish", phaseSince: now - 700_000 });
+  assert.equal(daemonShouldKill(publishYoung, now), false);
 });
 
 test("daemonShouldKill: 无 stall 或已终态不杀", () => {

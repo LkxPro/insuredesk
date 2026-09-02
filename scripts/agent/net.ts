@@ -4,6 +4,8 @@ interface NetPolicy {
   attempts?: number;
   timeoutSeconds?: number;
   baseDelaySeconds?: number;
+  // 存在性探针(show-ref/rev-parse --verify)的非零退出是控制流,不是故障。
+  silent?: boolean;
 }
 
 export class NetCallError extends Error {
@@ -21,7 +23,7 @@ export class NetCallError extends Error {
 
 // 传输层特征：命中即退避重试；确定性错误（lease 拒绝、4xx 校验）首败即返回。
 const TRANSIENT =
-  /connection (reset|refused|closed|aborted)|operation timed out|i\/o timeout|timed out|could not resolve host|temporary failure in name resolution|no route to host|network (is )?unreachable|tls handshake timeout|context deadline exceeded|unexpected eof|eof$|gnutls recv error|http 5[0-9][0-9]|returned error: 5[0-9][0-9]|rate limit|ssl_error_syscall|ssl routines|sslv3 alert|tlsv1 alert|handshake failure|securetransport|unexpected end of json input/i;
+  /connection (reset|refused|closed|aborted)|operation timed out|i\/o timeout|timed out|could not resolve host|temporary failure in name resolution|no route to host|network (is )?unreachable|tls handshake timeout|context deadline exceeded|unexpected eof|eof$|gnutls recv error|http 5[0-9][0-9]|returned error: 5[0-9][0-9]|http (429|499)|rate limit|ssl_error_syscall|ssl routines|sslv3 alert|tlsv1 alert|handshake failure|securetransport|unexpected end of json input/i;
 
 function envInt(source: NodeJS.ProcessEnv, key: string, fallback: number): number {
   const raw = source[key];
@@ -103,14 +105,22 @@ function runOnce(command: string, args: string[], options: AttemptOptions): Prom
 async function call(command: string, args: string[], options: AttemptOptions): Promise<string> {
   const attempts = options.attempts ?? envInt(process.env, "AGENT_NET_CALL_ATTEMPTS", 4);
   const baseDelay = options.baseDelaySeconds ?? envInt(process.env, "AGENT_NET_CALL_BASE_DELAY", 2);
+  // 网络风暴期逐 attempt 写日志会把 daemon.log 刷成数百行重试行:
+  // 中途静默退避,只在终态落一行摘要(命令 + 次数 + stderr 尾行)。
+  const label = `${command} ${args.join(" ")}`.slice(0, 120);
   let delay = baseDelay;
   let attempt = 0;
   let last: AttemptResult | undefined;
   while (attempt < attempts) {
     attempt += 1;
     last = await runOnce(command, args, options);
-    if (last.status === 0) return last.stdout;
-    process.stderr.write(last.stderr);
+    if (last.status === 0) {
+      if (attempt > 1 && !options.silent)
+        process.stderr.write(
+          `${new Date().toISOString()} net-call: ${label} recovered on attempt ${attempt}\n`,
+        );
+      return last.stdout;
+    }
     if (attempt >= attempts) break;
     const retriable =
       last.timedOut ||
@@ -120,12 +130,17 @@ async function call(command: string, args: string[], options: AttemptOptions): P
       // 子进程 stderr 带尾部换行,eof$ 这类尾锚必须先 trim。
       TRANSIENT.test(last.stderr.trimEnd());
     if (!retriable) break;
-    process.stderr.write(
-      `net-call: attempt ${attempt} failed (transient); retrying in ${delay}s\n`,
-    );
     await sleep(delay);
     delay *= 2;
   }
+  // timedOut 时 stderr 常为空,不加标记会与确定性失败不可辨。
+  const tail =
+    (last?.timedOut ? "(timed out) " : "") +
+    (last?.stderr ?? "").trim().split("\n").slice(-2).join(" | ").slice(0, 300);
+  if (!options.silent)
+    process.stderr.write(
+      `${new Date().toISOString()} net-call: ${label} failed after ${attempt} attempt(s): ${tail}\n`,
+    );
   throw new NetCallError(
     `${command} failed after ${attempt} attempt(s)`,
     last?.status ?? 1,

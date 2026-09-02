@@ -56,10 +56,22 @@ export class DirLock {
     }
   }
 
-  async acquireBlocking(waitSeconds = 5): Promise<void> {
+  // 等锁不响应 abort 会把丢租约的 worker 挂在等锁循环里,直到 stall 硬杀。
+  async acquireBlocking(waitSeconds = 5, signal?: AbortSignal): Promise<void> {
     for (;;) {
+      if (signal?.aborted) throw new DOMException("aborted", "AbortError");
       if (await this.acquire()) return;
-      await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, waitSeconds * 1000);
+        signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            reject(new DOMException("aborted", "AbortError"));
+          },
+          { once: true },
+        );
+      });
     }
   }
 
