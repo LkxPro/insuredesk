@@ -8,6 +8,7 @@ import { ApiRateLimiter, OPEN_API_RATE_LIMIT } from "../../services/api-rate-lim
 import type { AuthenticatedUser } from "../../services/auth.service.ts";
 import { registerDiscoveryRoute } from "./discovery.route.ts";
 import { registerMeRoute } from "./me.route.ts";
+import { registerTicketsRoute } from "./tickets.route.ts";
 
 export const OPEN_API_PREFIX = "/api/v1";
 
@@ -223,6 +224,7 @@ export function registerOpenApi(app: FastifyInstance, env: Env): void {
 
       registerDiscoveryRoute(scope, env);
       registerMeRoute(scope);
+      registerTicketsRoute(scope);
     },
     { prefix: OPEN_API_PREFIX },
   );
