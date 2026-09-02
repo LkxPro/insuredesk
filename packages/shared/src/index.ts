@@ -10,6 +10,7 @@ export * from "./external-ticket.ts";
 export * from "./feedback-receive-channel.ts";
 export * from "./health.ts";
 export * from "./notification.ts";
+export * from "./open-api/index.ts";
 export * from "./permissions.ts";
 export * from "./phone-tokenize.ts";
 export * from "./refund-push.ts";

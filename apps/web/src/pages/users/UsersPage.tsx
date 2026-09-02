@@ -20,6 +20,7 @@ import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 import { AssignRoleDialog } from "./AssignRoleDialog";
 import { DisableUserDialog } from "./DisableUserDialog";
+import { RevokeApiKeysDialog } from "./RevokeApiKeysDialog";
 import { UserCreateDialog } from "./UserCreateDialog";
 import { UserEditDialog } from "./UserEditDialog";
 
@@ -36,6 +37,7 @@ export function UsersPage() {
   const canEdit = hasPermission("user.edit");
   const canToggleActive = hasPermission("user.delete");
   const canAssignRole = hasPermission("user.assign_role");
+  const canRevokeApiKeys = hasPermission("api_key.revoke_all");
 
   const utils = trpc.useUtils();
   const listQuery = trpc.user.list.useQuery();
@@ -44,6 +46,7 @@ export function UsersPage() {
   const [editTarget, setEditTarget] = useState<UserRow | null>(null);
   const [assignTarget, setAssignTarget] = useState<UserRow | null>(null);
   const [disableTarget, setDisableTarget] = useState<UserRow | null>(null);
+  const [revokeKeysTarget, setRevokeKeysTarget] = useState<UserRow | null>(null);
 
   const enable = trpc.user.setActive.useMutation({
     onSuccess: (result) => {
@@ -149,6 +152,11 @@ export function UsersPage() {
                           分配角色
                         </Button>
                       )}
+                      {canRevokeApiKeys && (
+                        <Button variant="ghost" size="sm" onClick={() => setRevokeKeysTarget(user)}>
+                          吊销 API key
+                        </Button>
+                      )}
                       {/* 自禁用会当场锁死操作者，服务端同样拒绝 */}
                       {canToggleActive &&
                         user.id !== me?.id &&
@@ -202,6 +210,14 @@ export function UsersPage() {
           user={disableTarget}
           onOpenChange={(open) => {
             if (!open) setDisableTarget(null);
+          }}
+        />
+      )}
+      {canRevokeApiKeys && (
+        <RevokeApiKeysDialog
+          user={revokeKeysTarget}
+          onOpenChange={(open) => {
+            if (!open) setRevokeKeysTarget(null);
           }}
         />
       )}

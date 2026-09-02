@@ -251,6 +251,54 @@ server {
 }
 ```
 
+## 开放 API(默认关闭)
+
+开放 API(`/api/v1/*`)由 `OPEN_API_ENABLED` 整面开关控制,默认关闭。key 的创建与
+吊销是应用内动作(「个人资料」页自助,`api_key.manage` 门控),与部署无关;本节只管
+开关面本身。
+
+### 开启
+
+`.env` 加一行后重建容器(env_file 整文件注入,必须 `up -d` recreate,`restart` 不生效):
+
+```bash
+echo 'OPEN_API_ENABLED="true"' >> .env
+docker compose -f docker-compose.prod.yml up -d
+```
+
+验证:无 key 请求 `curl -i https://<域名>/api/v1/meta` 应得 401;带有效 key
+(`-H "Authorization: Bearer sk_…"`)应得 200。
+
+### 关闭(回滚)
+
+`.env` 删掉该行(或改 `"false"`)再 `up -d`,`/api/v1/*` 整面下线(404),全部 key
+即刻不可用。`api_keys` 表数据保留,重新开启即恢复可用,无需重新发卡。
+
+### 升级注意(权限收紧)
+
+吊销他人全部 key 的门禁由 `user.edit` 收紧为独立权限点 `api_key.revoke_all`。
+升级后,此前靠 `user.edit` 执行该操作的角色一律 403,需在角色管理里人工补授
+`api_key.revoke_all`;管理员经系统角色展开自动持有,无需动作。
+
+### nginx checklist
+
+- `/api/v1` 必须置于反向代理之后:失败认证按来源 IP 限流,来源 IP 取自
+  `X-Forwarded-For`(trustProxy 信任一跳)。直连部署时该头可被客户端任意伪造,
+  轮换伪造 IP 即绕过失败限流、污染审计归因;经反代时伪造段被代理追加的真实对端
+  地址顶到链尾之外,不参与取信。
+- `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` 必须在(上文模板已含)
+  ——限流与 `api_access_logs` 的来源 IP 取自该头,缺失则全部记成回环地址。
+- access log 不得包含 Authorization 头:自定义 `log_format` 时排查 `$http_authorization`,
+  头是 bearer key 明文,落盘即泄露。默认 combined 格式不含请求头,无需动作。
+
+### 索引迁移的锁窗口
+
+`20260902000000_open_api_keys` 迁移在 tickets(updatedAt,id)、process_logs(at,id)
+上建普通 `CREATE INDEX`,建索引期间持表写锁。当前千级行量锁窗口为毫秒级,随升级
+自动执行即可;行量上到十万级以上时,升级前改为手工迁移——先在低峰用
+`CREATE INDEX CONCURRENTLY`(不能在事务内执行)建好索引,再让 prisma 把该段标记为
+已应用(`prisma migrate resolve --applied`)。
+
 ## Building behind a restricted network(受限网络下构建)
 
 正常升级只 pull 镜像、不在服务器上构建;本节仅适用于 GHCR 拉不动时的本地

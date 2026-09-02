@@ -36,3 +36,6 @@ changelog/fixtures/screenshot/**/*.png
 .worktrees/
 # Claude Code session worktrees (.claude itself is tracked)
 .claude/worktrees/
+
+# pnpm 本地存储（nodeLinker 配置产物）
+.pnpm-store/

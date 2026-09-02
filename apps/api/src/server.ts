@@ -13,13 +13,34 @@ import type { Env } from "./env.ts";
 import { type AppRouter, appRouter } from "./routers/index.ts";
 import { registerExternalTicketExportRoute } from "./routes/external-ticket-export.route.ts";
 import { registerJbInsurancePushRoute } from "./routes/jb-insurance-push.route.ts";
+import { registerOpenApi } from "./routes/open-api/app.ts";
 import { registerTicketExportRoute } from "./routes/ticket-export.route.ts";
 import { registerTicketImportRoute } from "./routes/ticket-import.route.ts";
 import { registerTicketImportTemplateRoute } from "./routes/ticket-import-template.route.ts";
 import { PasswordAuthProvider, SessionService, toSessionToken } from "./services/auth.service.ts";
 import { createContext } from "./trpc.ts";
 
-export function buildServer(env: Env) {
+export interface BuildServerOptions {
+  loggerStream?: import("pino").DestinationStream;
+}
+
+export function buildLoggerOptions(env: Env, options?: BuildServerOptions) {
+  return {
+    level: env.LOG_LEVEL,
+    redact: ["req.headers.authorization"],
+    ...(options?.loggerStream ? { stream: options.loggerStream } : {}),
+    ...(env.NODE_ENV === "development"
+      ? {
+          transport: {
+            target: "pino-pretty",
+            options: { colorize: true, translateTime: "SYS:standard", ignore: "pid,hostname" },
+          },
+        }
+      : {}),
+  };
+}
+
+export function buildServer(env: Env, options?: BuildServerOptions) {
   const app = Fastify({
     // httpBatchLink packs every procedure name of a batch into ONE path
     // segment; Fastify's 100-char default rejects those with a 414 whose body
@@ -27,18 +48,11 @@ export function buildServer(env: Env) {
     // response from server" instead of anything actionable. 工单管理 alone
     // batches 5 procedures / 111 chars.
     routerOptions: { maxParamLength: 5000 },
+    // 拓扑上 API 前只有一跳反代（prod 绑 127.0.0.1 仅 nginx 可达，dev 经 vite
+    // proxy）：只信任这一跳追加的 XFF 项，左侧更远的项一律视为客户端伪造。
+    trustProxy: 1,
     logController: new LogController({ disableRequestLogging: env.NODE_ENV === "development" }),
-    logger: {
-      level: env.LOG_LEVEL,
-      ...(env.NODE_ENV === "development"
-        ? {
-            transport: {
-              target: "pino-pretty",
-              options: { colorize: true, translateTime: "SYS:standard", ignore: "pid,hostname" },
-            },
-          }
-        : {}),
-    },
+    logger: buildLoggerOptions(env, options),
     genReqId: () => randomUUID(),
     requestIdHeader: "x-request-id",
   });
@@ -137,6 +151,7 @@ export function buildServer(env: Env) {
   registerTicketImportTemplateRoute(app);
   registerTicketImportRoute(app);
   registerJbInsurancePushRoute(app, env);
+  registerOpenApi(app, env);
 
   // No CORS plugin: the web app talks to the API same-origin — via the Vite
   // proxy in dev (see apps/web/vite.config.ts) and behind a shared reverse
@@ -174,6 +189,17 @@ export function buildServer(env: Env) {
       hideClientButton: true,
     },
   });
+
+  if (env.OPEN_API_ENABLED) {
+    app.register(fastifyApiReference, {
+      routePrefix: "/docs/analytics",
+      configuration: {
+        url: "/api/v1/openapi.json",
+        hideTestRequestButton: true,
+        hideClientButton: true,
+      },
+    });
+  }
 
   if (env.NODE_ENV === "production") {
     registerStaticFrontend(app, env);

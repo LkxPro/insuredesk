@@ -22,6 +22,10 @@ export const envSchema = z.object({
   JB_INSURANCE_PUSH_TOKEN: z.string().optional(),
   JB_INSURANCE_CALLBACK_URL: z.string().url().optional(),
   JB_INSURANCE_CALLBACK_SECRET: z.string().optional(),
+  OPEN_API_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;

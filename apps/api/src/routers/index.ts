@@ -1,5 +1,6 @@
 import { healthStatusSchema } from "@insuredesk/shared";
 import { publicProcedure, router } from "../trpc.ts";
+import { apiKeyRouter } from "./api-key.router.ts";
 import { authRouter } from "./auth.router.ts";
 import { channelRouter } from "./channel.router.ts";
 import { completionStatusRouter } from "./completion-status.router.ts";
@@ -33,6 +34,8 @@ export const appRouter = router({
   })),
 
   auth: authRouter,
+
+  apiKey: apiKeyRouter,
 
   demo: demoRouter,
 

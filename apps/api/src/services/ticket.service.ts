@@ -309,8 +309,6 @@ type TicketListFilters = Pick<
   | "search"
   | "createdFrom"
   | "createdTo"
-  | "sortBy"
-  | "sortOrder"
 >;
 
 /**
@@ -414,7 +412,7 @@ export async function buildTicketListWhere(
 }
 
 export function buildTicketListOrderBy(
-  query: TicketListFilters,
+  query: Pick<TicketListQuery, "sortBy" | "sortOrder">,
 ): Prisma.TicketOrderByWithRelationInput[] {
   // dueAt is nullable (特急 has none): those rows sort last either direction —
   // "no deadline" is never "most urgent"

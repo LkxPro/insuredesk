@@ -172,7 +172,9 @@ export async function revokeImportBatch(
 
       const revoked = await tx.ticket.updateMany({
         where: { importBatchId: batch.id, deletedAt: null },
-        data: { deletedAt: now },
+        // updateMany 不触发 @updatedAt：增量同步（updatedAt >= updatedSince）
+        // 靠 updatedAt 前移发现 tombstone，不显式盖章删除事件会静默丢失。
+        data: { deletedAt: now, updatedAt: now },
       });
 
       const processedCount = await tx.ticket.count({

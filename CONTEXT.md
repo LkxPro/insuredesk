@@ -142,6 +142,10 @@ _Avoid_: 按白名单过滤外部可见字段（已移除）；按账号配置�
 **外部数据范围**：
 外部账号只看/只留言**自己提交的**工单（`creatorId` 判别），无机构共享视图。外部提交仍打 `source=external_channel`，工单号与内部单同序列，"外部"标签由 source 推导。
 
+**ApiKey（开放 API key）**：
+开放 API（`/api/v1/*`，由 `OPEN_API_ENABLED` 整面开关控制）的调用凭证，是持有人的**机器化身**：数据面请求以持有人身份与其角色权限执行，权限不收窄也不另配。凭证格式 `sk_` + 64 hex，库内只存 sha256 与后 8 位 keyPreview，明文仅创建成功时返回一次，此后任何接口不再返回；expiresAt 可空（null = 永不过期）；上限 10 个/人（按未吊销计数），吊销幂等、即刻生效（每请求查库，无缓存窗口）。两个面**双向隔离**：API key 进不了 session 面（tRPC 与页面），session cookie 也进不了 `/api/v1`；外部角色持有的 key 直接被拒（403）。管理面自助（/profile 的 ApiKeysCard）由 `api_key.manage` 门控，数据面另加第二道闸门 `ticket.export`（双闸门：能管 key 不等于能拉数据）；吊销某用户全部 key 走 `api_key.revoke_all`。生命周期动作（create/revoke/revoke_all）写 `api_key_audit_logs` 纯追加审计（无 FK，不随对象级联抹除）。增量拉取以 (updatedAt,id)/(at,id) 复合游标翻页，契约的五条 caveat 见 spec #356。
+_Avoid_: 把 key 明文落库或在任何接口回显（库内只存 sha256，列表只见 keyPreview 后 8 位）；给 key 配独立权限集（权限即持有人的，不做第二套）
+
 **Assignee（责任人）**：
 工单当前的处理人，同一时间只有一个，可改派。分配是主管/管理员的职责——一线客服看不到未分配池，不能自行认领。责任人候选限定为「启用 + 非外部角色 + 角色权限同时含 ticket.view 与 ticket.process」的用户（管理员 system 角色恒满足）：下拉只列合规人选（不合规者静默消失，无灰显或标注），assign/batchAssign 对不合规目标兜底报「所选责任人无工单处理权限」；不合规者名下的存量工单不改派、不告警，只卡新增分配。
 

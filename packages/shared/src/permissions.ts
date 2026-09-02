@@ -31,6 +31,8 @@ export const USER_PERMISSIONS = [
 
 export const EXTERNAL_ACCOUNT_PERMISSIONS = ["external_account.manage"] as const;
 
+export const OPEN_API_PERMISSIONS = ["api_key.manage", "api_key.revoke_all"] as const;
+
 /**
  * Points that mark a role as belonging to an 外部账号 rather than an
  * internal one — holding either makes the role an 外部角色. 同时是外部口子的
@@ -86,6 +88,7 @@ export const POSITIVE_PERMISSIONS = [
   ...ROLE_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
   ...EXTERNAL_ACCOUNT_PERMISSIONS,
+  ...OPEN_API_PERMISSIONS,
 ] as const;
 
 export const ALL_PERMISSIONS = [...POSITIVE_PERMISSIONS, ...RESTRICTIVE_PERMISSIONS] as const;
@@ -132,6 +135,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "sla.edit": "编辑 SLA 策略",
   "dictionary.manage": "管理字典目录",
   "external_account.manage": "管理外部账号",
+  "api_key.manage": "管理自己的 API key",
+  "api_key.revoke_all": "吊销用户的全部 API key",
   "user.forbid_change_own_password": "禁止修改自己的密码",
 };
 
@@ -147,6 +152,7 @@ export const PERMISSION_GROUPS = [
   { label: "角色权限", permissions: ROLE_PERMISSIONS, restrictive: false },
   { label: "系统配置", permissions: SYSTEM_PERMISSIONS, restrictive: false },
   { label: "外部账号", permissions: EXTERNAL_ACCOUNT_PERMISSIONS, restrictive: false },
+  { label: "开放 API", permissions: OPEN_API_PERMISSIONS, restrictive: false },
   { label: "限制类权限", permissions: RESTRICTIVE_PERMISSIONS, restrictive: true },
 ] as const;
 
