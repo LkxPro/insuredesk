@@ -14,12 +14,12 @@
 _Avoid_: 拿 id 示人——id 是不透明主键，只作外键/URL 引用
 
 **DictionaryCatalog（字典目录）**：
-渠道/类别/完结状态/用户反馈渠道/反馈信息接收渠道五个目录共用的生命周期语义。持有 `dictionary.manage`（管理字典目录，系统配置组，出厂仅管理员）的用户在「字典管理」页维护：新增、改名、排序、停用/启用、删除。工单存目录**引用**：改名全局生效，存量工单的列表、详情、导出立即显示新名；处理记录 remark 保留操作当时的字面快照。被工单（含软删除）引用的行只能停用，零引用才可物理删除。停用项退出录入下拉，存量工单照常显示，列表筛选含停用项（标注"已停用"）；编辑可保持原停用值，但不能新选其他停用项。初始条目只进空目录，此后目录归持有者维护，不恢复删除项、不覆盖修改。五目录相互独立平铺，procedure 集对称。
+渠道/类别/完结状态/用户反馈渠道/反馈信息接收渠道五个目录共用的生命周期语义（工单种类目录复用同一目录工厂与 procedure 对称面；差异：行为绑定行（key 是代码契约）只启停不物理删除，管理员新增的是无行为绑定的同形状行）。持有 `dictionary.manage`（管理字典目录，系统配置组，出厂仅管理员）的用户在「字典管理」页维护：新增、改名、排序、停用/启用、删除。工单存目录**引用**：改名全局生效，存量工单的列表、详情、导出立即显示新名；处理记录 remark 保留操作当时的字面快照。被工单（含软删除）引用的行只能停用，零引用才可物理删除。停用项退出录入下拉，存量工单照常显示，列表筛选含停用项（标注"已停用"）；编辑可保持原停用值，但不能新选其他停用项。初始条目只进空目录，此后目录归持有者维护，不恢复删除项、不覆盖修改。五目录相互独立平铺，procedure 集对称。
 _Avoid_: 把目录名快照存回工单——改名即需回写存量数据，引用正是为免此
 
 **Channel（反馈渠道）**：
 字典目录之一。首次初始化播种保司/经纪/支付/监管四渠道。工单引用可空（= 未填写），不影响手动分配，也不参与按排班自动分配——渠道是工单分类维度，不是人员路由条件。
-_Avoid_: 与 source 混用——source 是录入方式（manual/feishu_form/community/external_channel/file_import），兼作"由谁创建"的判别器；`external_channel` 即外部账号提交
+_Avoid_: 与 source 混用——source 是录入方式（manual/feishu_form/community/external_channel/file_import/jb-insurance），兼作"由谁创建"的判别器；`external_channel` 即外部账号提交
 
 **Category（客诉类别）**：
 字典目录之一。首次初始化播种 17 个类别。工单引用可空（= 未填写），也是工单列表筛选维度（含停用项）。
@@ -28,7 +28,7 @@ _Avoid_: 与 source 混用——source 是录入方式（manual/feishu_form/comm
 客户电话（phone = 投保人电话）之外的备用联系号码，两个用途：客户换号后改走此号联系；投保人 ≠ 被保人时后补另一方的电话。投诉单与退费单共有的字段，故留在 tickets 核心列、不随投诉专有字段下沉 ticket_complaint_details 侧表。查重与 phone 2×2 交叉命中（任一号码撞上既有工单即判重）。
 
 **Status（工单状态）**：
-数据库只存 4 个基础状态（unassigned/assigned/processing/completed）；pending_timeout 与 overdue 是**计算状态**，查询时按 deadlineWarningAt / dueAt 实时算、仅覆盖显示。状态只能经生命周期动作流转，不可直接编辑；completed 是终态，不可重开。
+数据库只存 4 个基础状态（unassigned/assigned/processing/completed）；pending_timeout 与 overdue 是**计算状态**，查询时按固定 2 小时预警窗（PENDING_TIMEOUT_WINDOW_MS，策略级提前预警见 deadlineWarningAt 词条，未实现）与 dueAt 实时算、仅覆盖显示。状态只能经生命周期动作流转，不可直接编辑；completed 是终态，不可重开。
 
 **CompletionStatus（完结状态）**：
 字典目录之一，完结时必选的原因。与 Channel/Category 的差异：引用**非空**（完结动作必须给出）；没有"保持原停用值"的编辑路径——完结后状态不可改，停用引用只存在于停用前完结的工单上；目录行由迁移插入（历史 12 项为初始值），无应用层种子。
@@ -38,17 +38,14 @@ _Avoid_: 按完结状态做看板聚合——本期明确不做
 字典目录之二，目录行由迁移插入（文本→目录映射表目标全集），无应用层种子。工单引用可空（= 未填写）；外部账号可按账号预填，提交时盖章进单。2026-08-21 由「用户投诉渠道/投诉信息接收渠道」全栈改名（模型/FK 字段/tRPC 命名空间/UI 同步），Excel 批量导入老列头按别名兼容。
 
 **ProcessLog（处理记录）**：
-工单操作的审计日志，构成详情页时间线，记录"当时发生的事实"（7 种 action）。只服务追溯与展示，不承担考核统计——考核走 assigneeId。
+工单操作的审计日志，构成详情页时间线，记录"当时发生的事实"（8 种 action）。只服务追溯与展示，不承担考核统计——考核走 assigneeId。
 
 **跟进记录（Follow-up）**：
 一次实际客户联系 = 一条 action=comment 的 ProcessLog，全量跟进只存这一处：详情页右栏时间线是唯一展示面，内部导出的"跟进记录"列读时按 at 升序拼接全部 comment（含 internalOnly，不含 resolve 完结备注）。internalOnly=true 的跟进不进外部账号的任何响应。
 _Avoid_: 在 tickets 表冗余"最新跟进/处理结果"快照字段——快照只装得下最后一条，且绕过 internalOnly 过滤泄漏到外部
 
-**Attachment（附件）**：
-工单处理过程中上传的文件材料。
-
 **软删除**：
-删除工单 = 设 deletedAt，默认列表与一切统计排除，ProcessLog/附件保留；本期只删不恢复。
+删除工单 = 设 deletedAt，默认列表与一切统计排除，ProcessLog 保留；本期只删不恢复。
 
 **工单表面（Ticket Surface）**：
 内外两个工单列表页共用的深模块（`apps/web/src/pages/ticket-surface/`）：三态骨架（全宽表格 / 窄列+详情主从 / 处理态筛选折叠）、URL 筛选态（查询串是唯一事实源，筛选变更回第 1 页）、翻单契约（切片内方向键 + 越界翻页）、可选 selection 与 DetailPaneShell，只维护一份。两个页面各退为薄 adapter：basePath、查询 hook、列定义（含可选排序）、筛选维度、头部动作、对话框、详情 pane 全部经槽位注入；深模块不认识任何具体动作与权限点，接口上无 capability 布尔 flag——门控在 adapter 层展开为槽位的有无。
@@ -76,8 +73,8 @@ _Avoid_: 把投递做成完结的同步阻塞步骤（完结可用性被平台�
 时效策略目录实体，是**唯一驱动 SLA 的概念**：名称（全表唯一，含停用行）+ 描述 + sortOrder 目录序 + active 启停，内含一份 SLA 规则值——首响违约线 + 超时时长（可空 = 不设处理时限）+ 处理时限提前预警 + 类型化提醒规则列表（follow_up_checkpoint / rolling_follow_up，规则类型由系统提供，不接受自定义表达式或脚本）。持 `sla.edit` 的管理员维护：新增、改名（含停用行撞名报错）、整组排序、停用/复活；无物理删除。工单存策略**引用**（slaPolicyId）：改名全局生效，存量工单的列表、详情、导出立即显示新名；改引用的 ProcessLog from/to 保留操作当时的策略名字面快照。引用可空 = 未指定：无 dueAt、首响/跟进要求和 SLA 时间告警，后续补指定仍从 slaAnchorAt 起算。停用策略退出建单/编辑新选、sla.options 与导入按名匹配（撞停用名即报错行）；引用它的存量工单照常显示，待办 poll 走缺行降级路径（不抛错），dashboard 特急卡改绑次高 active 策略；编辑工单的无关字段可保持原停用引用，但新选停用策略被拒绝（与缺行同错）。系统初始播种一般/高级/加急/特急四条（sortOrder 1..4，含口径文案），bootstrap 幂等——此后目录归管理员维护，重跑种子不覆盖修改。策略按工单**种类**分组：/sla 管理页组间以 divider 分隔，各组独立排序/启停/编辑；建单与编辑的策略下拉按工单种类过滤（投诉单只见投诉组）。存量四条归「投诉」组；「退费异常」组播种一条默认策略（48h 超时 + 36h 首检查点），推送建单即盖该组默认策略。
 _Avoid_: priority（它不驱动任何 SLA）；把策略名快照存回工单——改名即需回写存量数据，引用正是为免此（ProcessLog 留痕快照除外）
 
-**投诉等级文本轨（complaintLevel，过渡兼容）**：
-旧投诉等级枚举文本（一般/高级/加急/特急投诉）在输入层与列表筛选中仍被接受，经策略行的旧锚列映射到策略引用，与 slaPolicyId 输入产出相同盖章（slaPolicyId 优先，文本仅作缺省回落）；工单的 complaintLevel 文本列随引用派生盖章，不随输入原文。整条旧轨（含 COMPLAINT_LEVELS、旧 sla.update）由 sla-legacy-cleanup 拆除。
+**投诉等级文本轨（complaintLevel，已下线）**：
+旧投诉等级枚举文本轨（含 COMPLAINT_LEVELS、旧 sla.update）已由 sla-legacy-cleanup 拆除：输入层携带 complaintLevel 即明确报错（墓碑 schema，防 zod strip 静默吞键），请改用 slaPolicyId；工单的 complaintLevel 文本列只作历史显示，不再派生盖章。
 
 **Priority（优先级）**：
 独立的自由标签（low/medium/high/urgent），默认空、手动赋值，仅供人工标注与排序参考，与 SLA 无关。
@@ -104,7 +101,7 @@ _Avoid_: priority（它不驱动任何 SLA）；把策略名快照存回工单�
 通知两轨制之轨 1：用户操作触发的真事件，同步落库，有已读/未读与 toast。双向流动：内部事件通知内部用户（assigned 分配/改派；external_submitted 外部提交、external_note 外部留言广播或直达责任人），内部动作回执通知外部提交者（仅 source=external_channel 的工单：非 internal 跟进 → external_reply，完结 → external_resolved，直达 creatorId）。铃铛点击按账号内外部侧分叉到各自的工单路由。
 
 **我的待办**：
-通知两轨制之轨 2：待首响/检查点未达/特急欠跟进/due_soon/overdue 等时间类告警，**不落库**——前端 30 秒轮询时按当前 assigneeId 名下工单读时计算；未分配工单不进任何人的待办。
+通知两轨制之轨 2：待首响/检查点未达/欠跟进（rolling_follow_up，按工单所引策略规则判定）/due_soon/overdue 等时间类告警，**不落库**——前端 30 秒轮询时按当前 assigneeId 名下工单读时计算；未分配工单不进任何人的待办。
 
 **超时口径**：
 两个视角**有意不同**：看板"已超时数"= 实时运营视角（在途且已过 dueAt，完结即移出）；考核"超时单数"= 历史追责视角（曾超时即计入，含超时完结）。

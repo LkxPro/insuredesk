@@ -4,6 +4,7 @@ import { join } from "node:path";
 export type Phase =
   | "implementation"
   | "review"
+  | "check-wait"
   | "check"
   | "fix"
   | "sweep"
@@ -32,10 +33,21 @@ export interface WorkerStatus {
 // claude 相内 10 分钟无事件 = 空转；check 相（确定性命令）给 30 分钟。
 const CLAUDE_STALL_SECONDS =
   Number.parseInt(process.env.AGENT_STALL_CLAUDE_SECONDS ?? "600", 10) || 600;
+// 单个 Bash tool call 可合法跑数十分钟,与楔死无法靠静默区分。
+const CLAUDE_BASH_STALL_SECONDS =
+  Number.parseInt(process.env.AGENT_STALL_CLAUDE_BASH_SECONDS ?? "1800", 10) || 1800;
 const CHECK_STALL_SECONDS =
   Number.parseInt(process.env.AGENT_STALL_CHECK_SECONDS ?? "1800", 10) || 1800;
+// 等锁判死窗口 = (并发槽-1) × check 超时 + 余量:合法等锁最坏是排在全部其他槽之后。
+const CHECK_WAIT_STALL_SECONDS =
+  Number.parseInt(process.env.AGENT_STALL_CHECK_WAIT_SECONDS ?? "", 10) ||
+  ((Number.parseInt(process.env.AGENT_LOOP_MAX_PARALLEL ?? "4", 10) || 4) - 1) *
+    (Number.parseInt(process.env.AGENT_CHECK_TIMEOUT_SECONDS ?? "1800", 10) || 1800) +
+    600;
+// publish 是一串带退避重试的网络调用(claim 校验风暴帽 600s + fence/push/PR),
+// 窗口必须盖住风暴期合法重试总预算,否则合法发布被杀成重排队循环。
 const PUBLISH_STALL_SECONDS =
-  Number.parseInt(process.env.AGENT_STALL_PUBLISH_SECONDS ?? "600", 10) || 600;
+  Number.parseInt(process.env.AGENT_STALL_PUBLISH_SECONDS ?? "1800", 10) || 1800;
 
 export function statusFileOf(worktrees: string, issue: number): string {
   return join(worktrees, `issue-${issue}.status.json`);
@@ -83,12 +95,25 @@ export async function patchStatus(
   await writeStatus(worktrees, next);
 }
 
+// 长票的原始流可达数十 MB(完整 assistant 文本):落盘字段截断,事后调试仍够用。
+const truncateDeep = (value: unknown, depth: number): unknown => {
+  if (typeof value === "string")
+    return value.length > 2000
+      ? `${value.slice(0, 2000)}…[truncated ${value.length - 2000} chars]`
+      : value;
+  if (depth <= 0 || value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((item) => truncateDeep(item, depth - 1));
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) out[key] = truncateDeep(item, depth - 1);
+  return out;
+};
+
 export async function appendEvent(
   worktrees: string,
   issue: number,
   event: Record<string, unknown>,
 ): Promise<void> {
-  await appendFile(eventsFileOf(worktrees, issue), `${JSON.stringify(event)}\n`);
+  await appendFile(eventsFileOf(worktrees, issue), `${JSON.stringify(truncateDeep(event, 8))}\n`);
 }
 
 export interface Health {
@@ -96,13 +121,17 @@ export interface Health {
   reason: string;
 }
 
-export function nudgeWindowSeconds(): { after: number; grace: number } {
+// 最后事件是 Bash 时放宽软干预起点:Bash 长跑期间没有中间事件,nudge 也只能等它结束。
+export function nudgeWindowSeconds(lastEventKind?: string): { after: number; grace: number } {
   const read = (key: string, fallback: number) => {
     const value = Number.parseInt(process.env[key] ?? "", 10);
     return Number.isInteger(value) && value > 0 ? value : fallback;
   };
+  const bash = (lastEventKind ?? "").split(",").includes("Bash");
   return {
-    after: read("AGENT_NUDGE_AFTER_SECONDS", 600),
+    after: bash
+      ? read("AGENT_NUDGE_BASH_AFTER_SECONDS", CLAUDE_BASH_STALL_SECONDS)
+      : read("AGENT_NUDGE_AFTER_SECONDS", CLAUDE_STALL_SECONDS),
     grace: read("AGENT_NUDGE_GRACE_SECONDS", 600),
   };
 }
@@ -118,6 +147,14 @@ export function evaluateHealth(status: WorkerStatus, now = Date.now()): Health {
       };
     return { stuck: false, reason: "" };
   }
+  if (status.phase === "check-wait") {
+    if (ageSeconds(status.phaseSince) > CHECK_WAIT_STALL_SECONDS)
+      return {
+        stuck: true,
+        reason: `waiting for check lock for ${Math.floor(ageSeconds(status.phaseSince) / 60)}min`,
+      };
+    return { stuck: false, reason: "" };
+  }
   if (status.phase === "publish") {
     if (ageSeconds(status.phaseSince) > PUBLISH_STALL_SECONDS)
       return {
@@ -127,7 +164,8 @@ export function evaluateHealth(status: WorkerStatus, now = Date.now()): Health {
     return { stuck: false, reason: "" };
   }
   const lastTs = status.lastEvent?.ts ?? status.phaseSince;
-  if (ageSeconds(lastTs) > CLAUDE_STALL_SECONDS)
+  const { after } = nudgeWindowSeconds(status.lastEvent?.kind);
+  if (ageSeconds(lastTs) > after)
     return {
       stuck: true,
       reason: `${status.phase}: no executor event for ${Math.floor(ageSeconds(lastTs) / 60)}min`,
@@ -139,8 +177,9 @@ export function evaluateHealth(status: WorkerStatus, now = Date.now()): Health {
 // 窗口耗尽仍 stuck 说明 worker watchdog 也死了,才归 daemon 收割。
 export function daemonShouldKill(status: WorkerStatus, now = Date.now()): boolean {
   if (!evaluateHealth(status, now).stuck) return false;
-  if (status.phase === "check" || status.phase === "publish") return true;
-  const { after, grace } = nudgeWindowSeconds();
+  if (status.phase === "check" || status.phase === "check-wait" || status.phase === "publish")
+    return true;
+  const { after, grace } = nudgeWindowSeconds(status.lastEvent?.kind);
   const lastTs = status.lastEvent?.ts ?? status.phaseSince;
   return Math.floor((now - lastTs) / 1000) > after + grace;
 }

@@ -25,6 +25,7 @@ let base: string;
 let origin: string;
 let root: string;
 let worktrees: string;
+let savedDelayEnv: Record<string, string | undefined> = {};
 
 async function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}) {
   const { stdout } = await run("git", ["-C", cwd, ...args], {
@@ -38,6 +39,13 @@ async function remoteSha(ref: string): Promise<string> {
 }
 
 before(async () => {
+  // 失配/释放重试的真实等待只验证"发生了重试",间隔时长对断言无意义,压到最小。
+  savedDelayEnv = {
+    AGENT_CLAIM_VERIFY_DELAY: process.env.AGENT_CLAIM_VERIFY_DELAY,
+    AGENT_CLAIM_RELEASE_RETRY_DELAY: process.env.AGENT_CLAIM_RELEASE_RETRY_DELAY,
+  };
+  process.env.AGENT_CLAIM_VERIFY_DELAY = "1";
+  process.env.AGENT_CLAIM_RELEASE_RETRY_DELAY = "0.1";
   base = await mkdtemp(join(tmpdir(), "claim-test-"));
   origin = join(base, "origin.git");
   root = join(base, "repo");
@@ -56,6 +64,10 @@ before(async () => {
 });
 
 after(async () => {
+  for (const [key, value] of Object.entries(savedDelayEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   await rm(base, { recursive: true, force: true });
 });
 

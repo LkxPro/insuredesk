@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   claimFileOf,
@@ -159,14 +159,19 @@ async function issueWorktrees(worktrees: string): Promise<WorktreeEntry[]> {
 export async function artifactCleanup(worktrees: string, issue: number): Promise<void> {
   const names = (await readdir(worktrees).catch(() => [] as string[])).filter((name) =>
     new RegExp(
-      `^issue-${issue}\\.(claim|pid|log|publishing|publish-pending|status\\.json|events\\.jsonl|implementation\\.json|review\\.json|commit-message\\.json|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
+      `^issue-${issue}\\.(claim|pid|log|publishing|publish-pending|failed-diff\\.patch|status\\.json|events\\.jsonl|implementation\\.json|review\\.json|commit-message\\.json|fix-[0-9]+\\.json|sweep-[0-9]+\\.json)$`,
     ).test(name),
   );
   for (const name of names) await rm(join(worktrees, name), { force: true });
+  await rm(join(worktrees, `issue-${issue}.checkpoint`), { recursive: true, force: true });
 }
 
-async function git(root: string, args: string[]): Promise<string> {
-  return callGit(root, args);
+async function git(
+  root: string,
+  args: string[],
+  policy: { silent?: boolean } = {},
+): Promise<string> {
+  return callGit(root, args, policy);
 }
 
 async function ghIssueClosed(issue: number): Promise<boolean> {
@@ -395,20 +400,49 @@ export async function dispatchTick(root: string): Promise<void> {
       const branch = `codex/issue-${issue}`;
       const exists = await readdir(worktrees).catch(() => [] as string[]);
       if (!exists.includes(`issue-${issue}`)) {
-        const branchExists = await git(root, [
-          "show-ref",
-          "--verify",
-          "--quiet",
-          `refs/heads/${branch}`,
-        ])
+        const branchExists = await git(
+          root,
+          ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+          { silent: true },
+        )
           .then(() => true)
           .catch(() => false);
         const args = branchExists
           ? ["worktree", "add", worktree, branch]
           : ["worktree", "add", "-b", branch, worktree, `origin/${base}`];
-        try {
-          await git(root, args);
-        } catch {
+        // 分支被其他 worktree 占用(旧 clone 死 worker 残留):占用路径符合 agent 命名
+        // 且其姊妹 pid 文件无活进程才清尸体重试。pid 文件缺失有「spawn 成功、pid 未落盘」
+        // 的竞态窗口,只给 birthtime 宽限期外的占用判死;有活 pid 是真另有主,放掉 claim。
+        const added = await git(root, args).then(
+          () => true,
+          async (error: unknown) => {
+            const text = `${(error as { stderr?: string })?.stderr ?? ""}\n${String(error)}`;
+            const occupied = text.match(/already used by worktree at '([^']+)'/)?.[1];
+            if (!occupied || basename(occupied) !== `issue-${issue}`) return false;
+            const pidFile = join(dirname(occupied), `issue-${issue}.pid`);
+            if (await pidFileAlive(pidFile)) return false;
+            const pidFileExists = await stat(pidFile).then(
+              () => true,
+              () => false,
+            );
+            if (!pidFileExists) {
+              // 无 btime 的文件系统 birthtimeMs 退化,用 mtime 兜底。
+              const born = await stat(occupied).then(
+                (s) => s.birthtimeMs || s.mtimeMs,
+                () => 0,
+              );
+              if (Date.now() - born < num("AGENT_WORKTREE_RECLAIM_GRACE_SECONDS", 120) * 1000)
+                return false;
+            }
+            log(`reclaiming stale worktree ${occupied} for #${issue}`);
+            await git(root, ["worktree", "remove", "--force", occupied]).catch(() => "");
+            return git(root, args).then(
+              () => true,
+              () => false,
+            );
+          },
+        );
+        if (!added) {
           await releaseClaim(root, worktrees, issue).catch(() => {});
           continue;
         }
@@ -430,6 +464,7 @@ export async function dispatchTick(root: string): Promise<void> {
       await writeFile(join(worktrees, `issue-${issue}.pid`), `${pid}\n`);
       out(`started #${issue} in ${worktree}`);
     }
+    await reconcileOpenPrs();
     await finalizeSpecs(root);
   } finally {
     await lock.release();
@@ -459,6 +494,150 @@ export async function startDaemon(root: string): Promise<number | null> {
   return child.pid;
 }
 
+// 一次性 GitHub 事件(workflow_run/labeled)会丢:CI cancelled 不触发回队、merge workflow
+// 超时后无事件再驱动、贴标签前秒级窗口的失败静默丢失。daemon 每 tick 对账在途 agent PR,
+// 把 red(含 cancelled) 无 repair 标的回队、绿而滞留的补 merge、merged-but-open 的补关单。
+export async function reconcileOpenPrs(): Promise<void> {
+  const prs = await ghJson<
+    Array<{
+      number: number;
+      headRefName: string;
+      updatedAt: string;
+      labels: Array<{ name: string }>;
+      statusCheckRollup: Array<{
+        name?: string;
+        context?: string;
+        status?: string;
+        conclusion?: string | null;
+        state?: string;
+      }>;
+    }>
+  >([
+    "pr",
+    "list",
+    "--state",
+    "open",
+    "--limit",
+    "100",
+    "--json",
+    "number,headRefName,labels,updatedAt,statusCheckRollup",
+  ]);
+  const stuckMinutes = num("AGENT_MERGE_STUCK_MINUTES", 35);
+  for (const pr of prs) {
+    const match = pr.headRefName.match(/^codex\/issue-([0-9]+)$/);
+    if (!match) continue;
+    const issue = Number.parseInt(match[1] ?? "", 10);
+    if (!Number.isInteger(issue)) continue;
+    // merge-and-close 自身是 PR 上的 check:计入检查等于等自己。
+    const checks = pr.statusCheckRollup.filter((c) => (c.name ?? c.context) !== "merge-and-close");
+    const stateOf = (c: (typeof checks)[number]): "green" | "red" | "pending" => {
+      if (c.status && c.status.toUpperCase() !== "COMPLETED") return "pending";
+      const conclusion = c.conclusion?.toUpperCase();
+      if (conclusion)
+        return ["SUCCESS", "SKIPPED", "NEUTRAL"].includes(conclusion) ? "green" : "red";
+      const state = c.state?.toUpperCase();
+      if (state === "SUCCESS") return "green";
+      if (state === "PENDING") return "pending";
+      return "red";
+    };
+    const states = checks.map(stateOf);
+    const issueJson = await issueView(issue).catch(() => null);
+    if (issueJson?.state !== "OPEN") continue;
+    // blocked 归人:预算耗尽分支每次评论会变每 tick 刷屏;sweep 一律不动它。
+    if (hasLabel(issueJson, "agent:running") || hasLabel(issueJson, "agent:blocked")) continue;
+    // 贴标签前的 CI 失败已由 agent:running 跳过与断点续跑覆盖;此后仍无
+    // agent:automerge 的 PR 不归本 loop 管,红色也不动它(防误回队人工/异常 PR)。
+    const automerge = pr.labels.some((l) => l.name === "agent:automerge");
+    if (states.includes("red")) {
+      if (!automerge || hasLabel(issueJson, "agent:repair")) continue;
+      log(
+        `reconcile: PR #${pr.number} checks red/cancelled without repair label; requeue #${issue}`,
+      );
+      await requeueForRepair(issue, pr.number);
+      continue;
+    }
+    if (states.includes("pending") || checks.length === 0) continue;
+    if (!automerge) continue;
+    const ageMs = Date.now() - Date.parse(pr.updatedAt);
+    if (ageMs < stuckMinutes * 60_000) continue;
+    // 全绿但滞留超过 merge workflow 的 30min 预算:workflow 已死,daemon 补 merge。
+    // 不带 --delete-branch:本地分支被 worker worktree 占用时 gh 会因删本地分支
+    // 失败而整体报错(服务端 merge 其实已成);远端分支由仓库 auto-delete 收拾,
+    // 本地分支与 worktree 归 dispatch 的关闭回收管。
+    try {
+      await ghCall(["pr", "merge", String(pr.number), "--squash"]);
+      log(`reconcile: merged stuck green PR #${pr.number} for #${issue}`);
+    } catch (error) {
+      // 与 merge workflow 竞合:败者报错时 PR 可能已被对方合并,先确认仍 OPEN 再叫人。
+      const stillOpen = await ghJson<{ state: string }>([
+        "pr",
+        "view",
+        String(pr.number),
+        "--json",
+        "state",
+      ])
+        .then((view) => view.state === "OPEN")
+        .catch(() => true);
+      if (!stillOpen) continue;
+      const comments = await ghJson<Array<{ body: string }>>([
+        "pr",
+        "view",
+        String(pr.number),
+        "--json",
+        "comments",
+        "--jq",
+        ".comments",
+      ]).catch(() => []);
+      if (!comments.some((c) => c.body.includes("<!-- agent-merge-stuck -->"))) {
+        await ghCall([
+          "pr",
+          "comment",
+          String(pr.number),
+          "--body",
+          `<!-- agent-merge-stuck --> Checks are green but both the merge workflow and the daemon sweep failed to merge: ${String(error).slice(0, 300)}. Needs human attention.`,
+        ]).catch(() => "");
+      }
+      log(`reconcile: merge attempt failed for PR #${pr.number}: ${String(error)}`);
+    }
+  }
+  // merged-but-open(agent-merge 的 gh issue close 静默失败、非默认 base 时 Closes
+  // 关键字不生效、merge workflow 整体未跑)由这里兜底关单。
+  const openTasks = await ghJson<Array<{ number: number; labels: Array<{ name: string }> }>>([
+    "issue",
+    "list",
+    "--label",
+    "agent:task",
+    "--state",
+    "open",
+    "--limit",
+    "100",
+    "--json",
+    "number,labels",
+  ]);
+  for (const task of openTasks) {
+    const names = task.labels.map((l) => l.name);
+    if (names.some((n) => ["agent:running", "agent:queued", "agent:repair"].includes(n))) continue;
+    const merged = await ghJson<Array<{ number: number }>>([
+      "pr",
+      "list",
+      "--head",
+      `codex/issue-${task.number}`,
+      "--state",
+      "merged",
+      "--json",
+      "number",
+    ]).catch(() => []);
+    const pr = merged[0]?.number;
+    if (!pr) continue;
+    // 先关单后评论:评论成功而关单失败会每 tick 重复刷屏。
+    await ghCall(["issue", "close", String(task.number)]).catch(() => "");
+    const closedNow = await ghIssueClosed(task.number).catch(() => false);
+    if (!closedNow) continue;
+    await commentIssue(task.number, `PR #${pr} merged; closing (daemon sweep).`);
+    log(`reconcile: closed merged-but-open #${task.number} (PR #${pr})`);
+  }
+}
+
 export async function daemon(root: string): Promise<never> {
   const interval = num("AGENT_LOOP_INTERVAL", 30);
   const worktrees = process.env.AGENT_LOOP_WORKTREES ?? join(root, ".worktrees");
@@ -468,33 +647,33 @@ export async function daemon(root: string): Promise<never> {
     log("another daemon owns the daemon lock");
     process.exit(75);
   }
+  // 心跳文件:log 静默期间区分 idle 与挂死的唯一外部信号。
+  const heartbeatFile = join(worktrees, "daemon.heartbeat");
+  let tick = 0;
   for (;;) {
     if (!(await lock.verify())) {
       log("daemon lock lost; exiting");
       process.exit(75);
     }
-    await dispatchTick(root).catch((error) => {
-      log(`dispatch tick failed: ${error}; retrying after ${interval}s`);
-    });
+    const failure = await dispatchTick(root)
+      .then(() => "")
+      .catch((error) => String(error));
+    tick += 1;
+    await writeFile(
+      heartbeatFile,
+      `${JSON.stringify({ ts: Date.now(), tick, ok: failure === "", ...(failure ? { error: failure.slice(0, 300) } : {}) })}\n`,
+    ).catch(() => {});
+    if (failure) log(`dispatch tick failed: ${failure}; retrying after ${interval}s`);
     await new Promise((resolve) => setTimeout(resolve, interval * 1000));
   }
 }
 
-export async function reconcileCi(branch: string): Promise<void> {
-  const issue = Number.parseInt(branch.replace("codex/issue-", ""), 10);
-  if (!Number.isInteger(issue)) return;
-  const prs = await ghJson<Array<{ number: number; labels: Array<{ name: string }> }>>([
-    "pr",
-    "list",
-    "--head",
-    branch,
-    "--state",
-    "open",
-    "--json",
-    "number,labels",
-  ]);
-  const pr = prs.find((candidate) => candidate.labels.some((l) => l.name === "agent:automerge"));
-  if (!pr) return;
+// CI 修复回队的唯一入口:workflow 事件驱动(agent-pr-health)与 daemon 周期对账共用,
+// 同一个 agent-attempts 预算,超 budget 转 blocked。repair 标是双入口的乐观锁:
+// 先查后落,撞车时后手在查标阶段就退出,预算不被一次失败烧两次。
+async function requeueForRepair(issue: number, prNumber: number): Promise<void> {
+  const current = await issueView(issue).catch(() => null);
+  if (current && hasLabel(current, "agent:repair")) return;
   const maxAttempts = num("AGENT_REPAIR_MAX_ATTEMPTS", 3);
   const comments = await ghJson<Array<{ body: string }>>([
     "issue",
@@ -517,13 +696,31 @@ export async function reconcileCi(branch: string): Promise<void> {
     );
     return;
   }
-  await commentIssue(
-    issue,
-    `<!-- agent-attempts:${attempts + 1} --> CI failed on PR #${pr.number}; requeued for repair (attempt ${attempts + 1}/${maxAttempts}).`,
-  );
   // frontier 要求 queued+ready-for-agent;worker 发布时已摘除后者,回队必须补齐。
   await editIssue(issue, {
     add: ["agent:repair", "agent:queued", "ready-for-agent"],
     remove: ["agent:running"],
   });
+  await commentIssue(
+    issue,
+    `<!-- agent-attempts:${attempts + 1} --> CI failed on PR #${prNumber}; requeued for repair (attempt ${attempts + 1}/${maxAttempts}).`,
+  );
+}
+
+export async function reconcileCi(branch: string): Promise<void> {
+  const issue = Number.parseInt(branch.replace("codex/issue-", ""), 10);
+  if (!Number.isInteger(issue)) return;
+  const prs = await ghJson<Array<{ number: number; labels: Array<{ name: string }> }>>([
+    "pr",
+    "list",
+    "--head",
+    branch,
+    "--state",
+    "open",
+    "--json",
+    "number,labels",
+  ]);
+  const pr = prs.find((candidate) => candidate.labels.some((l) => l.name === "agent:automerge"));
+  if (!pr) return;
+  await requeueForRepair(issue, pr.number);
 }

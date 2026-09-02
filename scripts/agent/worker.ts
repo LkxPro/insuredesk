@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { appendFile, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -8,7 +9,7 @@ import { commentIssue, editIssue, ghCall, ghJson } from "./gh.ts";
 import { DirLock } from "./lock.ts";
 import { callGit, run } from "./net.ts";
 import { baseBranchOf } from "./spec.ts";
-import { appendEvent, patchStatus, readStatus } from "./status.ts";
+import { appendEvent, nudgeWindowSeconds, patchStatus, readStatus } from "./status.ts";
 
 type FailureClass = "process" | "fatal" | "exhausted";
 
@@ -20,7 +21,15 @@ class PhaseTimer {
   async transition(
     worktrees: string,
     issue: number,
-    phase: "implementation" | "review" | "check" | "fix" | "sweep" | "message" | "publish",
+    phase:
+      | "implementation"
+      | "review"
+      | "check-wait"
+      | "check"
+      | "fix"
+      | "sweep"
+      | "message"
+      | "publish",
   ): Promise<void> {
     const now = Date.now();
     this.durations.push({ phase: this.current, seconds: Math.floor((now - this.since) / 1000) });
@@ -150,8 +159,12 @@ interface PipelineContext {
   publishCommitted?: boolean;
 }
 
-async function git(worktree: string, args: string[]): Promise<string> {
-  return callGit(worktree, args);
+async function git(
+  worktree: string,
+  args: string[],
+  policy: { silent?: boolean } = {},
+): Promise<string> {
+  return callGit(worktree, args, policy);
 }
 
 async function runPipeline(
@@ -163,6 +176,40 @@ async function runPipeline(
   signal: AbortSignal,
   ctx: PipelineContext,
 ): Promise<void> {
+  if (existsSync(join(worktree, "package.json")) && !existsSync(join(worktree, "node_modules"))) {
+    const { spawn } = await import("node:child_process");
+    const code = await new Promise<number>((resolvePromise) => {
+      const child = spawn("pnpm", ["install", "--frozen-lockfile"], {
+        cwd: worktree,
+        detached: true,
+        stdio: ["ignore", "ignore", "inherit"],
+      });
+      const killTree = () => {
+        try {
+          if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+        } catch {}
+      };
+      const onAbort = () => killTree();
+      signal.addEventListener("abort", onAbort, { once: true });
+      const watchdog = setTimeout(killTree, num("AGENT_INSTALL_TIMEOUT_SECONDS", 600) * 1000);
+      watchdog.unref();
+      // pnpm 不在 PATH 等 spawn 级失败走 error 而非 close,同样归 process failure。
+      child.on("error", () => {
+        clearTimeout(watchdog);
+        signal.removeEventListener("abort", onAbort);
+        resolvePromise(1);
+      });
+      child.on("close", (c) => {
+        clearTimeout(watchdog);
+        signal.removeEventListener("abort", onAbort);
+        resolvePromise(c ?? 1);
+      });
+    });
+    if (signal.aborted)
+      throw new WorkerFailure("Worker lost its distributed claim during pnpm install.", "process");
+    if (code !== 0)
+      throw new WorkerFailure("pnpm install failed in the fresh worktree.", "process");
+  }
   const issueJson = await ghCall([
     "issue",
     "view",
@@ -215,8 +262,12 @@ async function runPipeline(
   await writeFile(taskFile, `${await readFile(promptFile, "utf8")}${issueBlock}${repairBlock}`);
 
   const startHead = (
-    (await git(worktree, ["rev-parse", "--verify", "@{upstream}^{commit}"]).catch(() => "")) ||
-    (await git(worktree, ["rev-parse", "--verify", `${baseRef}^{commit}`]).catch(() => "")) ||
+    (await git(worktree, ["rev-parse", "--verify", "@{upstream}^{commit}"], {
+      silent: true,
+    }).catch(() => "")) ||
+    (await git(worktree, ["rev-parse", "--verify", `${baseRef}^{commit}`], {
+      silent: true,
+    }).catch(() => "")) ||
     (await git(worktree, ["rev-parse", "--verify", "HEAD^{commit}"]))
   ).trim();
   ctx.startHead = startHead;
@@ -231,22 +282,8 @@ async function runPipeline(
   const aheadOfBase =
     (await git(worktree, ["rev-list", "--count", `${baseRef}..HEAD`]).catch(() => "0")).trim() !==
     "0";
-  const openPr = pendingSha
-    ? await ghJson<Array<{ number: number }>>([
-        "pr",
-        "list",
-        "--head",
-        branch,
-        "--state",
-        "open",
-        "--json",
-        "number",
-      ])
-        .then((prs) => prs.length > 0)
-        .catch(() => false)
-    : false;
-  const resumePublish =
-    !repair && pendingSha !== "" && pendingSha === headSha && aheadOfBase && !openPr;
+  // 已有 open PR 时忽略 marker 全量重跑:upstream 已含实现,零 diff 会被误判零产出。
+  const resumePublish = !repair && pendingSha !== "" && pendingSha === headSha && aheadOfBase;
   if (resumePublish) ctx.publishCommitted = true;
   else await rm(publishPendingFile, { force: true });
 
@@ -282,6 +319,39 @@ async function runPipeline(
     const historyUnchanged = async () =>
       (await git(worktree, ["rev-parse", "HEAD"])).trim() === startHead;
 
+    // git add 已暂存的改动对 ls-files --modified / git diff 不可见。
+    const unstage = async () => {
+      await git(worktree, ["reset", "-q"]).catch(() => "");
+    };
+
+    // intent-to-add 让未跟踪文件进入 diff,单一补丁即全量快照。
+    const checkpointDir = join(worktrees, `issue-${issue}.checkpoint`);
+    const saveCheckpoint = async () => {
+      await rm(checkpointDir, { recursive: true, force: true });
+      await mkdir(checkpointDir, { recursive: true });
+      await git(worktree, ["add", "-N", "."]);
+      const diff = await git(worktree, ["diff", "HEAD", "--binary"]);
+      await git(worktree, ["reset", "-q"]).catch(() => "");
+      await writeFile(join(checkpointDir, "diff.patch"), diff);
+      await writeFile(join(checkpointDir, "startHead"), `${startHead}\n`);
+    };
+    // base 已移动的 checkpoint 语义不可信。
+    const restoreCheckpoint = async (): Promise<boolean> => {
+      const cpHead = await readFile(join(checkpointDir, "startHead"), "utf8")
+        .then((text) => text.trim())
+        .catch(() => "");
+      if (repair || !cpHead || cpHead !== startHead) return false;
+      const patch = join(checkpointDir, "diff.patch");
+      const hasContent = await readFile(patch, "utf8")
+        .then((text) => text.trim() !== "")
+        .catch(() => false);
+      if (!hasContent) return false;
+      return git(worktree, ["apply", "--whitespace=nowarn", patch]).then(
+        () => true,
+        () => false,
+      );
+    };
+
     const executorEnv: NodeJS.ProcessEnv = {
       // 发布隔离：模型物理上无推送/调 API 凭据。
       GIT_CONFIG_GLOBAL: "/dev/null",
@@ -311,6 +381,8 @@ async function runPipeline(
     ): Promise<void> => {
       const max = num("AGENT_EXECUTOR_ATTEMPTS", 4);
       for (let attempt = 1; ; attempt += 1) {
+        if (signal.aborted)
+          throw new WorkerFailure("Worker lost its distributed claim mid-run.", "process");
         let promptFile = files.warm;
         if (!holder.session?.isAlive()) {
           const resumeId = holder.session?.sessionId() ?? null;
@@ -341,6 +413,12 @@ async function runPipeline(
             "Worker stalled and did not recover within the nudge grace period.",
             "process",
           );
+        // 轮次上限对 impl+fix 长存会话是确定性结局,重跑必再撞,直接 blocked 叫人调参。
+        if (result.subtype === "error_max_turns")
+          throw new WorkerFailure(
+            `executor hit the AGENT_MAX_TURNS cap during ${outputName}; raise the cap or split the ticket.`,
+            "fatal",
+          );
         if (attempt >= max || !transient(result)) {
           await holder.session?.close().catch(() => {});
           holder.session = null;
@@ -356,7 +434,6 @@ async function runPipeline(
     };
 
     // nudge 只在 CLI 下一 tool round 生效,救得了慢/绕圈,救不了进程楔死。
-    const nudgeAfter = num("AGENT_NUDGE_AFTER_SECONDS", 600);
     const nudgeGrace = num("AGENT_NUDGE_GRACE_SECONDS", 600);
     const nudgeMax = num("AGENT_NUDGE_MAX_PER_RUN", 2);
     const nudgeTemplate = await readFile(
@@ -369,7 +446,7 @@ async function runPipeline(
       void (async () => {
         const status = await readStatus(worktrees, issue);
         if (!status) return;
-        if (["check", "publish", "done", "failed"].includes(status.phase)) return;
+        if (["check-wait", "check", "publish", "done", "failed"].includes(status.phase)) return;
         const now = Date.now();
         if (nudgePendingSince > 0) {
           if ((status.lastEvent?.ts ?? 0) > nudgePendingSince) {
@@ -382,7 +459,7 @@ async function runPipeline(
         }
         const lastTs = status.lastEvent?.ts ?? status.phaseSince;
         const silentSeconds = Math.floor((now - lastTs) / 1000);
-        if (silentSeconds <= nudgeAfter) return;
+        if (silentSeconds <= nudgeWindowSeconds(status.lastEvent?.kind).after) return;
         const session = ctx.activeSession.current;
         if (!session?.inFlight() || !session.isAlive()) return;
         if (nudgesUsed >= nudgeMax) {
@@ -407,37 +484,43 @@ async function runPipeline(
 
     await patchStatus(worktrees, issue, { phase: "implementation" });
     const implHolder: SessionHolder = { session: null };
-    const continueFile = join(runDir, "continue.md");
-    await writeFile(
-      continueFile,
-      "The previous turn was interrupted by a transport failure. Continue the task from the current worktree state; the issue JSON and instructions are in the earlier conversation.\n",
-    );
-    await runPhase(
-      implHolder,
-      { warm: taskFile, cold: taskFile, resume: continueFile },
-      "implementation.json",
-      true,
-    );
-    if (!(await historyUnchanged()))
-      throw new WorkerFailure(
-        "Agent changed git history instead of leaving a controller-owned diff.",
-        "fatal",
+    if (await restoreCheckpoint()) {
+      await logLifecycle(worktrees, `#${issue} restored implementation from checkpoint`);
+    } else {
+      const continueFile = join(runDir, "continue.md");
+      await writeFile(
+        continueFile,
+        "The previous turn was interrupted by a transport failure. Continue the task from the current worktree state; the issue JSON and instructions are in the earlier conversation.\n",
       );
+      await runPhase(
+        implHolder,
+        { warm: taskFile, cold: taskFile, resume: continueFile },
+        "implementation.json",
+        true,
+      );
+      await unstage();
+      if (!(await historyUnchanged()))
+        throw new WorkerFailure(
+          "Agent changed git history instead of leaving a controller-owned diff.",
+          "fatal",
+        );
 
-    const changedFiles = (
-      await git(worktree, ["ls-files", "--modified", "--others", "--exclude-standard"])
-    )
-      .split("\n")
-      .filter(Boolean);
-    if (changedFiles.length === 0) {
-      const explained = await readFile(ctx.artifact("implementation.json"), "utf8")
-        .then((text) => {
-          const result = (JSON.parse(text) as { result?: unknown }).result;
-          return typeof result === "string" && result.trim() ? result.trim() : null;
-        })
-        .catch(() => null);
-      const detail = explained ? `\n\nAgent's blocker report:\n${explained.slice(0, 2000)}` : "";
-      throw new WorkerFailure(`Agent produced no repository change.${detail}`, "fatal");
+      const changedFiles = (
+        await git(worktree, ["ls-files", "--modified", "--others", "--exclude-standard"])
+      )
+        .split("\n")
+        .filter(Boolean);
+      if (changedFiles.length === 0) {
+        const explained = await readFile(ctx.artifact("implementation.json"), "utf8")
+          .then((text) => {
+            const result = (JSON.parse(text) as { result?: unknown }).result;
+            return typeof result === "string" && result.trim() ? result.trim() : null;
+          })
+          .catch(() => null);
+        const detail = explained ? `\n\nAgent's blocker report:\n${explained.slice(0, 2000)}` : "";
+        throw new WorkerFailure(`Agent produced no repository change.${detail}`, "fatal");
+      }
+      await saveCheckpoint();
     }
 
     const fingerprint = async (): Promise<string> => {
@@ -456,8 +539,17 @@ async function runPipeline(
     const checkLock = new DirLock(join(worktrees, ".check.lock"));
     const checkLog = join(runDir, "check.log");
     const runCheck = async (dir: string, setPhase = true): Promise<boolean> => {
+      // 等锁与跑 check 分开计相:phaseSince 从拿锁后才进 check,排队等锁不会被 stall 硬杀。
+      if (setPhase) await ctx.timer.transition(worktrees, issue, "check-wait");
+      try {
+        await checkLock.acquireBlocking(5, signal);
+      } catch {
+        throw new WorkerFailure(
+          "Worker lost its distributed claim while awaiting the check lock.",
+          "process",
+        );
+      }
       if (setPhase) await ctx.timer.transition(worktrees, issue, "check");
-      await checkLock.acquireBlocking();
       try {
         const { spawn } = await import("node:child_process");
         const output = await new Promise<string>((resolve) => {
@@ -468,18 +560,27 @@ async function runPipeline(
           let text = "";
           child.stdout?.on("data", (c: string) => (text += c));
           child.stderr?.on("data", (c: string) => (text += c));
-          const watchdog = setTimeout(() => {
+          const killTree = () => {
             try {
               if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
             } catch {}
-          }, num("AGENT_CHECK_TIMEOUT_SECONDS", 1800) * 1000);
+          };
+          const onAbort = () => killTree();
+          signal.addEventListener("abort", onAbort, { once: true });
+          const watchdog = setTimeout(killTree, num("AGENT_CHECK_TIMEOUT_SECONDS", 1800) * 1000);
           watchdog.unref();
           child.on("close", (code) => {
             clearTimeout(watchdog);
+            signal.removeEventListener("abort", onAbort);
             resolve(`${text}\n__exit=${code ?? 1}`);
           });
         });
         await writeFile(checkLog, output);
+        if (signal.aborted)
+          throw new WorkerFailure(
+            "Worker lost its distributed claim during make check.",
+            "process",
+          );
         return output.endsWith("__exit=0");
       } finally {
         await checkLock.release();
@@ -529,6 +630,7 @@ async function runPipeline(
         "review.json",
         false,
       );
+      await unstage();
       if (!(await historyUnchanged()))
         throw new WorkerFailure(
           "Review agent changed git history instead of leaving a controller-owned diff.",
@@ -536,7 +638,8 @@ async function runPipeline(
         );
       const reviewChanged = (await fingerprint()) !== fp0;
       if (snapshotCheck) {
-        if (!reviewChanged) await ctx.timer.transition(worktrees, issue, "check");
+        // review 已结束、executor 静默:等快照 check(可能在排锁)期间不能再停留在 claude 相。
+        await ctx.timer.transition(worktrees, issue, "check-wait");
         const result = await snapshotCheck.catch(() => null);
         if (!reviewChanged) prechecked = result;
       }
@@ -566,6 +669,7 @@ async function runPipeline(
           `sweep-${sweepRound}.json`,
           false,
         );
+        await unstage();
         if (!(await historyUnchanged()))
           throw new WorkerFailure(
             "Comment sweep changed git history instead of leaving a controller-owned diff.",
@@ -606,11 +710,13 @@ async function runPipeline(
           `fix-${fixRound}.json`,
           true,
         );
+        await unstage();
         if (!(await historyUnchanged()))
           throw new WorkerFailure(
             "Fix agent changed git history instead of leaving a controller-owned diff.",
             "fatal",
           );
+        await saveCheckpoint();
       }
     }
 
@@ -631,6 +737,7 @@ async function runPipeline(
       "commit-message.json",
       false,
     );
+    await unstage();
     if (!(await historyUnchanged()))
       throw new WorkerFailure(
         "Commit-message agent changed git history instead of leaving a controller-owned diff.",
@@ -660,6 +767,7 @@ async function runPipeline(
     await git(worktree, ["commit", ...(repair ? ["--amend"] : []), "-F", messagePath]);
     ctx.publishCommitted = true;
     await writeFile(publishPendingFile, `${(await git(worktree, ["rev-parse", "HEAD"])).trim()}\n`);
+    await rm(join(worktrees, `issue-${issue}.checkpoint`), { recursive: true, force: true });
   }
 
   if (!(await claimOwned(worktree, ctx.claimFile)))
@@ -751,6 +859,11 @@ async function handleFailure(
 ): Promise<void> {
   await ctx.timer.finish(worktrees, issue, "failed");
   if (!ctx.publishCommitted && ctx.startHead) {
+    // intent-to-add 让未跟踪文件进 diff。
+    await git(worktree, ["add", "-N", "."]).catch(() => "");
+    const diff = await git(worktree, ["diff", "HEAD", "--binary"]).catch(() => "");
+    if (diff.trim())
+      await writeFile(join(worktrees, `issue-${issue}.failed-diff.patch`), diff).catch(() => {});
     await git(worktree, ["reset", "--hard", ctx.startHead]).catch(() => {});
     await git(worktree, ["clean", "-fd"]).catch(() => {});
   }

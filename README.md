@@ -1,6 +1,6 @@
 # InsureDesk
 
-保险行业客服工单系统：统一受理多渠道客户投诉/咨询/理赔请求，按投诉等级驱动
+保险行业客服工单系统：统一受理多渠道客户投诉/咨询/理赔请求，按可配置时效策略驱动
 SLA，跟踪工单全生命周期。
 
 技术栈：Fastify + tRPC + Prisma / PostgreSQL；React + Vite + Tailwind CSS；
@@ -31,6 +31,10 @@ make check       # CI 全套检查（push 前本地跑一遍）
 make agent-loop-status  # 实时监控 agent worker：当前 phase、最后事件、卡死判定
 ```
 
+测试两分法：`apps/api/src/**` colocate 单测（不碰 Docker）；`apps/api/test/**` 集成测试
+（testcontainers 共享 Postgres，需 Docker 可用）。聚焦跑法：
+`pnpm --filter @insuredesk/api exec vitest run <file>`；web：`pnpm --filter web exec vitest run <file>`。
+
 - 清库重来：`make db-reset` 后重新 `make dev`。
 - node 版本由 `.nvmrc` 钉定，`make dev` 自动切换（未装则经 nvm 自动安装），无需手动 `nvm use`。
 - 改 schema：在 `apps/api/prisma/schema.prisma` 修改后，运行 `cd apps/api && pnpm db:migrate` 生成迁移文件并应用到开发库。下次启动 api 会自动应用。
@@ -45,4 +49,7 @@ make agent-loop-status  # 实时监控 agent worker：当前 phase、最后事�
 - [部署](docs/deployment.md) — 生产部署、备份恢复与 nginx 反代
 - [发版](docs/releasing.md) — CalVer 发版与升级操作手册
 - [领域词汇表](CONTEXT.md) — 核心概念与业务口径
+- [架构地图](docs/architecture-map.md) — 表结构、分层与路由速查
+- [ADR](docs/adr/) — 架构决策记录
+- [Agent 开发闭环](docs/agents/agent-loop.md) — GitHub Issue 自动实现流程
 

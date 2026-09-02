@@ -56,14 +56,16 @@ agent-loop-status:
 	@node scripts/agent/main.ts status --watch
 
 # caffeinate 防合盖/空闲睡眠打断 heartbeat 导致 worker 被误判 stale 杀掉。
+# ensure-node 钉 .nvmrc 版本:daemon/worker 全程该版本,原生 ABI 与引擎告警都不再将就。
 agent-loop-daemon:
-	@if command -v caffeinate >/dev/null 2>&1; then \
+	@. scripts/ensure-node.sh; \
+	if command -v caffeinate >/dev/null 2>&1; then \
 	  exec caffeinate -dims node scripts/agent/main.ts daemon; \
 	fi; \
 	exec node scripts/agent/main.ts daemon
 
 agent-loop-daemon-start:
-	@node scripts/agent/main.ts daemon --detach
+	@. scripts/ensure-node.sh; node scripts/agent/main.ts daemon --detach
 
 # 截图阶段需本地 dev 栈在跑（先 make dev）。
 release-prepare:
