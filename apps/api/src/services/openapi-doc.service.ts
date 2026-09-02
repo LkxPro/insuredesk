@@ -34,7 +34,7 @@ const PAGINATION_QUERY_DESCRIPTIONS: Record<string, string> = {
 const LIST_WRAPPER_DESCRIPTIONS: Record<string, string> = {
   hasMore: "是否还有下一页",
   nextCursor: "下一页游标（翻页时原样回传 cursor 参数）；无下一页时为 null",
-  nextUrl: "下一页完整 URL（直接 GET 即可）；无下一页时为 null",
+  nextUrl: "下一页相对路径（拼上 API host 后直接 GET）；无下一页时为 null",
 };
 
 const ERROR_ENVELOPE_DESCRIPTIONS: Record<string, string> = {
@@ -347,6 +347,7 @@ export function buildOpenApiDocument(env: Env): Json {
     "InsureDesk 开放数据 API（/api/v1）：面向内部数据消费方与分析代理的只读接口。",
     "认证：Authorization: Bearer sk_…（持有人的机器化身，权限与数据范围同人）；外部角色 key 一律 403。限流：每 key 令牌桶 burst 20 + 2 次/秒回填（稳态 ≈120 次/分钟）；无效 key 探测另按来源 IP 限流 20 次/分钟，锁定期间同 IP 的有效 key 一并 429（fail-closed）。超限 429 + Retry-After。错误一律 { error: { code, message } } 信封；带 query 的端点拒绝本文档未列出的参数（400 invalid_params，拼错的参数名不会静默生效）。",
     "分页：keyset 游标——响应带 nextCursor/nextUrl，原样回传 cursor 续翻到底；游标钉死签发时的模式与筛选集，混用报 invalid_cursor。",
+    "首次全量同步（bootstrap）：不带 updatedSince 沿 nextUrl 串行翻到底，记下所见最大 updatedAt 作为水位，之后带 updatedSince=水位 走增量；水位重叠与 tombstone 语义见下方注意事项。",
     OPEN_API_CONTRACT_EVOLUTION,
     `增量同步契约注意事项：\n${OPEN_API_INCREMENTAL_CAVEATS.map((caveat, index) => `${index + 1}. ${caveat}`).join("\n")}`,
   ].join("\n\n");
