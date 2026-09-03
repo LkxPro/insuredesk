@@ -74,9 +74,10 @@ function RefundInfoColumn({
         <Item label="创建人">{ticket.createdBy}</Item>
       </Section>
 
-      <RefundModule ticket={ticket} />
-
-      <Section title="客户信息">{field("contactPhone")}</Section>
+      <RefundModule
+        ticket={ticket}
+        contactPhoneField={editing ? field("contactPhone") : undefined}
+      />
 
       <Section title="分类与等级">
         {field("slaPolicyId")}
