@@ -7,6 +7,9 @@
 export interface TicketListFilterParams<S extends string = string> {
   status?: readonly S[] | undefined;
   kindId?: readonly string[] | undefined;
+  assigneeId?: readonly string[] | undefined;
+  firstResponse?: "pending" | undefined;
+  slaPolicyId?: readonly string[] | undefined;
   search?: string | undefined;
   createdFrom?: string | undefined;
   createdTo?: string | undefined;
@@ -15,10 +18,18 @@ export interface TicketListFilterParams<S extends string = string> {
 /**
  * 抽象筛选条件。statuses 保留调用方的状态类型（内部是展示状态、外部是存储
  * 状态），翻译端各自解析；createdAtRange 的 gte/lte 字段名即左闭右闭口径。
+ * slaPolicyIn 的 policyIds 已剔除字面值 "none"，orNull 标记它曾出现。
  */
 export type TicketListFilterCondition<S extends string = string> =
   | { readonly kind: "statusIn"; readonly statuses: readonly S[] }
   | { readonly kind: "kindIn"; readonly kindIds: readonly string[] }
+  | { readonly kind: "assigneeIn"; readonly assigneeIds: readonly string[] }
+  | { readonly kind: "firstResponsePending" }
+  | {
+      readonly kind: "slaPolicyIn";
+      readonly policyIds: readonly string[];
+      readonly orNull: boolean;
+    }
   | { readonly kind: "search"; readonly term: string }
   | { readonly kind: "createdAtRange"; readonly gte?: Date; readonly lte?: Date };
 
@@ -40,6 +51,22 @@ export function ticketListFilterConditions<S extends string>(
   }
   if (input.kindId && input.kindId.length > 0) {
     conditions.push({ kind: "kindIn", kindIds: input.kindId });
+  }
+  if (input.assigneeId && input.assigneeId.length > 0) {
+    conditions.push({ kind: "assigneeIn", assigneeIds: input.assigneeId });
+  }
+  if (input.firstResponse === "pending") {
+    conditions.push({ kind: "firstResponsePending" });
+  }
+  if (input.slaPolicyId && input.slaPolicyId.length > 0) {
+    // "none" 字面值契约（同 POLICY_NUMBER_STATE_FILTERS 先例）：= 未指定策略
+    // （slaPolicyId IS NULL）；与真实 id 混合时取并集，翻译端展开为
+    // (id IN policyIds) OR (id IS NULL)。
+    conditions.push({
+      kind: "slaPolicyIn",
+      policyIds: input.slaPolicyId.filter((id) => id !== "none"),
+      orNull: input.slaPolicyId.includes("none"),
+    });
   }
   if (input.search) {
     conditions.push({ kind: "search", term: input.search });

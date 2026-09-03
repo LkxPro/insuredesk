@@ -72,7 +72,10 @@ export class AssigneeNotProcessableError extends Error {
  * 恒满足——其库存权限数组是永不读取的空快照，不能按数组判定。外部角色持外部
  * 专用点即出局，不论数组里还配了什么。
  */
-function isAssigneeEligible(role: { system: boolean; permissions: readonly string[] }): boolean {
+export function isAssigneeEligible(role: {
+  system: boolean;
+  permissions: readonly string[];
+}): boolean {
   if (role.system) {
     return true;
   }
@@ -82,7 +85,7 @@ function isAssigneeEligible(role: { system: boolean; permissions: readonly strin
   return role.permissions.includes("ticket.view") && role.permissions.includes("ticket.process");
 }
 
-const eligibilityRoleSelect = {
+export const eligibilityRoleSelect = {
   role: { select: { system: true, permissions: true } },
 } satisfies Prisma.UserSelect;
 

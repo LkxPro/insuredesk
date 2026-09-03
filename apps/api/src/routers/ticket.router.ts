@@ -344,7 +344,11 @@ export const ticketRouter = router({
       }
     }),
 
-  assigneeOptions: requireAnyPermission(["ticket.assign", "ticket.batch_assign"]).query(() =>
-    listAssigneeOptions(deps),
-  ),
+  // 候选名单对 ticket.view 放开：列表责任人筛选与分配对话框同一来源；名单内容
+  // （处理工单同事的姓名）本就随列表 assigneeName 列对 viewer 可见。
+  assigneeOptions: requireAnyPermission([
+    "ticket.view",
+    "ticket.assign",
+    "ticket.batch_assign",
+  ]).query(() => listAssigneeOptions(deps)),
 });

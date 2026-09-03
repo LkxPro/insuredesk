@@ -1,6 +1,7 @@
 import type { Permission } from "@insuredesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { httpBatchLink } from "@trpc/client";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
+import type { DashboardActionStats, DashboardAnalysisStats } from "./dashboard-types";
 
 const auth = vi.hoisted(() => ({
   user: null as AuthUser | null,
@@ -40,57 +42,117 @@ function userWith(role: { name: string; permissions: readonly Permission[] }): A
   };
 }
 
-type StatsPayload = {
-  scope: "all" | "own";
-  metrics: Record<string, number>;
-  urgentPolicy: { id: string; name: string } | null;
-  channels: Array<{ channelId: string; name: string; count: number }>;
-  assignees: Array<{
-    assigneeId: string;
-    assigneeName: string;
-    totalCount: number;
-    completedCount: number;
-    avgCompletionMs: number | null;
-    overdueCount: number;
-    overdueRate: number;
-  }>;
-};
+const HOUR_MS = 60 * 60 * 1000;
 
-function statsPayload(overrides: Partial<StatsPayload> = {}): StatsPayload {
+function actionPayload(overrides: Partial<DashboardActionStats> = {}): DashboardActionStats {
   return {
     scope: "all",
     metrics: {
-      total: 42,
-      unassigned: 5,
-      assigned: 7,
-      processing: 11,
-      completed: 19,
-      pendingTimeout: 3,
       overdue: 2,
-      urgent: 1,
+      dueSoon: 3,
+      awaitingFirstResponse: 4,
+      firstResponseOverLine: 1,
+      unassigned: 5,
+      unassignedOldestWaitMs: 26 * HOUR_MS,
     },
-    urgentPolicy: { id: "pol-top", name: "特急投诉" },
-    channels: [
-      { channelId: "ch-1", name: "保司", count: 20 },
-      { channelId: "ch-2", name: "经纪", count: 10 },
-      { channelId: "ch-3", name: "支付", count: 6 },
-      { channelId: "ch-4", name: "监管", count: 6 },
+    policies: [
+      {
+        policyId: "pol-1",
+        name: "特急投诉",
+        kindName: "投诉",
+        timeoutMs: 48 * HOUR_MS,
+        inFlight: 9,
+        dueSoon: 2,
+        overdue: 1,
+      },
+      {
+        policyId: null,
+        name: "未指定策略",
+        kindName: null,
+        timeoutMs: null,
+        inFlight: 3,
+        dueSoon: 0,
+        overdue: 0,
+      },
     ],
-    assignees: [
+    ...overrides,
+  };
+}
+
+function analysisPayload(overrides: Partial<DashboardAnalysisStats> = {}): DashboardAnalysisStats {
+  return {
+    scope: "all",
+    trend: {
+      granularity: "day",
+      points: [
+        { bucketStart: "2026-08-06T00:00:00.000Z", created: 3, previous: 1 },
+        { bucketStart: "2026-08-07T00:00:00.000Z", created: 5, previous: 2 },
+      ],
+    },
+    kinds: [
+      { kindId: "k-1", name: "投诉", count: 10 },
+      { kindId: "k-2", name: "咨询", count: 6 },
+    ],
+    categories: [
+      { categoryId: "c-1", name: "理赔纠纷", count: 8 },
+      { categoryId: null, name: "未填写", count: 2 },
+    ],
+    sources: [
+      { source: "manual", count: 12 },
+      { source: "feishu_form", count: 4 },
+    ],
+    matrix: {
+      columns: [
+        { id: "ufc-1", name: "来电" },
+        { id: "ufc-2", name: "线上" },
+        { id: null, name: "未填写" },
+      ],
+      rows: [
+        {
+          channelId: "ch-1",
+          name: "保司",
+          cells: { "ufc-1": 5, "ufc-2": 3, unfilled: 1 },
+          entities: [{ name: "平安人寿", cells: { "ufc-1": 4, "ufc-2": 1, unfilled: 0 } }],
+        },
+        {
+          channelId: "ch-2",
+          name: "监管",
+          cells: { "ufc-1": 2, "ufc-2": 0, unfilled: 0 },
+          entities: [],
+        },
+        {
+          channelId: null,
+          name: "未填写",
+          cells: { "ufc-1": 0, "ufc-2": 1, unfilled: 0 },
+          entities: [],
+        },
+      ],
+    },
+    agents: [
       {
         assigneeId: "cs-1",
-        assigneeName: "张客服",
-        totalCount: 20,
-        completedCount: 15,
-        avgCompletionMs: 30.5 * 60 * 60 * 1000,
+        name: "张客服",
+        inFlight: 7,
+        overdue: 2,
+        dueSoon: 1,
+        awaitingFirstResponse: 1,
+        followUpCheckpoints: 1,
+        followUpRolling: 2,
+        completed: 15,
+        avgCompletionMs: 30.5 * HOUR_MS,
         overdueCount: 5,
         overdueRate: 0.25,
       },
       {
         assigneeId: "cs-2",
-        assigneeName: "李客服",
-        totalCount: 8,
-        completedCount: 0,
+        name: "李客服",
+        inFlight: 0,
+        overdue: 0,
+        dueSoon: 0,
+        awaitingFirstResponse: 0,
+        followUpCheckpoints: 0,
+        followUpRolling: 0,
+        completed: 0,
         avgCompletionMs: null,
         overdueCount: 0,
         overdueRate: 0,
@@ -100,7 +162,10 @@ function statsPayload(overrides: Partial<StatsPayload> = {}): StatsPayload {
   };
 }
 
-const canned = { stats: statsPayload() as StatsPayload | null };
+const canned = {
+  action: actionPayload() as DashboardActionStats | null,
+  analysis: analysisPayload() as DashboardAnalysisStats | null,
+};
 
 /** tRPC batched queries arrive as GET; answer each path in the batch. */
 function fakeFetch(input: RequestInfo | URL): Promise<Response> {
@@ -111,10 +176,19 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
     if (path === "notification.list") {
       return { result: { data: { items: [], unreadCount: 0, todo: { items: [], count: 0 } } } };
     }
-    if (canned.stats === null) {
-      return { error: { message: "boom", code: -32603, data: { httpStatus: 500 } } };
+    if (path === "dashboard.actionStats") {
+      if (canned.action === null) {
+        return { error: { message: "boom", code: -32603, data: { httpStatus: 500 } } };
+      }
+      return { result: { data: canned.action } };
     }
-    return { result: { data: canned.stats } };
+    if (path === "dashboard.analysisStats") {
+      if (canned.analysis === null) {
+        return { error: { message: "boom", code: -32603, data: { httpStatus: 500 } } };
+      }
+      return { result: { data: canned.analysis } };
+    }
+    return { error: { message: `unknown path ${path}`, code: -32603, data: { httpStatus: 500 } } };
   });
   return Promise.resolve(
     new Response(JSON.stringify(body), {
@@ -124,7 +198,7 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   );
 }
 
-function renderDashboard() {
+function renderDashboard(initialEntry = "/dashboard") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const trpcClient = trpc.createClient({
     links: [httpBatchLink({ url: "http://localhost/api/trpc", fetch: fakeFetch })],
@@ -134,7 +208,7 @@ function renderDashboard() {
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <MemoryRouter initialEntries={["/dashboard"]}>
+          <MemoryRouter initialEntries={[initialEntry]}>
             <AppRoutes />
           </MemoryRouter>
         </ThemeProvider>
@@ -146,166 +220,213 @@ function renderDashboard() {
 beforeEach(() => {
   auth.user = userWith(TEST_ROLES.CS_MANAGER);
   auth.isLoading = false;
-  canned.stats = statsPayload();
+  canned.action = actionPayload();
+  canned.analysis = analysisPayload();
 });
 
-describe("指标卡", () => {
-  it("renders all 8 cards with their labels and values", async () => {
-    renderDashboard();
+describe("区块渲染", () => {
+  it("renders all six sections and no page-level h1", async () => {
+    const { container } = renderDashboard();
 
-    expect(await screen.findByText("工单总数")).toBeInTheDocument();
-    for (const label of ["未分配", "已分配", "处理中", "已完结", "待超时", "已超时"]) {
-      expect(screen.getByText(label)).toBeInTheDocument();
+    expect(await screen.findByText("需要行动")).toBeInTheDocument();
+    for (const title of [
+      "时效策略",
+      "渠道 × 用户反馈渠道交叉分析",
+      "单量趋势",
+      "类型分布",
+      "坐席负载与考核",
+    ]) {
+      expect(screen.getByText(title)).toBeInTheDocument();
     }
-    expect(screen.getByText("特急投诉")).toBeInTheDocument();
-    expect(screen.getByText("最高档时效策略")).toBeInTheDocument();
-    expect(screen.getByText("42")).toBeInTheDocument();
-    expect(screen.getByText("19")).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(container.querySelector("h1")).toBeNull();
   });
 
-  it("无 active 策略时特急卡降级：固定文案，不随策略名", async () => {
-    canned.stats = statsPayload({
-      urgentPolicy: null,
-      metrics: { ...statsPayload().metrics, urgent: 0 },
+  it("shows the period capsule with the default 近 30 天 preset when URL has no range", async () => {
+    renderDashboard();
+
+    expect(await screen.findByText("需要行动")).toBeInTheDocument();
+    expect(screen.getAllByText("统计周期").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /创建时间筛选：近 30 天/ })).toBeInTheDocument();
+  });
+});
+
+describe("行动卡", () => {
+  it("renders the four cards with values and drill-down links", async () => {
+    const { container } = renderDashboard();
+
+    // 已超时/即将超时/待首响 同时也是考核表列名，只断言至少出现一次
+    expect((await screen.findAllByText("已超时")).length).toBeGreaterThanOrEqual(1);
+    for (const label of ["即将超时", "待首响", "未分配"]) {
+      expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1);
+    }
+    expect(container.querySelector('a[href="/tickets?status=overdue"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/tickets?status=pending_timeout"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/tickets?firstResponse=pending"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/tickets?status=unassigned"]')).not.toBeNull();
+  });
+
+  it("shows the over-line sub count on 待首响 and the oldest wait on 未分配", async () => {
+    renderDashboard();
+
+    expect(await screen.findByText("1 单已过首响线")).toBeInTheDocument();
+    expect(screen.getByText("最老已等待 1天2小时")).toBeInTheDocument();
+  });
+
+  it("omits the oldest-wait sub when nobody is waiting", async () => {
+    canned.action = actionPayload({
+      metrics: { ...actionPayload().metrics, unassigned: 0, unassignedOldestWaitMs: null },
     });
     renderDashboard();
 
-    expect(await screen.findByText("特急工单")).toBeInTheDocument();
-    expect(screen.getByText("无启用的时效策略")).toBeInTheDocument();
+    expect(await screen.findByText("需要行动")).toBeInTheDocument();
+    expect(screen.queryByText(/最老已等待/)).not.toBeInTheDocument();
+  });
+
+  it("explains the overlap in the footnote", async () => {
+    renderDashboard();
+
+    expect(
+      await screen.findByText(/已超时\/即将超时含未分配单.*卡间有交集，勿加总。/),
+    ).toBeInTheDocument();
   });
 });
 
-describe("渠道统计表", () => {
-  it("renders the channel distribution with catalog names and counts", async () => {
+describe("时效策略卡", () => {
+  it("renders policy cards with timeout badge and drill-down links", async () => {
     renderDashboard();
 
-    // Await a data row, not the card title — the title renders while loading.
-    expect(await screen.findByText("保司")).toBeInTheDocument();
-    for (const channel of ["经纪", "支付", "监管"]) {
-      expect(screen.getByText(channel)).toBeInTheDocument();
+    expect(await screen.findByText("特急投诉")).toBeInTheDocument();
+    expect(screen.getByText("48h")).toBeInTheDocument();
+    expect(screen.getByText("未指定策略")).toBeInTheDocument();
+    expect(screen.getByText("不设时限")).toBeInTheDocument();
+
+    expect(screen.getByRole("link", { name: "特急投诉" })).toHaveAttribute(
+      "href",
+      "/tickets?slaPolicyId=pol-1",
+    );
+    expect(screen.getByRole("link", { name: "未指定策略" })).toHaveAttribute(
+      "href",
+      "/tickets?slaPolicyId=none",
+    );
+    expect(screen.getByRole("link", { name: "超时 1" })).toHaveAttribute(
+      "href",
+      "/tickets?slaPolicyId=pol-1&status=overdue",
+    );
+    expect(screen.getByRole("link", { name: "预警 2" })).toHaveAttribute(
+      "href",
+      "/tickets?slaPolicyId=pol-1&status=pending_timeout",
+    );
+    expect(screen.getByRole("link", { name: "超时 0" })).toHaveAttribute(
+      "href",
+      "/tickets?slaPolicyId=none&status=overdue",
+    );
+  });
+});
+
+describe("交叉矩阵", () => {
+  it("renders columns, rows and the grand total row", async () => {
+    renderDashboard();
+
+    expect(await screen.findByText("来电")).toBeInTheDocument();
+    expect(screen.getByText("线上")).toBeInTheDocument();
+    expect(screen.getByText("保司")).toBeInTheDocument();
+    expect(screen.getByText("监管")).toBeInTheDocument();
+    expect(screen.getByText("合计")).toBeInTheDocument();
+    expect(screen.getByText("总计")).toBeInTheDocument();
+  });
+
+  it("expands entity rows only for rows that have entities", async () => {
+    const user = userEvent.setup();
+    renderDashboard();
+
+    const rowLabel = await screen.findByText("保司");
+    expect(screen.queryByText("平安人寿")).not.toBeInTheDocument();
+    await user.click(rowLabel.closest("tr") as HTMLElement);
+    expect(await screen.findByText("平安人寿")).toBeInTheDocument();
+
+    // 监管行无实体：整行不可点，也没有展开箭头
+    const regulatorRow = screen.getByText("监管").closest("tr") as HTMLElement;
+    expect(regulatorRow).not.toHaveClass("cursor-pointer");
+  });
+});
+
+describe("坐席负载与考核", () => {
+  it("renders the grouped two-row header and one row per agent", async () => {
+    renderDashboard();
+
+    const agentTable = (await screen.findByText("张客服")).closest("table") as HTMLElement;
+    const liveHeader = screen.getByText("实时").closest("th");
+    expect(liveHeader).toHaveAttribute("colspan", "5");
+    const periodHeader = screen
+      .getAllByText("统计周期")
+      .map((element) => element.closest("th"))
+      .find((cell) => cell !== null);
+    expect(periodHeader).toHaveAttribute("colspan", "3");
+
+    for (const column of [
+      "跟进人",
+      "在途",
+      "已超时",
+      "即将超时",
+      "待首响",
+      "欠跟进",
+      "完单",
+      "平均完结时长",
+      "超时率",
+    ]) {
+      expect(within(agentTable).getByText(column)).toBeInTheDocument();
     }
-    expect(screen.getByText("20")).toBeInTheDocument();
-  });
-});
-
-describe("跟进人考核表", () => {
-  it("renders one row per assignee with duration and rate formatting", async () => {
-    renderDashboard();
-
-    expect(await screen.findByText("张客服")).toBeInTheDocument();
     expect(screen.getByText("15")).toBeInTheDocument();
     expect(screen.getByText("1天6.5小时")).toBeInTheDocument();
-    expect(screen.getByText("25%")).toBeInTheDocument();
+    expect(screen.getByText("25.0%")).toBeInTheDocument();
     expect(screen.getByText("李客服")).toBeInTheDocument();
-    expect(screen.getByText("—")).toBeInTheDocument();
-    expect(screen.getByText("0%")).toBeInTheDocument();
   });
 
-  it("shows an empty state when nobody holds a ticket yet", async () => {
-    canned.stats = statsPayload({ assignees: [] });
+  it("欠跟进 cell merges checkpoint and rolling counts with a breakdown tooltip", async () => {
     renderDashboard();
+
+    const debtCell = (await screen.findByText("张客服")).closest("tr")?.querySelector("td[title]");
+    expect(debtCell).toHaveAttribute("title", "节点提醒 1 · 滚动提醒 2");
+    expect(debtCell).toHaveTextContent("3");
+  });
+
+  it("shows an empty state when nobody is assignee-eligible", async () => {
+    canned.analysis = analysisPayload({ agents: [] });
+    renderDashboard();
+
     expect(await screen.findByText("暂无考核数据")).toBeInTheDocument();
-  });
-
-  it("shows footnote explaining the two overdue 口径 and the partition", async () => {
-    renderDashboard();
-    expect(
-      await screen.findByText(/超时单数为历史追责口径.*六张状态卡互斥，合计 = 工单总数/),
-    ).toBeInTheDocument();
   });
 });
 
 describe("数据范围提示", () => {
   it("shows the own-scope badge only when the server scoped the numbers", async () => {
-    canned.stats = statsPayload({ scope: "own" });
+    canned.action = actionPayload({ scope: "own" });
+    canned.analysis = analysisPayload({ scope: "own" });
     renderDashboard();
+
     expect(await screen.findByText("仅统计我名下的工单")).toBeInTheDocument();
   });
 
   it("hides the badge for view_all scopes", async () => {
     renderDashboard();
-    expect(await screen.findByText("工单总数")).toBeInTheDocument();
+
+    expect(await screen.findByText("需要行动")).toBeInTheDocument();
     expect(screen.queryByText("仅统计我名下的工单")).not.toBeInTheDocument();
   });
 });
 
 describe("加载失败", () => {
-  it("surfaces the query error", async () => {
-    canned.stats = null;
+  it("surfaces the action query error", async () => {
+    canned.action = null;
     renderDashboard();
+
     expect(await screen.findByText("看板数据加载失败")).toBeInTheDocument();
   });
-});
 
-describe("卡片跳转工单管理", () => {
-  it("total card links to tickets with no status filter", async () => {
+  it("surfaces the analysis query error", async () => {
+    canned.analysis = null;
     renderDashboard();
 
-    const totalCard = (await screen.findByText("工单总数")).closest("a");
-    expect(totalCard).toHaveAttribute("href", "/tickets");
-  });
-
-  it("unassigned card links to tickets with status=unassigned", async () => {
-    renderDashboard();
-
-    const unassignedCard = (await screen.findByText("未分配")).closest("a");
-    expect(unassignedCard).toHaveAttribute("href", "/tickets?status=unassigned");
-  });
-
-  it("overdue card links to tickets with status=overdue", async () => {
-    renderDashboard();
-
-    const overdueCard = (await screen.findByText("已超时")).closest("a");
-    expect(overdueCard).toHaveAttribute("href", "/tickets?status=overdue");
-  });
-
-  it("urgent card links to tickets with policyId of the bound policy", async () => {
-    renderDashboard();
-
-    const urgentCard = (await screen.findByText("特急投诉")).closest("a");
-    expect(urgentCard).toHaveAttribute("href", "/tickets?policyId=pol-top");
-  });
-
-  it("cards include createdFrom/createdTo when dashboard has a time range", async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const trpcClient = trpc.createClient({
-      links: [httpBatchLink({ url: "http://localhost/api/trpc", fetch: fakeFetch })],
-    });
-
-    render(
-      <trpc.Provider client={trpcClient} queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider>
-            <MemoryRouter
-              initialEntries={["/dashboard?createdFrom=2026-07-01&createdTo=2026-07-31"]}
-            >
-              <AppRoutes />
-            </MemoryRouter>
-          </ThemeProvider>
-        </QueryClientProvider>
-      </trpc.Provider>,
-    );
-
-    const totalCard = (await screen.findByText("工单总数")).closest("a");
-    expect(totalCard).toHaveAttribute(
-      "href",
-      "/tickets?createdFrom=2026-07-01&createdTo=2026-07-31",
-    );
-
-    const overdueCard = screen.getByText("已超时").closest("a");
-    expect(overdueCard).toHaveAttribute(
-      "href",
-      "/tickets?status=overdue&createdFrom=2026-07-01&createdTo=2026-07-31",
-    );
-  });
-});
-
-describe("渠道行跳转工单管理", () => {
-  it("channel rows are clickable", async () => {
-    renderDashboard();
-
-    const channelRow = (await screen.findByText("保司")).closest("tr");
-    expect(channelRow).toHaveClass("cursor-pointer");
+    expect(await screen.findByText("看板数据加载失败")).toBeInTheDocument();
   });
 });

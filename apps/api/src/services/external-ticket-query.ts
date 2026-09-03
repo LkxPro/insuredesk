@@ -1,6 +1,7 @@
 import {
   substringSearchPattern,
   type TicketListFilterParams,
+  TicketStatus,
   ticketListFilterConditions,
 } from "@insuredesk/shared";
 import { Prisma } from "../generated/prisma/client.ts";
@@ -25,6 +26,21 @@ export function buildExternalTicketConditions(
         break;
       case "kindIn":
         conditions.push(Prisma.sql`t."kindId" IN (${Prisma.join(condition.kindIds)})`);
+        break;
+      case "assigneeIn":
+        conditions.push(Prisma.sql`t."assigneeId" IN (${Prisma.join(condition.assigneeIds)})`);
+        break;
+      case "firstResponsePending":
+        conditions.push(
+          Prisma.sql`(t.status IN (${Prisma.join([TicketStatus.Assigned, TicketStatus.Processing])}) AND t."contactCount" = 0)`,
+        );
+        break;
+      case "slaPolicyIn":
+        conditions.push(
+          condition.orNull
+            ? Prisma.sql`(t."slaPolicyId" IN (${Prisma.join(condition.policyIds)}) OR t."slaPolicyId" IS NULL)`
+            : Prisma.sql`t."slaPolicyId" IN (${Prisma.join(condition.policyIds)})`,
+        );
         break;
       case "search": {
         const pattern = substringSearchPattern(condition.term);

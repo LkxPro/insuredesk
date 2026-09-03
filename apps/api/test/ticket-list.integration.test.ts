@@ -369,6 +369,148 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
+  describe("责任人筛选", () => {
+    it("assigneeId 命中对应责任人；多选取并集；旧单值宽容接受；缺省不过滤", async () => {
+      const zhang = await makeTicket(
+        { customerName: "张客服的单" },
+        { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
+      );
+      const li = await makeTicket(
+        { customerName: "主管的单" },
+        { status: "assigned", assigneeId: seeded.users.manager.id, assignedAt: new Date() },
+      );
+      await makeTicket({ customerName: "未分配" });
+
+      expect((await manager().ticket.list({})).total).toBe(3);
+
+      const own = await manager().ticket.list({ assigneeId: seeded.users.cs1.id });
+      expect(own.items.map((t) => t.id)).toEqual([zhang.id]);
+
+      const union = await manager().ticket.list({
+        assigneeId: [seeded.users.cs1.id, seeded.users.manager.id],
+      });
+      expect(union.items.map((t) => t.id).sort()).toEqual([zhang.id, li.id].sort());
+
+      const single = await manager().ticket.list({ assigneeId: seeded.users.cs1.id as never });
+      expect(single.items.map((t) => t.id)).toEqual([zhang.id]);
+    });
+
+    it("data scope 与 assigneeId 筛选 AND 叠加 — scope 钉住的可见集不被筛选放宽", async () => {
+      const creator = () => callerWith(seeded.users.cs1, ["ticket.view", "ticket.create"]);
+      // cs1 名下（经 assigneeId 入 scope）
+      await makeTicket(
+        { customerName: "cs1 名下" },
+        { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
+      );
+      // cs1 创建、主管名下（经 creatorId 入 scope）
+      const createdByMe = await creator().ticket.create({
+        ...baseInput(),
+        customerName: "我创建主管处理",
+      });
+      await manager().ticket.assign({
+        ticketId: createdByMe.id,
+        assigneeId: seeded.users.manager.id,
+      });
+      // 与 cs1 无关的主管单（不在 scope）
+      await makeTicket(
+        { customerName: "主管自己的单" },
+        { status: "assigned", assigneeId: seeded.users.manager.id, assignedAt: new Date() },
+      );
+
+      const scoped = await frontline().ticket.list({ assigneeId: seeded.users.manager.id });
+      expect(scoped.items.map((t) => t.id)).toEqual([createdByMe.id]);
+    });
+  });
+
+  describe("待首响筛选 (firstResponse=pending)", () => {
+    it("命中 assigned/processing 且零次联系；未分配、已联系、已完结都不命中", async () => {
+      const assigned = await makeTicket(
+        { customerName: "已分配未联系" },
+        { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
+      );
+      const processing = await makeTicket(
+        { customerName: "处理中未联系" },
+        { status: "processing", assigneeId: seeded.users.cs1.id },
+      );
+      // 未分配即使零次联系也不算待首响（与待办/dashboard 同口径）
+      await makeTicket({ customerName: "未分配" });
+      await makeTicket(
+        { customerName: "已联系" },
+        { status: "processing", assigneeId: seeded.users.cs1.id, contactCount: 1 },
+      );
+      await makeTicket(
+        { customerName: "已完结" },
+        { status: "completed", completionTime: new Date() },
+      );
+
+      const result = await manager().ticket.list({ firstResponse: "pending" });
+      expect(result.items.map((t) => t.id).sort()).toEqual([assigned.id, processing.id].sort());
+    });
+
+    it("与责任人筛选叠加取交集", async () => {
+      const mine = await makeTicket(
+        { customerName: "我的待首响" },
+        { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
+      );
+      await makeTicket(
+        { customerName: "主管的待首响" },
+        { status: "assigned", assigneeId: seeded.users.manager.id, assignedAt: new Date() },
+      );
+
+      const result = await manager().ticket.list({
+        firstResponse: "pending",
+        assigneeId: seeded.users.cs1.id,
+      });
+      expect(result.items.map((t) => t.id)).toEqual([mine.id]);
+    });
+  });
+
+  describe("slaPolicyId=none 筛选", () => {
+    it("none 命中未指定策略的工单；与真实 id 混合时取并集", async () => {
+      const noPolicy = await makeTicket({ customerName: "未定级", slaPolicyId: null });
+      const normal = await makeTicket({ customerName: "一般" });
+      const high = await makeTicket({ customerName: "高级", slaPolicyId: policyId("高级投诉") });
+
+      const noneOnly = await manager().ticket.list({ slaPolicyId: ["none"] });
+      expect(noneOnly.items.map((t) => t.id)).toEqual([noPolicy.id]);
+
+      const mixed = await manager().ticket.list({ slaPolicyId: ["none", policyId("高级投诉")] });
+      expect(mixed.items.map((t) => t.id).sort()).toEqual([noPolicy.id, high.id].sort());
+
+      const realOnly = await manager().ticket.list({ slaPolicyId: [policyId("一般投诉")] });
+      expect(realOnly.items.map((t) => t.id)).toEqual([normal.id]);
+    });
+
+    it("三个新筛选维度叠加取交集", async () => {
+      const hit = await makeTicket(
+        { customerName: "三条件全中", slaPolicyId: null },
+        { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
+      );
+      // 策略不符（有指定策略）
+      await makeTicket(
+        { customerName: "有策略" },
+        { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
+      );
+      // 已首响
+      await makeTicket(
+        { customerName: "已联系", slaPolicyId: null },
+        { status: "processing", assigneeId: seeded.users.cs1.id, contactCount: 2 },
+      );
+      // 责任人不符
+      await makeTicket(
+        { customerName: "主管的", slaPolicyId: null },
+        { status: "assigned", assigneeId: seeded.users.manager.id, assignedAt: new Date() },
+      );
+
+      const result = await manager().ticket.list({
+        assigneeId: [seeded.users.cs1.id],
+        firstResponse: "pending",
+        slaPolicyId: ["none"],
+      });
+      expect(result.items.map((t) => t.id)).toEqual([hit.id]);
+    });
+  });
+
   describe("multi-select filters", () => {
     it("multi-value filters take the union within a dimension, intersect across dimensions", async () => {
       const payHigh = await makeTicket({

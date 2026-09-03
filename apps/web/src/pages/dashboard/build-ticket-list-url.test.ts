@@ -1,94 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { buildChannelTicketListUrl, buildTicketListUrl } from "./build-ticket-list-url";
+import {
+  buildFirstResponseTicketListUrl,
+  buildPolicyTicketListUrl,
+  buildStatusTicketListUrl,
+} from "./build-ticket-list-url";
 
-describe("buildTicketListUrl", () => {
-  it("total card returns no status filter", () => {
-    expect(buildTicketListUrl("total", {})).toBe("/tickets");
+describe("buildStatusTicketListUrl", () => {
+  it("overdue card links to status=overdue", () => {
+    expect(buildStatusTicketListUrl("overdue")).toBe("/tickets?status=overdue");
   });
 
-  it("unassigned card returns status=unassigned", () => {
-    expect(buildTicketListUrl("unassigned", {})).toBe("/tickets?status=unassigned");
+  it("due-soon card links to status=pending_timeout", () => {
+    expect(buildStatusTicketListUrl("pending_timeout")).toBe("/tickets?status=pending_timeout");
   });
 
-  it("assigned card returns status=assigned", () => {
-    expect(buildTicketListUrl("assigned", {})).toBe("/tickets?status=assigned");
-  });
-
-  it("processing card returns status=processing", () => {
-    expect(buildTicketListUrl("processing", {})).toBe("/tickets?status=processing");
-  });
-
-  it("completed card returns status=completed", () => {
-    expect(buildTicketListUrl("completed", {})).toBe("/tickets?status=completed");
-  });
-
-  it("pendingTimeout card returns status=pending_timeout", () => {
-    expect(buildTicketListUrl("pendingTimeout", {})).toBe("/tickets?status=pending_timeout");
-  });
-
-  it("overdue card returns status=overdue", () => {
-    expect(buildTicketListUrl("overdue", {})).toBe("/tickets?status=overdue");
-  });
-
-  it("urgent card returns policyId of the bound top-sortOrder active policy", () => {
-    expect(buildTicketListUrl("urgent", {}, "pol-top")).toBe("/tickets?policyId=pol-top");
-  });
-
-  it("urgent card degrades to an unfiltered list when no active policy exists", () => {
-    expect(buildTicketListUrl("urgent", {}, null)).toBe("/tickets");
-  });
-
-  it("urgent card keeps the time range alongside policyId", () => {
-    expect(
-      buildTicketListUrl("urgent", { createdFrom: "2026-07-01", createdTo: "2026-07-31" }, "p1"),
-    ).toBe("/tickets?policyId=p1&createdFrom=2026-07-01&createdTo=2026-07-31");
-  });
-
-  it("includes createdFrom when present", () => {
-    expect(buildTicketListUrl("total", { createdFrom: "2026-07-01" })).toBe(
-      "/tickets?createdFrom=2026-07-01",
-    );
-  });
-
-  it("includes createdTo when present", () => {
-    expect(buildTicketListUrl("total", { createdTo: "2026-07-31" })).toBe(
-      "/tickets?createdTo=2026-07-31",
-    );
-  });
-
-  it("includes both createdFrom and createdTo when both present", () => {
-    expect(
-      buildTicketListUrl("overdue", { createdFrom: "2026-07-01", createdTo: "2026-07-31" }),
-    ).toBe("/tickets?status=overdue&createdFrom=2026-07-01&createdTo=2026-07-31");
-  });
-
-  it("total card with time range includes only time params", () => {
-    expect(
-      buildTicketListUrl("total", { createdFrom: "2026-07-01", createdTo: "2026-07-31" }),
-    ).toBe("/tickets?createdFrom=2026-07-01&createdTo=2026-07-31");
+  it("unassigned card links to status=unassigned", () => {
+    expect(buildStatusTicketListUrl("unassigned")).toBe("/tickets?status=unassigned");
   });
 });
 
-describe("buildChannelTicketListUrl", () => {
-  it("returns channel filter with the given channelId", () => {
-    expect(buildChannelTicketListUrl("ch-1", {})).toBe("/tickets?channel=ch-1");
+describe("buildFirstResponseTicketListUrl", () => {
+  it("links to firstResponse=pending", () => {
+    expect(buildFirstResponseTicketListUrl()).toBe("/tickets?firstResponse=pending");
+  });
+});
+
+describe("buildPolicyTicketListUrl", () => {
+  it("policy card links to its slaPolicyId", () => {
+    expect(buildPolicyTicketListUrl("pol-1")).toBe("/tickets?slaPolicyId=pol-1");
   });
 
-  it("includes createdFrom when present", () => {
-    expect(buildChannelTicketListUrl("ch-1", { createdFrom: "2026-07-01" })).toBe(
-      "/tickets?channel=ch-1&createdFrom=2026-07-01",
+  it("null policy id maps to the literal none bucket", () => {
+    expect(buildPolicyTicketListUrl(null)).toBe("/tickets?slaPolicyId=none");
+  });
+
+  it("overdue drill-down appends status=overdue", () => {
+    expect(buildPolicyTicketListUrl("pol-1", "overdue")).toBe(
+      "/tickets?slaPolicyId=pol-1&status=overdue",
     );
   });
 
-  it("includes createdTo when present", () => {
-    expect(buildChannelTicketListUrl("ch-1", { createdTo: "2026-07-31" })).toBe(
-      "/tickets?channel=ch-1&createdTo=2026-07-31",
+  it("due-soon drill-down on the none bucket keeps both params", () => {
+    expect(buildPolicyTicketListUrl(null, "pending_timeout")).toBe(
+      "/tickets?slaPolicyId=none&status=pending_timeout",
     );
-  });
-
-  it("includes both createdFrom and createdTo when both present", () => {
-    expect(
-      buildChannelTicketListUrl("ch-2", { createdFrom: "2026-07-01", createdTo: "2026-07-31" }),
-    ).toBe("/tickets?channel=ch-2&createdFrom=2026-07-01&createdTo=2026-07-31");
   });
 });

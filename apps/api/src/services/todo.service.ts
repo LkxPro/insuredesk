@@ -8,6 +8,7 @@ import {
   ticketStatusSchema,
 } from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service.ts";
+import { isFollowUpCheckpointHit, isRollingFollowUpHit } from "./follow-up-alert.service.ts";
 import type { TicketServiceDeps } from "./ticket.service.ts";
 
 /**
@@ -32,7 +33,6 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
  */
 
 const MINUTE_MS = 60 * 1000;
-const HOUR_MS = 60 * MINUTE_MS;
 
 interface TodoAlert {
   type: TodoAlertType;
@@ -194,16 +194,8 @@ function evaluateRule(
   now: Date,
 ): TodoAlert[] {
   if (rule.type === "follow_up_checkpoint") {
-    // In from (checkpoint − advance) inclusive, out at the checkpoint
-    // exclusive — or the moment 累计 comments (contactCount, cumulative from
-    // createdAt across assignees) reach requiredCount.
-    const checkpointMs = ticket.slaAnchorAt.getTime() + rule.checkpointHours * HOUR_MS;
-    const windowStartMs = checkpointMs - rule.advanceMinutes * MINUTE_MS;
-    if (
-      now.getTime() >= windowStartMs &&
-      now.getTime() < checkpointMs &&
-      ticket.contactCount < rule.requiredCount
-    ) {
+    // 累计跟进 (contactCount, cumulative from createdAt across assignees) 达标即出窗。
+    if (isFollowUpCheckpointHit(rule, ticket, now)) {
       return [
         {
           type: "follow_up_checkpoint",
@@ -215,13 +207,7 @@ function evaluateRule(
     return [];
   }
 
-  // rolling_follow_up (特急): the clock starts at the LAST comment,
-  // so before any comment exists there is nothing to roll from — the constant
-  // 待首响 alert already holds the ticket in the todo until first contact.
-  if (
-    lastCommentAt !== null &&
-    now.getTime() - lastCommentAt.getTime() >= rule.intervalHours * HOUR_MS
-  ) {
+  if (lastCommentAt !== null && isRollingFollowUpHit(rule, lastCommentAt, now)) {
     return [
       {
         type: "rolling_follow_up",
