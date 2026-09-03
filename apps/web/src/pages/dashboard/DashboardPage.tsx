@@ -4,7 +4,7 @@ import {
   type DashboardMetricKey,
 } from "@insuredesk/shared";
 import { AlertCircle, Users } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { CreatedRangeFilter } from "@/pages/ticket-surface/CreatedRangeFilter";
 import { buildChannelTicketListUrl, buildTicketListUrl } from "./build-ticket-list-url";
+import { DashboardProto } from "./proto/DashboardProto";
 import { useCreatedRangeQueryParams } from "./useCreatedRangeQueryParams";
 
 /**
@@ -103,7 +104,18 @@ const percentFormat = new Intl.NumberFormat("zh-CN", {
   maximumFractionDigits: 1,
 });
 
+/** PROTOTYPE dispatch: /dashboard?proto=1|2|3 renders the throwaway redesign
+ * variants instead of the live page; no param = live page, unchanged. */
 export function DashboardPage() {
+  const [searchParams] = useSearchParams();
+  const proto = searchParams.get("proto");
+  if (proto !== null) {
+    return <DashboardProto variant={proto} />;
+  }
+  return <DashboardLivePage />;
+}
+
+function DashboardLivePage() {
   const navigate = useNavigate();
   const [createdRange, setCreatedRange] = useCreatedRangeQueryParams();
   const statsQuery = trpc.dashboard.stats.useQuery(createdRange);
