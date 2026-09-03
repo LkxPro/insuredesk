@@ -32,6 +32,38 @@ describe("ticketListFilterConditions", () => {
     expect(ticketListFilterConditions({})).toEqual([]);
   });
 
+  it("责任人集原样进入抽象条件；空集与缺省都不过滤", () => {
+    expect(ticketListFilterConditions({ assigneeId: ["u-1", "u-2"] })).toEqual([
+      { kind: "assigneeIn", assigneeIds: ["u-1", "u-2"] },
+    ]);
+    expect(ticketListFilterConditions({ assigneeId: [] })).toEqual([]);
+    expect(ticketListFilterConditions({})).toEqual([]);
+  });
+
+  it("firstResponse=pending 出待首响条件；缺省不过滤", () => {
+    expect(ticketListFilterConditions({ firstResponse: "pending" })).toEqual([
+      { kind: "firstResponsePending" },
+    ]);
+    expect(ticketListFilterConditions({})).toEqual([]);
+  });
+
+  it("slaPolicyId 无 none 时原样进条件，orNull=false", () => {
+    expect(ticketListFilterConditions({ slaPolicyId: ["sla-1", "sla-2"] })).toEqual([
+      { kind: "slaPolicyIn", policyIds: ["sla-1", "sla-2"], orNull: false },
+    ]);
+    expect(ticketListFilterConditions({ slaPolicyId: [] })).toEqual([]);
+    expect(ticketListFilterConditions({})).toEqual([]);
+  });
+
+  it("slaPolicyId 含 none = 未指定策略：单 none 只剩 orNull，与真实 id 混合时并入并集", () => {
+    expect(ticketListFilterConditions({ slaPolicyId: ["none"] })).toEqual([
+      { kind: "slaPolicyIn", policyIds: [], orNull: true },
+    ]);
+    expect(ticketListFilterConditions({ slaPolicyId: ["none", "sla-1"] })).toEqual([
+      { kind: "slaPolicyIn", policyIds: ["sla-1"], orNull: true },
+    ]);
+  });
+
   it("搜索词原样保留,通配由 substringSearchPattern 负责", () => {
     expect(ticketListFilterConditions({ search: "50%" })).toEqual([
       { kind: "search", term: "50%" },
@@ -66,17 +98,23 @@ describe("ticketListFilterConditions", () => {
     ]);
   });
 
-  it("条件顺序稳定:状态、种类、搜索、日期区间", () => {
+  it("条件顺序稳定:状态、种类、责任人、首响、策略、搜索、日期区间", () => {
     expect(
       ticketListFilterConditions({
         createdTo: "2026-08-02T00:00:00Z",
         search: "WO",
+        slaPolicyId: ["none", "sla-1"],
+        firstResponse: "pending",
+        assigneeId: ["u-1"],
         kindId: ["kind-1"],
         status: ["completed"],
       }),
     ).toEqual([
       { kind: "statusIn", statuses: ["completed"] },
       { kind: "kindIn", kindIds: ["kind-1"] },
+      { kind: "assigneeIn", assigneeIds: ["u-1"] },
+      { kind: "firstResponsePending" },
+      { kind: "slaPolicyIn", policyIds: ["sla-1"], orNull: true },
       { kind: "search", term: "WO" },
       { kind: "createdAtRange", lte: new Date("2026-08-02T00:00:00Z") },
     ]);

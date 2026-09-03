@@ -1,63 +1,27 @@
-import type { CreatedRangeQuery, DashboardMetricKey } from "@insuredesk/shared";
+/**
+ * 看板下钻链接只拼实时口径参数（status/firstResponse/slaPolicyId），不带
+ * createdRange——行动区与策略区是当前快照，周期筛选交给列表页自己叠加。
+ * slaPolicyId 的字面值 "none" = 未指定策略（契约见 shared/ticket-filter.ts）。
+ */
 
-function appendCreatedRange(params: URLSearchParams, createdRange: CreatedRangeQuery): void {
-  if (createdRange.createdFrom !== undefined) {
-    params.set("createdFrom", createdRange.createdFrom);
-  }
-  if (createdRange.createdTo !== undefined) {
-    params.set("createdTo", createdRange.createdTo);
-  }
+type ActionStatus = "overdue" | "pending_timeout" | "unassigned";
+
+export function buildStatusTicketListUrl(status: ActionStatus): string {
+  return `/tickets?status=${status}`;
 }
 
-export function buildTicketListUrl(
-  metric: DashboardMetricKey,
-  createdRange: CreatedRangeQuery,
-  urgentPolicyId?: string | null,
-): string {
-  const params = new URLSearchParams();
-
-  switch (metric) {
-    case "total":
-      break;
-    case "unassigned":
-      params.set("status", "unassigned");
-      break;
-    case "assigned":
-      params.set("status", "assigned");
-      break;
-    case "processing":
-      params.set("status", "processing");
-      break;
-    case "completed":
-      params.set("status", "completed");
-      break;
-    case "pendingTimeout":
-      params.set("status", "pending_timeout");
-      break;
-    case "overdue":
-      params.set("status", "overdue");
-      break;
-    case "urgent":
-      if (urgentPolicyId) {
-        params.set("policyId", urgentPolicyId);
-      }
-      break;
-  }
-
-  appendCreatedRange(params, createdRange);
-
-  const search = params.toString();
-  return `/tickets${search ? `?${search}` : ""}`;
+export function buildFirstResponseTicketListUrl(): string {
+  return "/tickets?firstResponse=pending";
 }
 
-export function buildChannelTicketListUrl(
-  channelId: string,
-  createdRange: CreatedRangeQuery,
+export function buildPolicyTicketListUrl(
+  policyId: string | null,
+  status?: "overdue" | "pending_timeout",
 ): string {
   const params = new URLSearchParams();
-  params.set("channel", channelId);
-  appendCreatedRange(params, createdRange);
-
-  const search = params.toString();
-  return `/tickets?${search}`;
+  params.set("slaPolicyId", policyId ?? "none");
+  if (status !== undefined) {
+    params.set("status", status);
+  }
+  return `/tickets?${params.toString()}`;
 }

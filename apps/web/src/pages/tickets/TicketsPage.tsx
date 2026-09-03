@@ -11,7 +11,6 @@ import {
   TICKET_SOURCES,
   TICKET_STATUS_LABELS,
   type TicketListQuery,
-  ticketListInputSchema,
 } from "@insuredesk/shared";
 import { keepPreviousData } from "@tanstack/react-query";
 import type { inferRouterOutputs } from "@trpc/server";
@@ -19,6 +18,13 @@ import { Plus, Ticket, Upload, UserPlus, Zap } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
@@ -41,50 +47,9 @@ import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { TicketDetailPane } from "./TicketDetailPane";
 import { TicketImportDialog } from "./TicketImportDialog";
+import { parseTicketListQuery, serializeSelection } from "./ticket-list-query";
 
 type ListItem = inferRouterOutputs<AppRouter>["ticket"]["list"]["items"][number];
-
-function parseListQuery(params: URLSearchParams): TicketListQuery {
-  const multi = (key: string) =>
-    params.has(key) ? params.get(key)?.split(",").filter(Boolean) : undefined;
-  const candidate = {
-    status: multi("status"),
-    kindId: multi("kind"),
-    channelId: multi("channel"),
-    categoryId: multi("category"),
-    completionStatusId: multi("completionStatus"),
-    slaPolicyId: multi("policyId"),
-    policyNumberState: multi("policyNumber"),
-    source: multi("source"),
-    search: params.get("q") ?? undefined,
-    createdFrom: params.get("createdFrom") ?? undefined,
-    createdTo: params.get("createdTo") ?? undefined,
-    sortBy: params.get("sortBy") ?? undefined,
-    sortOrder: params.get("sortOrder") ?? undefined,
-    page: params.has("page") ? Number(params.get("page")) : undefined,
-  };
-  const fields = ticketListInputSchema.shape;
-  return ticketListInputSchema.parse(
-    Object.fromEntries(
-      Object.entries(candidate).map(([key, value]) => [
-        key,
-        fields[key as keyof typeof fields].safeParse(value).success ? value : undefined,
-      ]),
-    ),
-  );
-}
-
-function serializeSelection(
-  values: readonly string[],
-  defaultValues: readonly string[],
-): string | null {
-  if (values.length === 0) {
-    return defaultValues.length === 0 ? null : "";
-  }
-  const sameSet =
-    values.length === defaultValues.length && values.every((v) => defaultValues.includes(v));
-  return sameSet ? null : values.join(",");
-}
 
 function useTicketList(query: TicketListQuery) {
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
@@ -148,6 +113,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
   // 策略筛选只列启用项（sla.options 口径），与目录 filterOptions 的停用标注口径不同
   const slaOptions = trpc.sla.options.useQuery().data ?? [];
+  // 责任人筛选与分配对话框同一候选来源（assigneeOptions）
+  const assigneeOptions = trpc.ticket.assigneeOptions.useQuery().data ?? [];
 
   const kinds = useMemo(
     () =>
@@ -184,6 +151,10 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const slaPolicies = useMemo(
     () => slaOptions.map((policy) => ({ value: policy.id, label: policy.name })),
     [slaOptions],
+  );
+  const assignees = useMemo(
+    () => assigneeOptions.map((user) => ({ value: user.id, label: user.name })),
+    [assigneeOptions],
   );
 
   const columns: ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>> = useMemo(
@@ -381,7 +352,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   return (
     <TicketSurface
       basePath="/tickets"
-      parseQuery={parseListQuery}
+      parseQuery={parseTicketListQuery}
       useList={useTicketList}
       title="工单管理"
       subtitle="客诉工单的创建、分配与跟进。"
@@ -450,8 +421,29 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             label={TICKET_FIELDS.slaPolicyId.label}
             values={query.slaPolicyId ?? []}
             options={slaPolicies}
-            onChange={(values) => setParam("policyId", serializeSelection(values, []))}
+            onChange={(values) =>
+              // 回写规范参数名并清掉遗留别名 policyId（旧下钻链接只读兼容）
+              setParams({ slaPolicyId: serializeSelection(values, []), policyId: null })
+            }
           />
+          <MultiSelectFilter
+            label="责任人"
+            values={query.assigneeId ?? []}
+            options={assignees}
+            onChange={(values) => setParam("assigneeId", serializeSelection(values, []))}
+          />
+          <Select
+            value={query.firstResponse ?? "all"}
+            onValueChange={(value) => setParam("firstResponse", value === "all" ? null : value)}
+          >
+            <SelectTrigger size="sm" aria-label="首响">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部首响状态</SelectItem>
+              <SelectItem value="pending">待首响</SelectItem>
+            </SelectContent>
+          </Select>
           <MultiSelectFilter
             label={TICKET_FIELDS.policyNumbers.label}
             values={query.policyNumberState ?? []}
@@ -493,6 +485,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           query.categoryId?.length,
           query.completionStatusId?.length,
           query.slaPolicyId?.length,
+          query.assigneeId?.length,
+          query.firstResponse ? 1 : 0,
           query.policyNumberState?.length,
           query.search ? 1 : 0,
           query.createdFrom || query.createdTo ? 1 : 0,

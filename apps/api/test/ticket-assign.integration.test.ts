@@ -608,9 +608,13 @@ describe("ticket assignment (Testcontainers)", () => {
         await expect(
           caller.ticket.batchAssign({ ticketIds: [ticketId], assigneeId: seeded.users.cs1.id }),
         ).rejects.toMatchObject({ code: "FORBIDDEN" });
-        await expect(caller.ticket.assigneeOptions()).rejects.toMatchObject({
-          code: "FORBIDDEN",
-        });
+      }
+    });
+
+    it("assigneeOptions 对 ticket.view 放开（列表责任人筛选与分配对话框同源）", async () => {
+      for (const caller of [frontline(), observer()]) {
+        const options = await caller.ticket.assigneeOptions();
+        expect(options.length).toBeGreaterThan(0);
       }
     });
 

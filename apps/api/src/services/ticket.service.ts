@@ -304,6 +304,8 @@ type TicketListFilters = Pick<
   | "categoryId"
   | "completionStatusId"
   | "slaPolicyId"
+  | "assigneeId"
+  | "firstResponse"
   | "policyNumberState"
   | "source"
   | "search"
@@ -356,9 +358,6 @@ export async function buildTicketListWhere(
   if (query.completionStatusId && query.completionStatusId.length > 0) {
     filters.push({ completionStatusId: { in: query.completionStatusId } });
   }
-  if (query.slaPolicyId && query.slaPolicyId.length > 0) {
-    filters.push({ slaPolicyId: { in: query.slaPolicyId } });
-  }
   if (query.policyNumberState?.includes("none")) {
     filters.push({ complaintDetail: { noPolicyNumber: true } });
   }
@@ -376,6 +375,23 @@ export async function buildTicketListWhere(
       case "kindIn":
         filters.push({ kindId: { in: [...condition.kindIds] } });
         break;
+      case "assigneeIn":
+        filters.push({ assigneeId: { in: [...condition.assigneeIds] } });
+        break;
+      case "firstResponsePending":
+        // 待首响口径（业务 invariant）= 在途已分配（assigned/processing）且零次
+        // 联系：与 dashboard 待首响卡、我的待办 awaiting_first_response 同口径；
+        // 未分配不算待首响（未分配不进任何人的待办）。
+        filters.push({
+          status: { in: [TicketStatus.Assigned, TicketStatus.Processing] },
+          contactCount: 0,
+        });
+        break;
+      case "slaPolicyIn": {
+        const inPolicies = { slaPolicyId: { in: [...condition.policyIds] } };
+        filters.push(condition.orNull ? { OR: [inPolicies, { slaPolicyId: null }] } : inPolicies);
+        break;
+      }
       case "search":
         filters.push({
           OR: [

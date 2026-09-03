@@ -1,9 +1,11 @@
-import type { Permission, TicketCreateInput } from "@insuredesk/shared";
-import { DASHBOARD_METRIC_KEYS } from "@insuredesk/shared";
+import { DASHBOARD_MATRIX_UNFILLED_KEY } from "@insuredesk/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { Prisma, PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
-import { appRouter } from "../src/routers/index.ts";
-import { getDashboardStats } from "../src/services/dashboard.service.ts";
+import { seedRefundDefaultSlaPolicy } from "../prisma/seed-data.ts";
+import type { PrismaClient } from "../src/generated/prisma/client.ts";
+import {
+  getDashboardActionStats,
+  getDashboardAnalysisStats,
+} from "../src/services/dashboard.service.ts";
 import {
   type ComplaintCoreInput,
   type ComplaintDetailInput,
@@ -13,1008 +15,937 @@ import {
 } from "./integration-harness.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const NOW = new Date("2026-07-20T10:00:00.000Z");
+const at = (offsetHours: number) => new Date(NOW.getTime() + offsetHours * HOUR_MS);
 
-describe("dashboard stats (Testcontainers)", () => {
+describe("dashboard (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
   let seeded: IntegrationHarness["seeded"];
-  let channelRows: { id: string; name: string }[];
-  let channelIds: Map<string, string>;
   let complaintKindId: string;
   let refundKindId: string;
+  let refundPolicyId: string;
 
   beforeAll(async () => {
     harness = await startIntegrationHarness({
-      seed: ["rolesAndUsers", "slaPolicies", "channels"],
+      seed: ["rolesAndUsers", "slaPolicies", "channels", "categories"],
     });
     prisma = harness.prisma;
     seeded = harness.seeded;
-    baseInput = {
-      feedbackTime: "2026-07-09T02:00:00.000Z",
-      project: "融盛",
-      brokerageEntity: "东方大地",
-      paymentChannel: "连连支付",
-      policyNumbers: ["P2026070900123"],
-      userFeedbackChannelId: null,
-      customerName: "王小明",
-      phone: "13800000000",
-      customerRequest: "对保费收取金额有异议，要求核实并回复",
-      nuclearBodyStatus: "待核实",
-      hasContacted: false,
-      slaPolicyId: harness.slaPolicyId("一般投诉"),
-      allowDuplicate: true,
-    };
-    channelRows = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
-    channelIds = new Map(channelRows.map((channel) => [channel.name, channel.id]));
     complaintKindId = (await prisma.ticketKind.findUniqueOrThrow({ where: { key: "complaint" } }))
       .id;
     refundKindId = (
       await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
     ).id;
+    // harness 的 slaPolicies 种子只含投诉组；退费组默认策略由独立种子补插（同 bootstrap）。
+    refundPolicyId = (await seedRefundDefaultSlaPolicy(prisma)).id;
   }, 180_000);
 
   afterAll(async () => {
     await harness?.stop();
   });
 
-  // Every test builds its own fixture set from a clean slate. Extra users some
-  // tests create keep zero tickets afterwards, so they can never leak into
-  // another test's assignee table (rollups derive from tickets alone).
   beforeEach(async () => {
     await prisma.ticket.deleteMany();
   });
 
-  function authUserFor(user: User, role: Role, permissions?: Permission[]) {
-    return {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      email: user.email,
-      team: user.team,
-      roleId: role.id,
-      roleName: role.name,
-      permissions: permissions ?? (role.permissions as Permission[]),
-      requiredTicketFields: [],
-      isExternal: false,
-    };
-  }
+  const managerAuth = () => harness.authUserFor(seeded.users.manager, seeded.roles.csManager);
+  const frontlineAuth = () => harness.authUserFor(seeded.users.cs1, seeded.roles.frontline);
 
-  function callerFor(user: User, role: Role, permissions?: Permission[]) {
-    return appRouter.createCaller({
-      traceId: "dashboard-test",
-      user: authUserFor(user, role, permissions),
-      sessionToken: null,
-    });
-  }
-
-  const manager = () => callerFor(seeded.users.manager, seeded.roles.csManager);
-  const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
-  const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
-
-  function statsAt(
-    now: Date,
-    viewer: User = seeded.users.manager,
-    role?: Role,
+  const actionStats = (viewer = managerAuth()) =>
+    getDashboardActionStats(harness.depsAt(NOW), viewer);
+  const analysisStats = (
     input: { createdFrom?: string; createdTo?: string } = {},
-  ) {
-    return getDashboardStats(
-      { prisma, clock: { now: () => now } },
-      authUserFor(viewer, role ?? seeded.roles.csManager),
-      input,
-    );
-  }
+    viewer = managerAuth(),
+  ) => getDashboardAnalysisStats(harness.depsAt(NOW), viewer, input);
 
-  const channelId = (name: string) => {
-    const id = channelIds.get(name);
-    if (!id) throw new Error(`渠道「${name}」未播种`);
-    return id;
-  };
-
-  let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
-
-  async function makeTicket(
-    input: Partial<TicketCreateInput> = {},
-    row: Prisma.TicketUncheckedUpdateInput = {},
-  ) {
-    const created = await manager().ticket.create({
-      ...baseInput,
-      channelId: channelId("保司"),
-      ...input,
-    });
-    if (Object.keys(row).length > 0) {
-      await prisma.ticket.update({ where: { id: created.id }, data: row });
-    }
-    return created;
-  }
-
-  function bulkRow(
-    coreOverrides: Partial<Prisma.TicketCreateManyInput> = {},
-    detailOverrides: ComplaintDetailInput = {},
+  function fixture(
+    core: ComplaintCoreInput = {},
+    detail: ComplaintDetailInput = {},
   ): { core: ComplaintCoreInput; detail: ComplaintDetailInput } {
     return {
       core: {
         source: "manual",
         kindId: complaintKindId,
-        createdAt: new Date("2026-07-09T02:00:00.000Z"),
         slaPolicyId: harness.slaPolicyId("一般投诉"),
-        followUpFrequency: "24小时内累计跟进1次；48小时内累计跟进2次",
-        firstResponseRequirement: "120分钟内完成首次响应",
-        ...coreOverrides,
+        ...core,
       },
-      detail: {
-        feedbackTime: new Date("2026-07-09T02:00:00.000Z"),
-        channelId: channelId("保司"),
-        project: "融盛",
-        brokerageEntity: "东方大地",
-        paymentChannel: "连连支付",
-        policyNumbers: ["BULK"],
-        userFeedbackChannelId: null,
-        customerName: "批量客户",
-        phone: "13800000000",
-        customerRequest: "批量数据",
-        nuclearBodyStatus: "待核实",
-        hasContacted: false,
-        ...detailOverrides,
-      },
+      detail: { channelId: harness.channelId("保司"), ...detail },
     };
   }
 
-  describe("8 张指标卡", () => {
-    it("6 display statuses partition the set; overdue/pending_timeout no longer count in stored status", async () => {
-      const now = new Date();
-      const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
-
-      await makeTicket({ customerName: "新单" });
-      await makeTicket(
-        { customerName: "已分配" },
-        { status: "assigned", assigneeId: seeded.users.cs1.id, dueAt: at(30) },
-      );
-      await makeTicket(
-        { customerName: "处理中" },
-        { status: "processing", assigneeId: seeded.users.cs1.id, dueAt: at(30) },
-      );
-      await makeTicket(
-        { customerName: "按时完结" },
-        {
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: at(10),
-          completionTime: at(-1),
-        },
-      );
-      await makeTicket(
-        { customerName: "预警中" },
-        { status: "assigned", assigneeId: seeded.users.cs1.id, dueAt: at(1) },
-      );
-      await makeTicket(
-        { customerName: "已超时" },
-        { status: "processing", assigneeId: seeded.users.cs1.id, dueAt: at(-1) },
-      );
-      await makeTicket(
-        { customerName: "特急", slaPolicyId: harness.slaPolicyId("特急投诉") },
-        { createdAt: at(-100) }, // dueAt stays null however old it gets
-      );
-      await makeTicket({ customerName: "监管件", channelId: channelId("监管") });
-
-      const { metrics } = await statsAt(now);
-
-      expect(Object.keys(metrics).sort()).toEqual([...DASHBOARD_METRIC_KEYS].sort());
-      expect(metrics.total).toBe(8);
-      expect(metrics.unassigned).toBe(3);
-      expect(metrics.assigned).toBe(1);
-      expect(metrics.processing).toBe(1);
-      expect(metrics.completed).toBe(1);
-      expect(metrics.pendingTimeout).toBe(1);
-      expect(metrics.overdue).toBe(1);
-      expect(metrics.urgent).toBe(1);
-      expect(
-        metrics.unassigned +
-          metrics.assigned +
-          metrics.processing +
-          metrics.completed +
-          metrics.pendingTimeout +
-          metrics.overdue,
-      ).toBe(metrics.total);
+  async function makeRefundTicket(core: ComplaintCoreInput = {}) {
+    return prisma.ticket.create({
+      data: {
+        source: "jb-insurance",
+        kindId: refundKindId,
+        slaPolicyId: refundPolicyId,
+        slaAnchorAt: core.slaAnchorAt ?? core.createdAt ?? NOW,
+        ...core,
+      },
     });
+  }
 
-    it("agrees with the list predicates on the 2h / dueAt boundaries (single truth)", async () => {
-      const now = new Date();
-      await makeTicket(
-        { customerName: "整两小时" },
-        { status: "assigned", dueAt: new Date(now.getTime() + 2 * HOUR_MS) },
-      );
-      await makeTicket({ customerName: "恰在时限" }, { status: "assigned", dueAt: now });
-      await makeTicket(
-        { customerName: "刚过时限" },
-        { status: "assigned", dueAt: new Date(now.getTime() - 1) },
-      );
+  function policyRow(stats: Awaited<ReturnType<typeof actionStats>>, name: string) {
+    const row = stats.policies.find((policy) => policy.name === name);
+    if (!row) throw new Error(`策略桶「${name}」缺失`);
+    return row;
+  }
 
-      const { metrics } = await statsAt(now);
-
-      // 不足 2 小时 is strict (exactly 2h left is safe); 已超过 is strict
-      // (the dueAt instant is still pending) — same edges as the list filter.
-      expect(metrics.pendingTimeout).toBe(1);
-      expect(metrics.overdue).toBe(1);
-    });
-
-    it("完结即移出 — 已超时卡是实时运营视角，不含超时完结", async () => {
-      const now = new Date();
-      await makeTicket(
-        { customerName: "超时后完结" },
-        {
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() - 10 * HOUR_MS),
-          completionTime: new Date(now.getTime() - HOUR_MS),
-        },
-      );
-
-      const { metrics } = await statsAt(now);
-      expect(metrics.overdue).toBe(0);
-      expect(metrics.pendingTimeout).toBe(0);
-      expect(metrics.completed).toBe(1);
-    });
-  });
-
-  describe("两种超时口径有意不同", () => {
-    it("看板已超时 counts only in-flight; 考核超时单数 adds 超时完结 on top", async () => {
-      const now = new Date();
-      const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
+  describe("actionStats 行动指标", () => {
+    it("四个计数与边界：待首响不含未分配、过线严格大于、超时/预警与列表同边界", async () => {
       const cs1 = seeded.users.cs1.id;
-
-      await makeTicket(
-        { customerName: "超时完结" },
-        {
+      const manager = seeded.users.manager.id;
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: at(-3), dueAt: at(30) }), // 未分配·新
+        fixture({ createdAt: at(-10), slaPolicyId: null, dueAt: null }), // 未分配·无策略
+        fixture({ createdAt: at(-50), dueAt: at(-1) }), // 未分配·已超时（含未分配单）
+        fixture({
+          // 待超时 + 待首响未过线
+          status: "assigned",
+          assigneeId: cs1,
+          createdAt: at(-0.5),
+          slaAnchorAt: at(-0.5),
+          dueAt: at(1),
+        }),
+        fixture({
+          // 恰 2h 不预警（严格）；首响过线（121min > 120min）
+          status: "assigned",
+          assigneeId: cs1,
+          createdAt: at(-2),
+          slaAnchorAt: new Date(NOW.getTime() - 121 * 60 * 1000),
+          dueAt: new Date(NOW.getTime() + 2 * HOUR_MS),
+        }),
+        fixture({
+          // 恰在时限不超时（严格），但已入 2h 预警窗；已首响不待首响
+          status: "assigned",
+          assigneeId: cs1,
+          createdAt: at(-2),
+          dueAt: NOW,
+          contactCount: 1,
+        }),
+        fixture({
+          // 刚过时限即超时；首响 119min 未过线
+          status: "processing",
+          assigneeId: cs1,
+          createdAt: at(-2),
+          slaAnchorAt: new Date(NOW.getTime() - 119 * 60 * 1000),
+          dueAt: new Date(NOW.getTime() - 1),
+        }),
+        fixture({
+          // 在途超时；已首响
+          status: "processing",
+          assigneeId: manager,
+          createdAt: at(-30),
+          dueAt: at(-5),
+          contactCount: 2,
+        }),
+        fixture({
+          // 完结即移出实时口径
           status: "completed",
           assigneeId: cs1,
-          createdAt: at(-50),
-          dueAt: at(-20),
-          completionTime: at(-1),
-        },
-      );
-      await makeTicket(
-        { customerName: "在途超时" },
-        { status: "processing", assigneeId: cs1, createdAt: at(-60), dueAt: at(-12) },
-      );
-      await makeTicket(
-        { customerName: "按时完结" },
-        {
-          status: "completed",
-          assigneeId: cs1,
-          createdAt: at(-10),
-          dueAt: at(38),
+          createdAt: at(-30),
+          dueAt: at(-1),
           completionTime: at(-2),
-        },
-      );
-
-      const stats = await statsAt(now);
-
-      expect(stats.metrics.overdue).toBe(1);
-
-      const row = stats.assignees.find((entry) => entry.assigneeId === cs1);
-      expect(row).toBeDefined();
-      expect(row?.assigneeName).toBe(seeded.users.cs1.name);
-      expect(row?.totalCount).toBe(3);
-      expect(row?.completedCount).toBe(2);
-      expect(row?.overdueCount).toBe(2);
-      expect(row?.overdueRate).toBeCloseTo(2 / 3, 10);
-      expect(row?.avgCompletionMs).toBe(28.5 * HOUR_MS);
-    });
-
-    it("特急 (无 dueAt) 永不计入任何超时口径", async () => {
-      const now = new Date();
-      await makeTicket(
-        { customerName: "特急在途", slaPolicyId: harness.slaPolicyId("特急投诉") },
-        {
-          status: "processing",
-          assigneeId: seeded.users.cs1.id,
-          createdAt: new Date(now.getTime() - 500 * HOUR_MS),
-        },
-      );
-      await makeTicket(
-        { customerName: "特急完结", slaPolicyId: harness.slaPolicyId("特急投诉") },
-        {
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          createdAt: new Date(now.getTime() - 500 * HOUR_MS),
-          completionTime: new Date(now.getTime() - HOUR_MS),
-        },
-      );
-
-      const stats = await statsAt(now);
-      expect(stats.metrics.overdue).toBe(0);
-      expect(stats.metrics.pendingTimeout).toBe(0);
-      expect(stats.metrics.urgent).toBe(2);
-
-      const row = stats.assignees.find((entry) => entry.assigneeId === seeded.users.cs1.id);
-      expect(row?.overdueCount).toBe(0);
-      expect(row?.overdueRate).toBe(0);
-    });
-  });
-
-  describe("特急卡绑定 sortOrder 最高的 active 时效策略", () => {
-    it("默认绑定特急投诉，urgentPolicy 携 id/name（跳转参数随之）", async () => {
-      const urgentPolicy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { name: "特急投诉" },
-      });
-      await makeTicket({ customerName: "特急", slaPolicyId: harness.slaPolicyId("特急投诉") });
-      await makeTicket({ customerName: "一般", slaPolicyId: harness.slaPolicyId("一般投诉") });
-
-      const stats = await statsAt(new Date());
-      expect(stats.urgentPolicy).toEqual({ id: urgentPolicy.id, name: "特急投诉" });
-      expect(stats.metrics.urgent).toBe(1);
-    });
-
-    it("停用最高位策略后卡片切换到次高 active 策略，计数随之", async () => {
-      const urgentPolicy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { name: "特急投诉" },
-      });
-      const rushPolicy = await prisma.slaPolicy.findUniqueOrThrow({
-        where: { name: "加急投诉" },
-      });
-      await makeTicket({ customerName: "特急", slaPolicyId: harness.slaPolicyId("特急投诉") });
-      await makeTicket({ customerName: "加急甲", slaPolicyId: harness.slaPolicyId("加急投诉") });
-      await makeTicket({ customerName: "加急乙", slaPolicyId: harness.slaPolicyId("加急投诉") });
-
-      await prisma.slaPolicy.update({ where: { id: urgentPolicy.id }, data: { active: false } });
-      try {
-        const stats = await statsAt(new Date());
-        expect(stats.urgentPolicy).toEqual({ id: rushPolicy.id, name: "加急投诉" });
-        expect(stats.metrics.urgent).toBe(2);
-      } finally {
-        await prisma.slaPolicy.update({ where: { id: urgentPolicy.id }, data: { active: true } });
-      }
-    });
-
-    it("无 active 策略时卡片安全降级：urgent=0、urgentPolicy=null", async () => {
-      await prisma.slaPolicy.updateMany({ data: { active: false } });
-      try {
-        const stats = await statsAt(new Date());
-        expect(stats.urgentPolicy).toBeNull();
-        expect(stats.metrics.urgent).toBe(0);
-        expect(stats.metrics.total).toBe(0);
-      } finally {
-        await prisma.slaPolicy.updateMany({ data: { active: true } });
-      }
-    });
-
-    it("退费组策略不参与绑定——即便 sortOrder 全表最大；退费单也不计入 urgent", async () => {
-      const refundPolicy = await prisma.slaPolicy.create({
-        data: {
-          name: "退费专属策略",
-          firstResponseMinutes: 120,
-          overdueHours: 48,
-          reminderRules: [],
-          kindId: refundKindId,
-          sortOrder: 999,
-        },
-      });
-      try {
-        await makeTicket(
-          { customerName: "退费单" },
-          { kindId: refundKindId, slaPolicyId: refundPolicy.id },
-        );
-        await makeTicket({
-          customerName: "特急",
+        }),
+        fixture({
+          // 无策略：待首响但永不判过线
+          status: "assigned",
+          assigneeId: manager,
+          createdAt: at(-10),
+          slaAnchorAt: at(-10),
+          slaPolicyId: null,
+          dueAt: null,
+        }),
+        fixture({
+          // 特急 30min 首响线：31min 已过线
+          status: "assigned",
+          assigneeId: cs1,
+          createdAt: new Date(NOW.getTime() - 31 * 60 * 1000),
+          slaAnchorAt: new Date(NOW.getTime() - 31 * 60 * 1000),
           slaPolicyId: harness.slaPolicyId("特急投诉"),
-        });
-
-        const stats = await statsAt(new Date());
-        expect(stats.urgentPolicy).toEqual({
-          id: harness.slaPolicyId("特急投诉"),
-          name: "特急投诉",
-        });
-        expect(stats.metrics.urgent).toBe(1);
-      } finally {
-        await prisma.ticket.deleteMany({ where: { slaPolicyId: refundPolicy.id } });
-        await prisma.slaPolicy.delete({ where: { id: refundPolicy.id } });
-      }
-    });
-  });
-
-  describe("考核口径：退费单超时单数按 slaAnchorAt 判定", () => {
-    it("平台推送延迟计入超时（completionTime > 锚定 dueAt），平均完结时长仍 completionTime − createdAt", async () => {
-      const now = new Date();
-      const at = (offsetHours: number) => new Date(now.getTime() + offsetHours * HOUR_MS);
-      const cs1 = seeded.users.cs1.id;
-      const refundPolicy = await prisma.slaPolicy.create({
-        data: {
-          name: "退费考核策略",
-          firstResponseMinutes: 120,
-          overdueHours: 48,
-          reminderRules: [],
-          kindId: refundKindId,
-        },
-      });
-      try {
-        await makeTicket(
-          { customerName: "退费超时完结" },
-          {
-            kindId: refundKindId,
-            slaPolicyId: refundPolicy.id,
-            status: "completed",
-            assigneeId: cs1,
-            createdAt: at(-36),
-            slaAnchorAt: at(-49),
-            dueAt: at(-1),
-            completionTime: at(0),
-          },
-        );
-        await makeTicket(
-          { customerName: "投诉按时完结" },
-          {
-            status: "completed",
-            assigneeId: cs1,
-            createdAt: at(-36),
-            slaAnchorAt: at(-36),
-            dueAt: at(12),
-            completionTime: at(0),
-          },
-        );
-
-        const stats = await statsAt(now);
-        const row = stats.assignees.find((entry) => entry.assigneeId === cs1);
-        expect(row?.overdueCount).toBe(1);
-        expect(row?.completedCount).toBe(2);
-        expect(row?.avgCompletionMs).toBe(36 * HOUR_MS);
-      } finally {
-        await prisma.ticket.deleteMany({ where: { slaPolicyId: refundPolicy.id } });
-        await prisma.slaPolicy.delete({ where: { id: refundPolicy.id } });
-      }
-    });
-  });
-
-  describe("软删排除 — 全部指标、渠道表、考核表", () => {
-    it("soft-deleted tickets count nowhere, whatever state they died in", async () => {
-      const now = new Date();
-      const kept = await makeTicket({ customerName: "存活" });
-      await makeTicket(
-        {
-          customerName: "删·超时",
-          channelId: channelId("监管"),
-          slaPolicyId: harness.slaPolicyId("特急投诉"),
-        },
-        { deletedAt: now },
-      );
-      await makeTicket(
-        { customerName: "删·完结" },
-        {
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() - 10 * HOUR_MS),
-          completionTime: new Date(now.getTime() - HOUR_MS),
-          deletedAt: now,
-        },
-      );
-      await makeTicket(
-        { customerName: "删·在途超时", channelId: channelId("支付") },
-        {
-          status: "processing",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() - HOUR_MS),
-          deletedAt: now,
-        },
-      );
-
-      const stats = await statsAt(now);
-
-      expect(stats.metrics.total).toBe(1);
-      expect(stats.metrics.unassigned).toBe(1);
-      expect(stats.metrics.completed).toBe(0);
-      expect(stats.metrics.overdue).toBe(0);
-      expect(stats.metrics.urgent).toBe(0);
-
-      expect(stats.channels).toEqual([
-        { channelId: channelId("保司"), name: "保司", count: 1 },
-        { channelId: channelId("经纪"), name: "经纪", count: 0 },
-        { channelId: channelId("支付"), name: "支付", count: 0 },
-        { channelId: channelId("监管"), name: "监管", count: 0 },
+          dueAt: null,
+        }),
       ]);
 
-      expect(stats.assignees).toHaveLength(0);
-
-      const list = await manager().ticket.list({});
-      expect(list.items.map((ticket) => ticket.id)).toEqual([kept.id]);
+      const { metrics } = await actionStats();
+      expect(metrics.overdue).toBe(3);
+      expect(metrics.dueSoon).toBe(2);
+      expect(metrics.awaitingFirstResponse).toBe(5);
+      expect(metrics.firstResponseOverLine).toBe(2);
+      expect(metrics.unassigned).toBe(3);
+      expect(metrics.unassignedOldestWaitMs).toBe(50 * HOUR_MS);
     });
-  });
 
-  describe("file_import 排除 — 全部指标、渠道表、考核表", () => {
-    it("file_import tickets count nowhere, matching list default", async () => {
-      const now = new Date();
-      await makeTicket({ customerName: "手工单" }, { source: "manual" });
-      await makeTicket(
-        {
-          customerName: "归档·完结",
-          channelId: channelId("监管"),
-          slaPolicyId: harness.slaPolicyId("特急投诉"),
-        },
-        {
-          source: "file_import",
-          status: "completed",
+    it("策略停用的工单不判首响过线，复活后恢复", async () => {
+      await createComplaintTickets(prisma, [
+        fixture({
+          status: "assigned",
           assigneeId: seeded.users.cs1.id,
-          completionTime: new Date(now.getTime() - HOUR_MS),
-        },
-      );
-      await makeTicket(
-        { customerName: "归档·在途超时", channelId: channelId("支付") },
-        {
-          source: "file_import",
-          status: "processing",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() - HOUR_MS),
-        },
-      );
-
-      const stats = await statsAt(now);
-
-      expect(stats.metrics.total).toBe(1);
-      expect(stats.metrics.unassigned).toBe(1);
-      expect(stats.metrics.completed).toBe(0);
-      expect(stats.metrics.overdue).toBe(0);
-      expect(stats.metrics.urgent).toBe(0);
-
-      expect(stats.channels.find((ch) => ch.name === "保司")?.count).toBe(1);
-      expect(stats.channels.find((ch) => ch.name === "监管")?.count).toBe(0);
-      expect(stats.channels.find((ch) => ch.name === "支付")?.count).toBe(0);
-
-      expect(stats.assignees).toHaveLength(0);
-    });
-  });
-
-  describe("渠道统计表", () => {
-    it("returns the whole catalog zero-filled, in display order, names from the catalog", async () => {
-      await makeTicket({ channelId: channelId("保司") });
-      await makeTicket({ channelId: channelId("保司") });
-      await makeTicket({ channelId: channelId("支付") });
-      await makeTicket({ channelId: channelId("监管") });
-
-      const stats = await manager().dashboard.stats({});
-
-      expect(stats.channels.map((row) => row.name)).toEqual(["保司", "经纪", "支付", "监管"]);
-      expect(stats.channels.map((row) => row.count)).toEqual([2, 0, 1, 1]);
-    });
-
-    it("改名立即显穿渠道统计 — 行名来自目录，不是快照", async () => {
-      await makeTicket({ channelId: channelId("支付") });
-      await prisma.channel.update({
-        where: { id: channelId("支付") },
-        data: { name: "第三方支付" },
-      });
+          createdAt: at(-10),
+          slaAnchorAt: at(-10),
+          slaPolicyId: harness.slaPolicyId("高级投诉"),
+        }),
+      ]);
+      const policyId = harness.slaPolicyId("高级投诉");
+      await prisma.slaPolicy.update({ where: { id: policyId }, data: { active: false } });
       try {
-        const stats = await manager().dashboard.stats({});
-        expect(stats.channels.find((row) => row.channelId === channelId("支付"))?.name).toBe(
-          "第三方支付",
-        );
+        const { metrics } = await actionStats();
+        expect(metrics.awaitingFirstResponse).toBe(1);
+        expect(metrics.firstResponseOverLine).toBe(0);
       } finally {
-        await prisma.channel.update({
-          where: { id: channelId("支付") },
-          data: { name: "支付" },
-        });
+        await prisma.slaPolicy.update({ where: { id: policyId }, data: { active: true } });
       }
+      const { metrics } = await actionStats();
+      expect(metrics.firstResponseOverLine).toBe(1);
     });
   });
 
-  describe("跟进人考核 Top 10", () => {
-    it("caps at 10 assignees ranked by 完单数, dropping the smallest producers", async () => {
-      const extras = Array.from({ length: 12 }, (_, index) => ({
-        username: `perf-cs-${index + 1}`,
-        name: `考核客服${index + 1}`,
-        roleId: seeded.roles.frontline.id,
-        active: true,
-      }));
-      await prisma.user.createMany({ data: extras, skipDuplicates: true });
-      const users = await prisma.user.findMany({
-        where: { username: { startsWith: "perf-cs-" } },
-        orderBy: { username: "asc" },
-      });
+  describe("actionStats 策略桶", () => {
+    it("两组 active 策略按 kind displayOrder→sortOrder 排序，未指定桶垫底；不设时限恒 0", async () => {
+      const cs1 = seeded.users.cs1.id;
+      await createComplaintTickets(prisma, [
+        fixture({ status: "assigned", assigneeId: cs1, createdAt: at(-1), dueAt: at(47) }),
+        fixture({ status: "processing", assigneeId: cs1, createdAt: at(-2), dueAt: at(46) }),
+        fixture({
+          // 完结不计 inFlight
+          status: "completed",
+          assigneeId: cs1,
+          createdAt: at(-30),
+          dueAt: at(18),
+          completionTime: at(-2),
+        }),
+        fixture({
+          status: "processing",
+          assigneeId: cs1,
+          createdAt: at(-50),
+          slaPolicyId: harness.slaPolicyId("高级投诉"),
+          dueAt: at(-2),
+        }),
+        fixture({
+          status: "assigned",
+          assigneeId: cs1,
+          createdAt: at(-1),
+          slaPolicyId: harness.slaPolicyId("加急投诉"),
+          dueAt: at(1),
+        }),
+        fixture({
+          // 特急 dueAt 恒 null：多老都不出超时/预警
+          status: "processing",
+          assigneeId: cs1,
+          createdAt: at(-500),
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+          dueAt: null,
+        }),
+        fixture({ status: "assigned", assigneeId: cs1, createdAt: at(-1), slaPolicyId: null }),
+      ]);
+      await makeRefundTicket({ createdAt: at(-1), status: "assigned", assigneeId: cs1 });
 
-      const now = Date.now();
+      const stats = await actionStats();
+      expect(stats.policies.map((policy) => policy.name)).toEqual([
+        "一般投诉",
+        "高级投诉",
+        "加急投诉",
+        "特急投诉",
+        "退费异常默认策略",
+        "未指定策略",
+      ]);
+      expect(policyRow(stats, "一般投诉")).toMatchObject({
+        policyId: harness.slaPolicyId("一般投诉"),
+        kindName: "投诉",
+        timeoutMs: 48 * HOUR_MS,
+        inFlight: 2,
+        dueSoon: 0,
+        overdue: 0,
+      });
+      expect(policyRow(stats, "高级投诉")).toMatchObject({ inFlight: 1, dueSoon: 0, overdue: 1 });
+      expect(policyRow(stats, "加急投诉")).toMatchObject({
+        timeoutMs: 72 * HOUR_MS,
+        inFlight: 1,
+        dueSoon: 1,
+        overdue: 0,
+      });
+      expect(policyRow(stats, "特急投诉")).toMatchObject({
+        timeoutMs: null,
+        inFlight: 1,
+        dueSoon: 0,
+        overdue: 0,
+      });
+      expect(policyRow(stats, "退费异常默认策略")).toMatchObject({
+        policyId: refundPolicyId,
+        kindName: "退费异常",
+        timeoutMs: 48 * HOUR_MS,
+        inFlight: 1,
+      });
+      const unspecified = stats.policies.at(-1);
+      expect(unspecified).toMatchObject({
+        policyId: null,
+        kindName: null,
+        timeoutMs: null,
+        inFlight: 1,
+        dueSoon: 0,
+        overdue: 0,
+      });
+    });
+  });
+
+  describe("actionStats 数据范围", () => {
+    it("无 dashboard.view_all 收窄为本人名下：unassigned 恒 0，策略桶同步收窄", async () => {
+      const cs1 = seeded.users.cs1.id;
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: at(-1), dueAt: at(47) }), // 未分配
+        fixture({ status: "assigned", assigneeId: cs1, createdAt: at(-1), dueAt: at(1) }),
+        fixture({
+          status: "processing",
+          assigneeId: seeded.users.manager.id,
+          createdAt: at(-30),
+          dueAt: at(-1),
+        }),
+      ]);
+
+      const own = await actionStats(frontlineAuth());
+      expect(own.scope).toBe("own");
+      expect(own.metrics.unassigned).toBe(0);
+      expect(own.metrics.dueSoon).toBe(1);
+      expect(own.metrics.overdue).toBe(0);
+      expect(policyRow(own, "一般投诉").inFlight).toBe(1);
+
+      const all = await actionStats();
+      expect(all.scope).toBe("all");
+      expect(all.metrics.unassigned).toBe(1);
+      expect(all.metrics.overdue).toBe(1);
+      expect(policyRow(all, "一般投诉").inFlight).toBe(3);
+    });
+
+    it("rejects callers without dashboard.view", async () => {
+      const caller = harness.callerWith(seeded.users.cs1, seeded.roles.frontline, ["ticket.view"]);
+      await expect(caller.dashboard.actionStats()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+  });
+
+  describe("analysisStats trend 粒度", () => {
+    const localIso = (date: Date) => date.toISOString();
+
+    it("span < 2 天按小时：createdFrom 所在本地日 24 桶，previous = 前一日同时段", async () => {
+      const dayStart = new Date(2026, 6, 10);
+      const hour = (offset: number) => new Date(dayStart.getTime() + offset * HOUR_MS);
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: hour(3) }),
+        fixture({ createdAt: hour(3.5) }),
+        fixture({ createdAt: hour(15) }),
+        fixture({ createdAt: new Date(dayStart.getTime() - 21 * HOUR_MS) }), // 前一日 03:00
+        fixture({ createdAt: new Date(dayStart.getTime() - 9 * HOUR_MS) }), // 前一日 15:00
+        fixture({ createdAt: new Date(dayStart.getTime() - 8.5 * HOUR_MS) }),
+        fixture({ createdAt: hour(5), source: "file_import" }), // file_import 排除
+      ]);
+
+      const { trend } = await analysisStats({
+        createdFrom: localIso(dayStart),
+        createdTo: localIso(new Date(dayStart.getTime() + DAY_MS)),
+      });
+      expect(trend.granularity).toBe("hour");
+      expect(trend.points).toHaveLength(24);
+      expect(trend.points[0]?.bucketStart).toBe(localIso(dayStart));
+      expect(trend.points[3]).toMatchObject({ created: 2, previous: 1 });
+      expect(trend.points[15]).toMatchObject({ created: 1, previous: 2 });
+      expect(trend.points.reduce((sum, point) => sum + point.created, 0)).toBe(3);
+    });
+
+    it("span = 62 天按日：本地日界分桶，previous 等长前移按桶序号对齐", async () => {
+      const from = new Date(2026, 5, 1);
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: new Date(from.getTime() + HOUR_MS) }),
+        fixture({ createdAt: new Date(from.getTime() + 5 * DAY_MS) }),
+        fixture({ createdAt: new Date(from.getTime() - 58 * DAY_MS) }), // previous 桶 5
+        fixture({ createdAt: new Date(from.getTime() - 64 * DAY_MS) }), // previous 窗口之外
+      ]);
+      await makeRefundTicket({ createdAt: new Date(from.getTime() + 5 * DAY_MS + HOUR_MS) });
+
+      const { trend } = await analysisStats({
+        createdFrom: localIso(from),
+        createdTo: localIso(new Date(from.getTime() + 62 * DAY_MS)),
+      });
+      expect(trend.granularity).toBe("day");
+      expect(trend.points).toHaveLength(63);
+      expect(trend.points[0]?.bucketStart).toBe(localIso(from));
+      expect(trend.points[0]).toMatchObject({ created: 1, previous: 0 });
+      expect(trend.points[5]).toMatchObject({ created: 2, previous: 1 }); // 含全部种类
+      expect(trend.points.reduce((sum, point) => sum + point.previous, 0)).toBe(1);
+    });
+
+    it("span = 63 天按周：自 range 起点 7 天一桶，恰落 to 的工单入末桶", async () => {
+      const from = new Date(2026, 5, 1);
+      const to = new Date(from.getTime() + 63 * DAY_MS);
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: new Date(from.getTime() + DAY_MS) }),
+        fixture({ createdAt: to }),
+        fixture({ createdAt: new Date(from.getTime() - 65 * DAY_MS) }), // previous 桶 0
+      ]);
+
+      const { trend } = await analysisStats({
+        createdFrom: localIso(from),
+        createdTo: localIso(to),
+      });
+      expect(trend.granularity).toBe("week");
+      expect(trend.points).toHaveLength(10);
+      expect(trend.points[0]?.bucketStart).toBe(localIso(from));
+      expect(trend.points[0]).toMatchObject({ created: 1, previous: 1 });
+      expect(trend.points[9]).toMatchObject({ created: 1, previous: 0 });
+    });
+
+    it("缺省窗口：createdTo = now、createdFrom = 其前 6 天（按日 7 桶）；其余周期块无界", async () => {
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: new Date(NOW.getTime() - 100 * DAY_MS) }),
+      ]);
+
+      const stats = await analysisStats();
+      expect(stats.trend.granularity).toBe("day");
+      expect(stats.trend.points).toHaveLength(7);
+      // 周期块不叠 range：100 天前的工单仍计入 kinds
+      expect(stats.kinds.find((kind) => kind.name === "投诉")?.count).toBe(1);
+    });
+  });
+
+  describe("analysisStats kinds / categories / sources", () => {
+    it("kinds 全种类目录零填充，按 displayOrder 序，叠 createdRange", async () => {
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: at(-24) }),
+        fixture({ createdAt: at(-24) }),
+        fixture({ createdAt: at(-24 * 30) }), // 区间外
+      ]);
+      await makeRefundTicket({ createdAt: at(-24) });
+
+      const { kinds } = await analysisStats({
+        createdFrom: at(-7 * 24).toISOString(),
+        createdTo: NOW.toISOString(),
+      });
+      expect(kinds).toEqual([
+        { kindId: complaintKindId, name: "投诉", count: 2 },
+        { kindId: refundKindId, name: "退费异常", count: 1 },
+      ]);
+    });
+
+    it("categories 投诉单 Top 10 + 其他 + 未填写", async () => {
+      const names = [
+        "监管投诉-引导性",
+        "监管投诉-非引导性",
+        "投诉-服务态度",
+        "投诉-未履行告知义务",
+        "投诉-信息泄露",
+        "投诉-保费收取问题",
+        "理赔咨询",
+        "理赔投诉",
+        "退保申请",
+        "退保投诉",
+        "保单变更",
+        "保单查询",
+      ];
+      const rows = names.flatMap((name, index) =>
+        Array.from({ length: names.length - index }, () =>
+          fixture({ createdAt: at(-24) }, { categoryId: harness.categoryId(name) }),
+        ),
+      );
+      rows.push(fixture({ createdAt: at(-24) }, { categoryId: null }));
+      rows.push(fixture({ createdAt: at(-24) }, { categoryId: null }));
+      await createComplaintTickets(prisma, rows);
+
+      const { categories } = await analysisStats();
+      expect(categories.map((row) => row.name)).toEqual([...names.slice(0, 10), "其他", "未填写"]);
+      expect(categories.map((row) => row.count)).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 3, 2]);
+      expect(categories[0]?.categoryId).toBe(harness.categoryId("监管投诉-引导性"));
+      expect(categories.at(-2)?.categoryId).toBeNull();
+      expect(categories.at(-1)?.categoryId).toBeNull();
+    });
+
+    it("sources 按 DEFAULT_TICKET_SOURCE_FILTER 零填充，file_import 永不在列", async () => {
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: at(-1) }),
+        fixture({ createdAt: at(-1) }),
+        fixture({ createdAt: at(-1), source: "external_channel" }),
+        fixture({ createdAt: at(-1), source: "file_import" }),
+        fixture({ createdAt: at(-1), source: "file_import" }),
+      ]);
+
+      const { sources } = await analysisStats();
+      expect(sources).toEqual([
+        { source: "feishu_form", count: 0 },
+        { source: "manual", count: 2 },
+        { source: "community", count: 0 },
+        { source: "external_channel", count: 1 },
+        { source: "jb-insurance", count: 0 },
+      ]);
+    });
+  });
+
+  describe("analysisStats matrix", () => {
+    it("行列和 = 周期内投诉单总数；实体和 = 行和；未填写行/列；实体 Top 8 + 其他 + 未填写", async () => {
+      const ufcA = harness.userFeedbackChannelId("经纪400热线");
+      const ufcB = harness.userFeedbackChannelId("保司400热线");
       const rows: { core: ComplaintCoreInput; detail: ComplaintDetailInput }[] = [];
-      for (const user of users) {
-        const completions = Number(user.username.replace("perf-cs-", ""));
-        for (let i = 0; i < completions; i++) {
+      // 保司：9 个项目（9..1 张）→ Top 8 + 其他(1)；1 张未填项目
+      for (let index = 0; index < 9; index += 1) {
+        const count = 9 - index;
+        for (let i = 0; i < count; i += 1) {
           rows.push(
-            bulkRow({
-              assigneeId: user.id,
-              status: "completed",
-              dueAt: new Date(now + 40 * HOUR_MS),
-              completionTime: new Date(now - i * HOUR_MS),
-            }),
+            fixture(
+              { createdAt: at(-24) },
+              {
+                channelId: harness.channelId("保司"),
+                project: `项目${index + 1}`,
+                userFeedbackChannelId: index % 2 === 0 ? ufcA : ufcB,
+              },
+            ),
           );
         }
       }
+      rows.push(
+        fixture(
+          { createdAt: at(-24) },
+          {
+            channelId: harness.channelId("保司"),
+            project: null,
+            userFeedbackChannelId: null,
+          },
+        ),
+      );
+      // 经纪 / 支付：实体下钻；监管：无实体
+      rows.push(
+        fixture(
+          { createdAt: at(-24) },
+          {
+            channelId: harness.channelId("经纪"),
+            brokerageEntity: "东方大地",
+            userFeedbackChannelId: ufcA,
+          },
+        ),
+        fixture(
+          { createdAt: at(-24) },
+          {
+            channelId: harness.channelId("经纪"),
+            brokerageEntity: "东方大地",
+            userFeedbackChannelId: ufcA,
+          },
+        ),
+        fixture(
+          { createdAt: at(-24) },
+          {
+            channelId: harness.channelId("经纪"),
+            brokerageEntity: "其他经纪",
+            userFeedbackChannelId: ufcB,
+          },
+        ),
+        fixture(
+          { createdAt: at(-24) },
+          {
+            channelId: harness.channelId("支付"),
+            paymentChannel: "连连支付",
+            userFeedbackChannelId: ufcA,
+          },
+        ),
+        fixture(
+          { createdAt: at(-24) },
+          { channelId: harness.channelId("监管"), userFeedbackChannelId: ufcB },
+        ),
+        fixture(
+          { createdAt: at(-24) },
+          { channelId: harness.channelId("监管"), userFeedbackChannelId: ufcB },
+        ),
+        // 未填写行
+        fixture({ createdAt: at(-24) }, { channelId: null, userFeedbackChannelId: ufcA }),
+        // 区间外：不计入
+        fixture(
+          { createdAt: at(-24 * 30) },
+          { channelId: harness.channelId("保司"), project: "老项目", userFeedbackChannelId: ufcA },
+        ),
+      );
       await createComplaintTickets(prisma, rows);
 
-      const stats = await manager().dashboard.stats({});
+      const range = {
+        createdFrom: at(-7 * 24).toISOString(),
+        createdTo: NOW.toISOString(),
+      };
+      const { matrix } = await analysisStats(range);
 
-      expect(stats.assignees).toHaveLength(10);
-      expect(stats.assignees.map((row) => row.completedCount)).toEqual([
-        12, 11, 10, 9, 8, 7, 6, 5, 4, 3,
+      const ufcCatalogCount = await prisma.userFeedbackChannel.count();
+      expect(matrix.columns).toHaveLength(ufcCatalogCount + 1);
+      expect(matrix.columns.at(-1)).toEqual({ id: null, name: "未填写" });
+
+      expect(matrix.rows.map((row) => row.name)).toEqual([
+        "保司",
+        "经纪",
+        "支付",
+        "监管",
+        "未填写",
       ]);
-      expect(stats.assignees[0]?.assigneeName).toBe("考核客服12");
-      const shownNames = stats.assignees.map((row) => row.assigneeName);
-      expect(shownNames).not.toContain("考核客服1");
-      expect(shownNames).not.toContain("考核客服2");
-    });
+      const sumCells = (cells: Record<string, number>) =>
+        Object.values(cells).reduce((sum, count) => sum + count, 0);
+      const rowByName = (name: string) => {
+        const row = matrix.rows.find((entry) => entry.name === name);
+        if (!row) throw new Error(`matrix 行「${name}」缺失`);
+        return row;
+      };
 
-    it("includes assignees with zero completions while room remains — avg 完结时长 is null", async () => {
-      await makeTicket(
-        { customerName: "只在途" },
-        { status: "processing", assigneeId: seeded.users.cs1.id },
+      // 行列和 = 周期内投诉单总数
+      const grandTotal = matrix.rows.reduce((sum, row) => sum + sumCells(row.cells), 0);
+      expect(grandTotal).toBe(46 + 3 + 1 + 2 + 1);
+      for (const row of matrix.rows) {
+        expect(Object.keys(row.cells)).toHaveLength(ufcCatalogCount + 1);
+      }
+
+      const insurance = rowByName("保司");
+      expect(sumCells(insurance.cells)).toBe(46);
+      expect(insurance.cells[DASHBOARD_MATRIX_UNFILLED_KEY]).toBe(1);
+      // Top 8（计数降序）+ 其他 + 未填写
+      expect(insurance.entities.map((entity) => entity.name)).toEqual([
+        "项目1",
+        "项目2",
+        "项目3",
+        "项目4",
+        "项目5",
+        "项目6",
+        "项目7",
+        "项目8",
+        "其他",
+        "未填写",
+      ]);
+      expect(insurance.entities[0]?.cells[ufcA]).toBe(9);
+      expect(sumCells(insurance.entities[8]?.cells ?? {})).toBe(1); // 其他 = 项目9
+      expect(insurance.entities[9]?.cells[DASHBOARD_MATRIX_UNFILLED_KEY]).toBe(1);
+      const entityTotal = insurance.entities.reduce(
+        (sum, entity) => sum + sumCells(entity.cells),
+        0,
+      );
+      expect(entityTotal).toBe(sumCells(insurance.cells));
+
+      const brokerage = rowByName("经纪");
+      expect(brokerage.entities.map((entity) => entity.name)).toEqual(["东方大地", "其他经纪"]);
+      expect(brokerage.entities[0]?.cells[ufcA]).toBe(2);
+      expect(brokerage.entities.reduce((sum, entity) => sum + sumCells(entity.cells), 0)).toBe(
+        sumCells(brokerage.cells),
       );
 
-      const stats = await manager().dashboard.stats({});
+      const payment = rowByName("支付");
+      expect(payment.entities.map((entity) => entity.name)).toEqual(["连连支付"]);
 
-      expect(stats.assignees).toEqual([
-        {
-          assigneeId: seeded.users.cs1.id,
-          assigneeName: seeded.users.cs1.name,
-          totalCount: 1,
-          completedCount: 0,
+      expect(rowByName("监管").entities).toEqual([]);
+      const unfilled = matrix.rows.at(-1);
+      expect(unfilled?.channelId).toBeNull();
+      expect(unfilled?.cells[ufcA]).toBe(1);
+      expect(unfilled?.entities).toEqual([]);
+    });
+  });
+
+  describe("analysisStats agents", () => {
+    it("责任人候选全集零填充（含无工单者），无 dashboard.view_all 只剩自己一行", async () => {
+      const stats = await analysisStats();
+      // admin/manager/cs1 合规；observer 只读无 ticket.process 出局
+      expect(stats.agents.map((agent) => agent.assigneeId).sort()).toEqual(
+        [seeded.users.admin.id, seeded.users.manager.id, seeded.users.cs1.id].sort(),
+      );
+      for (const agent of stats.agents) {
+        expect(agent).toMatchObject({
+          inFlight: 0,
+          overdue: 0,
+          dueSoon: 0,
+          awaitingFirstResponse: 0,
+          followUpCheckpoints: 0,
+          followUpRolling: 0,
+          completed: 0,
           avgCompletionMs: null,
           overdueCount: 0,
           overdueRate: 0,
-        },
-      ]);
-    });
-  });
+        });
+      }
 
-  describe("数据范围: 无 dashboard.view_all 收窄为本人名下", () => {
-    it("frontline sees own-only numbers and scope=own; view_all roles see everything", async () => {
-      const now = new Date();
-      await makeTicket({ customerName: "无主单", channelId: channelId("监管") });
-      await makeTicket(
-        { customerName: "主管的超时单" },
-        {
+      const own = await analysisStats({}, frontlineAuth());
+      expect(own.scope).toBe("own");
+      expect(own.agents.map((agent) => agent.assigneeId)).toEqual([seeded.users.cs1.id]);
+    });
+
+    it("实时列不叠 createdRange：区间外创建的在途单照常计入", async () => {
+      const range = {
+        createdFrom: at(-7 * 24).toISOString(),
+        createdTo: NOW.toISOString(),
+      };
+      await createComplaintTickets(prisma, [
+        fixture({
+          // 区间外创建：实时列照计，周期列不计
+          status: "processing",
+          assigneeId: seeded.users.cs1.id,
+          createdAt: at(-24 * 30),
+          dueAt: at(-1),
+        }),
+        fixture({
+          status: "assigned",
+          assigneeId: seeded.users.manager.id,
+          createdAt: at(-24 * 30),
+          dueAt: at(1),
+          contactCount: 0,
+        }),
+      ]);
+
+      const { agents } = await analysisStats(range);
+      const cs1 = agents.find((agent) => agent.assigneeId === seeded.users.cs1.id);
+      const manager = agents.find((agent) => agent.assigneeId === seeded.users.manager.id);
+      expect(cs1).toMatchObject({ inFlight: 1, overdue: 1, dueSoon: 0, overdueCount: 0 });
+      expect(manager).toMatchObject({
+        inFlight: 1,
+        dueSoon: 1,
+        awaitingFirstResponse: 1,
+        completed: 0,
+      });
+    });
+
+    it("周期列口径：completed/avgCompletionMs/overdueCount（曾超时）/overdueRate 分母；排序 inFlight→completed→name", async () => {
+      const cs1 = seeded.users.cs1.id;
+      await createComplaintTickets(prisma, [
+        fixture({
+          // 按时完结：时长 1 天
+          status: "completed",
+          assigneeId: cs1,
+          createdAt: at(-3 * 24),
+          dueAt: at(-24),
+          completionTime: at(-2 * 24),
+        }),
+        fixture({
+          // 超时完结：时长 3 天，曾超时
+          status: "completed",
+          assigneeId: cs1,
+          createdAt: at(-4 * 24),
+          dueAt: at(-2 * 24),
+          completionTime: at(-24),
+        }),
+        fixture({
+          // 在途已超时：曾超时
+          status: "processing",
+          assigneeId: cs1,
+          createdAt: at(-2 * 24),
+          dueAt: at(-24),
+        }),
+        fixture({
+          // 特急在途：dueAt null 永不超时
+          status: "processing",
+          assigneeId: cs1,
+          createdAt: at(-24),
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+          dueAt: null,
+        }),
+        fixture({
+          status: "assigned",
+          assigneeId: seeded.users.manager.id,
+          createdAt: at(-24),
+          dueAt: at(47),
+        }),
+        fixture({
+          // 区间外完结：不进周期列
+          status: "completed",
+          assigneeId: cs1,
+          createdAt: at(-24 * 30),
+          dueAt: at(-24 * 29),
+          completionTime: at(-24 * 29),
+        }),
+      ]);
+
+      const { agents } = await analysisStats({
+        createdFrom: at(-7 * 24).toISOString(),
+        createdTo: NOW.toISOString(),
+      });
+      expect(agents.map((agent) => agent.assigneeId)).toEqual([
+        cs1,
+        seeded.users.manager.id,
+        seeded.users.admin.id,
+      ]);
+      const row = agents[0];
+      expect(row).toMatchObject({
+        completed: 2,
+        avgCompletionMs: 2 * DAY_MS,
+        overdueCount: 2,
+        overdueRate: 0.5, // 分母 = 周期内创建名下单总数 4
+        inFlight: 2,
+        overdue: 1,
+      });
+    });
+
+    it("跟进欠账列：检查点窗口内未达标命中、窗口已过不命中、滚动欠跟进命中、达标即出窗", async () => {
+      const cs1 = seeded.users.cs1.id;
+      const rows = await createComplaintTickets(prisma, [
+        fixture({
+          // 24h 检查点窗口 [23h,24h) 内，0/1 次 → 命中
+          status: "assigned",
+          assigneeId: cs1,
+          createdAt: at(-23.5),
+          slaAnchorAt: at(-23.5),
+          dueAt: at(24.5),
+        }),
+        fixture({
+          // 24h 窗口已过、48h 窗口未至 → 不命中
+          status: "assigned",
+          assigneeId: cs1,
+          createdAt: at(-25),
+          slaAnchorAt: at(-25),
+          dueAt: at(23),
+        }),
+        fixture({
+          // 特急：上条 comment 距今 13h ≥ 12h → 滚动命中
+          status: "processing",
+          assigneeId: cs1,
+          createdAt: at(-30),
+          slaAnchorAt: at(-30),
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+          dueAt: null,
+          contactCount: 1,
+        }),
+        fixture({
+          // 特急但无任何 comment：滚动不启动（待首响兜底）
+          status: "assigned",
+          assigneeId: cs1,
+          createdAt: at(-30),
+          slaAnchorAt: at(-30),
+          slaPolicyId: harness.slaPolicyId("特急投诉"),
+          dueAt: null,
+        }),
+        fixture({
+          // 检查点已达标（1/1）→ 不命中
           status: "processing",
           assigneeId: seeded.users.manager.id,
-          dueAt: new Date(now.getTime() - HOUR_MS),
+          createdAt: at(-23.5),
+          slaAnchorAt: at(-23.5),
+          dueAt: at(24.5),
+          contactCount: 1,
+        }),
+      ]);
+      const rollingTicketId = rows[2];
+      if (!rollingTicketId) throw new Error("滚动工单 fixture 缺失");
+      await prisma.processLog.create({
+        data: {
+          ticketId: rollingTicketId,
+          operatorId: cs1,
+          operatorName: seeded.users.cs1.name,
+          action: "comment",
+          remark: "跟进",
+          at: at(-13),
         },
-      );
-      await makeTicket(
-        { customerName: "小张的完结单" },
-        {
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          completionTime: new Date(now.getTime() - HOUR_MS),
-        },
-      );
-      await makeTicket(
-        { customerName: "小张的在途单", channelId: channelId("支付") },
-        {
-          status: "assigned",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() + 30 * HOUR_MS),
-        },
-      );
+      });
 
-      const own = await frontline().dashboard.stats({});
-      expect(own.scope).toBe("own");
-      expect(own.metrics.total).toBe(2);
-      expect(own.metrics.unassigned).toBe(0);
-      expect(own.metrics.completed).toBe(1);
-      expect(own.metrics.assigned).toBe(1);
-      expect(own.metrics.overdue).toBe(0);
-      expect(own.channels.find((row) => row.name === "支付")?.count).toBe(1);
-      expect(own.assignees.map((row) => row.assigneeId)).toEqual([seeded.users.cs1.id]);
-
-      for (const caller of [manager(), observer()]) {
-        const all = await caller.dashboard.stats({});
-        expect(all.scope).toBe("all");
-        expect(all.metrics.total).toBe(4);
-        expect(all.metrics.unassigned).toBe(1);
-        expect(all.metrics.overdue).toBe(1);
-        expect(all.assignees.map((row) => row.assigneeId).sort()).toEqual(
-          [seeded.users.manager.id, seeded.users.cs1.id].sort(),
-        );
-      }
+      const { agents } = await analysisStats();
+      const cs1Row = agents.find((agent) => agent.assigneeId === cs1);
+      expect(cs1Row?.followUpCheckpoints).toBe(1);
+      expect(cs1Row?.followUpRolling).toBe(1);
+      const managerRow = agents.find((agent) => agent.assigneeId === seeded.users.manager.id);
+      expect(managerRow?.followUpCheckpoints).toBe(0);
+      expect(managerRow?.followUpRolling).toBe(0);
     });
 
-    it("我创建但他人处理/未指派的单不计入我的看板 — 看板口径按我名下，与列表有意不同", async () => {
-      await makeTicket({ customerName: "小张创建未指派" }, { creatorId: seeded.users.cs1.id });
-      await makeTicket(
-        { customerName: "小张创建主管处理" },
-        {
-          creatorId: seeded.users.cs1.id,
+    it("策略停用退出跟进欠账判定", async () => {
+      await createComplaintTickets(prisma, [
+        fixture({
           status: "assigned",
-          assigneeId: seeded.users.manager.id,
-          assignedAt: new Date(),
-        },
-      );
-
-      const own = await frontline().dashboard.stats({});
-      expect(own.scope).toBe("own");
-      expect(own.metrics.total).toBe(0);
-      expect(own.assignees).toEqual([]);
+          assigneeId: seeded.users.cs1.id,
+          createdAt: at(-23.5),
+          slaAnchorAt: at(-23.5),
+          slaPolicyId: harness.slaPolicyId("高级投诉"),
+          dueAt: at(24.5),
+        }),
+      ]);
+      const policyId = harness.slaPolicyId("高级投诉");
+      await prisma.slaPolicy.update({ where: { id: policyId }, data: { active: false } });
+      try {
+        const { agents } = await analysisStats();
+        expect(
+          agents.find((agent) => agent.assigneeId === seeded.users.cs1.id)?.followUpCheckpoints,
+        ).toBe(0);
+      } finally {
+        await prisma.slaPolicy.update({ where: { id: policyId }, data: { active: true } });
+      }
     });
   });
 
-  describe("权限", () => {
+  describe("analysisStats 数据范围与权限", () => {
+    it("own scope：周期块与 agents 同步收窄为本人名下", async () => {
+      await createComplaintTickets(prisma, [
+        fixture({ status: "assigned", assigneeId: seeded.users.cs1.id, createdAt: at(-24) }),
+        fixture({
+          status: "assigned",
+          assigneeId: seeded.users.manager.id,
+          createdAt: at(-24),
+        }),
+      ]);
+
+      const own = await analysisStats(
+        { createdFrom: at(-7 * 24).toISOString(), createdTo: NOW.toISOString() },
+        frontlineAuth(),
+      );
+      expect(own.scope).toBe("own");
+      expect(own.kinds.find((kind) => kind.name === "投诉")?.count).toBe(1);
+      expect(own.sources.find((row) => row.source === "manual")?.count).toBe(1);
+      expect(own.agents).toHaveLength(1);
+
+      const all = await analysisStats({
+        createdFrom: at(-7 * 24).toISOString(),
+        createdTo: NOW.toISOString(),
+      });
+      expect(all.kinds.find((kind) => kind.name === "投诉")?.count).toBe(2);
+    });
+
+    it("软删与 file_import 不计入任何周期块", async () => {
+      await createComplaintTickets(prisma, [
+        fixture({ createdAt: at(-24) }),
+        fixture({ createdAt: at(-24), deletedAt: at(-1) }),
+        fixture({ createdAt: at(-24), source: "file_import" }),
+      ]);
+
+      const stats = await analysisStats();
+      expect(stats.kinds.find((kind) => kind.name === "投诉")?.count).toBe(1);
+      expect(stats.sources.reduce((sum, row) => sum + row.count, 0)).toBe(1);
+      expect(
+        stats.matrix.rows.reduce(
+          (total, row) => total + Object.values(row.cells).reduce((sum, count) => sum + count, 0),
+          0,
+        ),
+      ).toBe(1);
+      expect(stats.trend.points.reduce((sum, point) => sum + point.created, 0)).toBe(1);
+    });
+
     it("rejects callers without dashboard.view", async () => {
-      const caller = callerFor(seeded.users.cs1, seeded.roles.frontline, ["ticket.view"]);
-      await expect(caller.dashboard.stats({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const caller = harness.callerWith(seeded.users.cs1, seeded.roles.frontline, ["ticket.view"]);
+      await expect(caller.dashboard.analysisStats({})).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
     });
   });
 
   describe("性能", () => {
-    it("computes the full dashboard over 3000 tickets in under 2 seconds", async () => {
-      const now = Date.now();
-      const assignees = [
-        seeded.users.cs1.id,
-        seeded.users.manager.id,
-        seeded.users.observer.id,
-        seeded.users.admin.id,
-        null,
-      ];
+    it("3000 工单上两个 procedure 各在 2 秒内完成", async () => {
+      const assignees = [seeded.users.cs1.id, seeded.users.manager.id, seeded.users.admin.id, null];
       const statuses = ["unassigned", "assigned", "processing", "completed"] as const;
       await createComplaintTickets(
         prisma,
         Array.from({ length: 3000 }, (_, i) => {
           const status = statuses[i % statuses.length] ?? "unassigned";
           const assigneeId = status === "unassigned" ? null : (assignees[i % 4] ?? null);
-          const completed = status === "completed";
-          return bulkRow(
+          return fixture(
             {
               slaPolicyId: harness.slaPolicyId(i % 11 === 0 ? "特急投诉" : "一般投诉"),
               status,
               assigneeId,
-              createdAt: new Date(now - (i % 96) * HOUR_MS),
-              dueAt: i % 11 === 0 ? null : new Date(now + ((i % 96) - 48) * HOUR_MS),
-              completionTime: completed ? new Date(now - (i % 24) * HOUR_MS) : null,
+              createdAt: new Date(NOW.getTime() - (i % 96) * HOUR_MS),
+              dueAt: i % 11 === 0 ? null : new Date(NOW.getTime() + ((i % 96) - 48) * HOUR_MS),
+              completionTime:
+                status === "completed" ? new Date(NOW.getTime() - (i % 24) * HOUR_MS) : null,
             },
-            { channelId: channelRows[i % channelRows.length]?.id },
+            { project: `项目${i % 12}` },
           );
         }),
       );
 
-      const startedAt = performance.now();
-      const stats = await manager().dashboard.stats({});
-      const elapsedMs = performance.now() - startedAt;
+      const actionStart = performance.now();
+      await actionStats();
+      expect(performance.now() - actionStart).toBeLessThan(2000);
 
-      expect(stats.metrics.total).toBe(3000);
-      expect(elapsedMs).toBeLessThan(2000);
-    });
-  });
-
-  describe("创建时间筛选", () => {
-    it("默认「全部」：空入参与改动前行为一致", async () => {
-      const now = new Date("2026-07-20T10:00:00Z");
-      await makeTicket({ customerName: "旧单" }, { createdAt: new Date("2026-07-01T00:00:00Z") });
-      await makeTicket({ customerName: "新单" }, { createdAt: new Date("2026-07-20T08:00:00Z") });
-
-      const stats = await statsAt(now);
-      expect(stats.metrics.total).toBe(2);
-    });
-
-    it("选中区间后，8 张指标卡、渠道统计、考核 Top 10 全部只统计该区间内创建的工单", async () => {
-      const now = new Date("2026-07-20T10:00:00Z");
-      const rangeStart = "2026-07-15T00:00:00Z";
-      const rangeEnd = "2026-07-20T23:59:59.999Z";
-
-      await makeTicket(
-        { customerName: "区间前", channelId: channelId("保司") },
-        {
-          createdAt: new Date("2026-07-14T23:59:59Z"),
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          completionTime: new Date("2026-07-15T01:00:00Z"),
-        },
-      );
-      await makeTicket(
-        { customerName: "区间起点", channelId: channelId("经纪") },
-        {
-          createdAt: new Date(rangeStart),
-          status: "assigned",
-          assigneeId: seeded.users.cs1.id,
-        },
-      );
-      await makeTicket(
-        { customerName: "区间内处理中", channelId: channelId("监管") },
-        {
-          createdAt: new Date("2026-07-16T10:00:00Z"),
-          status: "processing",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() + 10 * HOUR_MS),
-        },
-      );
-      await makeTicket(
-        {
-          customerName: "区间内特急",
-          channelId: channelId("保司"),
-          slaPolicyId: harness.slaPolicyId("特急投诉"),
-        },
-        {
-          createdAt: new Date("2026-07-17T10:00:00Z"),
-        },
-      );
-      await makeTicket(
-        { customerName: "区间末点", channelId: channelId("支付") },
-        {
-          createdAt: new Date(rangeEnd),
-          status: "completed",
-          assigneeId: seeded.users.manager.id,
-          completionTime: new Date("2026-07-21T00:00:00Z"),
-        },
-      );
-      await makeTicket(
-        { customerName: "区间后", channelId: channelId("经纪") },
-        { createdAt: new Date("2026-07-21T00:00:00Z") },
-      );
-
-      const stats = await statsAt(now, seeded.users.manager, undefined, {
-        createdFrom: rangeStart,
-        createdTo: rangeEnd,
-      });
-
-      expect(stats.metrics.total).toBe(4);
-      expect(stats.metrics.unassigned).toBe(1);
-      expect(stats.metrics.assigned).toBe(1);
-      expect(stats.metrics.processing).toBe(1);
-      expect(stats.metrics.completed).toBe(1);
-      expect(stats.metrics.overdue).toBe(0);
-      expect(stats.metrics.urgent).toBe(1);
-
-      expect(stats.channels.find((ch) => ch.name === "保司")?.count).toBe(1);
-      expect(stats.channels.find((ch) => ch.name === "经纪")?.count).toBe(1);
-      expect(stats.channels.find((ch) => ch.name === "支付")?.count).toBe(1);
-      expect(stats.channels.find((ch) => ch.name === "监管")?.count).toBe(1);
-
-      expect(stats.assignees).toHaveLength(2);
-      const cs1Row = stats.assignees.find((a) => a.assigneeId === seeded.users.cs1.id);
-      expect(cs1Row?.totalCount).toBe(2);
-      expect(cs1Row?.completedCount).toBe(0);
-      expect(cs1Row?.overdueCount).toBe(0);
-      const managerRow = stats.assignees.find((a) => a.assigneeId === seeded.users.manager.id);
-      expect(managerRow?.totalCount).toBe(1);
-      expect(managerRow?.completedCount).toBe(1);
-    });
-
-    it("预警/超时在区间内仍以当下时刻判定，与列表同名筛选一致", async () => {
-      const now = new Date("2026-07-20T10:00:00Z");
-      const rangeStart = "2026-07-15T00:00:00Z";
-      const rangeEnd = "2026-07-20T23:59:59.999Z";
-
-      await makeTicket(
-        { customerName: "昨天创建今天超时" },
-        {
-          createdAt: new Date("2026-07-14T10:00:00Z"),
-          status: "assigned",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() - HOUR_MS),
-        },
-      );
-      await makeTicket(
-        { customerName: "区间内创建当下超时" },
-        {
-          createdAt: new Date("2026-07-18T10:00:00Z"),
-          status: "processing",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() - 10 * 60 * 1000),
-        },
-      );
-      await makeTicket(
-        { customerName: "区间内创建当下预警" },
-        {
-          createdAt: new Date("2026-07-19T10:00:00Z"),
-          status: "assigned",
-          assigneeId: seeded.users.cs1.id,
-          dueAt: new Date(now.getTime() + HOUR_MS),
-        },
-      );
-
-      const stats = await statsAt(now, seeded.users.manager, undefined, {
-        createdFrom: rangeStart,
-        createdTo: rangeEnd,
-      });
-
-      expect(stats.metrics.total).toBe(2);
-      expect(stats.metrics.overdue).toBe(1);
-      expect(stats.metrics.pendingTimeout).toBe(1);
-    });
-
-    it("考核 Top 10 按创建时间落区间，排序与上限规则不变", async () => {
-      const rangeStart = "2026-07-15T00:00:00Z";
-      const rangeEnd = "2026-07-20T23:59:59.999Z";
-
-      await makeTicket(
-        { customerName: "区间前完结" },
-        {
-          createdAt: new Date("2026-07-14T10:00:00Z"),
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          completionTime: new Date("2026-07-18T10:00:00Z"),
-        },
-      );
-      await makeTicket(
-        { customerName: "区间内完结" },
-        {
-          createdAt: new Date("2026-07-16T10:00:00Z"),
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          completionTime: new Date("2026-07-18T10:00:00Z"),
-        },
-      );
-      await makeTicket(
-        { customerName: "区间内未完结" },
-        {
-          createdAt: new Date("2026-07-17T10:00:00Z"),
-          status: "assigned",
-          assigneeId: seeded.users.cs1.id,
-        },
-      );
-
-      const stats = await statsAt(
-        new Date("2026-07-20T10:00:00Z"),
-        seeded.users.manager,
-        undefined,
-        { createdFrom: rangeStart, createdTo: rangeEnd },
-      );
-
-      expect(stats.assignees).toHaveLength(1);
-      expect(stats.assignees[0]?.totalCount).toBe(2);
-      expect(stats.assignees[0]?.completedCount).toBe(1);
-    });
-
-    it("数据范围权限与时间区间叠加正确", async () => {
-      const rangeStart = "2026-07-15T00:00:00Z";
-      const rangeEnd = "2026-07-20T23:59:59.999Z";
-
-      await makeTicket(
-        { customerName: "小张·区间内" },
-        {
-          createdAt: new Date("2026-07-18T10:00:00Z"),
-          status: "assigned",
-          assigneeId: seeded.users.cs1.id,
-        },
-      );
-      await makeTicket(
-        { customerName: "小张·区间外" },
-        {
-          createdAt: new Date("2026-07-14T10:00:00Z"),
-          status: "completed",
-          assigneeId: seeded.users.cs1.id,
-          completionTime: new Date("2026-07-15T10:00:00Z"),
-        },
-      );
-      await makeTicket(
-        { customerName: "主管·区间内" },
-        {
-          createdAt: new Date("2026-07-19T10:00:00Z"),
-          status: "processing",
-          assigneeId: seeded.users.manager.id,
-        },
-      );
-
-      const own = await frontline().dashboard.stats({
-        createdFrom: rangeStart,
-        createdTo: rangeEnd,
-      });
-      expect(own.scope).toBe("own");
-      expect(own.metrics.total).toBe(1);
-      expect(own.assignees[0]?.assigneeId).toBe(seeded.users.cs1.id);
-
-      const all = await manager().dashboard.stats({
-        createdFrom: rangeStart,
-        createdTo: rangeEnd,
-      });
-      expect(all.scope).toBe("all");
-      expect(all.metrics.total).toBe(2);
-    });
-
-    it("单边区间正确生效：只约束有值的那端", async () => {
-      const now = new Date("2026-07-20T10:00:00Z");
-      await makeTicket({ customerName: "旧单" }, { createdAt: new Date("2026-07-01T00:00:00Z") });
-      await makeTicket({ customerName: "新单" }, { createdAt: new Date("2026-07-19T10:00:00Z") });
-
-      const fromOnly = await statsAt(now, seeded.users.manager, undefined, {
-        createdFrom: "2026-07-10T00:00:00Z",
-      });
-      expect(fromOnly.metrics.total).toBe(1);
-
-      const toOnly = await statsAt(now, seeded.users.manager, undefined, {
-        createdTo: "2026-07-10T23:59:59.999Z",
-      });
-      expect(toOnly.metrics.total).toBe(1);
+      const analysisStart = performance.now();
+      await analysisStats();
+      expect(performance.now() - analysisStart).toBeLessThan(2000);
     });
   });
 });

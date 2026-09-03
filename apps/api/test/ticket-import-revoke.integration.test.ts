@@ -151,8 +151,15 @@ describe("ticket import history & batch revocation (Testcontainers)", () => {
 
       expect((await supervisorCaller().ticket.list({})).total).toBe(0);
       expect((await importerCaller().ticket.list({})).total).toBe(0);
-      const stats = await supervisorCaller().dashboard.stats({});
-      expect(stats.metrics.total).toBe(0);
+      const stats = await supervisorCaller().dashboard.actionStats();
+      expect(stats.metrics).toEqual({
+        overdue: 0,
+        dueSoon: 0,
+        awaitingFirstResponse: 0,
+        firstResponseOverLine: 0,
+        unassigned: 0,
+        unassignedOldestWaitMs: null,
+      });
       const file = await exportTickets(deps(), authUser(supervisor, SUPERVISOR_PERMISSIONS), {
         format: "csv",
         source: [...TICKET_SOURCES],

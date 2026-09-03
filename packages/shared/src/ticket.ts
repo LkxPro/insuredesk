@@ -366,10 +366,11 @@ export type PolicyNumberStateFilter = (typeof POLICY_NUMBER_STATE_FILTERS)[numbe
 
 /**
  * Ticket-list query contract, shared by the list page's filter state and the
- * API input — one schema, both ends. All filters are multi-select: 空数组 =
- * 不过滤. The 状态 filter accepts all 6 display statuses: computed ones are
- * resolved to SQL predicates server-side, never stored. Each filter tolerates
- * a legacy single value (old `?source=manual` links) by wrapping it.
+ * API input — one schema, both ends. All filters are multi-select (空数组 =
+ * 不过滤) except firstResponse（单值枚举）. The 状态 filter accepts all 6
+ * display statuses: computed ones are resolved to SQL predicates server-side,
+ * never stored. Each multi filter tolerates a legacy single value (old
+ * `?source=manual` links) by wrapping it.
  */
 
 const multiFilter = <T extends z.ZodTypeAny>(schema: T) =>
@@ -384,9 +385,13 @@ export const ticketListInputSchema = z.object({
   /** 完结状态目录引用筛选；停用状态也可选，仍能查到其存量工单。 */
   completionStatusId: multiFilter(z.string().min(1)).optional(),
   complaintLevel: legacyComplaintLevelInputSchema,
-  /** 时效策略目录引用筛选；停用策略也可选，仍能查到其存量工单。 */
+  /** 时效策略目录引用筛选；停用策略也可选，仍能查到其存量工单。字面值 "none" = 未指定策略（契约见 ticket-filter.ts）。 */
   slaPolicyId: multiFilter(z.string().min(1)).optional(),
   kindId: multiFilter(z.string().min(1)).optional(),
+  /** 候选项与分配对话框同源（启用 + 非外部 + ticket.view&ticket.process）。 */
+  assigneeId: multiFilter(z.string().min(1)).optional(),
+  /** 无 "全部" 字面值——缺省即不过滤。 */
+  firstResponse: z.enum(["pending"]).optional(),
   policyNumberState: multiFilter(policyNumberStateFilterSchema).optional(),
   /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */
   source: multiFilter(ticketSourceSchema).default([...DEFAULT_TICKET_SOURCE_FILTER]),

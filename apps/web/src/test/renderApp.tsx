@@ -84,6 +84,10 @@ function defaultData(path: string): unknown {
   if (path.endsWith(".filterOptions") || path.endsWith(".options")) {
     return [];
   }
+  // 责任人候选是数组（筛选控件与分配对话框共用），不能落进下面的列表默认形
+  if (path === "ticket.assigneeOptions") {
+    return [];
+  }
   // 详情页条幅会查 ticket.findDuplicates；空数组 = 无命中，条幅不渲染
   if (path === "ticket.findDuplicates") {
     return [];

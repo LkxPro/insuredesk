@@ -70,7 +70,7 @@ _Avoid_: 把投递做成完结的同步阻塞步骤（完结可用性被平台�
 ### SLA 与提醒
 
 **时效策略（SlaPolicy）**：
-时效策略目录实体，是**唯一驱动 SLA 的概念**：名称（全表唯一，含停用行）+ 描述 + sortOrder 目录序 + active 启停，内含一份 SLA 规则值——首响违约线 + 超时时长（可空 = 不设处理时限）+ 处理时限提前预警 + 类型化提醒规则列表（follow_up_checkpoint / rolling_follow_up，规则类型由系统提供，不接受自定义表达式或脚本）。持 `sla.edit` 的管理员维护：新增、改名（含停用行撞名报错）、整组排序、停用/复活；无物理删除。工单存策略**引用**（slaPolicyId）：改名全局生效，存量工单的列表、详情、导出立即显示新名；改引用的 ProcessLog from/to 保留操作当时的策略名字面快照。引用可空 = 未指定：无 dueAt、首响/跟进要求和 SLA 时间告警，后续补指定仍从 slaAnchorAt 起算。停用策略退出建单/编辑新选、sla.options 与导入按名匹配（撞停用名即报错行）；引用它的存量工单照常显示，待办 poll 走缺行降级路径（不抛错），dashboard 特急卡改绑次高 active 策略；编辑工单的无关字段可保持原停用引用，但新选停用策略被拒绝（与缺行同错）。系统初始播种一般/高级/加急/特急四条（sortOrder 1..4，含口径文案），bootstrap 幂等——此后目录归管理员维护，重跑种子不覆盖修改。策略按工单**种类**分组：/sla 管理页组间以 divider 分隔，各组独立排序/启停/编辑；建单与编辑的策略下拉按工单种类过滤（投诉单只见投诉组）。存量四条归「投诉」组；「退费异常」组播种一条默认策略（48h 超时 + 36h 首检查点），推送建单即盖该组默认策略。
+时效策略目录实体，是**唯一驱动 SLA 的概念**：名称（全表唯一，含停用行）+ 描述 + sortOrder 目录序 + active 启停，内含一份 SLA 规则值——首响违约线 + 超时时长（可空 = 不设处理时限）+ 处理时限提前预警 + 类型化提醒规则列表（follow_up_checkpoint / rolling_follow_up，规则类型由系统提供，不接受自定义表达式或脚本）。持 `sla.edit` 的管理员维护：新增、改名（含停用行撞名报错）、整组排序、停用/复活；无物理删除。工单存策略**引用**（slaPolicyId）：改名全局生效，存量工单的列表、详情、导出立即显示新名；改引用的 ProcessLog from/to 保留操作当时的策略名字面快照。引用可空 = 未指定：无 dueAt、首响/跟进要求和 SLA 时间告警，后续补指定仍从 slaAnchorAt 起算。停用策略退出建单/编辑新选、sla.options 与导入按名匹配（撞停用名即报错行）；引用它的存量工单照常显示，待办 poll 走缺行降级路径（不抛错），dashboard 策略桶只列 active 策略（停用即退出首响过线与跟进欠账判定）；编辑工单的无关字段可保持原停用引用，但新选停用策略被拒绝（与缺行同错）。系统初始播种一般/高级/加急/特急四条（sortOrder 1..4，含口径文案），bootstrap 幂等——此后目录归管理员维护，重跑种子不覆盖修改。策略按工单**种类**分组：/sla 管理页组间以 divider 分隔，各组独立排序/启停/编辑；建单与编辑的策略下拉按工单种类过滤（投诉单只见投诉组）。存量四条归「投诉」组；「退费异常」组播种一条默认策略（48h 超时 + 36h 首检查点），推送建单即盖该组默认策略。
 _Avoid_: priority（它不驱动任何 SLA）；把策略名快照存回工单——改名即需回写存量数据，引用正是为免此（ProcessLog 留痕快照除外）
 
 **投诉等级文本轨（complaintLevel，已下线）**：
@@ -105,6 +105,12 @@ _Avoid_: priority（它不驱动任何 SLA）；把策略名快照存回工单�
 
 **超时口径**：
 两个视角**有意不同**：看板"已超时数"= 实时运营视角（在途且已过 dueAt，完结即移出）；考核"超时单数"= 历史追责视角（曾超时即计入，含超时完结）。
+
+**数据看板**：
+两个 procedure 承载首页看板：`dashboard.actionStats`（实时口径，无入参——4 项行动指标 + 未分配两项 + 全部 active 策略桶、末尾「未指定策略」桶，同一 clock.now() 服务全部判定）与 `dashboard.analysisStats`（周期口径，入参 createdRange——trend/kinds/categories/sources/matrix + agents 表；agents 的实时列不叠 range，周期列叠）。两者共享同一 base：软删排除 + 默认来源筛选（排除 file_import）+ dashboard 数据范围。超时/待超时谓词与列表、我的待办单源（displayStatusTicketWhere / deriveDisplayStatus），禁止重述；首响过线严格大于 slaAnchorAt + firstResponseMinutes，无策略/策略停用不计。
+**trend 粒度**：span < 2 天按小时（createdFrom 所在**服务器本地日**的 24 桶，previous = 前一日同时段）；≤ 62 天按日（本地日界分桶）；> 62 天按周（自 range 起点 7 天一桶，+1 桶兜住恰落 createdTo 的单）。previous = 等长前移窗口，按桶序号对齐。分桶日界取服务器本地日是部署单时区约定（与排班墙钟口径同源）。createdTo 缺省 = now、createdFrom 缺省 = 其前 6 天——缺省窗口只作用 trend，其余周期块无界（= 全部）。
+**matrix 实体下钻按目录名匹配**：反馈渠道行「保司/经纪/支付」分别下钻 complaintDetail.project / brokerageEntity / paymentChannel（各取 Top 8，其余归「其他」，空值归「未填写」）；字典行可被管理员改名，改名后该行退化为无实体可展（entities = []），不报错——按名匹配是有意约定。未填写列在 cells 里的 key 是导出常量 DASHBOARD_MATRIX_UNFILLED_KEY。
+**agents 表** = 责任人候选全集零填充（own scope 只剩自己一行），排序在途降序 → 完单降序 → 姓名；跟进欠账两列（检查点/滚动）与我的待办共用 follow-up-alert.service.ts 的命中谓词——检查点窗口已过不再命中、策略停用退出判定。
 
 ### 人与权限
 
@@ -151,7 +157,7 @@ _Avoid_: 把 key 明文落库或在任何接口回显（库内只存 sha256，�
 _Avoid_: 落库的 follower 字段或姓名快照（改名后陈旧）
 
 **跟进人考核**：
-3 个维度——完单数 / 平均完结时长（completionTime − createdAt，端到端口径）/ 超时单数，全部按**当前 assigneeId** 归属，不追踪转单历史。退费异常工单：超时单数按 slaAnchorAt（=refundCreateTime）判定，平台推送延迟计入客服超时（有意——48h 是对外承诺）；平均完结时长仍 completionTime − createdAt，不计平台延迟。
+由看板 agents 表的周期列承载——完单数 / 平均完结时长（completionTime − createdAt，端到端口径）/ 曾超时单数 / 超时率（分母 = 周期内创建名下单总数），全部按**当前 assigneeId** 归属，不追踪转单历史。退费异常工单：超时单数按锚定 dueAt（锚 = refundCreateTime）判定，平台推送延迟计入客服超时（有意——48h 是对外承诺）；平均完结时长仍 completionTime − createdAt，不计平台延迟。
 
 **ShiftType（班次定义）**：
 管理员维护的班次目录，以名称作为唯一标识，包含显示颜色、排序和零个或多个墙钟时段。时段允许跨午夜；零时段表示休息日。首次启动在空目录中创建早班/晚班/全班/休四个初始定义；此后目录归管理员维护，启动流程不恢复删除项，也不覆盖改名或其他修改。
