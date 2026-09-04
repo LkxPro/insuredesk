@@ -1,6 +1,7 @@
 import {
   NUCLEAR_BODY_STATUSES,
   openApiErrorBody,
+  POLICY_NUMBER_STATE_FILTER_LABELS,
   PRIORITY_LABELS,
   PROCESS_LOG_ACTION_LABELS,
   TICKET_SOURCE_LABELS,
@@ -16,11 +17,11 @@ export const OPEN_API_CONTRACT_EVOLUTION =
   "契约演化承诺：/api/v1 内只加字段、不改类型、不删字段；任何 breaking 变更走 /api/v2。";
 
 export const OPEN_API_INCREMENTAL_CAVEATS = [
-  "重叠窗口：增量拉取应把 updatedSince 回拨一个重叠窗口（分钟级）并按 id 幂等去重——并发事务的可见顺序可能与 at/updatedAt 值序错位，重叠重拉兜底。",
-  "tombstone：软删工单在 /api/v1/tickets 增量流中以 tombstone 最小形状（id/workOrderNumber/deletedAt/updatedAt/tombstone）流出，下游据 deletedAt 抹除本地副本；/api/v1/process-logs 不出 tombstone，父单软删后其日志照常流出。",
-  "displayStatus 是读时计算态：计算态跃迁不产生增量事件，下游不得等待推送，须按同一规则自行重算——status 为 completed 或 dueAt 为空时 displayStatus 等于 status；当前时刻已过 dueAt 为 overdue；距 dueAt 不足 2 小时为 pending_timeout。",
-  "字典 name 是读时 join 的当前值、非历史快照：目录改名不产生工单或日志的增量事件，下游须以 id 为键缓存，并经 /api/v1/meta 刷新 name 映射。",
-  "/api/v1/process-logs 含 internalOnly=true 的内部跟进（对齐内部导出口径）：面向外部数据使用方的下游须自行过滤。",
+  "重叠窗口：增量拉取把 updatedSince 往回拨几分钟作为重叠窗口，并按 id 幂等去重——并发事务的可见顺序可能与 updatedAt 不一致，不回拨会漏行。",
+  "tombstone：软删工单在 /api/v1/tickets 增量流里以 tombstone 行返回（只有 id/workOrderNumber/deletedAt/updatedAt/tombstone 五个字段），下游据 deletedAt 删除本地副本；/api/v1/process-logs 不出 tombstone，父工单软删后日志照常返回。",
+  "displayStatus 是实时计算的：计算态跃迁不产生增量事件，下游不要等推送，要按同一规则自行重算。按序判定：status=completed 或 dueAt 为空 → 等于 status；已过 dueAt → overdue；距 dueAt 不足 2 小时 → pending_timeout；否则等于 status。",
+  "字典的 name 是读取时的当前值，不是历史快照：目录改名不产生工单或日志的增量事件，下游以 id 为键缓存，要刷新 name 时重拉 /api/v1/meta。",
+  "/api/v1/process-logs 包含 internalOnly=true 的内部跟进记录；数据要交给外部使用方的下游，请自行过滤这些行。",
 ] as const;
 
 const enumEntrySchema = z.object({ value: z.string(), label: z.string() }).strict();
@@ -39,6 +40,7 @@ export const openApiMetaResponseSchema = z
         "ticket.status": z.array(enumEntrySchema),
         "ticket.displayStatus": z.array(enumEntrySchema),
         "ticket.source": z.array(enumEntrySchema),
+        "ticket.policyNumberState": z.array(enumEntrySchema),
         "complaint.priority": z.array(enumEntrySchema),
         "complaint.nuclearBodyStatus": z.array(enumEntrySchema),
         "processLog.action": z.array(enumEntrySchema),
@@ -162,6 +164,7 @@ export function registerMetaRoute(app: FastifyInstance, env: Env) {
         })),
         "ticket.displayStatus": enumEntries(TICKET_STATUS_LABELS),
         "ticket.source": enumEntries(TICKET_SOURCE_LABELS),
+        "ticket.policyNumberState": enumEntries(POLICY_NUMBER_STATE_FILTER_LABELS),
         "complaint.priority": enumEntries(PRIORITY_LABELS),
         "complaint.nuclearBodyStatus": NUCLEAR_BODY_STATUSES.map((value) => ({
           value,

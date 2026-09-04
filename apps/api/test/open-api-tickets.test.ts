@@ -222,7 +222,10 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
         const res = await getTickets(token, bad);
         expect(res.statusCode).toBe(400);
         expect(res.json().error.code).toBe("invalid_params");
+        expect(res.json().error.message).not.toContain(": :");
       }
+      const res = await getTickets(token, "?nope=1");
+      expect(res.json().error.message).toContain("nope");
     });
 
     it("软删工单在 ad-hoc 模式不出现", async () => {

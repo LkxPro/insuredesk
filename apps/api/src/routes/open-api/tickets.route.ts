@@ -11,6 +11,7 @@ import {
   OpenApiInvalidCursorError,
 } from "../../services/open-api-ticket.service.ts";
 import { splitMultiValueParams } from "../ticket-export.route.ts";
+import { formatQueryIssues } from "./format-query-issues.ts";
 
 const MULTI_VALUE_PARAMS = [
   "status",
@@ -80,12 +81,14 @@ export function registerTicketsRoute(app: FastifyInstance) {
       splitMultiValueParams(req.query as Record<string, unknown>, MULTI_VALUE_PARAMS),
     );
     if (!parsed.success) {
-      const detail = parsed.error.issues
-        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-        .join("; ");
       return reply
         .code(400)
-        .send(openApiErrorBody("invalid_params", `Invalid query parameters: ${detail}`));
+        .send(
+          openApiErrorBody(
+            "invalid_params",
+            `Invalid query parameters: ${formatQueryIssues(parsed.error)}`,
+          ),
+        );
     }
 
     try {

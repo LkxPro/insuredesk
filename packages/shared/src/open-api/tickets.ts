@@ -158,23 +158,14 @@ export const openApiTicketsInputSchema = z
       .optional(),
     createdFrom: datetimeParam.optional(),
     createdTo: datetimeParam.optional(),
-    fields: multiValue(z.string().min(1)),
+    fields: multiValue(
+      z.enum(OPEN_API_TICKET_FIELD_KEYS as [string, ...string[]], {
+        error: (issue) =>
+          `Unknown field: ${String(issue.input)}. Allowed fields: ${OPEN_API_TICKET_FIELD_KEYS.join(", ")}`,
+      }),
+    ),
   })
-  .strict()
-  .superRefine((value, ctx) => {
-    if (!value.fields) {
-      return;
-    }
-    const allowed = new Set(OPEN_API_TICKET_FIELD_KEYS);
-    const unknown = value.fields.filter((field) => !allowed.has(field));
-    if (unknown.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["fields"],
-        message: `Unknown fields: ${unknown.join(", ")}. Allowed fields: ${OPEN_API_TICKET_FIELD_KEYS.join(", ")}`,
-      });
-    }
-  });
+  .strict();
 
 export type OpenApiTicketsInput = z.input<typeof openApiTicketsInputSchema>;
 export type OpenApiTicketsQuery = z.output<typeof openApiTicketsInputSchema>;
