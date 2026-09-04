@@ -364,6 +364,10 @@ export const POLICY_NUMBER_STATE_FILTERS = ["none"] as const;
 export const policyNumberStateFilterSchema = z.enum(POLICY_NUMBER_STATE_FILTERS);
 export type PolicyNumberStateFilter = (typeof POLICY_NUMBER_STATE_FILTERS)[number];
 
+export const POLICY_NUMBER_STATE_FILTER_LABELS: Record<PolicyNumberStateFilter, string> = {
+  none: "无保单号",
+};
+
 /**
  * Ticket-list query contract, shared by the list page's filter state and the
  * API input — one schema, both ends. All filters are multi-select (空数组 =

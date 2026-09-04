@@ -232,6 +232,7 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
       expect(body.meta).toBe("/api/v1/meta");
       expect(body.docs).toBe("/docs/analytics");
       expect(body.auth).toMatchObject({ scheme: "bearer", header: "Authorization" });
+      expect(body.publicEndpoints).toEqual(["/api/v1", "/api/v1/openapi.json", "/docs/analytics"]);
     });
 
     it("me 自省：管理员 key → dataScope all，字段穿过认证/审计全栈", async () => {

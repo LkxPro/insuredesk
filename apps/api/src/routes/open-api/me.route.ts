@@ -1,7 +1,27 @@
 import { openApiErrorBody } from "@insuredesk/shared";
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { apiDb } from "../../db.ts";
 import { effectivePermissions } from "../../services/auth.service.ts";
+
+export const openApiMeResponseSchema = z
+  .object({
+    user: z
+      .object({
+        id: z.string(),
+        username: z.string(),
+        name: z.string(),
+        email: z.string().nullable(),
+        team: z.string().nullable(),
+      })
+      .strict(),
+    role: z.object({ id: z.string(), name: z.string() }).strict(),
+    permissions: z.array(z.string()),
+    dataScope: z.enum(["all", "own"]),
+  })
+  .strict();
+
+export type OpenApiMeResponse = z.infer<typeof openApiMeResponseSchema>;
 
 export function registerMeRoute(app: FastifyInstance) {
   app.get("/me", async (req, reply) => {
@@ -35,6 +55,6 @@ export function registerMeRoute(app: FastifyInstance) {
       role: { id: row.role.id, name: row.role.name },
       permissions,
       dataScope: permissions.includes("ticket.view_all") ? "all" : "own",
-    };
+    } satisfies OpenApiMeResponse;
   });
 }

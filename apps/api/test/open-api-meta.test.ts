@@ -120,6 +120,7 @@ describe("GET /api/v1/meta (Testcontainers)", () => {
 
       expect(enums["ticket.displayStatus"]).toEqual(pairs(TICKET_STATUS_LABELS));
       expect(enums["ticket.source"]).toEqual(pairs(TICKET_SOURCE_LABELS));
+      expect(enums["ticket.policyNumberState"]).toEqual([{ value: "none", label: "无保单号" }]);
       expect(enums["complaint.priority"]).toEqual(pairs(PRIORITY_LABELS));
       expect(enums["processLog.action"]).toEqual(pairs(PROCESS_LOG_ACTION_LABELS));
 

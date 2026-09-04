@@ -13,5 +13,6 @@ export function registerDiscoveryRoute(app: FastifyInstance, env: Env) {
     openapi: "/api/v1/openapi.json",
     meta: "/api/v1/meta",
     docs: "/docs/analytics",
+    publicEndpoints: ["/api/v1", "/api/v1/openapi.json", "/docs/analytics"],
   }));
 }

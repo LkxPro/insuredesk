@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { parseEnv } from "../src/env.ts";
+import { openApiMeResponseSchema } from "../src/routes/open-api/me.route.ts";
 import { openApiMetaResponseSchema } from "../src/routes/open-api/meta.route.ts";
 import { buildServer } from "../src/server.ts";
 import { buildOpenApiDocument } from "../src/services/openapi-doc.service.ts";
@@ -55,9 +56,10 @@ describe("openapi-doc.service 生成物契约", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("路径覆盖三个数据端点且均为 GET", () => {
+  it("路径覆盖四个数据端点且均为 GET", () => {
     const paths = doc.paths as Record<string, Record<string, unknown>>;
     expect(Object.keys(paths).sort()).toEqual([
+      "/api/v1/me",
       "/api/v1/meta",
       "/api/v1/process-logs",
       "/api/v1/tickets",
@@ -76,10 +78,10 @@ describe("openapi-doc.service 生成物契约", () => {
     expect(info.version).toBe(env.APP_VERSION);
   });
 
-  it("info.description 声明横切契约：未知 query 参数 400 invalid_params；失败认证 IP 锁定期同 IP 有效 key 一并 429（fail-closed）", () => {
+  it("info.description 声明横切契约：未知 query 参数 400 invalid_params；无效 key IP 限流锁定期同 IP 有效 key 连带 429", () => {
     const info = doc.info as { description: string };
     expect(info.description).toContain("invalid_params");
-    expect(info.description).toContain("fail-closed");
+    expect(info.description).toContain("连带 429");
   });
 
   it("响应 schema 剥掉 describe 后与 zod 源逐一深等（zod 是契约唯一来源）", () => {
@@ -88,6 +90,7 @@ describe("openapi-doc.service 生成物契约", () => {
       ["/api/v1/tickets", openApiTicketListResponseSchema],
       ["/api/v1/process-logs", openApiProcessLogListResponseSchema],
       ["/api/v1/meta", openApiMetaResponseSchema],
+      ["/api/v1/me", openApiMeResponseSchema],
     ];
     for (const [path, source] of cases) {
       const generated = stripMeta(responseJsonSchema(paths[path]?.get));
@@ -226,6 +229,7 @@ describe("/api/v1/openapi.json 与 /docs/analytics (Testcontainers)", () => {
     const body = res.json();
     expect(body.openapi).toBe("3.1.0");
     expect(Object.keys(body.paths).sort()).toEqual([
+      "/api/v1/me",
       "/api/v1/meta",
       "/api/v1/process-logs",
       "/api/v1/tickets",

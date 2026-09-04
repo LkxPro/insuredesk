@@ -9,6 +9,7 @@ import {
   listOpenApiProcessLogs,
   OpenApiInvalidCursorError,
 } from "../../services/open-api-process-log.service.ts";
+import { formatQueryIssues } from "./format-query-issues.ts";
 
 function buildNextUrl(path: string, query: OpenApiProcessLogsQuery, nextCursor: string): string {
   const params = new URLSearchParams();
@@ -40,12 +41,14 @@ export function registerProcessLogsRoute(app: FastifyInstance) {
 
     const parsed = openApiProcessLogsInputSchema.safeParse(req.query);
     if (!parsed.success) {
-      const detail = parsed.error.issues
-        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-        .join("; ");
       return reply
         .code(400)
-        .send(openApiErrorBody("invalid_params", `Invalid query parameters: ${detail}`));
+        .send(
+          openApiErrorBody(
+            "invalid_params",
+            `Invalid query parameters: ${formatQueryIssues(parsed.error)}`,
+          ),
+        );
     }
 
     try {
