@@ -18,11 +18,11 @@
     "db:migrate": "pnpm --filter @insuredesk/api run db:migrate"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.4",
+    "@biomejs/biome": "^2.5.12",
     "@insuredesk/shared": "workspace:*",
     "@seriousme/openapi-schema-validator": "^2.9.1",
-    "@types/node": "^24.13.3",
-    "playwright": "^1.62.1",
+    "@types/node": "^26.4.1",
+    "playwright": "^1.63.0",
     "typescript": "^7.0.2",
     "yaml": "^2.9.0"
   }
