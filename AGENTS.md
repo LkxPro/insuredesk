@@ -1,4 +1,6 @@
 ## Communication Language
+Please remove all mannered prose.
+When a literal phrase is available, use it.
 When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 
 ## Conventions
