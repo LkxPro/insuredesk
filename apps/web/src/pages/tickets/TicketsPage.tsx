@@ -30,7 +30,6 @@ import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { CreatedRangeFilter } from "@/pages/ticket-surface/CreatedRangeFilter";
 import { MultiSelectFilter } from "@/pages/ticket-surface/MultiSelectFilter";
-import { PolicyNumbersCell } from "@/pages/ticket-surface/PolicyNumbersCell";
 import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
 import { TicketExportButton } from "@/pages/ticket-surface/TicketExportButton";
 import { TicketListSearch } from "@/pages/ticket-surface/TicketListSearch";
@@ -181,16 +180,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         key: "customerName",
         header: TICKET_FIELDS.customerName.label,
         render: (ticket) => ticket.customerName ?? <Unknown />,
-      },
-      {
-        key: "policyNumbers",
-        header: TICKET_FIELDS.policyNumbers.label,
-        render: (ticket) => (
-          <PolicyNumbersCell
-            policyNumbers={ticket.policyNumbers}
-            noPolicyNumber={ticket.noPolicyNumber}
-          />
-        ),
       },
       {
         key: "channel",
