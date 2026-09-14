@@ -117,6 +117,8 @@ describe("list rendering", () => {
     expect(screen.getByText("王小明")).toBeInTheDocument();
     expect(screen.getByText("已超时")).toBeInTheDocument();
     expect(screen.queryByText("已分配")).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "保单号" })).not.toBeInTheDocument();
+    expect(screen.queryByText("P2026070900123")).not.toBeInTheDocument();
   });
 
   it.each([
@@ -149,67 +151,6 @@ describe("list rendering", () => {
     const row = (await screen.findByText("WO100001")).closest("tr") as HTMLTableRowElement;
     expect(within(row).getByText("VIP 通道")).toBeInTheDocument();
     expect(within(row).queryByText("特急投诉")).not.toBeInTheDocument();
-  });
-});
-
-describe("保单号列: 首个 + N 徽标", () => {
-  it("单保单号原样展示，无徽标", async () => {
-    canned.items = [listItem({ policyNumbers: ["P-ONLY-001"] })];
-    canned.total = 1;
-    renderAt("/tickets");
-
-    expect(await screen.findByText("P-ONLY-001")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /还有.*个保单号/ })).not.toBeInTheDocument();
-  });
-
-  it("空数组沿用未填写占位，不展示徽标", async () => {
-    canned.items = [listItem({ policyNumbers: [] })];
-    canned.total = 1;
-    renderAt("/tickets");
-
-    await screen.findByText("WO100001");
-    const row = screen.getByText("WO100001").closest("tr") as HTMLTableRowElement;
-    expect(within(row).getByText("—")).toBeInTheDocument();
-    expect(within(row).queryByRole("button", { name: /还有.*个保单号/ })).not.toBeInTheDocument();
-  });
-
-  it("「无保单号」工单显示 muted 的无，与未填写占位区分", async () => {
-    canned.items = [listItem({ policyNumbers: [], noPolicyNumber: true })];
-    canned.total = 1;
-    renderAt("/tickets");
-
-    await screen.findByText("WO100001");
-    const row = screen.getByText("WO100001").closest("tr") as HTMLTableRowElement;
-    expect(within(row).getByText("无")).toBeInTheDocument();
-    expect(within(row).queryByText("—")).not.toBeInTheDocument();
-  });
-
-  it("多保单号只显首个 + N 徽标，点徽标弹出全部", async () => {
-    canned.items = [listItem({ policyNumbers: ["P-FIRST-001", "P-SECOND-002", "P-THIRD-003"] })];
-    canned.total = 1;
-    renderAt("/tickets");
-
-    expect(await screen.findByText("P-FIRST-001")).toBeInTheDocument();
-    expect(screen.queryByText("P-SECOND-002")).not.toBeInTheDocument();
-
-    const badge = screen.getByRole("button", { name: "还有 2 个保单号" });
-    expect(badge).toHaveTextContent("+2");
-
-    fireEvent.click(badge);
-    const popover = await screen.findByRole("dialog");
-    expect(within(popover).getByText("P-FIRST-001")).toBeInTheDocument();
-    expect(within(popover).getByText("P-SECOND-002")).toBeInTheDocument();
-    expect(within(popover).getByText("P-THIRD-003")).toBeInTheDocument();
-  });
-
-  it("点徽标展开保单号不连带打开行详情", async () => {
-    canned.items = [listItem({ policyNumbers: ["P-A-1", "P-B-2"] })];
-    canned.total = 1;
-    renderAt("/tickets");
-
-    fireEvent.click(await screen.findByRole("button", { name: "还有 1 个保单号" }));
-    await screen.findByRole("dialog");
-    expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
 });
 
