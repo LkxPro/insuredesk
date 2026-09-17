@@ -21,6 +21,11 @@ PostgreSQL 17(docker 容器),与应用 API 同机。
 | 认证 | scram-sha-256(密码认证,无 SSL——链路限定内网) |
 | 网络 | 云安全组只放行 ETL 出口网段;安全组是唯一访问控制层 |
 
+两种消费方式,都已开通:
+
+1. **SQL 直连轮询**(普通连接,SELECT 白名单表)。
+2. **逻辑复制**(replication 连接,订阅变更流,见第 4 节)。
+
 psql 自检:
 
 ```bash
@@ -51,7 +56,21 @@ psql "host=<内网IP> port=5432 user=etl_ro dbname=insuredesk" -c "SELECT count(
 ⚠️ **未来新建的表会自动对你们开放 SELECT**(default privileges)。反之,
 如果你们某天发现一张新表不可读,说明它被显式 REVOKE 了——有意为之,勿报障。
 
-## 4. 读懂数据前必须知道的语义坑
+## 4. 逻辑复制(变更流)
+
+`etl_ro` 带 REPLICATION 属性,可订阅 publication `etl_pub`(白名单同
+第 3 节的 12 张表)。连接方式:
+
+- 连接串加 `replication=database`,插件用 `pgoutput`。
+- 复制 slot 由你们创建并命名;slot 会钉住 WAL,消费断开期间 WAL 持续堆积,
+  超过 10GB 后 slot 被强制失效——届时需重建 slot 并重做快照,**断了就尽快
+  恢复,别挂着**。
+- 复制流内容与 SELECT 白名单一致:白名单外的表在流里不存在。
+- 新建表默认不进 `etl_pub`(刻意设计,防敏感表随 default privileges
+  自动外泄)。你们发现新表不在流里 = 系统侧未加,找系统侧确认后再加,
+  勿自行绕过。
+
+## 5. 读懂数据前必须知道的语义坑
 
 以下每一条都是踩过才值钱的坑,抽数口径错一条,湖里的数就是错的:
 
@@ -83,7 +102,7 @@ psql "host=<内网IP> port=5432 user=etl_ro dbname=insuredesk" -c "SELECT count(
 10. **多值保单号**:`ticket_complaint_details.policyNumbers` 是 `text[]`;
     `ticket_refund_details.refundTrades` 是 `jsonb` 期次明细原文。
 
-## 5. 对生产库的礼貌(重要)
+## 6. 对生产库的礼貌(重要)
 
 当前没有角色级 statement_timeout 和连接数上限——**你们的失控查询没有刹车**。
 请自律:
@@ -94,7 +113,7 @@ psql "host=<内网IP> port=5432 user=etl_ro dbname=insuredesk" -c "SELECT count(
 - 不要开长事务挂着抽数:长事务会顶住 vacuum,让在线库表膨胀。
 - 禁止 `SELECT *` 无 WHERE 的全表裸拉做日常增量——首全量除外,且请提前打招呼。
 
-## 6. schema 会变,而且没有兼容承诺
+## 7. schema 会变,而且没有兼容承诺
 
 应用用 Prisma migrate 演进表结构,**每次发版都可能改表**。你们直连的是
 物理 schema,等于把它当契约——但它不是契约:
@@ -103,9 +122,10 @@ psql "host=<内网IP> port=5432 user=etl_ro dbname=insuredesk" -c "SELECT count(
   就是先例)。
 - 发版不逐个通知下游。**建议**:抽取作业对「列缺失」显式报错而非静默置空,
   挂了立刻找系统侧核对 schema 变更。
-- 新表自动可读(见第 3 节),但新列出现在既有表不保证顺序。
+- 新表自动可读(见第 3 节),但**不进复制流**(见第 4 节),新列出现在
+  既有表不保证顺序。
 
-## 7. 运维协同
+## 8. 运维协同
 
 | 事项 | 路径 |
 |---|---|
