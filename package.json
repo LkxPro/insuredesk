@@ -24,6 +24,6 @@
     "@types/node": "^24.13.3",
     "playwright": "^1.62.1",
     "typescript": "^7.0.2",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   }
 }
