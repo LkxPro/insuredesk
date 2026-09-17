@@ -328,6 +328,35 @@ publication 是静态表级白名单(12 张,同 SELECT 白名单):新建表默�
 白名单。消费方断开后 WAL 堆积超 10GB,slot 强制失效,需重建 slot + 重做
 快照——发现消费长期断开时主动联系 ETL 侧。
 
+### DataWorks 实时同步账号 etl_sync(ADR 0006,生产已开)
+
+DataWorks 作业固定自建 publication(`di_pub_*`),不复用 etl_pub,etl_ro
+不满足其权限要求,专用账号 etl_sync 承担。**该账号继承 insuredesk 全部权限
+(全库读写含 DDL),只用于 DataWorks 作业,禁止下发给其他用途。**
+
+开通(一次性,手工,不进 migration/bootstrap):
+
+```sql
+CREATE ROLE etl_sync LOGIN REPLICATION PASSWORD '<openssl rand -hex 24>';
+GRANT insuredesk TO etl_sync;
+```
+
+安全组需另行放行 DataWorks 独享资源组的出口 IP(与 ETL 网段是两批源)。
+
+口令轮换:`ALTER ROLE etl_sync PASSWORD '<新值>';` → 同步更新 DataWorks
+作业配置。不走 .env/bootstrap。
+
+巡检:DataWorks 的 slot(`di_slot_*`)停消费后同样受
+`max_slot_wal_keep_size=10GB` 兜底,但 slot 失效 = 对方要重做快照,
+发现 `active=f` 长期不动主动联系数据侧;作业确认废弃后手工清理:
+
+```sql
+SELECT slot_name, active, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS lag
+FROM pg_replication_slots;
+SELECT pg_drop_replication_slot('<slot>');           -- 确认废弃才执行
+DROP PUBLICATION IF EXISTS <di_pub_...>;             -- 顺带清残留
+```
+
 ### 口令轮换
 
 改 `.env` 的 `ETL_RO_PASSWORD` → `up -d` recreate → 抄送运维新口令。
