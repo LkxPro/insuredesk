@@ -1,6 +1,7 @@
 BEGIN;
 
--- ETL 数据湖直连的只读角色（ADR 0004）。
+-- NOREPLICATION 于 ADR 0005（20260917000000_etl_logical_replication）
+-- 起改为带 REPLICATION，勿回改。
 -- 幂等:角色是 cluster 全局对象,migrate dev 的影子库会先建一次,主库重放
 -- 时裸 CREATE ROLE 必报 already exists。
 DO $$

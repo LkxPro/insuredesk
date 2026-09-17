@@ -14,12 +14,13 @@ ETL 作业从内网经 TCP 连 5432,用 SQL 抽取。应用层 API(/api/v1 增�
   承担(Docker 走自己的 iptables 链,ufw/firewalld 拦不到发布端口,
   安全组在宿主机网络栈之外生效,是唯一可靠的那层)。pg_hba 不写源地址段,
   全源 scram-sha-256。
-- **专用只读角色 etl_ro**:LOGIN,NOSUPERUSER/NOCREATEDB/NOCREATEROLE/
-  NOREPLICATION;SELECT 白名单 = 工单域表(tickets、ticket_*_details、
-  process_logs、ticket_import_batches、sla_policies、ticket_kinds、
-  五个字典目录表)。排除:users/roles/sessions/api_keys/api_access_logs/
-  api_key_audit_logs(认证与审计面)、app_notifications、
-  callback_deliveries、shift_types/schedules。
+- **专用只读角色 etl_ro**:LOGIN,NOSUPERUSER/NOCREATEDB/NOCREATEROLE;
+  SELECT 白名单 = 工单域表(tickets、ticket_*_details、process_logs、
+  ticket_import_batches、sla_policies、ticket_kinds、五个字典目录表)。
+  排除:users/roles/sessions/api_keys/api_access_logs/api_key_audit_logs
+  (认证与审计面)、app_notifications、callback_deliveries、
+  shift_types/schedules。(原含 NOREPLICATION;ADR 0005 起改为带
+  REPLICATION 属性以支持逻辑复制。)
 - **未来表自动授权**:`ALTER DEFAULT PRIVILEGES FOR ROLE insuredesk`
   让迁移角色新建的表自动对 etl_ro 开放 SELECT,避免「发版后 ETL 静默
   断表」。已知代价:**未来新增的敏感表会被自动暴露**,新增敏感表时须显式

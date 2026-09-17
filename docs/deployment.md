@@ -311,6 +311,23 @@ ETL 侧连接参数:宿主内网 IP:5432,角色 `etl_ro`,口令如上,库名同
 `POSTGRES_DB`。etl_ro 只能 SELECT 工单域表白名单(清单见 ADR 0004),
 users/sessions/api_keys 等认证审计面不可达。
 
+### 逻辑复制(ADR 0005,生产已开)
+
+ETL 消费方要求变更流时,除上述开通外还需:
+
+1. `ALTER SYSTEM SET wal_level='logical'` 与 `max_slot_wal_keep_size='10GB'`,
+   重启 db 容器(秒级中断)。
+2. pg_hba 追加 `host replication etl_ro all scram-sha-256`(与既有
+   `host all all all` 同模式,源限制仍在安全组)。
+3. 迁移 `20260917000000_etl_logical_replication` 负责角色 REPLICATION
+   属性与 publication `etl_pub`(幂等);`ALTER SYSTEM` 与 pg_hba 是
+   服务器侧手工项。
+
+publication 是静态表级白名单(12 张,同 SELECT 白名单):新建表默认不进
+复制流,需 `ALTER PUBLICATION etl_pub ADD TABLE …` 显式加入并同步 SELECT
+白名单。消费方断开后 WAL 堆积超 10GB,slot 强制失效,需重建 slot + 重做
+快照——发现消费长期断开时主动联系 ETL 侧。
+
 ### 口令轮换
 
 改 `.env` 的 `ETL_RO_PASSWORD` → `up -d` recreate → 抄送运维新口令。
