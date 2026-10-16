@@ -18,7 +18,8 @@
       "!**/apps/api/prisma/migrations",
       "!**/apps/api/src/generated",
       "!**/apps/web/dist",
-      "!**/pnpm-lock.yaml"
+      "!**/pnpm-lock.yaml",
+      "!**/apps/web/src/lib/region/**/*.geo.json"
     ]
   },
   "formatter": {
