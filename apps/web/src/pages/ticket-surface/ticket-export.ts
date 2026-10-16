@@ -27,6 +27,7 @@ export function buildTicketExportUrl(
     "categoryId",
     "completionStatusId",
     "slaPolicyId",
+    "userFeedbackChannelId",
     "source",
   ] as const) {
     const value = query[key];
@@ -39,6 +40,9 @@ export function buildTicketExportUrl(
   }
   if (query.search) {
     params.set("search", query.search);
+  }
+  if (query.locationCode) {
+    params.set("locationCode", query.locationCode);
   }
   for (const key of ["createdFrom", "createdTo"] as const) {
     const value = query[key];

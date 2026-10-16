@@ -37,6 +37,7 @@ import {
   useTicketDuplicates,
 } from "./TicketDuplicates";
 import {
+  addressFormValueToInput,
   type RefundEditFormValues,
   refundEditFormSchema,
   type TicketFormValues,
@@ -188,7 +189,12 @@ export function TicketDetailPane({
 
   function saveComplaint(values: TicketFormValues) {
     if (!ticket || guardEmptyDiff(form.formState.isDirty)) return;
-    editComplaint.mutate({ ticketId: ticket.id, ...ticketFormValuesToInput(values) });
+    const { address, ...input } = ticketFormValuesToInput(values);
+    editComplaint.mutate({
+      ticketId: ticket.id,
+      ...input,
+      ...(form.formState.dirtyFields.address ? { address } : {}),
+    });
   }
 
   function saveRefund(values: RefundEditFormValues) {
@@ -197,6 +203,9 @@ export function TicketDetailPane({
       ticketId: ticket.id,
       contactPhone: values.contactPhone,
       slaPolicyId: values.slaPolicyId,
+      ...(refundForm.formState.dirtyFields.address
+        ? { address: addressFormValueToInput(values.address) }
+        : {}),
     });
   }
 

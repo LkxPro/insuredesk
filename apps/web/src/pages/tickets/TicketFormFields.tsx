@@ -5,8 +5,11 @@ import {
   PRIORITY_LABELS,
   policyNumbersError,
   splitPolicyNumbers,
+  TICKET_ADDRESS_INVALID_MESSAGE,
+  TICKET_ADDRESS_LABEL,
   TICKET_CREATE_FIELD_KEYS,
   TICKET_FIELDS,
+  type TicketAddressCodes,
   type TicketCreateFieldKey,
   type TicketCreateInput,
   TicketKindKey,
@@ -45,6 +48,7 @@ import {
   splitLocalDateTime,
 } from "@/lib/local-date-time";
 import { trpc } from "@/lib/trpc";
+import { RegionCascader } from "./RegionCascader";
 import { SearchableCombobox } from "./SearchableCombobox";
 import { DuplicateFieldHint, useTicketDuplicates } from "./TicketDuplicates";
 
@@ -151,10 +155,39 @@ const refinePolicyNumbersText = (value: string, ctx: z.RefinementCtx) => {
   }
 };
 
+/**
+ * complete 由级联控件按区划树判定（是否选到叶子）；表单 schema 不引用区划树，
+ * 完整路径校验在服务端。
+ */
+const addressFormSchema = z
+  .object({
+    provinceCode: z.string(),
+    cityCode: z.string().nullable(),
+    districtCode: z.string().nullable(),
+    complete: z.boolean(),
+  })
+  .nullish()
+  .refine((value) => !value || value.complete, TICKET_ADDRESS_INVALID_MESSAGE);
+
+export type AddressFormValue = NonNullable<z.input<typeof addressFormSchema>>;
+
+export function addressFormValueToInput(
+  value: AddressFormValue | null | undefined,
+): TicketAddressCodes | null {
+  return value
+    ? {
+        provinceCode: value.provinceCode,
+        cityCode: value.cityCode,
+        districtCode: value.districtCode,
+      }
+    : null;
+}
+
 export const ticketFormSchema = ticketCreateInputSchema.extend({
   feedbackTime: localDateTimeFieldSchema(TICKET_FIELDS.feedbackTime.label, false),
   contactTime: localDateTimeFieldSchema(TICKET_FIELDS.contactTime.label, false),
   policyNumbers: z.string().superRefine(refinePolicyNumbersText),
+  address: addressFormSchema,
 });
 
 export type TicketFormValues = z.input<typeof ticketFormSchema>;
@@ -165,13 +198,16 @@ export function ticketFormValuesToInput(values: TicketFormValues): TicketCreateI
     feedbackTime: localDateTimeToIso(values.feedbackTime),
     contactTime: localDateTimeToIso(values.contactTime),
     policyNumbers: splitPolicyNumbers(values.policyNumbers),
+    address: addressFormValueToInput(values.address),
   };
 }
 
-export const refundEditFormSchema = editRefundInputSchema.pick({
-  contactPhone: true,
-  slaPolicyId: true,
-});
+export const refundEditFormSchema = editRefundInputSchema
+  .pick({
+    contactPhone: true,
+    slaPolicyId: true,
+  })
+  .extend({ address: addressFormSchema });
 
 export type RefundEditFormValues = z.input<typeof refundEditFormSchema>;
 
@@ -596,6 +632,22 @@ export function TicketFormFields({
               )}
             />
             <FieldError errors={[errors.nuclearBodyStatus]} />
+          </Field>
+          <Field data-invalid={!!errors.address} className="sm:col-span-2">
+            <FieldLabel htmlFor="address">{TICKET_ADDRESS_LABEL}</FieldLabel>
+            <Controller
+              control={control}
+              name="address"
+              render={({ field }) => (
+                <RegionCascader
+                  id="address"
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalid={!!errors.address}
+                />
+              )}
+            />
+            <FieldError errors={[errors.address]} />
           </Field>
           <Field data-invalid={!!errors.customerRequest} className="sm:col-span-2">
             <FieldLabel htmlFor="customerRequest">

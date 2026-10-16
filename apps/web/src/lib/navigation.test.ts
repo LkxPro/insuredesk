@@ -8,11 +8,12 @@ function visiblePaths(permissions: readonly Permission[]): string[] {
 }
 
 describe("NAV_ITEMS", () => {
-  it("covers the ten page permissions, one menu entry each", () => {
+  it("covers the eleven page permissions, one menu entry each", () => {
     expect(NAV_ITEMS.map((item) => item.permission)).toEqual([
       "dashboard.view",
       "ticket.create_external",
       "ticket.view",
+      "ticket_map.view",
       "user.view",
       "external_account.manage",
       "role.view",
@@ -25,10 +26,11 @@ describe("NAV_ITEMS", () => {
 });
 
 describe("visibleNavItems", () => {
-  it("管理员 sees all nine menu entries", () => {
+  it("管理员 sees all ten internal menu entries", () => {
     expect(visiblePaths(TEST_ROLES.ADMIN.permissions)).toEqual([
       "/dashboard",
       "/tickets",
+      "/ticket-map",
       "/users",
       "/external-accounts",
       "/roles",
@@ -53,6 +55,11 @@ describe("visibleNavItems", () => {
 
   it("只读观察 sees dashboard and tickets only", () => {
     expect(visiblePaths(TEST_ROLES.READ_ONLY.permissions)).toEqual(["/dashboard", "/tickets"]);
+  });
+
+  it("工单地图入口只看 ticket_map.view", () => {
+    expect(visiblePaths(["ticket_map.view"])).toEqual(["/ticket-map"]);
+    expect(visiblePaths(["ticket.view", "ticket.view_all"])).not.toContain("/ticket-map");
   });
 
   it("returns nothing for a role with no page permissions", () => {

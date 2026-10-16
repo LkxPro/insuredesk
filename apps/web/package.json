@@ -24,6 +24,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "echarts": "^6.1.0",
     "imask": "^7.6.1",
     "lucide-react": "^1.38.0",
     "pinyin-pro": "^3.29.3",
