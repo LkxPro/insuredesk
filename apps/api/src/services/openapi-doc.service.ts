@@ -92,6 +92,12 @@ const ENDPOINTS: OpenApiEndpointSpec[] = [
       kindKey:
         "工单种类 key（complaint=投诉，refund_exception=退费异常）；不匹配的侧表字段恒为 null",
       contactPhone: "联系电话",
+      provinceCode: "地址省级区划码（6 位国家行政区划代码）；地址为空时省市区六列全为 null",
+      provinceName: "地址省级名称（写入时快照）",
+      cityCode: "地址市级区划码；直辖市、港澳、台湾地址为 null",
+      cityName: "地址市级名称（写入时快照）",
+      districtCode: "地址区县级区划码；市级叶子（如东莞）与台湾地址为 null",
+      districtName: "地址区县级名称（写入时快照）",
       slaPolicyId: "时效策略 id（见 meta 字典 slaPolicies）",
       slaPolicyName: "时效策略名称（当前值，非快照）",
       assigneeId: "责任人用户 id",

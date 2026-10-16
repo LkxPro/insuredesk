@@ -924,6 +924,12 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
         "kindId",
         "kindKey",
         "contactPhone",
+        "provinceCode",
+        "provinceName",
+        "cityCode",
+        "cityName",
+        "districtCode",
+        "districtName",
         "slaPolicyId",
         "slaPolicyName",
         "assigneeId",
@@ -1021,6 +1027,9 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
         跟进记录: "processLogsText",
         完结时间: "completionTime",
         完结状态: "completionStatusName",
+        省: "provinceName",
+        市: "cityName",
+        区县: "districtName",
       };
       const refundHeaderToField: Record<string, string> = {
         工单号: "workOrderNumber",
@@ -1044,6 +1053,9 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
         退费异常原因: "refund_failureReason",
         应退金额: "refund_expectedAmount",
         补偿金: "refund_compensationAmount",
+        省: "provinceName",
+        市: "cityName",
+        区县: "districtName",
       };
 
       await createComplaintTicket(prisma, { createdAt: new Date("2026-08-01T00:00:00Z") });

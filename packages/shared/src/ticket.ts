@@ -6,6 +6,7 @@ import {
   ticketSourceSchema,
 } from "./enums.ts";
 import { REFUND_AMOUNT_PATTERN } from "./refund-push.ts";
+import { ticketAddressInputSchema } from "./ticket-address.ts";
 import {
   normalizePolicyNumbers,
   policyNumbersError,
@@ -100,6 +101,8 @@ export const ticketCreateInputSchema = z.object({
   slaPolicyId: optionalText(100),
   /** 独立自由标签，默认空；"" 来自未选择的下拉框。 */
   priority: optionalEnum(prioritySchema),
+  /** 建单：缺省/null = 无地址。编辑：缺省 = 保留原值，null = 清空。 */
+  address: ticketAddressInputSchema.nullish(),
 });
 
 export type TicketCreateInput = z.input<typeof ticketCreateInputSchema>;
@@ -138,6 +141,7 @@ export const editRefundInputSchema = z
     contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
     /** 时效策略目录引用；null = 未定级（无处理时限与 SLA 告警）。 */
     slaPolicyId: optionalText(100),
+    address: ticketAddressInputSchema.nullish(),
     feedbackTime: retiredRefundEditFieldSchema,
     channelId: retiredRefundEditFieldSchema,
     project: retiredRefundEditFieldSchema,
@@ -397,6 +401,13 @@ export const ticketListInputSchema = z.object({
   /** 无 "全部" 字面值——缺省即不过滤。 */
   firstResponse: z.enum(["pending"]).optional(),
   policyNumberState: multiFilter(policyNumberStateFilterSchema).optional(),
+  /** 用户反馈渠道目录引用筛选；列表页无对应控件，仅随工单地图下钻链接生效。 */
+  userFeedbackChannelId: multiFilter(z.string().min(1)).optional(),
+  /** 叶子区划码；列表页无对应控件，仅随工单地图下钻链接生效。 */
+  locationCode: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
   /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */
   source: multiFilter(ticketSourceSchema).default([...DEFAULT_TICKET_SOURCE_FILTER]),
   /** 工单号 / 客户姓名 / 保单号；空白输入等同未搜索。 */

@@ -12,6 +12,7 @@ const MULTI_VALUE_PARAMS = [
   "categoryId",
   "completionStatusId",
   "slaPolicyId",
+  "userFeedbackChannelId",
   "source",
 ] as const;
 

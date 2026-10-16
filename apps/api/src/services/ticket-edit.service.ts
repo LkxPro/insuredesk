@@ -4,6 +4,7 @@ import {
   PRIORITY_LABELS,
   type Priority,
   TICKET_CREATE_FIELD_KEYS,
+  type TicketAddressCodes,
   type TicketCreateFieldKey,
   type TicketEditData,
   TicketKindKey,
@@ -24,6 +25,12 @@ import {
   type TicketServiceDeps,
   toDateOrNull,
 } from "./ticket.service.ts";
+import {
+  sameTicketAddress,
+  type TicketAddressColumns,
+  ticketAddressRemarkLine,
+  toTicketAddressColumns,
+} from "./ticket-address.service.ts";
 import { TicketNotFoundError } from "./ticket-assign.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
@@ -54,8 +61,9 @@ import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
  *   an edit that changes nothing writes nothing
  */
 
-type EditableFields = Omit<TicketEditData, "ticketId" | "complaintLevel">;
+type EditableFields = Omit<TicketEditData, "ticketId" | "complaintLevel" | "address">;
 type EditableFieldKey = keyof EditableFields;
+type ChangedFieldKey = EditableFieldKey | "address";
 type DiffFieldKey = Exclude<TicketCreateFieldKey, "slaPolicyId">;
 
 type DetailFieldKey =
@@ -184,6 +192,25 @@ async function resolveSlaChange(
   return { refPolicy, slaChanged, slaFields };
 }
 
+/** address 缺省 = 不改，且不校验已存值：失效码不阻塞编辑。 */
+function resolveAddressChange(
+  ticket: TicketAddressColumns,
+  input: TicketAddressCodes | null | undefined,
+) {
+  if (input === undefined) {
+    return { addressChanged: false, addressFields: {}, addressLine: null };
+  }
+  const next = toTicketAddressColumns(input);
+  if (sameTicketAddress(ticket, next)) {
+    return { addressChanged: false, addressFields: {}, addressLine: null };
+  }
+  return {
+    addressChanged: true,
+    addressFields: next,
+    addressLine: ticketAddressRemarkLine(ticket, next),
+  };
+}
+
 async function writeEditLog(
   tx: Prisma.TransactionClient,
   ticket: { id: string; slaPolicyId: string | null },
@@ -220,7 +247,7 @@ export async function editComplaint(
   options?: { allowDuplicate?: boolean },
 ) {
   const now = clock.now();
-  const { ticketId, ...fields } = input;
+  const { ticketId, address: addressInput, ...fields } = input;
   // The wire carries datetimes as ISO strings (or null = 未填写);
   // everything downstream (diff, remark, update) works on the parsed instant.
   const next = applyNoPolicyNumber({
@@ -260,8 +287,12 @@ export async function editComplaint(
       ticket,
       nextSlaPolicyId,
     );
+    const { addressChanged, addressFields, addressLine } = resolveAddressChange(
+      ticket,
+      addressInput,
+    );
 
-    if (changedFields.length === 0 && !slaChanged) {
+    if (changedFields.length === 0 && !slaChanged && !addressChanged) {
       // Nothing changed → no update, no log: a remark with no field diffs
       // would violate its own contract (remark 记录改动的字段)
       return { id: ticket.id, workOrderNumber: ticket.workOrderNumber, changedFields };
@@ -329,7 +360,7 @@ export async function editComplaint(
     // detail 改动同事务 touch tickets.updatedAt：核心列可能零改动
     await tx.ticket.update({
       where: { id: ticket.id },
-      data: { contactPhone: next.contactPhone, ...slaFields, updatedAt: now },
+      data: { contactPhone: next.contactPhone, ...slaFields, ...addressFields, updatedAt: now },
     });
     if (changedFields.some((key) => key !== "contactPhone")) {
       await tx.ticketComplaintDetail.upsert({
@@ -369,6 +400,9 @@ export async function editComplaint(
         ? [`${ticketProcessLogLabel(key)}: ${formatSide(key, "from")}→${formatSide(key, "to")}`]
         : [];
     });
+    if (addressLine !== null) {
+      remarkLines.push(addressLine);
+    }
     await writeEditLog(tx, ticket, ticket.slaPolicy?.name ?? null, actor, now, remarkLines, {
       refPolicy,
       slaChanged,
@@ -380,7 +414,8 @@ export async function editComplaint(
       changedFields: [
         ...changedFields,
         ...(slaChanged ? (["slaPolicyId"] as const) : []),
-      ] as EditableFieldKey[],
+        ...(addressChanged ? (["address"] as const) : []),
+      ] as ChangedFieldKey[],
     };
   });
 }
@@ -388,11 +423,21 @@ export async function editComplaint(
 export async function editRefund(
   { prisma, clock }: TicketServiceDeps,
   actor: AuthenticatedUser,
-  input: { ticketId: string; contactPhone: string | null; slaPolicyId: string | null },
+  input: {
+    ticketId: string;
+    contactPhone: string | null;
+    slaPolicyId: string | null;
+    address?: TicketAddressCodes | null | undefined;
+  },
   options?: { allowDuplicate?: boolean },
 ) {
   const now = clock.now();
-  const { ticketId, contactPhone: nextContactPhone, slaPolicyId: nextSlaPolicyId } = input;
+  const {
+    ticketId,
+    contactPhone: nextContactPhone,
+    slaPolicyId: nextSlaPolicyId,
+    address: addressInput,
+  } = input;
 
   return prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
@@ -418,8 +463,12 @@ export async function editRefund(
       ticket,
       nextSlaPolicyId,
     );
+    const { addressChanged, addressFields, addressLine } = resolveAddressChange(
+      ticket,
+      addressInput,
+    );
 
-    if (changedFields.length === 0 && !slaChanged) {
+    if (changedFields.length === 0 && !slaChanged && !addressChanged) {
       return { id: ticket.id, workOrderNumber: ticket.workOrderNumber, changedFields };
     }
 
@@ -437,7 +486,7 @@ export async function editRefund(
 
     await tx.ticket.update({
       where: { id: ticket.id },
-      data: { contactPhone: nextContactPhone, ...slaFields, updatedAt: now },
+      data: { contactPhone: nextContactPhone, ...slaFields, ...addressFields, updatedAt: now },
     });
 
     const slaLine = slaChanged
@@ -450,6 +499,7 @@ export async function editRefund(
           ]
         : []),
       ...(slaLine === null ? [] : [slaLine]),
+      ...(addressLine === null ? [] : [addressLine]),
     ];
     await writeEditLog(tx, ticket, ticket.slaPolicy?.name ?? null, actor, now, remarkLines, {
       refPolicy,
@@ -462,7 +512,8 @@ export async function editRefund(
       changedFields: [
         ...changedFields,
         ...(slaChanged ? (["slaPolicyId"] as const) : []),
-      ] as EditableFieldKey[],
+        ...(addressChanged ? (["address"] as const) : []),
+      ] as ChangedFieldKey[],
     };
   });
 }
