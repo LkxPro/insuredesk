@@ -42,6 +42,7 @@ import { downloadTicketExport } from "@/pages/ticket-surface/ticket-export";
 import { Unknown } from "@/pages/ticket-surface/Unknown";
 import { type AssignTarget, AssignTicketDialog } from "./AssignTicketDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
+import { LocationFilterChip } from "./LocationFilterChip";
 import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { TicketDetailPane } from "./TicketDetailPane";
@@ -462,6 +463,12 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
               })
             }
           />
+          {query.locationCode && (
+            <LocationFilterChip
+              code={query.locationCode}
+              onRemove={() => setParam("locationCode", null)}
+            />
+          )}
           <TicketListSearch
             draft={searchDraft}
             onDraftChange={setSearchDraft}
@@ -482,6 +489,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           query.assigneeId?.length,
           query.firstResponse ? 1 : 0,
           query.policyNumberState?.length,
+          query.userFeedbackChannelId?.length,
+          query.locationCode ? 1 : 0,
           query.search ? 1 : 0,
           query.createdFrom || query.createdTo ? 1 : 0,
         ].filter((count) => (count ?? 0) > 0).length

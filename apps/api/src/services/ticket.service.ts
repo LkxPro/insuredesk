@@ -30,6 +30,7 @@ import type { AuthenticatedUser } from "./auth.service.ts";
 import { channelCatalog } from "./channel.service.ts";
 import { applyTicketDataScope } from "./data-scope.service.ts";
 import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.service.ts";
+import { toTicketAddressColumns } from "./ticket-address.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { displayStatusTicketWhere } from "./ticket-display-status.ts";
 import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
@@ -178,11 +179,12 @@ function validateRequiredFields(input: TicketCreateData, requiredFields: string[
 
 export function complaintDetailData(
   data: TicketCreateData,
-): Omit<TicketCreateData, "contactPhone" | "slaPolicyId" | "complaintLevel"> {
+): Omit<TicketCreateData, "contactPhone" | "slaPolicyId" | "complaintLevel" | "address"> {
   const {
     contactPhone: _corePhone,
     slaPolicyId: _corePolicy,
     complaintLevel: _legacy,
+    address: _coreAddress,
     ...detail
   } = data;
   return detail;
@@ -222,6 +224,7 @@ export async function createTicket(
   const kindId = await requireTicketKindId(prisma, TicketKindKey.Complaint);
   const slaStamp = await computeSlaStamp(prisma, data.slaPolicyId, now, kindId);
   const detail = complaintDetailData(data);
+  const address = toTicketAddressColumns(data.address ?? null);
 
   return prisma.$transaction(async (tx) => {
     // 提交兜底查重：与插入同事务，命中即整体回滚；批量导入不经此路，天然豁免
@@ -244,6 +247,7 @@ export async function createTicket(
     const ticket = await tx.ticket.create({
       data: {
         contactPhone: data.contactPhone,
+        ...address,
         createdAt: now,
         slaAnchorAt: now,
         kindId,
@@ -308,6 +312,8 @@ type TicketListFilters = Pick<
   | "assigneeId"
   | "firstResponse"
   | "policyNumberState"
+  | "userFeedbackChannelId"
+  | "locationCode"
   | "source"
   | "search"
   | "createdFrom"
@@ -327,6 +333,17 @@ async function searchPolicyNumbersTicketIds(
     SELECT "ticketId" FROM ticket_complaint_details WHERE array_to_string("policyNumbers", ' ') ILIKE ${substringSearchPattern(search)}
   `;
   return rows.map((row) => row.ticketId);
+}
+
+/** 定位码 = districtCode ?? cityCode ?? provinceCode，展开成三列 OR 以逐列命中索引。 */
+export function locationCodeTicketWhere(code: string): Prisma.TicketWhereInput {
+  return {
+    OR: [
+      { districtCode: code },
+      { districtCode: null, cityCode: code },
+      { districtCode: null, cityCode: null, provinceCode: code },
+    ],
+  };
 }
 
 /**
@@ -358,6 +375,14 @@ export async function buildTicketListWhere(
   }
   if (query.completionStatusId && query.completionStatusId.length > 0) {
     filters.push({ completionStatusId: { in: query.completionStatusId } });
+  }
+  if (query.userFeedbackChannelId && query.userFeedbackChannelId.length > 0) {
+    filters.push({
+      complaintDetail: { userFeedbackChannelId: { in: query.userFeedbackChannelId } },
+    });
+  }
+  if (query.locationCode !== undefined) {
+    filters.push(locationCodeTicketWhere(query.locationCode));
   }
   if (query.policyNumberState?.includes("none")) {
     filters.push({ complaintDetail: { noPolicyNumber: true } });
@@ -593,6 +618,17 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     customerName: detail?.customerName ?? null,
     phone: detail?.phone ?? null,
     contactPhone: ticket.contactPhone,
+    address:
+      ticket.provinceCode === null || ticket.provinceName === null
+        ? null
+        : {
+            provinceCode: ticket.provinceCode,
+            provinceName: ticket.provinceName,
+            cityCode: ticket.cityCode,
+            cityName: ticket.cityName,
+            districtCode: ticket.districtCode,
+            districtName: ticket.districtName,
+          },
     customerRequest: detail?.customerRequest ?? null,
     submissionText: ticket.submissionText,
     nuclearBodyStatus: parseNullable(nuclearBodyStatusSchema, detail?.nuclearBodyStatus ?? null),

@@ -1,9 +1,12 @@
 import type { NuclearBodyStatus, Priority } from "@insuredesk/shared";
 import {
+  formatTicketAddress,
   joinPolicyNumbers,
   NUCLEAR_BODY_STATUSES,
   PRIORITY_LABELS,
+  TICKET_ADDRESS_LABEL,
   TICKET_FIELDS,
+  type TicketAddress,
   type TicketCreateFieldKey,
   type TicketFieldOverrides,
 } from "@insuredesk/shared";
@@ -24,8 +27,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { RegionCascader } from "./RegionCascader";
 import { SearchableCombobox } from "./SearchableCombobox";
 import {
+  type AddressFormValue,
   type CurrentCatalogOption,
   HAS_CONTACTED_OPTIONS,
   PolicyNumbersControl,
@@ -66,6 +71,19 @@ export interface EditableTicket {
   slaPolicy: CurrentCatalogOption | null;
   kindKey: string;
   priority: Priority | null;
+  address: TicketAddress | null;
+}
+
+function addressFormDefault(ticket: EditableTicket | null): AddressFormValue | null {
+  const address = ticket?.address;
+  return address
+    ? {
+        provinceCode: address.provinceCode,
+        cityCode: address.cityCode,
+        districtCode: address.districtCode,
+        complete: true,
+      }
+    : null;
 }
 
 /**
@@ -100,6 +118,7 @@ export function formDefaults(ticket: EditableTicket | null): TicketFormValues {
     categoryId: ticket?.category?.id ?? "",
     slaPolicyId: ticket?.slaPolicy?.id ?? "",
     priority: ticket?.priority ?? "",
+    address: addressFormDefault(ticket),
   };
 }
 
@@ -107,6 +126,7 @@ export function refundFormDefaults(ticket: EditableTicket | null): RefundEditFor
   return {
     contactPhone: ticket?.contactPhone ?? "",
     slaPolicyId: ticket?.slaPolicy?.id ?? "",
+    address: addressFormDefault(ticket),
   };
 }
 
@@ -481,6 +501,45 @@ export function TicketDetailField({
         <EditControl name={name} ticket={ticket} form={form} invalid={!!error} />
       ) : (
         (readValue(name, ticket) ?? "—")
+      )}
+    </DetailFieldShell>
+  );
+}
+
+export function AddressDetailField({
+  ticket,
+  editing,
+  value,
+  onChange,
+  dirty,
+  error,
+}: {
+  ticket: EditableTicket;
+  editing: boolean;
+  value: AddressFormValue | null | undefined;
+  onChange: (value: AddressFormValue | null) => void;
+  dirty: boolean;
+  error?: string;
+}) {
+  const storedLabel = ticket.address ? formatTicketAddress(ticket.address) : "";
+  return (
+    <DetailFieldShell
+      label={TICKET_ADDRESS_LABEL}
+      editing={editing}
+      dirty={dirty}
+      controlId="address"
+      error={error}
+    >
+      {editing ? (
+        <RegionCascader
+          id="address"
+          value={value}
+          onChange={onChange}
+          invalid={!!error}
+          storedLabel={storedLabel}
+        />
+      ) : (
+        storedLabel || "—"
       )}
     </DetailFieldShell>
   );

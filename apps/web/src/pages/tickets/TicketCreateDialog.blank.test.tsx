@@ -197,6 +197,7 @@ describe("空白提交 (issue #43 + #62 反馈时间默认此刻)", () => {
       feedbackTime: NOW.toISOString(),
       policyNumbers: [],
       noPolicyNumber: false,
+      address: null,
     });
 
     await waitFor(() => {

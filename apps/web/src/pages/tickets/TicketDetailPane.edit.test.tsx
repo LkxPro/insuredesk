@@ -351,3 +351,73 @@ describe("未保存改动的三个出口", () => {
     expect(screen.queryByRole("button", { name: "保存修改" })).not.toBeInTheDocument();
   });
 });
+
+describe("地址的编辑协议", () => {
+  const nanshan = {
+    provinceCode: "440000",
+    provinceName: "广东省",
+    cityCode: "440300",
+    cityName: "深圳市",
+    districtCode: "440305",
+    districtName: "南山区",
+  };
+
+  function renderWithAddress(address: typeof nanshan) {
+    renderApp({
+      path: "/tickets/t1",
+      trpc: {
+        "ticket.list": { items: rows, total: rows.length, page: 1, pageSize: 20 },
+        "ticket.detail": detailPayload({ address }),
+        "channel.options": channelOptions,
+        "ticketCategory.options": categoryOptions,
+        "ticket.editComplaint": { id: "t1", workOrderNumber: "WO100001", status: "processing" },
+      },
+    });
+  }
+
+  async function startEditing() {
+    const pane = await findPane();
+    expect(pane).toHaveTextContent("广东省 深圳市");
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "保存修改" })).toBeInTheDocument(),
+    );
+    return pane;
+  }
+
+  it("详情只读展示省市区", async () => {
+    renderWithAddress(nanshan);
+    expect(await findPane()).toHaveTextContent("广东省 深圳市 南山区");
+  });
+
+  it("未改地址：保存不携带 address", async () => {
+    renderWithAddress(nanshan);
+    const pane = await startEditing();
+    fireEvent.change(within(pane).getByLabelText("客户姓名"), { target: { value: "王大明" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(editInputs()).toHaveLength(1));
+    expect(editInputs()[0]).not.toHaveProperty("address");
+  });
+
+  it("清空地址：提交 null", async () => {
+    renderWithAddress(nanshan);
+    const pane = await startEditing();
+    const province = within(pane).getByLabelText("地址");
+    await waitFor(() => expect(province).toHaveValue("广东省"));
+    const group = province.parentElement as HTMLElement;
+    fireEvent.click(within(group).getByRole("button", { name: "清除选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(editInputs()).toHaveLength(1));
+    expect(editInputs()[0]?.address).toBeNull();
+  });
+
+  it("已存失效码：显示已存名称，未改地址可保存其他字段", async () => {
+    renderWithAddress({ ...nanshan, districtCode: "440399", districtName: "已撤销区" });
+    const pane = await startEditing();
+    expect(await within(pane).findByText(/已存地址「广东省 深圳市 已撤销区」/)).toBeInTheDocument();
+    fireEvent.change(within(pane).getByLabelText("客户姓名"), { target: { value: "王大明" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(editInputs()).toHaveLength(1));
+    expect(editInputs()[0]).not.toHaveProperty("address");
+  });
+});

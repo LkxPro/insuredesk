@@ -145,7 +145,16 @@ model Ticket {
   /// 外部提交原文; source=external_channel 时必填，创建后不可编辑
   submissionText String?
 
-  assignee           User?                  @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  /// 工单地址（行政区划）：全空或省→叶子的完整路径；直辖市/港澳无市级，
+  /// 市级叶子无区县。名称是写入时的区划数据快照，区划更新后不回写。
+  provinceCode String?
+  provinceName String?
+  cityCode     String?
+  cityName     String?
+  districtCode String?
+  districtName String?
+
+  assignee          User?                  @relation("TicketAssignee", fields: [assigneeId], references: [id])
   creator            User?                  @relation("TicketCreator", fields: [creatorId], references: [id])
   kind               TicketKind             @relation(fields: [kindId], references: [id], onDelete: Restrict)
   completionStatus   CompletionStatus?      @relation(fields: [completionStatusId], references: [id], onDelete: Restrict)
@@ -170,6 +179,10 @@ model Ticket {
   @@index([dueAt])
   @@index([deletedAt])
   @@index([importBatchId])
+  /// 定位码 = districtCode ?? cityCode ?? provinceCode；过滤按三列 OR 展开逐列命中
+  @@index([provinceCode])
+  @@index([cityCode])
+  @@index([districtCode])
   /// 开放 API 全局增量流的游标序（(updatedAt, id) 翻页）
   @@index([updatedAt, id])
   @@map("tickets")

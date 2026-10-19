@@ -197,3 +197,33 @@ describe("筛选 URL 契约", () => {
     expect(locationText()).toBe("/tickets");
   });
 });
+
+describe("工单地图下钻参数", () => {
+  it("locationCode / userFeedbackChannel 深链进入 ticket.list 入参", async () => {
+    renderAt("/tickets?locationCode=440305&userFeedbackChannel=ufc-1,ufc-2");
+
+    await waitFor(() => expect(listCalls().length).toBeGreaterThan(0));
+    expect(listCalls().at(-1)?.input).toMatchObject({
+      locationCode: "440305",
+      userFeedbackChannelId: ["ufc-1", "ufc-2"],
+    });
+  });
+
+  it("地区以可移除标签呈现，用户反馈渠道不显示任何控件", async () => {
+    renderAt("/tickets?locationCode=440305&userFeedbackChannel=ufc-1");
+
+    expect(await screen.findByText("地区：广东省 深圳市 南山区")).toBeInTheDocument();
+    expect(screen.queryByText(/用户反馈渠道/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "移除地区筛选" }));
+    await waitFor(() => expect(locationText()).toBe("/tickets?userFeedbackChannel=ufc-1"));
+    expect(listCalls().at(-1)?.input).not.toHaveProperty("locationCode");
+  });
+
+  it("非法 locationCode 静默丢弃", async () => {
+    renderAt("/tickets?locationCode=abc");
+
+    await waitFor(() => expect(listCalls().length).toBeGreaterThan(0));
+    expect(listCalls().at(-1)?.input).not.toHaveProperty("locationCode");
+  });
+});

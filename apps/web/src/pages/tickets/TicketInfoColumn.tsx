@@ -5,13 +5,13 @@ import {
   TicketKindKey,
 } from "@insuredesk/shared";
 import type { ReactNode } from "react";
-import type { UseFormReturn } from "react-hook-form";
+import { Controller, type UseFormReturn } from "react-hook-form";
 import { formatDateTime } from "@/lib/datetime";
 import { DetailItem as Item, DetailSection as Section } from "@/pages/ticket-surface/DetailGrid";
 import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
 import { RefundModule } from "./RefundModule";
 import { SubmissionTextCollapse } from "./SubmissionTextCollapse";
-import { RefundDetailField, TicketDetailField } from "./TicketDetailFields";
+import { AddressDetailField, RefundDetailField, TicketDetailField } from "./TicketDetailFields";
 import type { RefundEditFormValues, TicketFormValues } from "./TicketFormFields";
 import type { TicketDetail } from "./ticket-detail";
 
@@ -72,6 +72,20 @@ function RefundInfoColumn({
         <Item label="更新时间">{formatDateTime(ticket.updatedAt)}</Item>
         <Item label="工单来源">{TICKET_SOURCE_LABELS[ticket.source]}</Item>
         <Item label="创建人">{ticket.createdBy}</Item>
+        <Controller
+          control={form.control}
+          name="address"
+          render={({ field }) => (
+            <AddressDetailField
+              ticket={ticket}
+              editing={editing}
+              value={field.value}
+              onChange={field.onChange}
+              dirty={!!dirtyFields.address}
+              error={errors.address?.message}
+            />
+          )}
+        />
       </Section>
 
       <RefundModule
@@ -157,6 +171,22 @@ export function TicketInfoColumn({
         {field("hasContacted")}
         {field("contactTime")}
         {field("contactId")}
+        <div className="sm:col-span-2 xl:col-span-3">
+          <Controller
+            control={form.control}
+            name="address"
+            render={({ field }) => (
+              <AddressDetailField
+                ticket={ticket}
+                editing={editing}
+                value={field.value}
+                onChange={field.onChange}
+                dirty={!!dirtyFields.address}
+                error={errors.address?.message}
+              />
+            )}
+          />
+        </div>
         <div className="sm:col-span-2 xl:col-span-3">{field("customerRequest")}</div>
       </Section>
 

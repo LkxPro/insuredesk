@@ -59,6 +59,7 @@ function createDefaults(): TicketFormValues {
     categoryId: "",
     slaPolicyId: "",
     priority: "",
+    address: null,
   };
 }
 

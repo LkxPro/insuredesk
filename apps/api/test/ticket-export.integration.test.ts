@@ -236,6 +236,9 @@ describe("ticket export (Testcontainers)", () => {
     "跟进记录",
     "完结时间",
     "完结状态",
+    "省",
+    "市",
+    "区县",
   ];
   const REFUND_HEADER = [
     "工单号",
@@ -259,6 +262,9 @@ describe("ticket export (Testcontainers)", () => {
     "退费异常原因",
     "应退金额",
     "补偿金",
+    "省",
+    "市",
+    "区县",
   ];
 
   describe("权限校验 (UI 无入口之外，API 也拒绝)", () => {

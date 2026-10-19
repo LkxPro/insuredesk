@@ -31,6 +31,7 @@ import {
   RequiredFieldsMissingError,
   SlaPolicyNotConfiguredError,
 } from "../services/ticket.service.ts";
+import { TicketAddressInvalidError } from "../services/ticket-address.service.ts";
 import {
   AssigneeNotAssignableError,
   AssigneeNotProcessableError,
@@ -91,7 +92,11 @@ function mapEditError(error: unknown): never {
   if (error instanceof TicketNotFoundError) {
     throw new TRPCError({ code: "NOT_FOUND", message: error.message, cause: error });
   }
-  if (error instanceof EditKindMismatchError || error instanceof CatalogUnavailableError) {
+  if (
+    error instanceof EditKindMismatchError ||
+    error instanceof CatalogUnavailableError ||
+    error instanceof TicketAddressInvalidError
+  ) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
   }
   if (error instanceof SlaPolicyNotConfiguredError) {
@@ -127,7 +132,10 @@ export const ticketRouter = router({
             cause: error,
           });
         }
-        if (error instanceof CatalogUnavailableError) {
+        if (
+          error instanceof CatalogUnavailableError ||
+          error instanceof TicketAddressInvalidError
+        ) {
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         }
         mapDuplicateError(error);

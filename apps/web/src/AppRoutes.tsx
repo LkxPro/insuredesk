@@ -40,6 +40,9 @@ const ShiftTypesPage = lazy(() =>
   import("@/pages/shift-types/ShiftTypesPage").then((m) => ({ default: m.ShiftTypesPage })),
 );
 const SlaPage = lazy(() => import("@/pages/sla/SlaPage").then((m) => ({ default: m.SlaPage })));
+const TicketMapPage = lazy(() =>
+  import("@/pages/ticket-map/TicketMapPage").then((m) => ({ default: m.TicketMapPage })),
+);
 const TicketsPage = lazy(() =>
   import("@/pages/tickets/TicketsPage").then((m) => ({ default: m.TicketsPage })),
 );
@@ -64,6 +67,7 @@ const PAGES: Record<NavPath, ReactElement> = {
   "/dashboard": suspense(<DashboardPage />),
   "/external-tickets": suspense(<ExternalTicketsPage />),
   "/tickets": suspense(<TicketsPage />),
+  "/ticket-map": suspense(<TicketMapPage />),
   "/users": suspense(<UsersPage />),
   "/external-accounts": suspense(<ExternalAccountManagePage />),
   "/roles": suspense(<RolesPage />),

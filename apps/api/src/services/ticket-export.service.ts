@@ -3,6 +3,7 @@ import {
   joinPolicyNumbers,
   PRIORITY_LABELS,
   prioritySchema,
+  TICKET_ADDRESS_EXPORT_HEADERS,
   TICKET_SOURCE_LABELS,
   TICKET_STATUS_LABELS,
   type TicketExportQuery,
@@ -132,6 +133,13 @@ const completionStatusColumn: ExportColumn<TicketExportRow> = {
   value: (t) => t.completionStatus?.name ?? "",
 };
 
+/** 地址三列追加在两 sheet 末尾：既有列序是对外契约，不插队。 */
+const ADDRESS_EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
+  { header: TICKET_ADDRESS_EXPORT_HEADERS.province, value: (t) => t.provinceName ?? "" },
+  { header: TICKET_ADDRESS_EXPORT_HEADERS.city, value: (t) => t.cityName ?? "" },
+  { header: TICKET_ADDRESS_EXPORT_HEADERS.district, value: (t) => t.districtName ?? "" },
+];
+
 /** 客户姓名/电话两 sheet 同列头同列位，取值源各属侧表，不可合并为单一定义。 */
 const complaintCustomerNameColumn: ExportColumn<TicketExportRow> = {
   header: ticketExportHeader("customerName"),
@@ -237,6 +245,7 @@ const COMPLAINT_EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   processLogsColumn,
   completionTimeColumn,
   completionStatusColumn,
+  ...ADDRESS_EXPORT_COLUMNS,
 ];
 
 /** 退费 sheet 列集：投诉专有列不下沉；refundDetail 其余字段不进导出。 */
@@ -262,6 +271,7 @@ const REFUND_EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: "退费异常原因", value: (t) => t.refundDetail?.failureReason ?? "" },
   { header: "应退金额", value: (t) => t.refundDetail?.expectedAmount ?? "" },
   { header: "补偿金", value: (t) => t.refundDetail?.compensationAmount ?? "" },
+  ...ADDRESS_EXPORT_COLUMNS,
 ];
 
 /**

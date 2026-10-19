@@ -77,6 +77,7 @@ const RETIRED_KEY_SAMPLE_VALUES: Record<(typeof EDIT_REFUND_RETIRED_KEYS)[number
 };
 
 const COMPLAINT_EDIT_KEYS = [
+  "address",
   "brokerageEntity",
   "categoryId",
   "channelId",
@@ -103,7 +104,7 @@ const COMPLAINT_EDIT_KEYS = [
 ] as const;
 
 describe("editComplaintInputSchema", () => {
-  it("字段集＝现状编辑全集（23 键，含 complaintLevel 墓碑键）", () => {
+  it("字段集＝现状编辑全集（24 键，含 complaintLevel 墓碑键）", () => {
     expect(Object.keys(editComplaintInputSchema.shape).sort()).toEqual([...COMPLAINT_EDIT_KEYS]);
     expect(Object.keys(ticketEditInputSchema.shape).sort()).toEqual([...COMPLAINT_EDIT_KEYS]);
   });
@@ -122,11 +123,12 @@ describe("editComplaintInputSchema", () => {
 });
 
 describe("editRefundInputSchema", () => {
-  it("仅裁留 ticketId/contactPhone/slaPolicyId：空编辑合法，三字段照常解析", () => {
+  it("仅裁留 ticketId/contactPhone/slaPolicyId/address：空编辑合法，三字段照常解析", () => {
     expect(editRefundInputSchema.parse({ ticketId: "t1" })).toEqual({
       ticketId: "t1",
       contactPhone: null,
       slaPolicyId: null,
+      address: undefined,
       ...Object.fromEntries(EDIT_REFUND_RETIRED_KEYS.map((key) => [key, undefined])),
     });
     const data = editRefundInputSchema.parse({
@@ -146,9 +148,9 @@ describe("editRefundInputSchema", () => {
     expect(editRefundInputSchema.safeParse({ ticketId: "" }).success).toBe(false);
   });
 
-  it("退役键全集＝投诉编辑全集裁掉三键，共 20 键", () => {
+  it("退役键全集＝投诉编辑全集裁掉四键，共 20 键", () => {
     const retired = Object.keys(ticketEditInputSchema.shape)
-      .filter((key) => !["ticketId", "contactPhone", "slaPolicyId"].includes(key))
+      .filter((key) => !["ticketId", "contactPhone", "slaPolicyId", "address"].includes(key))
       .sort();
     expect(retired).toEqual([...EDIT_REFUND_RETIRED_KEYS]);
   });

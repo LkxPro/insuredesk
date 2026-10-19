@@ -19,6 +19,8 @@ export function parseTicketListQuery(params: URLSearchParams): TicketListQuery {
     assigneeId: multi("assigneeId"),
     firstResponse: params.get("firstResponse") ?? undefined,
     policyNumberState: multi("policyNumber"),
+    userFeedbackChannelId: multi("userFeedbackChannel"),
+    locationCode: params.get("locationCode") ?? undefined,
     source: multi("source"),
     search: params.get("q") ?? undefined,
     createdFrom: params.get("createdFrom") ?? undefined,

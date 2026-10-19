@@ -21,6 +21,8 @@ export const TICKET_PERMISSIONS = [
   "ticket.process_external",
 ] as const;
 
+export const TICKET_MAP_PERMISSIONS = ["ticket_map.view"] as const;
+
 export const USER_PERMISSIONS = [
   "user.view",
   "user.create",
@@ -84,6 +86,7 @@ export const RESTRICTIVE_PERMISSIONS = ["user.forbid_change_own_password"] as co
 export const POSITIVE_PERMISSIONS = [
   ...DASHBOARD_PERMISSIONS,
   ...TICKET_PERMISSIONS,
+  ...TICKET_MAP_PERMISSIONS,
   ...USER_PERMISSIONS,
   ...ROLE_PERMISSIONS,
   ...SYSTEM_PERMISSIONS,
@@ -118,6 +121,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "ticket.delete": "删除工单",
   "ticket.create_external": "提交外部工单",
   "ticket.process_external": "添加外部留言",
+  "ticket_map.view": "访问工单地图",
   "user.view": "访问用户管理",
   "user.create": "新增用户",
   "user.edit": "编辑用户",
@@ -148,6 +152,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
 export const PERMISSION_GROUPS = [
   { label: "数据看板", permissions: DASHBOARD_PERMISSIONS, restrictive: false },
   { label: "工单管理", permissions: TICKET_PERMISSIONS, restrictive: false },
+  { label: "工单地图", permissions: TICKET_MAP_PERMISSIONS, restrictive: false },
   { label: "用户管理", permissions: USER_PERMISSIONS, restrictive: false },
   { label: "角色权限", permissions: ROLE_PERMISSIONS, restrictive: false },
   { label: "系统配置", permissions: SYSTEM_PERMISSIONS, restrictive: false },

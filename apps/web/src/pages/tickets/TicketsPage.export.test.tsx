@@ -198,4 +198,23 @@ describe("buildTicketExportUrl", () => {
     expect(params.get("source")).toBe("");
     expect(params.get("search")).toBe("三丰");
   });
+
+  it("地图下钻参数随导出下传", () => {
+    const url = buildTicketExportUrl(
+      {
+        userFeedbackChannelId: ["ufc-1", "ufc-2"],
+        locationCode: "440305",
+        source: ["manual"],
+        sortBy: "createdAt",
+        sortOrder: "desc",
+        page: 1,
+        pageSize: 20,
+      },
+      "csv",
+      "UTC",
+    );
+    const params = new URL(url, "http://localhost").searchParams;
+    expect(params.get("userFeedbackChannelId")).toBe("ufc-1,ufc-2");
+    expect(params.get("locationCode")).toBe("440305");
+  });
 });

@@ -154,3 +154,29 @@ describe("buildTicketFormSchema 日期时间成对校验", () => {
     expect(requiredMessage("feedbackTime")).toBe("反馈时间为必填项");
   });
 });
+
+describe("地址字段", () => {
+  const schema = buildTicketFormSchema([]);
+  const address = (complete: boolean) => ({
+    provinceCode: "440000",
+    cityCode: "440300",
+    districtCode: complete ? "440305" : null,
+    complete,
+  });
+
+  it("未选到最后一级不可提交", () => {
+    const result = schema.safeParse({ ...BLANK_FORM, address: address(false) });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.find((issue) => issue.path[0] === "address")?.message).toBe(
+        "地址须从省选到最后一级区划",
+      );
+    }
+  });
+
+  it("选到叶子或不填均可提交", () => {
+    expect(schema.safeParse({ ...BLANK_FORM, address: address(true) }).success).toBe(true);
+    expect(schema.safeParse({ ...BLANK_FORM, address: null }).success).toBe(true);
+    expect(refundEditFormSchema.safeParse({ address: address(false) }).success).toBe(false);
+  });
+});

@@ -35,6 +35,7 @@ export function detailPayload(overrides: Record<string, unknown> = {}) {
     slaPolicy: { id: "pol-normal", name: "一般投诉", active: true },
     kindKey: "complaint",
     priority: null,
+    address: null,
     followUpFrequency: "24小时内累计跟进1次",
     firstResponseRequirement: "120分钟内完成首次响应",
     status: "processing",
