@@ -26,6 +26,8 @@ PostgreSQL 17(docker 容器),与应用 API 同机。
 1. **SQL 直连轮询**(普通连接,SELECT 白名单表)。
 2. **逻辑复制**(replication 连接,订阅变更流,见第 4 节)。
 
+(DataWorks 实时同步走独立账号 `etl_sync`,不适用上两条,见第 9 节。)
+
 psql 自检:
 
 ```bash
@@ -133,3 +135,23 @@ psql "host=<内网IP> port=5432 user=etl_ro dbname=insuredesk" -c "SELECT count(
 | 你们搞挂了连接(口令错太多次等) | 无自动锁定机制,直接联系系统侧排查 |
 | 系统侧急停 | 删 compose `ports:` + `up -d`,30 秒内 5432 关闭——发现异常连接/泄露时会先斩后奏 |
 | 连接审计 | **没有**(未开 `log_connections`)。你们的连接行为不可追溯,同时也是信任前提 |
+
+## 9. DataWorks 实时同步账号 etl_sync
+
+DataWorks 实时同步作业不用 etl_ro,用专用账号 `etl_sync`(连接主机/端口/
+库名/认证方式与第 2 节相同,口令单独下发)。与 etl_ro 的三点本质区别:
+
+1. **它是可写账号**。DataWorks 建 publication 要求表的 ownership,etl_sync
+   通过继承应用 owner 角色拿到该权限,实际权限 = 全库读写含 DDL。只许挂在
+   DataWorks 同步作业上——禁止拿它跑手工 SQL、接 BI、配进任何带写动作的
+   工具,误操作改的是线上数据,按事故处理。
+2. **它看到的表没有白名单**。etl_ro 看不到的认证审计表(users、api_keys
+   等)对 etl_sync 全部可见。同步任务选表自行限定在工单域(第 3 节清单),
+   不要把认证审计面同步进湖。
+3. **publication 与 slot 由 DataWorks 自建自管**(库里的 `di_pub_*` /
+   `di_slot_*` 是它的对象,属正常)。作业停止期间 WAL 积压超 10GB 后 slot
+   被强制失效,恢复 = 重建 slot + 重做快照,代价在贵方——作业要长期暂停
+   或下线,提前打招呼,由系统侧确认对象清理。
+
+第 5 节的语义坑(时区、软删除 tombstone、读时计算态、金额字符串等)对
+同步流同样适用,逐条照做。

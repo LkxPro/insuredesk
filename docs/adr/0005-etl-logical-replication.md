@@ -26,6 +26,10 @@ ADR 0004 给数据湖的接入是 SQL 直连轮询。ETL 消费方随后要求**
   `host all all all` 同模式,源限制仍在安全组)。
 - 复制 slot 由消费方创建(pgoutput),名称与消费节奏归 ETL 侧管理。
 
+**例外(2026-09-17 补)**:DataWorks 实时同步不适用本通道——它的作业固定
+自建 publication(`di_pub_*`),不复用 etl_pub,而 publication 的创建要求
+表 ownership,etl_ro 给不了。DataWorks 改走高权账号 etl_sync,见 ADR 0006。
+
 ## 运维点(服务器侧一次性手工项)
 
 以下不在 Prisma 迁移内,已在生产执行,重建环境时需重做:
