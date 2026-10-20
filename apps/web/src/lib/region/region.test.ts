@@ -45,6 +45,26 @@ describe("单省下一级边界", () => {
   });
 });
 
+describe("单市区县边界", () => {
+  it("每个有区县的市都有边界且与区划树一一对应；市级叶子与直辖市的区不可下钻", async () => {
+    const { loadCityDistrictMap } = await import("./index");
+    const cities = REGION_PROVINCES.flatMap((province) => province.children).filter(
+      (node) => node.level === "city" && node.children.length > 0,
+    );
+    expect(cities.length).toBeGreaterThan(300);
+    const maps = await Promise.all(cities.map((city) => loadCityDistrictMap(city.code)));
+    for (const [index, city] of cities.entries()) {
+      expect(
+        maps[index]?.features.map((feature) => String(feature.properties.adcode)).sort(),
+        city.code,
+      ).toEqual(city.children.map((child) => child.code).sort());
+    }
+    expect(await loadCityDistrictMap("441900")).toBeNull();
+    expect(await loadCityDistrictMap("110105")).toBeNull();
+    // 300 多个边界文件逐个 transform，比单测默认超时慢
+  }, 120_000);
+});
+
 describe("叶子区划边界", () => {
   it("每个叶子都有边界；中心点基本都落在自身边界内", async () => {
     const { centers, shapes } = await loadMapRegionData();

@@ -13,8 +13,8 @@ const POINT_COLOR = "#e03131";
 type GeoJsonInput = Parameters<typeof echarts.registerMap>[1];
 
 export interface MapArea {
-  /** 全国视图为 null；单省视图为省码，底图只含该省下一级边界。 */
-  readonly provinceCode: string | null;
+  /** 全国视图为 null；单省/单市视图为省码/市码，底图只含其下一级边界。 */
+  readonly areaCode: string | null;
   readonly geoJson: ChinaProvincesGeoJson;
   readonly counts: ReadonlyMap<string, number>;
 }
@@ -22,7 +22,7 @@ export interface MapArea {
 const registered = new Set<string>();
 
 function ensureMap(area: MapArea): string {
-  const name = `insuredesk-${area.provinceCode ?? "china"}`;
+  const name = `insuredesk-${area.areaCode ?? "china"}`;
   if (!registered.has(name)) {
     echarts.registerMap(name, area.geoJson as unknown as GeoJsonInput);
     registered.add(name);
@@ -43,6 +43,8 @@ interface ScatterDatum {
 
 const AREA_LABEL = { show: true, fontSize: 11, color: "#6b7280" };
 
+const HIGHLIGHT_STYLE = { areaColor: "#fff4e6", borderColor: "#f08c00", borderWidth: 2 };
+
 /** 全国视图省名用简称且不标港澳：全称与港澳名在京津冀、粤港澳一带挤成一团。 */
 const NATIONAL_UNLABELED = new Set(["香港特别行政区", "澳门特别行政区"]);
 
@@ -56,7 +58,13 @@ function buildOption(
   area: MapArea,
   clickable: boolean,
   showLabels: boolean,
+  highlightCode: string | null,
 ) {
+  const highlightName = highlightCode
+    ? area.geoJson.features.find((feature) => String(feature.properties.adcode) === highlightCode)
+        ?.properties.name
+    : undefined;
+
   const areaData = area.geoJson.features.filter(isRegionFeature).map((feature) => ({
     name: feature.properties.name,
     value: area.counts.get(String(feature.properties.adcode)) ?? 0,
@@ -68,14 +76,14 @@ function buildOption(
     geo: {
       map: ensureMap(area),
       roam: true,
-      ...(area.provinceCode === null
+      ...(area.areaCode === null
         ? { zoom: 1.2, center: [104.5, 36] as [number, number] }
         : { layoutCenter: ["50%", "50%"], layoutSize: "92%" }),
       scaleLimit: { min: 1, max: 80 },
       label: showLabels
         ? {
             ...AREA_LABEL,
-            ...(area.provinceCode === null && {
+            ...(area.areaCode === null && {
               formatter: (params: { name: string }) => nationalLabel(params.name),
             }),
           }
@@ -86,6 +94,15 @@ function buildOption(
         itemStyle: { areaColor: "#f1f3f5", borderColor: "#868e96" },
       },
       select: { disabled: true },
+      regions: highlightName
+        ? [
+            {
+              name: highlightName,
+              itemStyle: HIGHLIGHT_STYLE,
+              label: { ...AREA_LABEL, color: "#d9480f", fontWeight: "bold" as const },
+            },
+          ]
+        : [],
     },
     series: [
       {
@@ -130,6 +147,7 @@ export function TicketMapChart({
   onAreaDoubleClick,
   showLabels,
   resetToken,
+  highlightCode = null,
 }: {
   points: readonly MapPoint[];
   area: MapArea;
@@ -137,6 +155,7 @@ export function TicketMapChart({
   onAreaDoubleClick?: (code: string) => void;
   showLabels: boolean;
   resetToken: number;
+  highlightCode?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -172,13 +191,15 @@ export function TicketMapChart({
     };
   }, []);
 
-  // resetToken 变化 = 复位：notMerge 重设整套 option，缩放与平移回到初始
   // biome-ignore lint/correctness/useExhaustiveDependencies: resetToken 仅作触发器
   useEffect(() => {
-    chartRef.current?.setOption(buildOption(points, area, onPointClick !== undefined, showLabels), {
-      notMerge: true,
-    });
-  }, [points, area, onPointClick !== undefined, showLabels, resetToken]);
+    chartRef.current?.setOption(
+      buildOption(points, area, onPointClick !== undefined, showLabels, highlightCode),
+      {
+        notMerge: true,
+      },
+    );
+  }, [points, area, onPointClick !== undefined, showLabels, highlightCode, resetToken]);
 
   return <div ref={containerRef} className="h-full min-h-[560px] w-full" />;
 }

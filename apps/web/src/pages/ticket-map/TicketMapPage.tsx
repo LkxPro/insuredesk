@@ -1,7 +1,8 @@
 import type { CreatedRangeQuery, TicketMapLocation } from "@insuredesk/shared";
+import type { RegionNode } from "@insuredesk/shared/region";
 import { endOfDay, startOfDay, subDays } from "date-fns";
 import { AlertCircle, ArrowLeft, RotateCcw, Tags } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   type ChinaProvincesGeoJson,
   cityCodeOf,
+  loadCityDistrictMap,
   loadMapRegionData,
   loadProvinceCityMap,
   type MapRegionData,
@@ -19,7 +21,12 @@ import {
 import { trpc } from "@/lib/trpc";
 import { CreatedRangeFilter } from "@/pages/ticket-surface/CreatedRangeFilter";
 import { MultiSelectFilter } from "@/pages/ticket-surface/MultiSelectFilter";
+import { useRegionModule } from "@/pages/tickets/RegionCascader";
 import { buildLocationTicketListUrl, layoutMapPoints } from "./map-points";
+import { RegionRanking } from "./RegionRanking";
+import { RegionSearch } from "./RegionSearch";
+import { buildRegionRanking, type RankLevel, rankLevelsFor } from "./region-ranking";
+import type { RegionPath } from "./region-search";
 import type { MapArea } from "./TicketMapChart";
 
 const TicketMapChart = lazy(() =>
@@ -41,6 +48,13 @@ const DISTRICT_CHILD_PROVINCES = new Set([
 function areaLabelNoun(provinceCode: string | null): string {
   if (provinceCode === null) return "省名";
   return DISTRICT_CHILD_PROVINCES.has(provinceCode) ? "区名" : "市名";
+}
+
+interface FocusCity {
+  readonly provinceCode: string;
+  readonly code: string;
+  readonly name: string;
+  readonly geoJson: ChinaProvincesGeoJson;
 }
 
 function defaultRange(now: Date = new Date()): CreatedRangeQuery {
@@ -132,16 +146,6 @@ export function TicketMapPage() {
         (feature) => String(feature.properties.adcode) === focusProvinceCode,
       )?.properties.name ?? null)
     : null;
-  const visiblePoints = useMemo(
-    () =>
-      layout && focusProvinceCode
-        ? layout.points.filter((point) => point.provinceCode === focusProvinceCode)
-        : (layout?.points ?? []),
-    [layout, focusProvinceCode],
-  );
-  const visibleTotal = focusProvinceCode
-    ? (layout?.provinceCounts.get(focusProvinceCode) ?? 0)
-    : (layout?.locatedTotal ?? 0);
 
   const [cityMap, setCityMap] = useState<{
     provinceCode: string;
@@ -158,10 +162,87 @@ export function TicketMapPage() {
     };
   }, [focusProvinceCode]);
 
+  const [focusCity, setFocusCity] = useState<FocusCity | null>(null);
+  const activeCity = focusCity?.provinceCode === focusProvinceCode ? focusCity : null;
+  const canDrillCity =
+    focusProvinceCode !== null &&
+    activeCity === null &&
+    !DISTRICT_CHILD_PROVINCES.has(focusProvinceCode);
+
+  // 地区检索定位到的末级（区县、市级叶子或省视图里的市）：底图与排名高亮，不另行过滤
+  const [highlightCode, setHighlightCode] = useState<string | null>(null);
+
+  const focusProvince = useCallback((code: string | null) => {
+    setFocusCity(null);
+    setHighlightCode(null);
+    setFocusProvinceCode(code);
+  }, []);
+
+  /** 只有有区县的市可下钻。 */
+  const enterCity = useCallback(
+    async (provinceCode: string, code: string, name: string): Promise<boolean> => {
+      const geoJson = await loadCityDistrictMap(code);
+      if (!geoJson) return false;
+      setHighlightCode(null);
+      setFocusProvinceCode(provinceCode);
+      setFocusCity({ provinceCode, code, name, geoJson });
+      return true;
+    },
+    [],
+  );
+
+  const drillCity = useCallback(
+    (code: string): Promise<boolean> => {
+      if (!focusProvinceCode) return Promise.resolve(false);
+      const name =
+        cityMap?.geoJson?.features.find((feature) => String(feature.properties.adcode) === code)
+          ?.properties.name ?? code;
+      return enterCity(focusProvinceCode, code, name);
+    },
+    [focusProvinceCode, cityMap, enterCity],
+  );
+
+  const onRegionSelect = useCallback(
+    async (path: RegionPath) => {
+      const [province] = path;
+      const leaf = path.at(-1);
+      if (!province || !leaf) return;
+      const city = path.find((node) => node.level === "city");
+      if (city && (await enterCity(province.code, city.code, city.name))) {
+        setHighlightCode(leaf === city ? null : leaf.code);
+        return;
+      }
+      focusProvince(province.code);
+      setHighlightCode(leaf === province ? null : leaf.code);
+    },
+    [enterCity, focusProvince],
+  );
+
+  const searchValue = [focusProvinceCode, activeCity?.code, highlightCode].filter(
+    (code): code is string => Boolean(code),
+  );
+
   const area = useMemo((): MapArea | null => {
     if (!regionData || !layout) return null;
     if (!focusProvinceCode) {
-      return { provinceCode: null, geoJson: regionData.provinces, counts: layout.provinceCounts };
+      return { areaCode: null, geoJson: regionData.provinces, counts: layout.provinceCounts };
+    }
+    if (activeCity) {
+      const districtCodes = new Set(
+        activeCity.geoJson.features.map((feature) => String(feature.properties.adcode)),
+      );
+      const counts = new Map<string, number>();
+      for (const location of locations) {
+        if (
+          cityCodeOf(location.code) !== activeCity.code ||
+          !regionData.centers.has(location.code)
+        ) {
+          continue;
+        }
+        const key = districtCodes.has(location.code) ? location.code : activeCity.code;
+        counts.set(key, (counts.get(key) ?? 0) + location.count);
+      }
+      return { areaCode: activeCity.code, geoJson: activeCity.geoJson, counts };
     }
     if (cityMap?.provinceCode !== focusProvinceCode) return null;
     const geoJson = cityMap.geoJson ?? {
@@ -183,8 +264,21 @@ export function TicketMapPage() {
           : focusProvinceCode;
       counts.set(key, (counts.get(key) ?? 0) + location.count);
     }
-    return { provinceCode: focusProvinceCode, geoJson, counts };
-  }, [regionData, layout, focusProvinceCode, cityMap, locations]);
+    return { areaCode: focusProvinceCode, geoJson, counts };
+  }, [regionData, layout, focusProvinceCode, activeCity, cityMap, locations]);
+
+  const visiblePoints = useMemo(() => {
+    const points = layout?.points ?? [];
+    if (activeCity) return points.filter((point) => cityCodeOf(point.code) === activeCity.code);
+    if (focusProvinceCode)
+      return points.filter((point) => point.provinceCode === focusProvinceCode);
+    return points;
+  }, [layout, focusProvinceCode, activeCity]);
+  const visibleTotal = activeCity
+    ? [...(area?.counts.values() ?? [])].reduce((sum, count) => sum + count, 0)
+    : focusProvinceCode
+      ? (layout?.provinceCounts.get(focusProvinceCode) ?? 0)
+      : (layout?.locatedTotal ?? 0);
 
   const canDrill = hasPermission("ticket.view");
   const onPointClick = useMemo(
@@ -193,15 +287,48 @@ export function TicketMapPage() {
     [canDrill, navigate, filters],
   );
 
+  const regions = useRegionModule();
+  const rankScope = useMemo(
+    () =>
+      regions
+        ? [focusProvinceCode, activeCity?.code]
+            .map((code) => (code ? regions.findRegion(code) : undefined))
+            .filter((node): node is RegionNode => node !== undefined)
+        : [],
+    [regions, focusProvinceCode, activeCity],
+  );
+  const rankLevels = rankLevelsFor(rankScope);
+  const [preferredRankLevel, setPreferredRankLevel] = useState<RankLevel | null>(null);
+  const rankLevel =
+    preferredRankLevel && rankLevels.includes(preferredRankLevel)
+      ? preferredRankLevel
+      : (rankLevels[0] as RankLevel);
+  const ranking = useMemo(
+    () =>
+      regions && regionData
+        ? buildRegionRanking(locations, rankLevel, rankScope, regions.regionPath, (code) =>
+            regionData.centers.has(code),
+          )
+        : { rows: [], total: 0, excluded: 0 },
+    [regions, regionData, locations, rankLevel, rankScope],
+  );
+
+  const onAreaDoubleClick = !focusProvinceCode
+    ? focusProvince
+    : canDrillCity
+      ? (code: string) => void drillCity(code)
+      : undefined;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">
             工单地图{focusProvinceName && ` · ${focusProvinceName}`}
+            {activeCity && ` · ${activeCity.name}`}
           </h1>
           <p className="text-sm text-muted-foreground">
-            按工单地址展示分布，每个红点为一例工单；双击省份只看该省及其市界。
+            按工单地址展示分布，每个红点为一例工单；双击省份看该省市界，再双击市看区县，也可在排名卡片里搜索地区。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -215,11 +342,25 @@ export function TicketMapPage() {
           <Badge variant="secondary" className="h-8 tabular-nums">
             已定位 {visibleTotal} 例
           </Badge>
-          {focusProvinceCode && (
-            <Button variant="outline" size="sm" onClick={() => setFocusProvinceCode(null)}>
+          {activeCity ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setFocusCity(null);
+                setHighlightCode(null);
+              }}
+            >
               <ArrowLeft data-icon="inline-start" />
-              返回全国
+              返回{focusProvinceName ?? "全省"}
             </Button>
+          ) : (
+            focusProvinceCode && (
+              <Button variant="outline" size="sm" onClick={() => focusProvince(null)}>
+                <ArrowLeft data-icon="inline-start" />
+                返回全国
+              </Button>
+            )
           )}
           <Toggle
             variant="outline"
@@ -230,7 +371,7 @@ export function TicketMapPage() {
           >
             <Tags />
             {showLabels ? "隐藏" : "显示"}
-            {areaLabelNoun(focusProvinceCode)}
+            {activeCity ? "区名" : areaLabelNoun(focusProvinceCode)}
           </Toggle>
           <Button
             variant="outline"
@@ -259,13 +400,32 @@ export function TicketMapPage() {
               points={visiblePoints}
               area={area}
               onPointClick={onPointClick}
-              onAreaDoubleClick={focusProvinceCode ? undefined : setFocusProvinceCode}
+              onAreaDoubleClick={onAreaDoubleClick}
               showLabels={showLabels}
               resetToken={resetToken}
+              highlightCode={highlightCode}
             />
           </Suspense>
         ) : (
           <Skeleton className="h-full w-full" />
+        )}
+        {regionData && (
+          <RegionRanking
+            ranking={ranking}
+            level={rankLevel}
+            levels={rankLevels}
+            onLevelChange={setPreferredRankLevel}
+            onRowSelect={(path) => void onRegionSelect(path)}
+            onOpenTickets={onPointClick}
+            highlightCodes={searchValue}
+            search={
+              <RegionSearch
+                value={searchValue}
+                onSelect={(path) => void onRegionSelect(path)}
+                onClear={() => focusProvince(null)}
+              />
+            }
+          />
         )}
       </div>
     </div>
