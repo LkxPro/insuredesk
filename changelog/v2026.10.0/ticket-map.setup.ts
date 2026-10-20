@@ -6,7 +6,19 @@ import { requireTicketKindId } from "../../apps/api/src/services/ticket-kind.ser
 const TICKET_ID_PREFIX = "clchangelogmap";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// 地图页默认筛选近 90 天：演示工单锚在近 60 天内，东西横跨八省形成聚散对比。
+// ticket-map-ranking 截图复用本脚本，南京区县数据供其区县排名。
+const NANJING_DISTRICTS = [
+  ["320106", "鼓楼区", 4],
+  ["320104", "秦淮区", 3],
+  ["320115", "江宁区", 3],
+  ["320102", "玄武区", 2],
+  ["320105", "建邺区", 2],
+  ["320111", "浦口区", 1],
+  ["320113", "栖霞区", 1],
+  ["320114", "雨花台区", 1],
+] as const;
+
+// 地图页默认只筛近 90 天创建的工单，演示工单须全部落在该窗口内。
 const CLUSTERS = [
   {
     provinceCode: "440000",
@@ -80,6 +92,15 @@ const CLUSTERS = [
     districtName: "天山区",
     count: 1,
   },
+  ...NANJING_DISTRICTS.map(([districtCode, districtName, count]) => ({
+    provinceCode: "320000",
+    provinceName: "江苏省",
+    cityCode: "320100",
+    cityName: "南京市",
+    districtCode,
+    districtName,
+    count,
+  })),
 ] as const;
 
 const customerNames = [
@@ -105,7 +126,7 @@ const now = Date.now();
 let index = 0;
 for (const cluster of CLUSTERS) {
   for (let n = 0; n < cluster.count; n++) {
-    const anchor = new Date(now - (2 + index * 3) * DAY_MS);
+    const anchor = new Date(now - (2 + index * 1.5) * DAY_MS);
     const ticket = await prisma.ticket.create({
       data: {
         id: `${TICKET_ID_PREFIX}${String(index).padStart(2, "0")}`,
