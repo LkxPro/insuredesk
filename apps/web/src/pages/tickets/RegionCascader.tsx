@@ -7,13 +7,12 @@ type RegionModule = typeof import("@insuredesk/shared/region");
 
 let regionModule: Promise<RegionModule> | null = null;
 
-/** 区划树只在打开含地址字段的表单时加载，不进入首屏包。 */
 export function loadRegionModule(): Promise<RegionModule> {
   regionModule ??= import("@insuredesk/shared/region");
   return regionModule;
 }
 
-function useRegionModule(): RegionModule | null {
+export function useRegionModule(): RegionModule | null {
   const [loaded, setLoaded] = useState<RegionModule | null>(null);
   useEffect(() => {
     let live = true;
@@ -43,10 +42,7 @@ function toFormValue(path: readonly RegionNode[]): AddressFormValue | null {
   };
 }
 
-/**
- * 省→市→区县逐级可搜索下拉，层级按区划树原样：直辖市/港澳省下直接区县，
- * 市级叶子与台湾到此为止。已存码在当前区划数据中缺失时只提示，不改值。
- */
+/** 已存码在当前区划数据中缺失时只提示，不改值。 */
 export function RegionCascader({
   id,
   value,

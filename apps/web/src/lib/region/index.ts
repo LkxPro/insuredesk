@@ -19,7 +19,6 @@ export interface MapRegionData {
   readonly shapes: ReadonlyMap<string, readonly Ring[]>;
 }
 
-/** 地图页专用：中心点表、叶子边界与省界底图都走懒加载 chunk，不进入首屏。 */
 export async function loadMapRegionData(): Promise<MapRegionData> {
   const [{ REGION_CENTERS }, { REGION_SHAPES }, provinces] = await Promise.all([
     import("./region-centers"),
@@ -35,10 +34,6 @@ const PROVINCE_CITY_MAPS = import.meta.glob<{ default: ChinaProvincesGeoJson }>(
   "./provinces/*.geo.json",
 );
 
-/**
- * 单省视图的下一级边界（市；直辖市/港澳为区县），按省各自懒加载。
- * 无下级边界数据的省（台湾）返回 null，调用方退回省轮廓。
- */
 export async function loadProvinceCityMap(
   provinceCode: string,
 ): Promise<ChinaProvincesGeoJson | null> {
@@ -46,7 +41,15 @@ export async function loadProvinceCityMap(
   return load ? (await load()).default : null;
 }
 
-/** 区县码 → 所属市码：前四位 + "00"（已核实对全部区县成立）；市级叶子即其自身。 */
 export function cityCodeOf(locationCode: string): string {
   return `${locationCode.slice(0, 4)}00`;
+}
+
+const CITY_DISTRICT_MAPS = import.meta.glob<{ default: ChinaProvincesGeoJson }>(
+  "./cities/*.geo.json",
+);
+
+export async function loadCityDistrictMap(cityCode: string): Promise<ChinaProvincesGeoJson | null> {
+  const load = CITY_DISTRICT_MAPS[`./cities/${cityCode}.geo.json`];
+  return load ? (await load()).default : null;
 }
