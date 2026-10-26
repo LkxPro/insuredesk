@@ -9,7 +9,7 @@ const chartProps = vi.hoisted(() => ({
   current: null as ComponentProps<typeof TicketMapChart> | null,
 }));
 
-// jsdom 没有 canvas：图表替身只记录入参，交互由测试直接调用回调
+// jsdom 没有 canvas，需替换图表。
 vi.mock("./TicketMapChart", () => ({
   TicketMapChart: (props: ComponentProps<typeof TicketMapChart>) => {
     chartProps.current = props;
@@ -67,10 +67,10 @@ beforeEach(() => {
 });
 
 describe("工单地图页", () => {
-  it("每例一个点；无坐标定位码不画点，也不计入已定位与省份", async () => {
+  it("全国视图不画点；无坐标定位码不计入已定位与省份", async () => {
     renderMap(["ticket_map.view", "ticket.view"]);
 
-    expect(await screen.findByTestId("map-chart")).toHaveTextContent("5");
+    expect(await screen.findByTestId("map-chart")).toHaveTextContent("0");
     expect(screen.getByText("已定位 5 例")).toBeInTheDocument();
     expect(chartProps.current?.area.counts.get("440000")).toBe(3);
     expect(chartProps.current?.area.counts.get("110000")).toBe(2);
@@ -106,7 +106,7 @@ describe("工单地图页", () => {
     );
   });
 
-  it("双击省份只看该省：点与已定位按省过滤，返回全国恢复", async () => {
+  it("双击省份只看该省：不画点，已定位按省过滤，返回全国恢复", async () => {
     renderMap(["ticket_map.view", "ticket.view"]);
     await screen.findByTestId("map-chart");
 
@@ -117,7 +117,7 @@ describe("工单地图页", () => {
       "深圳市",
     );
     expect(chartProps.current?.area.counts.get("440300")).toBe(3);
-    expect(screen.getByTestId("map-chart")).toHaveTextContent("3");
+    expect(screen.getByTestId("map-chart")).toHaveTextContent("0");
     expect(screen.getByText("已定位 3 例")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "返回全国" }));

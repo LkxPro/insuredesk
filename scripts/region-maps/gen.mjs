@@ -1,4 +1,4 @@
-// 传入上次打印的下载目录即复用已下载的源数据：DataV 连续请求数百次会被限流（403）。
+// DataV 连续请求数百次会被限流（403）。
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";

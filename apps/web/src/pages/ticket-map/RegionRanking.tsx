@@ -15,7 +15,6 @@ import {
 } from "./region-ranking";
 import type { RegionPath } from "./region-search";
 
-/** 全国区县可达上千行：只渲染前若干名，检索定位到的行不在其中时补在末尾。 */
 export const RANKING_ROW_LIMIT = 100;
 
 const MEDAL: Record<number, string> = {
