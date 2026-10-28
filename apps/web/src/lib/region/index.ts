@@ -15,7 +15,6 @@ export interface ChinaProvincesGeoJson {
 export interface MapRegionData {
   readonly centers: ReadonlyMap<string, LngLat>;
   readonly provinces: ChinaProvincesGeoJson;
-  /** 叶子区划简化边界：红点落位的约束范围。 */
   readonly shapes: ReadonlyMap<string, readonly Ring[]>;
 }
 

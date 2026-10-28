@@ -1,7 +1,6 @@
 import type { RegionNode } from "@insuredesk/shared/region";
 import { matchName } from "@/lib/name-match";
 
-/** 省、省+市、省+市+区县各成一条，路径即层级（直辖市为省+区县）。 */
 export type RegionPath = readonly RegionNode[];
 
 const SEPARATORS = /[\s,，、/\\>＞|·-]+/g;
@@ -36,7 +35,6 @@ function matchChinese(query: string, names: readonly string[]): boolean {
   return consume(0, 0);
 }
 
-/** 拼音（全拼或首字母，空格分段）：末段须命中末级名称，全部分段须命中整条路径。 */
 function matchPinyin(query: string, names: readonly string[]): boolean {
   const tokens = query.trim().split(/\s+/);
   const leaf = names.at(-1) ?? "";

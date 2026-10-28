@@ -1,14 +1,23 @@
 import { MapChart, ScatterChart } from "echarts/charts";
-import { GeoComponent, TooltipComponent } from "echarts/components";
+import { GeoComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useRef } from "react";
 import type { ChinaProvincesGeoJson } from "@/lib/region";
 import type { MapPoint } from "./map-points";
 
-echarts.use([MapChart, ScatterChart, GeoComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([
+  MapChart,
+  ScatterChart,
+  GeoComponent,
+  TooltipComponent,
+  VisualMapComponent,
+  CanvasRenderer,
+]);
 
 const POINT_COLOR = "#e03131";
+
+const HEAT_COLORS = ["#fee5d9", "#fcae91", "#fb6a4a", "#de2d26", "#a50f15", "#67000d"];
 
 type GeoJsonInput = Parameters<typeof echarts.registerMap>[1];
 
@@ -45,7 +54,7 @@ const AREA_LABEL = { show: true, fontSize: 11, color: "#6b7280" };
 
 const HIGHLIGHT_STYLE = { areaColor: "#fff4e6", borderColor: "#f08c00", borderWidth: 2 };
 
-/** 全国视图省名用简称且不标港澳：全称与港澳名在京津冀、粤港澳一带挤成一团。 */
+/** 全国视图全称标签重叠，港澳名称无法容纳。 */
 const NATIONAL_UNLABELED = new Set(["香港特别行政区", "澳门特别行政区"]);
 
 function nationalLabel(name: string): string {
@@ -69,10 +78,26 @@ function buildOption(
     name: feature.properties.name,
     value: area.counts.get(String(feature.properties.adcode)) ?? 0,
   }));
+  const maxCount = Math.max(1, ...areaData.map((datum) => datum.value));
 
   return {
     animation: false,
     tooltip: { trigger: "item" as const, confine: true },
+    visualMap: {
+      type: "continuous" as const,
+      seriesIndex: 0,
+      // min 取 1：0 例落到 outOfRange 保持白底，不与最浅档混淆。
+      min: 1,
+      max: maxCount,
+      inRange: { color: HEAT_COLORS },
+      outOfRange: { color: "#ffffff" },
+      text: ["多", "少"],
+      left: 16,
+      bottom: 16,
+      itemWidth: 12,
+      itemHeight: 100,
+      textStyle: { color: "#6b7280", fontSize: 11 },
+    },
     geo: {
       map: ensureMap(area),
       roam: true,
@@ -120,7 +145,7 @@ function buildOption(
         geoIndex: 0,
         symbolSize: 6,
         cursor: clickable ? "pointer" : "default",
-        itemStyle: { color: POINT_COLOR, opacity: 0.85 },
+        itemStyle: { color: POINT_COLOR, opacity: 0.85, borderColor: "#ffffff", borderWidth: 1 },
         emphasis: { scale: 1.6, itemStyle: { opacity: 1 } },
         data: points.map(
           (point): ScatterDatum => ({

@@ -178,7 +178,6 @@ export function TicketMapPage() {
     setFocusProvinceCode(code);
   }, []);
 
-  /** 只有有区县的市可下钻。 */
   const enterCity = useCallback(
     async (provinceCode: string, code: string, name: string): Promise<boolean> => {
       const geoJson = await loadCityDistrictMap(code);
@@ -268,12 +267,9 @@ export function TicketMapPage() {
   }, [regionData, layout, focusProvinceCode, activeCity, cityMap, locations]);
 
   const visiblePoints = useMemo(() => {
-    const points = layout?.points ?? [];
-    if (activeCity) return points.filter((point) => cityCodeOf(point.code) === activeCity.code);
-    if (focusProvinceCode)
-      return points.filter((point) => point.provinceCode === focusProvinceCode);
-    return points;
-  }, [layout, focusProvinceCode, activeCity]);
+    if (!activeCity) return [];
+    return (layout?.points ?? []).filter((point) => cityCodeOf(point.code) === activeCity.code);
+  }, [layout, activeCity]);
   const visibleTotal = activeCity
     ? [...(area?.counts.values() ?? [])].reduce((sum, count) => sum + count, 0)
     : focusProvinceCode
