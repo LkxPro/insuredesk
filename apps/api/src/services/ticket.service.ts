@@ -1,6 +1,7 @@
 import {
   applyNoPolicyNumber,
   CALLBACK_DELIVERY_STATUSES,
+  CREATOR_BACKED_SOURCES,
   deriveDisplayStatus,
   formatFirstResponseRequirement,
   formatFollowUpFrequency,
@@ -70,20 +71,11 @@ export function toDateOrNull(value: string | null): Date | null {
   return value === null ? null : new Date(value);
 }
 
-/**
- * THE dueAt formula: slaAnchorAt + the policy's overdueHours, null when the
- * policy has no deadline. Creation stamps it; a 改策略引用 re-runs it with
- * the new policy's hours against the same unchanging slaAnchorAt.
- */
+/** 改策略沿用原 slaAnchorAt，不重新起算时限。 */
 export function computeDueAt(slaAnchorAt: Date, overdueHours: number | null): Date | null {
   return overdueHours === null ? null : new Date(slaAnchorAt.getTime() + overdueHours * HOUR_MS);
 }
 
-/**
- * 解析策略引用到策略行。引用非空而查无此行 = 配置故障（抛
- * SlaPolicyNotConfiguredError）；停用行照常返回——是否接受停用由调用方按
- * 场景决定（写入拒绝，读侧降级）。
- */
 export async function findSlaPolicyById(
   db: Pick<PrismaClient, "slaPolicy">,
   slaPolicyId: string | null,
@@ -113,11 +105,7 @@ export async function resolveSlaPolicy(
   return policy;
 }
 
-/**
- * The SLA fields a 时效策略引用 stamps onto a ticket. A null policy (未指定)
- * stamps all-null: no dueAt, no 首响/跟进 requirements — and hence no SLA time
- * alerts until an edit sets a reference (off the ticket's slaAnchorAt).
- */
+/** 未指定策略不运行 SLA 时钟，也不触发 SLA 告警。 */
 export function stampFromPolicy(
   policy: SlaPolicy | null,
   slaAnchorAt: Date,
@@ -152,11 +140,6 @@ export async function computeSlaStamp(
   return stampFromPolicy(await resolveSlaPolicy(db, slaPolicyId, expectedKindId), slaAnchorAt);
 }
 
-/**
- * 校验角色建单必填字段集：每项属于清单且值非空（三态字段必须明确选是/否，
- * 多值字段的空数组＝未填写）。缺失字段一次性全部报出，字段名＝描述表标准名
- * （与表单可见 label 对上）。读取时忽略未知 key（防御字段改名）。
- */
 function validateRequiredFields(input: TicketCreateData, requiredFields: string[]): void {
   const missingLabels: string[] = [];
   for (const field of requiredFields) {
@@ -190,21 +173,7 @@ export function complaintDetailData(
   return detail;
 }
 
-/**
- * Create a manually-entered ticket:
- *
- * - every user field is optional: a fully blank submission is valid,
- *   unfilled fields persist as NULL ("unknown", never "")
- * - requiredTicketFields of creator's role: missing any → reject with all missing fields
- * - workOrderNumber comes from the Postgres sequence default (concurrency-safe)
- * - 手工建单只产投诉单：kind 盖投诉、slaAnchorAt = createdAt；dueAt fixed
- *   once, here: anchor + the policy's overdueHours
- *   (null for 特急 — never overdue; null while 未定级 — no SLA clock fields)
- * - 跟进频次/首响要求 are stamped from the policy's SLA config, not hardcoded
- * - source=manual records creatorId; "由谁创建" derives at read time
- * - the first `create` ProcessLog (operator name snapshot) lands in the same
- *   transaction, so a ticket can never exist without its timeline root
- */
+/** 工单和首条创建日志必须同事务落库，不能存在无时间线起点的工单。 */
 export async function createTicket(
   { prisma, clock }: TicketServiceDeps,
   creator: AuthenticatedUser,
@@ -284,7 +253,6 @@ export async function createTicket(
 
 const listInclude = {
   creator: { select: { name: true } },
-  // Current follow-up owner is derived via JOIN, never stored
   assignee: { select: { name: true } },
   slaPolicy: { select: { name: true } },
   complaintDetail: {
@@ -310,6 +278,7 @@ type TicketListFilters = Pick<
   | "completionStatusId"
   | "slaPolicyId"
   | "assigneeId"
+  | "creatorId"
   | "firstResponse"
   | "policyNumberState"
   | "userFeedbackChannelId"
@@ -335,7 +304,6 @@ async function searchPolicyNumbersTicketIds(
   return rows.map((row) => row.ticketId);
 }
 
-/** 定位码 = districtCode ?? cityCode ?? provinceCode，展开成三列 OR 以逐列命中索引。 */
 export function locationCodeTicketWhere(code: string): Prisma.TicketWhereInput {
   return {
     OR: [
@@ -346,26 +314,20 @@ export function locationCodeTicketWhere(code: string): Prisma.TicketWhereInput {
   };
 }
 
-/**
- * The ONE WHERE for "what this viewer's filtered list contains" — shared by
- * the paged list and the export so the two can never disagree. Applies:
- *
- * - soft-delete exclusion (deletedAt null)
- * - the RBAC data scope — no `ticket.view_all` → only tickets assigned to or
- *   created by the viewer, so the rest of the unassigned pool never reaches
- *   一线客服
- * - the filters, with computed statuses resolved through the single-truth
- *   predicate module rather than restated here
- */
+/** 列表与导出必须使用相同的数据范围和筛选口径。 */
 export async function buildTicketListWhere(
   prisma: PrismaClient,
   viewer: AuthenticatedUser,
   query: TicketListFilters,
   now: Date,
 ): Promise<Prisma.TicketWhereInput> {
-  // Each filter is its own AND element so their inner ORs (base-status
-  // predicate, search) can never collide.
   const filters: Prisma.TicketWhereInput[] = [];
+  if (query.creatorId && query.creatorId.length > 0) {
+    filters.push({
+      source: { in: [...CREATOR_BACKED_SOURCES] },
+      creatorId: { in: query.creatorId },
+    });
+  }
   if (query.channelId && query.channelId.length > 0) {
     // 退费行无 detail：渠道/类别筛选对退费恒不命中（故意）
     filters.push({ complaintDetail: { channelId: { in: query.channelId } } });
@@ -393,7 +355,6 @@ export async function buildTicketListWhere(
   for (const condition of ticketListFilterConditions(query)) {
     switch (condition.kind) {
       case "statusIn":
-        // 多选状态取并集：单状态谓词恰好互斥划分全量工单，OR 后不重不漏
         filters.push({
           OR: condition.statuses.map((status) => displayStatusTicketWhere(status, now)),
         });
@@ -453,11 +414,26 @@ export async function buildTicketListWhere(
   };
 }
 
+export async function listCreatorOptions({ prisma }: TicketServiceDeps, viewer: AuthenticatedUser) {
+  return prisma.user.findMany({
+    where: {
+      createdTickets: {
+        some: {
+          deletedAt: null,
+          source: { in: [...CREATOR_BACKED_SOURCES] },
+          ...applyTicketDataScope(viewer),
+        },
+      },
+    },
+    select: { id: true, name: true, active: true },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+  });
+}
+
 export function buildTicketListOrderBy(
   query: Pick<TicketListQuery, "sortBy" | "sortOrder">,
 ): Prisma.TicketOrderByWithRelationInput[] {
-  // dueAt is nullable (特急 has none): those rows sort last either direction —
-  // "no deadline" is never "most urgent"
+  // 无时限不代表最紧急，正反向排序都必须置后。
   const orderBy: Prisma.TicketOrderByWithRelationInput =
     query.sortBy === "dueAt"
       ? { dueAt: { sort: query.sortOrder, nulls: "last" } }
@@ -466,12 +442,7 @@ export function buildTicketListOrderBy(
   return [orderBy, { id: "desc" }];
 }
 
-/**
- * Paged ticket list for 工单管理: the shared WHERE/ORDER above,
- * plus pagination. One `clock.now()` serves the whole request, so the rows a
- * computed-status filter selects and the displayStatus they serialize with can
- * never disagree.
- */
+/** 状态筛选和展示必须共用同一时刻，避免请求跨越时效边界后口径不一致。 */
 export async function listTickets(
   { prisma, clock }: TicketServiceDeps,
   viewer: AuthenticatedUser,
@@ -560,13 +531,7 @@ const detailInclude = {
 
 type TicketWithDetail = Prisma.TicketGetPayload<{ include: typeof detailInclude }>;
 
-/**
- * Full ticket detail + timeline for the detail page. Applies the RBAC data
- * scope (no `ticket.view_all` → only tickets assigned to or created by the
- * viewer) and excludes soft-deleted rows; returns null when the ticket is
- * invisible to the viewer, which the router surfaces as NOT_FOUND (existence
- * is not leaked).
- */
+/** 无权访问与不存在均返回 null，不泄露工单是否存在。 */
 export async function getTicketDetail(
   { prisma, clock }: TicketServiceDeps,
   viewer: AuthenticatedUser,
@@ -579,15 +544,7 @@ export async function getTicketDetail(
   return ticket === null ? null : serializeTicketDetail(ticket, clock.now());
 }
 
-/**
- * Wire shape for the web app: dates as ISO-8601 strings (no transformer on the
- * tRPC link), plus the read-time derivations — createdBy and the computed
- * display status.
- */
 function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
-  // Re-narrow the String columns through the shared schemas so the wire type
-  // carries the enum unions — the web renders without a single cast. Nullable
-  // columns (未填写) pass null through untouched.
   const source = ticketSourceSchema.parse(ticket.source);
   const status = ticketStatusSchema.parse(ticket.status);
   const detail = ticket.complaintDetail;
@@ -675,7 +632,6 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     status,
     displayStatus: deriveDisplayStatus(status, ticket.dueAt, now),
     assigneeId: ticket.assigneeId,
-    // Current follow-up owner is derived via JOIN, never stored
     assigneeName: ticket.assignee?.name ?? null,
     assignedAt: ticket.assignedAt?.toISOString() ?? null,
     dueAt: ticket.dueAt?.toISOString() ?? null,

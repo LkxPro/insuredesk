@@ -27,6 +27,7 @@ import { CatalogUnavailableError } from "../services/dictionary-catalog.service.
 import {
   createTicket,
   getTicketDetail,
+  listCreatorOptions,
   listTickets,
   RequiredFieldsMissingError,
   SlaPolicyNotConfiguredError,
@@ -149,6 +150,10 @@ export const ticketRouter = router({
   list: requirePermission("ticket.view")
     .input(ticketListInputSchema)
     .query(({ ctx, input }) => listTickets(deps, ctx.user, input)),
+
+  creatorOptions: requirePermission("ticket.view").query(({ ctx }) =>
+    listCreatorOptions(deps, ctx.user),
+  ),
 
   detail: requirePermission("ticket.view")
     .input(z.object({ id: z.string().min(1) }))

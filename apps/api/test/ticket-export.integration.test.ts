@@ -55,8 +55,6 @@ describe("ticket export (Testcontainers)", () => {
     const channels = await prisma.channel.findMany({ orderBy: { displayOrder: "asc" } });
     channelIds = new Map(channels.map((c) => [c.name, c.id]));
 
-    // No factory role holds ticket.export without ticket.view_all, so the
-    // data-scope criterion needs a custom role: sees/export own tickets only.
     const scopedRole = await prisma.role.create({
       data: { name: "个人档导出", permissions: ["ticket.view", "ticket.export"] },
     });
@@ -272,13 +270,11 @@ describe("ticket export (Testcontainers)", () => {
       const anonymous = await exportRequest(null, { format: "csv" });
       expect(anonymous.statusCode).toBe(401);
 
-      // 只读观察 holds ticket.view_all but NOT ticket.export
       const observer = await sessionFor("observer");
       const forbidden = await exportRequest(observer, { format: "csv" });
       expect(forbidden.statusCode).toBe(403);
       expect(forbidden.json().error).toContain("ticket.export");
 
-      // 一线客服 has no export permission either
       const frontline = await sessionFor("cs1");
       expect((await exportRequest(frontline, { format: "csv" })).statusCode).toBe(403);
     });
@@ -299,6 +295,22 @@ describe("ticket export (Testcontainers)", () => {
   });
 
   describe("逗号分隔多选参数 (querystring 是扁平字符串)", () => {
+    it("导出按多选创建人筛选，与列表一致", async () => {
+      await makeTicket({ customerName: "创建人甲的客户" }, { creatorId: seeded.users.cs1.id });
+      await makeTicket({ customerName: "创建人乙的客户" }, { creatorId: seeded.users.observer.id });
+      await makeTicket({ customerName: "其他创建人的客户" });
+      const session = await sessionFor("manager");
+      const res = await exportRequest(session, {
+        format: "csv",
+        creatorId: `${seeded.users.cs1.id},${seeded.users.observer.id}`,
+      });
+      expect(res.statusCode).toBe(200);
+      const complaint = await complaintCsvText(res.rawPayload);
+      expect(complaint).toContain("创建人甲的客户");
+      expect(complaint).toContain("创建人乙的客户");
+      expect(complaint).not.toContain("其他创建人的客户");
+    });
+
     it("splits comma-joined filters and exports the union", async () => {
       await makeTicket({ channelId: channelId("支付"), customerName: "支付客户" });
       await makeTicket({ channelId: channelId("监管"), customerName: "监管客户" });
@@ -327,7 +339,6 @@ describe("ticket export (Testcontainers)", () => {
       expect(defaultedText).toContain("活跃客户");
       expect(defaultedText).not.toContain("归档客户");
 
-      // 与列表页"清空来源筛选"下传的标记一致：空值覆盖缺省
       const cleared = await exportRequest(session, { format: "csv", source: "" });
       expect(cleared.statusCode).toBe(200);
       expect(await complaintCsvText(cleared.rawPayload)).toContain("归档客户");
@@ -488,7 +499,6 @@ describe("ticket export (Testcontainers)", () => {
       const createdColumn = rows[0]?.indexOf("创建时间") ?? -1;
       expect(rows[1]?.[createdColumn]).toBe("2026-07-10 00:30");
 
-      // An invalid zone degrades to UTC instead of failing the download
       const fallback = await exportRequest(session, { format: "csv", timeZone: "Not/AZone" });
       expect(fallback.statusCode).toBe(200);
       const fallbackRows = parseCsv(await complaintCsvText(fallback.rawPayload));

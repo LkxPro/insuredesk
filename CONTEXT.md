@@ -131,7 +131,7 @@ _Avoid_: 预设角色/preset——没有"受保护的预设"这一概念，系�
 _Avoid_: 按用户名/团队约定识别外部方；把外部账号权限做成可选可配的多档；给外部导出加权限点或开关（已移除）
 
 **外部账号预填（ticket prefill）**：
-外部账号 = 凭证 + 6 个身份类预填字段（全部选填，空 = 客服后补）：`prefillChannelId`（反馈渠道，FK→channels，Restrict）+ `prefillProject`（项目·保司）+ `prefillBrokerageEntity`（经纪主体）+ `prefillPaymentChannel`（支付渠道）+ `prefillUserFeedbackChannelId`（用户反馈渠道）+ `prefillFeedbackReceiveChannelId`（反馈信息接收渠道）。外部方提交时服务端静默快照进工单字段（创建时盖章，进单后与手填无异，客服走现有 ticket.edit 自由改）。预填对提交输入隐形——外部表单仍只有 submissionText 一个输入口子。
+外部账号 = 凭证 + 6 个身份类预填字段（全部选填，空 = 客服后补）：`prefillChannelId`（反馈渠道，FK→channels，Restrict）+ `prefillProject`（项目·保司）+ `prefillBrokerageEntity`（经纪主体）+ `prefillPaymentChannel`（支付渠道）+ `prefillUserFeedbackChannelId`（用户反馈渠道）+ `prefillFeedbackReceiveChannelId`（反馈信息接收渠道）。外部方提交时服务端静默快照进工单字段（创建时盖章，进单后与手填无异，客服走现有 ticket.edit 自由改）。预填对提交输入隐形——外部表单必填投保人手机号与 submissionText；手机号保存为投诉明细的 phone。
 _Avoid_: 把预填做成可改表单默认值（引入外部输入校验与可见性三摊问题）
 
 **外部账号管理**：
@@ -143,7 +143,7 @@ _Avoid_: 把外部账号混进用户管理列表（权限边界模糊）
 _Avoid_: 按白名单过滤外部可见字段（已移除）；按账号配置可见字段清单（已移除）
 
 **外部数据范围**：
-外部账号只看/只留言**自己提交的**工单（`creatorId` 判别），无机构共享视图。外部提交仍打 `source=external_channel`，工单号与内部单同序列，"外部"标签由 source 推导。
+外部账号只看/只留言**自己提交的**工单（`creatorId` 判别），无机构共享视图。录入投保人手机号时，仅在自己的未软删、未完结工单中匹配 phone/contactPhone，显示可跳转的关联提醒；详情提醒另支持任意保单号相同。关联是读时匹配，不存绑定关系，不暴露内部跟进，命中时隐藏原文与提交入口，只能进入已有工单；服务端拒绝新建，同账号并发提交串行查重。外部提交仍打 `source=external_channel`，工单号与内部单同序列，"外部"标签由 source 推导。
 
 **ApiKey（开放 API key）**：
 开放 API（`/api/v1/*`，由 `OPEN_API_ENABLED` 整面开关控制）的调用凭证，是持有人的**机器化身**：数据面请求以持有人身份与其角色权限执行，权限不收窄也不另配。凭证格式 `sk_` + 64 hex，库内只存 sha256 与后 8 位 keyPreview，明文仅创建成功时返回一次，此后任何接口不再返回；expiresAt 可空（null = 永不过期）；上限 10 个/人（按未吊销计数），吊销幂等、即刻生效（每请求查库，无缓存窗口）。两个面**双向隔离**：API key 进不了 session 面（tRPC 与页面），session cookie 也进不了 `/api/v1`；外部角色持有的 key 直接被拒（403）。管理面自助（/profile 的 ApiKeysCard）由 `api_key.manage` 门控，数据面另加第二道闸门 `ticket.export`（双闸门：能管 key 不等于能拉数据）；吊销某用户全部 key 走 `api_key.revoke_all`。生命周期动作（create/revoke/revoke_all）写 `api_key_audit_logs` 纯追加审计（无 FK，不随对象级联抹除）。增量拉取以 (updatedAt,id)/(at,id) 复合游标翻页，契约的五条 caveat 见 spec #356。

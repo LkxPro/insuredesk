@@ -97,7 +97,6 @@ const canned = { items: [] as ListItem[], total: 0 };
 let calls: Array<{ path: string; input: unknown }>;
 
 function respond(path: string, input: unknown): unknown {
-  // The AppLayout bell polls notification.list in the same batch.
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
@@ -106,6 +105,7 @@ function respond(path: string, input: unknown): unknown {
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
     path === "sla.options" ||
+    path === "ticket.creatorOptions" ||
     path === "completionStatus.filterOptions"
   ) {
     return [];
@@ -147,7 +147,6 @@ function respond(path: string, input: unknown): unknown {
   throw new Error(`Unexpected tRPC path: ${path}`);
 }
 
-/** Decode batched tRPC calls: GET carries `input` in the URL, POST in the body. */
 function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(String(input));
   const paths = (url.pathname.split("/api/trpc/")[1] ?? "").split(",");

@@ -1,3 +1,6 @@
+let phoneSequence = 0;
+const nextPhone = () => "138" + String(++phoneSequence).padStart(8, "0");
+
 import ExcelJS from "exceljs";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +12,6 @@ import { hashPassword } from "../src/services/auth.service.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
 /**
- * 导出口是 REST endpoint 而非 tRPC procedure,故走 buildServer + app.inject。
  * 导出对外部账号恒开,无权限位可关。
  */
 describe("external ticket export (Testcontainers)", () => {
@@ -115,7 +117,9 @@ describe("external ticket export (Testcontainers)", () => {
     submissionText: string,
     row: Record<string, unknown> = {},
   ) {
-    const result = await harness.callerFor(user, role).externalTicket.submit({ submissionText });
+    const result = await harness
+      .callerFor(user, role)
+      .externalTicket.submit({ phone: nextPhone(), submissionText });
     const core: Record<string, unknown> = {};
     const detail: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row)) {
@@ -279,7 +283,7 @@ describe("external ticket export (Testcontainers)", () => {
     });
 
     it("空字段导出为空字符串，不留占位符", async () => {
-      await submit("空字段单");
+      await submit("空字段单", { phone: null });
 
       const session = await sessionFor("ext-exporter");
       const res = await exportRequest(session, { format: "csv" });

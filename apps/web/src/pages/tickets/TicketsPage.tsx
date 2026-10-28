@@ -113,8 +113,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
   // 策略筛选只列启用项（sla.options 口径），与目录 filterOptions 的停用标注口径不同
   const slaOptions = trpc.sla.options.useQuery().data ?? [];
-  // 责任人筛选与分配对话框同一候选来源（assigneeOptions）
   const assigneeOptions = trpc.ticket.assigneeOptions.useQuery().data ?? [];
+  const creatorOptions = trpc.ticket.creatorOptions.useQuery().data ?? [];
 
   const kinds = useMemo(
     () =>
@@ -155,6 +155,14 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const assignees = useMemo(
     () => assigneeOptions.map((user) => ({ value: user.id, label: user.name })),
     [assigneeOptions],
+  );
+  const creators = useMemo(
+    () =>
+      creatorOptions.map((user) => ({
+        value: user.id,
+        label: user.active ? user.name : `${user.name}（已停用）`,
+      })),
+    [creatorOptions],
   );
 
   const columns: ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>> = useMemo(
@@ -220,7 +228,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         // 处理时限 defaults to soonest-first — that's the queue-working order
         sort: { field: "dueAt", initialOrder: "asc" },
         render: (ticket) =>
-          // dueAt null = 策略不设时限（如出厂特急行）when a policy exists, 未指定策略 otherwise
           ticket.dueAt ? (
             formatDateTime(ticket.dueAt)
           ) : ticket.slaPolicyId ? (
@@ -427,6 +434,12 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             options={assignees}
             onChange={(values) => setParam("assigneeId", serializeSelection(values, []))}
           />
+          <MultiSelectFilter
+            label="创建人"
+            values={query.creatorId ?? []}
+            options={creators}
+            onChange={(values) => setParam("creatorId", serializeSelection(values, []))}
+          />
           <Select
             value={query.firstResponse ?? "all"}
             onValueChange={(value) => setParam("firstResponse", value === "all" ? null : value)}
@@ -487,6 +500,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           query.completionStatusId?.length,
           query.slaPolicyId?.length,
           query.assigneeId?.length,
+          query.creatorId?.length,
           query.firstResponse ? 1 : 0,
           query.policyNumberState?.length,
           query.userFeedbackChannelId?.length,

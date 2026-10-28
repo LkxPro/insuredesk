@@ -10,7 +10,6 @@ import { TEST_ROLES } from "@/test/roles";
 import { AppRoutes } from "../../AppRoutes";
 import { ThemeProvider } from "../../components/ThemeProvider";
 
-/** Frozen 此刻 so the prefilled feedbackTime is a known, minute-precise instant. */
 const NOW = new Date("2026-07-15T09:30:00.000Z");
 
 const auth = vi.hoisted(() => ({
@@ -122,6 +121,7 @@ function respond(path: string): unknown {
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
     path === "sla.options" ||
+    path === "ticket.creatorOptions" ||
     path === "completionStatus.filterOptions"
   ) {
     return [];
@@ -129,7 +129,6 @@ function respond(path: string): unknown {
   throw new Error(`Unexpected tRPC path: ${path}`);
 }
 
-/** Decode batched tRPC calls: GET carries `input` in the URL, POST in the body. */
 function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(String(input));
   const paths = (url.pathname.split("/api/trpc/")[1] ?? "").split(",");

@@ -2,11 +2,7 @@ import type { TicketExportFormat, TicketListQuery } from "@insuredesk/shared";
 import { format as formatDate } from "date-fns";
 import { downloadFile } from "@/lib/download";
 
-/**
- * Current list state → export URL. Pagination is deliberately dropped (an
- * export covers every matching row); the browser's IANA zone rides along so
- * the file's date columns match what the list page displays (local time).
- */
+/** 导出覆盖筛选全集；请求传递本地时区，确保日期列与列表一致。 */
 export function buildTicketExportUrl(
   query: TicketListQuery,
   format: TicketExportFormat,
@@ -26,6 +22,7 @@ export function buildTicketExportUrl(
     "channelId",
     "categoryId",
     "completionStatusId",
+    "creatorId",
     "slaPolicyId",
     "userFeedbackChannelId",
     "source",
@@ -57,7 +54,7 @@ export async function downloadTicketExport(
   query: TicketListQuery,
   format: TicketExportFormat,
 ): Promise<void> {
-  // 实际容器（xlsx/zip/csv）由服务端按筛选决定，文件名只能取 Content-Disposition
+  // 文件格式由服务端按筛选决定，文件名只能取 Content-Disposition。
   await downloadFile(
     buildTicketExportUrl(query, format),
     `工单导出-${formatDate(new Date(), "yyyyMMdd-HHmm")}`,

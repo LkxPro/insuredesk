@@ -9,11 +9,6 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import type { AuthUser } from "@/contexts/AuthContext";
 import { trpc } from "@/lib/trpc";
 
-/**
- * Import this module FIRST in the test file: its vi.mock calls register when
- * the module evaluates, and app modules imported later must see the mocks.
- */
-
 const authState = vi.hoisted(() => ({
   user: null as AuthUser | null,
   isLoading: false,
@@ -23,9 +18,6 @@ const authState = vi.hoisted(() => ({
 
 export const auth = authState;
 
-// The ToastHost outlet lives in App.tsx, outside this render tree — spy on the
-// imperative facade instead of hunting for rendered toast text. The base fn
-// covers plain toast(...) calls (NotificationBell arrivals).
 const spies = vi.hoisted(() =>
   Object.assign(vi.fn(), {
     error: vi.fn(),
@@ -76,26 +68,21 @@ export function callsTo(path: string) {
 export type TrpcOverrides = Record<string, unknown>;
 
 function defaultData(path: string): unknown {
-  // The AppLayout bell polls notification.list in the same batch; an empty
-  // inbox keeps tests focused on their own procedures.
   if (path === "notification.list") {
     return { items: [], unreadCount: 0, todo: { items: [], count: 0 } };
   }
   if (path.endsWith(".filterOptions") || path.endsWith(".options")) {
     return [];
   }
-  // 责任人候选是数组（筛选控件与分配对话框共用），不能落进下面的列表默认形
-  if (path === "ticket.assigneeOptions") {
+  if (path === "ticket.assigneeOptions" || path === "ticket.creatorOptions") {
     return [];
   }
-  // 详情页条幅会查 ticket.findDuplicates；空数组 = 无命中，条幅不渲染
-  if (path === "ticket.findDuplicates") {
+  if (path === "ticket.findDuplicates" || path === "externalTicket.findRelated") {
     return [];
   }
   return { items: [], total: 0, page: 1, pageSize: 20 };
 }
 
-/** Batched tRPC calls arrive as GET with `input` in the URL, POST with it as the body. */
 function fakeTrpcFetch(overrides: TrpcOverrides) {
   return (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input));
@@ -106,9 +93,6 @@ function fakeTrpcFetch(overrides: TrpcOverrides) {
       const procedureInput = batch[String(index)];
       calls.push({ path, input: procedureInput });
       const override = overrides[path];
-      // A resolver that throws stands in for a server-side failure: the batch
-      // item becomes an error envelope, so the client surfaces it the way it
-      // would a real TRPCError instead of the request hanging.
       try {
         const data =
           override === undefined
@@ -141,8 +125,6 @@ function fakeTrpcFetch(overrides: TrpcOverrides) {
   };
 }
 
-// Non-tRPC requests (export download, import template/upload) call the global
-// fetch; the tRPC link gets its own injected one, so the two never cross.
 export const restFetch = vi.fn();
 
 export function renderApp(options: {

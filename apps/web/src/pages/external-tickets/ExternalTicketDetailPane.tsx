@@ -11,12 +11,11 @@ import type {
 } from "@/pages/ticket-surface/detail-navigation";
 import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
 import { TicketTimelineColumn } from "@/pages/ticket-surface/TicketTimelineColumn";
+import { RelatedTicketsBanner } from "@/pages/tickets/TicketDuplicates";
 import { ExternalNoteCard } from "./ExternalNoteCard";
 import { ExternalTicketInfoColumn } from "./ExternalTicketInfoColumn";
 
 /**
- * 时间线内容已由服务端过滤（create + comment 非 internal + external_note +
- * resolve）；从外部方视角客服跟进（comment）是"对方发出"，落左侧气泡。
  * key={ticketId} 强制换单重挂：折叠态与留言草稿不跨单残留。
  */
 
@@ -58,6 +57,13 @@ export function ExternalTicketDetailPane({
       title={ticket?.workOrderNumber}
       status={ticket && <StatusBadge status={ticket.status} />}
     >
+      {data && !detailQuery.error && (
+        <RelatedTicketsBanner
+          ticketId={ticketId}
+          duplicates={data.relatedTickets ?? []}
+          basePath="/external-tickets"
+        />
+      )}
       {detailQuery.error ? (
         <Alert variant="destructive" className="m-4">
           <AlertCircle />

@@ -4,13 +4,13 @@ import { systemClock } from "../clock.ts";
 import { prisma } from "../db.ts";
 import { exportTickets } from "../services/ticket-export.service.ts";
 
-/** Querystring 是扁平字符串：多选筛选按列表页 URL 约定以逗号分隔，拆分后交给 schema。 */
 const MULTI_VALUE_PARAMS = [
   "status",
   "kindId",
   "channelId",
   "categoryId",
   "completionStatusId",
+  "creatorId",
   "slaPolicyId",
   "userFeedbackChannelId",
   "source",

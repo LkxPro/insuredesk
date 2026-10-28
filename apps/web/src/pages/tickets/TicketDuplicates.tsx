@@ -42,7 +42,6 @@ function phoneQueryable(value: string | null | undefined, touched: boolean | und
   return trimmed.length >= PHONE_READY_LENGTH || (touched === true && trimmed.length > 0);
 }
 
-/** RHF watch 未注册键返回 undefined：裁键表单缺的查重字段按未填处理。 */
 interface DuplicatesWatchForm {
   watch: (name: TicketDuplicateMatchField) => unknown;
   formState: { touchedFields: Partial<Record<"phone" | "contactPhone", boolean>> };
@@ -55,7 +54,6 @@ export function useTicketDuplicates(
   const policyNumbersText = form.watch("policyNumbers");
   const phone = form.watch("phone");
   const contactPhone = form.watch("contactPhone");
-  // touchedFields 由失焦置位，是「失焦触发」的信号源
   const { phone: phoneTouched, contactPhone: contactPhoneTouched } = form.formState.touchedFields;
 
   const input = useMemo(
@@ -102,13 +100,19 @@ export function useTicketDuplicates(
   return query.data ?? [];
 }
 
-export function DuplicateTicketList({ duplicates }: { duplicates: readonly DuplicateTicket[] }) {
+export function DuplicateTicketList({
+  duplicates,
+  basePath = "/tickets",
+}: {
+  duplicates: readonly DuplicateTicket[];
+  basePath?: "/tickets" | "/external-tickets";
+}) {
   return (
-    <ul className="space-y-1">
+    <ul className="flex flex-col gap-1">
       {duplicates.map((duplicate) => (
         <li key={duplicate.id} className="flex items-center gap-2 text-xs">
           <a
-            href={`/tickets/${duplicate.id}`}
+            href={`${basePath}/${duplicate.id}`}
             target="_blank"
             rel="noreferrer"
             className="shrink-0 font-mono underline underline-offset-2"
@@ -156,7 +160,6 @@ export interface DuplicateConflictValues {
   contactPhone: string | null;
 }
 
-/** 「仍要」带 allowDuplicate 的重发由调用方执行，组件只表达确认意图。 */
 export function DuplicateConfirmDialog({
   values,
   excludeTicketId,
@@ -232,11 +235,23 @@ export function DuplicateTicketsBanner({ ticket }: { ticket: TicketDetail }) {
     { enabled: queryable },
   );
 
-  // 展开态绑在工单 id 上：切单后 expandedFor 失配即回落收起，无需 effect
-  const [expandedFor, setExpandedFor] = useState<string | null>(null);
-  const expanded = expandedFor === ticket.id;
+  return (
+    <RelatedTicketsBanner ticketId={ticket.id} duplicates={query.data ?? []} basePath="/tickets" />
+  );
+}
 
-  const dups = query.data ?? [];
+export function RelatedTicketsBanner({
+  ticketId,
+  duplicates: dups,
+  basePath,
+}: {
+  ticketId: string;
+  duplicates: readonly DuplicateTicket[];
+  basePath: "/tickets" | "/external-tickets";
+}) {
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+  const expanded = expandedFor === ticketId;
+
   if (dups.length === 0) {
     return null;
   }
@@ -255,7 +270,7 @@ export function DuplicateTicketsBanner({ ticket }: { ticket: TicketDetail }) {
             <li key={dup.id} className="flex flex-col gap-0.5 py-0.5">
               <span className="flex items-center gap-1.5">
                 <a
-                  href={`/tickets/${dup.id}`}
+                  href={`${basePath}/${dup.id}`}
                   target="_blank"
                   rel="noreferrer"
                   className="shrink-0 font-mono underline underline-offset-2"
@@ -276,7 +291,7 @@ export function DuplicateTicketsBanner({ ticket }: { ticket: TicketDetail }) {
             className="shrink-0 cursor-pointer tabular-nums"
             aria-label={`展开其余 ${hidden} 个工单`}
           >
-            <button type="button" onClick={() => setExpandedFor(ticket.id)}>
+            <button type="button" onClick={() => setExpandedFor(ticketId)}>
               +{hidden}
               <ChevronDown className="size-3" />
             </button>
