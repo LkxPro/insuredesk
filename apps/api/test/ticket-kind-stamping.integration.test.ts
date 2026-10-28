@@ -1,3 +1,6 @@
+let phoneSequence = 0;
+const nextPhone = () => "138" + String(++phoneSequence).padStart(8, "0");
+
 import { TICKET_IMPORT_HEADERS } from "@insuredesk/shared";
 import ExcelJS from "exceljs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -67,7 +70,7 @@ describe("四个建单点的 kindId/slaAnchorAt 盖章 (Testcontainers)", () => 
   it("外部账号提交 externalTicket.submit", async () => {
     const result = await harness
       .callerFor(externalUser, externalRole)
-      .externalTicket.submit({ submissionText: "外部提交的客户反馈原文" });
+      .externalTicket.submit({ phone: nextPhone(), submissionText: "外部提交的客户反馈原文" });
 
     await expectComplaintStamp([result.id]);
   });
@@ -96,7 +99,6 @@ describe("四个建单点的 kindId/slaAnchorAt 盖章 (Testcontainers)", () => 
     const { created } = await seedDemoTickets(prisma, harness.seeded);
     expect(created.length).toBeGreaterThan(0);
     await expectComplaintStamp(created.map((ticket) => ticket.id));
-    // demo 覆盖到非 manual 来源才算数（直插路径不经过 createTicket）
     const sources = new Set(created.map((ticket) => ticket.source));
     expect(sources).toContain("feishu_form");
     expect(sources).toContain("community");

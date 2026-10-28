@@ -36,8 +36,6 @@ describe("ticket list (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  // Every test builds its own fixture set from a clean slate, so counts and
-  // orderings are exact (ProcessLogs cascade with their tickets).
   beforeEach(async () => {
     await prisma.ticket.deleteMany();
   });
@@ -106,7 +104,6 @@ describe("ticket list (Testcontainers)", () => {
       expect(item?.source).toBe("manual");
       expect(item?.createdBy).toBe("李主管");
       expect(item?.status).toBe("unassigned");
-      // Fresh 一般投诉 is 48h from due — no computed override
       expect(item?.displayStatus).toBe("unassigned");
       expect(item?.assigneeName).toBeNull();
       expect(item && "deletedAt" in item).toBe(false);
@@ -432,12 +429,10 @@ describe("ticket list (Testcontainers)", () => {
 
     it("data scope 与 assigneeId 筛选 AND 叠加 — scope 钉住的可见集不被筛选放宽", async () => {
       const creator = () => callerWith(seeded.users.cs1, ["ticket.view", "ticket.create"]);
-      // cs1 名下（经 assigneeId 入 scope）
       await makeTicket(
         { customerName: "cs1 名下" },
         { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
       );
-      // cs1 创建、主管名下（经 creatorId 入 scope）
       const createdByMe = await creator().ticket.create({
         ...baseInput(),
         customerName: "我创建主管处理",
@@ -446,7 +441,6 @@ describe("ticket list (Testcontainers)", () => {
         ticketId: createdByMe.id,
         assigneeId: seeded.users.manager.id,
       });
-      // 与 cs1 无关的主管单（不在 scope）
       await makeTicket(
         { customerName: "主管自己的单" },
         { status: "assigned", assigneeId: seeded.users.manager.id, assignedAt: new Date() },
@@ -521,17 +515,14 @@ describe("ticket list (Testcontainers)", () => {
         { customerName: "三条件全中", slaPolicyId: null },
         { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
       );
-      // 策略不符（有指定策略）
       await makeTicket(
         { customerName: "有策略" },
         { status: "assigned", assigneeId: seeded.users.cs1.id, assignedAt: new Date() },
       );
-      // 已首响
       await makeTicket(
         { customerName: "已联系", slaPolicyId: null },
         { status: "processing", assigneeId: seeded.users.cs1.id, contactCount: 2 },
       );
-      // 责任人不符
       await makeTicket(
         { customerName: "主管的", slaPolicyId: null },
         { status: "assigned", assigneeId: seeded.users.manager.id, assignedAt: new Date() },
@@ -739,6 +730,85 @@ describe("ticket list (Testcontainers)", () => {
     });
   });
 
+  describe("创建人筛选", () => {
+    it("按账号多选取并集，与搜索和来源取交集，保留数据范围", async () => {
+      const own = await makeTicket({}, { creatorId: seeded.users.cs1.id });
+      const assigned = await makeTicket(
+        { customerName: "匹配客户" },
+        { assigneeId: seeded.users.cs1.id },
+      );
+      const hidden = await makeTicket();
+      const imported = await makeTicket({}, { source: "file_import" });
+      const external = await makeTicket({}, { source: "external_channel" });
+      await makeTicket({}, { creatorId: null });
+      await makeTicket({}, { source: "feishu_form" });
+      await makeTicket({}, { deletedAt: new Date() });
+
+      const creatorId = [seeded.users.manager.id];
+      const result = await manager().ticket.list({ creatorId });
+      expect(result.items.map((ticket) => ticket.id).sort()).toEqual(
+        [assigned.id, hidden.id, external.id].sort(),
+      );
+      expect(result.total).toBe(3);
+      expect((await manager().ticket.list({ creatorId, source: [] })).total).toBe(4);
+      expect(
+        (await manager().ticket.list({ creatorId: [...creatorId, seeded.users.cs1.id] })).total,
+      ).toBe(4);
+      expect(
+        (await manager().ticket.list({ creatorId, search: "匹配客户" })).items.map((t) => t.id),
+      ).toEqual([assigned.id]);
+      expect((await manager().ticket.list({ creatorId: ["unknown"] })).total).toBe(0);
+      expect((await manager().ticket.list({ creatorId: [] })).total).toBe(6);
+      expect(
+        (await manager().ticket.list({ creatorId, source: ["file_import"] })).items.map(
+          (ticket) => ticket.id,
+        ),
+      ).toEqual([imported.id]);
+      expect((await frontline().ticket.list({ creatorId })).items.map((t) => t.id)).toEqual([
+        assigned.id,
+      ]);
+      expect(
+        (await frontline().ticket.list({ creatorId: [seeded.users.cs1.id] })).items.map(
+          (t) => t.id,
+        ),
+      ).toEqual([own.id]);
+    });
+
+    it("候选来自可见工单，包含归档、外部来源和停用创建人，按当前姓名显示", async () => {
+      await makeTicket({}, { creatorId: seeded.users.cs1.id });
+      await makeTicket({}, { source: "file_import" });
+      const creator = seeded.users.observer;
+      const external = await makeTicket({}, { source: "external_channel", creatorId: creator.id });
+      await makeTicket({}, { creatorId: seeded.users.admin.id, deletedAt: new Date() });
+      await makeTicket({}, { source: "feishu_form", creatorId: seeded.users.admin.id });
+      try {
+        await prisma.user.update({
+          where: { id: creator.id },
+          data: { name: "旧创建人", active: false },
+        });
+        const options = await manager().ticket.creatorOptions();
+        expect(options.map((u) => u.id).sort()).toEqual(
+          [seeded.users.cs1.id, seeded.users.manager.id, creator.id].sort(),
+        );
+        expect(options).toContainEqual({ id: creator.id, name: "旧创建人", active: false });
+        expect((await frontline().ticket.creatorOptions()).map((u) => u.id)).toEqual([
+          seeded.users.cs1.id,
+        ]);
+        expect(
+          (await manager().ticket.list({ creatorId: [creator.id] })).items.map((t) => t.id),
+        ).toEqual([external.id]);
+        await expect(
+          callerWith(seeded.users.cs1, []).ticket.creatorOptions(),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      } finally {
+        await prisma.user.update({
+          where: { id: creator.id },
+          data: { name: creator.name, active: creator.active },
+        });
+      }
+    });
+  });
+
   describe("search: 工单号 / 客户姓名 / 保单号 / 电话", () => {
     it("matches partial work-order number, customer name, and policy number", async () => {
       const zhang = await makeTicket({ customerName: "张三丰", policyNumbers: ["PA-88001"] });
@@ -914,12 +984,10 @@ describe("ticket list (Testcontainers)", () => {
         { channelId: channelId("支付"), customerName: "区间内" },
         { createdAt: new Date("2026-07-08T02:00:00.000Z") },
       );
-      // 同渠道同名但在区间外
       await makeTicket(
         { channelId: channelId("支付"), customerName: "区间内" },
         { createdAt: new Date("2026-07-20T02:00:00.000Z") },
       );
-      // 区间内但另一渠道
       await makeTicket(
         { channelId: channelId("保司"), customerName: "区间内" },
         { createdAt: new Date("2026-07-09T02:00:00.000Z") },

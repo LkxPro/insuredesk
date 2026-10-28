@@ -45,7 +45,6 @@ function listItem(overrides: Partial<ListItem> = {}): ListItem {
   };
 }
 
-/** sla.options 的筛选 feed：仅启用策略（目录序）。 */
 const SLA_OPTIONS = [
   { id: "pol-normal", name: "一般投诉", description: "常规投诉：48 小时处理时限。" },
   { id: "pol-high", name: "高级投诉", description: "重要投诉：48 小时处理时限。" },
@@ -58,6 +57,10 @@ function renderAt(path: string) {
   return renderApp({
     path,
     trpc: {
+      "ticket.creatorOptions": [
+        { id: "creator-a", name: "建单人甲", active: true },
+        { id: "creator-b", name: "建单人乙", active: false },
+      ],
       "ticketKind.filterOptions": [
         { id: "kind-complaint", name: "投诉", active: true },
         { id: "kind-refund", name: "退费异常", active: true },
@@ -231,7 +234,6 @@ describe("URL-driven filters (deep-linkable)", () => {
     );
   });
 
-  // 停用项为何仍在筛选 feed 里、按停用 id 为何还能筛到存量工单, 是服务端规则。
   it.each([
     {
       param: "channel",
@@ -395,13 +397,44 @@ describe("search / sort / pagination re-query", () => {
     await waitFor(() => expect(listInputs().at(-1)).toMatchObject({ search: "三丰" }));
   });
 
+  it("创建人多选筛选支持深链、全选、清空，并保留搜索条件和重置页码", async () => {
+    renderAt("/tickets?creatorId=creator-a&q=客户&page=3");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    expect(listInputs().at(-1)).toMatchObject({
+      creatorId: ["creator-a"],
+      search: "客户",
+      page: 3,
+    });
+    expect(screen.getByRole("searchbox")).not.toHaveAttribute(
+      "placeholder",
+      expect.stringContaining("创建人"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "创建人" }));
+    expect(await screen.findByRole("checkbox", { name: "建单人甲" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "建单人乙（已停用）" }));
+    await waitFor(() =>
+      expect(listInputs().at(-1)).toMatchObject({
+        creatorId: ["creator-a", "creator-b"],
+        search: "客户",
+        page: 1,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "创建人" })).toHaveTextContent("2");
+    fireEvent.click(screen.getByRole("checkbox", { name: "建单人甲" }));
+    await waitFor(() => expect(listInputs().at(-1)?.creatorId).toEqual(["creator-b"]));
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    await waitFor(() => expect(listInputs().at(-1)?.creatorId).toEqual(["creator-a", "creator-b"]));
+    fireEvent.click(screen.getByRole("button", { name: "清空" }));
+    await waitFor(() => expect(listInputs().at(-1)?.creatorId).toBeUndefined());
+    expect(listInputs().at(-1)?.search).toBe("客户");
+  });
+
   it("clicking 创建时间 flips to ascending; clicking 处理时限 sorts by dueAt soonest-first", async () => {
     canned.items = [listItem()];
     canned.total = 1;
     renderAt("/tickets");
     await screen.findByText("WO100001");
 
-    // 同名的创建时间筛选器也在页面上，排序表头按精确名字定位
     fireEvent.click(screen.getByRole("button", { name: "创建时间" }));
     await waitFor(() =>
       expect(listInputs().at(-1)).toMatchObject({ sortBy: "createdAt", sortOrder: "asc" }),

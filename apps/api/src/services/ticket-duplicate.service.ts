@@ -9,12 +9,7 @@ import type { Clock } from "../clock.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 /**
- * 建单/编辑查重：对全部未软删工单做保单号 + 手机号精确匹配。退费单无投诉
- * detail，仅核心的 contactPhone 参与命中。
- *
- * 数据范围故意不加 applyTicketDataScope —— 查重的价值恰恰在于看见别的客服
- * 名下的工单，收窄到「指派给我/我创建」会让重复单恰恰漏掉。权限边界在路由层
- * （ticket.view），本模块返回的最小字段集即全部暴露面。
+ * 内部查重跨客服数据范围；外部提醒必须按登录账号限定创建人，同时过滤内部跟进。
  */
 
 export interface TicketDuplicateDeps {
@@ -38,7 +33,6 @@ type CandidateRow = {
   contactPhone: string | null;
 };
 
-/** 保单号只会是数字+字母；「无」「无保单信息」等占位值不参与查重，否则无保单客户互相误报。 */
 const MATCHABLE_POLICY_NUMBER = /^[0-9A-Za-z]+$/;
 
 function matchedFieldsOf(
@@ -65,6 +59,7 @@ function matchedFieldsOf(
 export async function findDuplicateTickets(
   { prisma, clock }: TicketDuplicateDeps,
   query: TicketFindDuplicatesQuery,
+  externalScope?: { creatorId: string },
 ) {
   const policyNumbers = query.policyNumbers.filter((value) => MATCHABLE_POLICY_NUMBER.test(value));
   const phones = [query.phone, query.contactPhone].filter(
@@ -84,6 +79,9 @@ export async function findDuplicateTickets(
   const rows = await prisma.ticket.findMany({
     where: {
       deletedAt: null,
+      ...(externalScope
+        ? { creatorId: externalScope.creatorId, status: { not: "completed" } }
+        : {}),
       ...(query.excludeTicketId ? { id: { not: query.excludeTicketId } } : {}),
       OR: branches,
     },
@@ -98,7 +96,14 @@ export async function findDuplicateTickets(
       // 完结单的沟通止于 resolve（完结后不可再跟进/留言），取到的必是完结备注
       processLogs: {
         select: { at: true, remark: true },
-        where: { action: { in: ["resolve", "comment", "external_note"] } },
+        where: externalScope
+          ? {
+              OR: [
+                { action: { in: ["resolve", "external_note"] } },
+                { action: "comment", internalOnly: false },
+              ],
+            }
+          : { action: { in: ["resolve", "comment", "external_note"] } },
         orderBy: [{ at: "desc" }, { id: "desc" }],
         take: 1,
       },

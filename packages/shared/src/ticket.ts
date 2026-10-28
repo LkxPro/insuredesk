@@ -17,17 +17,7 @@ import {
 import { ticketDisplayStatusSchema } from "./ticket-status.ts";
 import { createdRangeFields } from "./time-range.ts";
 
-/**
- * Manual ticket-creation contract, shared by the web form (react-hook-form
- * resolver) and the API mutation input — one schema, both ends.
- * System-derived fields (workOrderNumber, source, creatorId, dueAt,
- * followUpFrequency, firstResponseRequirement, status…) are stamped
- * server-side and deliberately absent here.
- *
- * Every user-entered field is optional: a fully blank form is a valid
- * submission, and anything unfilled persists as NULL — "unknown", never
- * "" or an assumed value. hasContacted unfilled means 未知, not false.
- */
+/** 未填写表示未知，不能以空串或假定值代替；系统派生字段不接受客户端输入。 */
 
 const optionalText = (max: number) =>
   z
@@ -63,7 +53,6 @@ const optionalPolicyNumbers = z
   });
 
 export const ticketCreateInputSchema = z.object({
-  /** 客户实际反馈时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。 */
   feedbackTime: optionalEnum(z.string().datetime({ offset: true, message: "反馈时间格式不正确" })),
   /** 反馈渠道目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
   channelId: optionalText(TICKET_FIELDS.channelId.maxLength),
@@ -86,12 +75,10 @@ export const ticketCreateInputSchema = z.object({
   contactPhone: optionalText(TICKET_TEXT_LIMITS.contactPhone),
   customerRequest: optionalText(TICKET_TEXT_LIMITS.customerRequest),
   nuclearBodyStatus: optionalEnum(nuclearBodyStatusSchema),
-  /** 三态：true/false/未知（null）。 */
   hasContacted: z
     .boolean()
     .nullish()
     .transform((value) => value ?? null),
-  /** 客户那次进线发生的时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。 */
   contactTime: optionalEnum(z.string().datetime({ offset: true, message: "进线时间格式不正确" })),
   contactId: optionalText(TICKET_TEXT_LIMITS.contactId),
   /** 客诉类别目录引用；null = 未填写。目录项须存在且启用（编辑保持原值除外）。 */
@@ -99,7 +86,6 @@ export const ticketCreateInputSchema = z.object({
   complaintLevel: legacyComplaintLevelInputSchema,
   /** 时效策略目录引用；null = 未定级（无处理时限与 SLA 告警）。 */
   slaPolicyId: optionalText(100),
-  /** 独立自由标签，默认空；"" 来自未选择的下拉框。 */
   priority: optionalEnum(prioritySchema),
   /** 建单：缺省/null = 无地址。编辑：缺省 = 保留原值，null = 清空。 */
   address: ticketAddressInputSchema.nullish(),
@@ -108,14 +94,7 @@ export const ticketCreateInputSchema = z.object({
 export type TicketCreateInput = z.input<typeof ticketCreateInputSchema>;
 export type TicketCreateData = z.output<typeof ticketCreateInputSchema>;
 
-/**
- * 编辑工单 contract: every basic-info field — the same set the creation form
- * collects — editable in any status, 已完结 included. status is deliberately
- * absent: it moves only through lifecycle actions, and editing can never
- * reopen a completed ticket. System-derived fields (dueAt, followUpFrequency,
- * firstResponseRequirement…) stay server-stamped — a 时效策略引用 change
- * recomputes them from the new policy.
- */
+/** 已完结仍可编辑基础信息；编辑不能重开工单，状态只能通过生命周期操作改变。 */
 export const ticketEditInputSchema = ticketCreateInputSchema.extend({
   ticketId: z.string().min(1),
 });
@@ -190,7 +169,6 @@ export type TicketUpdateRefundCompensationData = z.output<
 export const TICKET_DUPLICATE_MATCH_FIELDS = ["policyNumbers", "phone", "contactPhone"] as const;
 export type TicketDuplicateMatchField = (typeof TICKET_DUPLICATE_MATCH_FIELDS)[number];
 
-/** 查重历史范围上限：全部未软删工单按创建时间倒序取前 N 条。 */
 export const TICKET_DUPLICATES_LIMIT = 20;
 
 /**
@@ -210,42 +188,26 @@ export const ticketFindDuplicatesInputSchema = z.object({
 export type TicketFindDuplicatesInput = z.input<typeof ticketFindDuplicatesInputSchema>;
 export type TicketFindDuplicatesQuery = z.output<typeof ticketFindDuplicatesInputSchema>;
 
-/**
- * 删除工单 contract: a dangerous, UI-double-confirmed soft delete — the
- * server stamps deletedAt, nothing is physically removed, and this phase
- * offers no restore.
- */
+/** 工单只软删，不提供恢复。 */
 export const ticketDeleteInputSchema = z.object({
   ticketId: z.string().min(1),
 });
 export type TicketDeleteInput = z.infer<typeof ticketDeleteInputSchema>;
 
-/**
- * Assignment contracts. Only the target is caller-chosen: assignedAt / status
- * / the ProcessLog entries are derived server-side, and dueAt is never
- * touched. status is deliberately absent everywhere — it moves only through
- * lifecycle actions.
- */
+/** 分配不得改变 dueAt；状态和分配时间由服务端派生。 */
 export const ticketAssignInputSchema = z.object({
   ticketId: z.string().min(1),
   assigneeId: z.string().min(1, "请选择责任人"),
 });
 export type TicketAssignInput = z.infer<typeof ticketAssignInputSchema>;
 
-/** 批量分配单次上限（即列表单页上限）；列表多选与 API 校验共用这一个数。 */
 export const BATCH_ASSIGN_LIMIT = 100;
 
-/** 批量导入单次行数上限（不含表头）；模板填写说明与上传校验共用这一个数。 */
 export const TICKET_IMPORT_ROW_LIMIT = 2000;
 
-/** 批量导入文件大小上限；前端提示与服务端 multipart 限制共用这一个数。 */
 export const TICKET_IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024;
 
-/**
- * 批量导入 REST 响应契约（/api/tickets/import）。全或无：任一行有错则整批
- * 零入库，携带逐行错误清单；行号为文件内 Excel 行号（表头是第 1 行），
- * 文件级错误（表头不符、超行数上限等）row/column 为 null。
- */
+/** 任一行有错则整批零入库；行号含表头，文件级错误的 row/column 为 null。 */
 export interface TicketImportRowError {
   row: number | null;
   /** 模板中文列名；不属于某一列的错误为 null。 */
@@ -280,7 +242,6 @@ export const TICKET_IMPORT_BATCH_STATUS_LABELS: Record<TicketImportBatchStatus, 
   revoked: "已撤销",
 };
 
-/** 导入历史 list contract; scope is server-side (own batches unless ticket.view_all). */
 export const ticketImportBatchListInputSchema = z.object({
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(50),
@@ -309,28 +270,18 @@ export const ticketBatchAssignInputSchema = z.object({
 });
 export type TicketBatchAssignInput = z.infer<typeof ticketBatchAssignInputSchema>;
 
-/**
- * Supervisor-triggered assignment from the current on-duty schedule. The
- * candidate set is global (not channel-specific); the system chooses the
- * least-loaded person for each unassigned ticket.
- */
+/** 自动分配候选集不按渠道限制。 */
 export const ticketAutoAssignInputSchema = z.object({
   ticketIds: ticketIdsSchema,
 });
 export type TicketAutoAssignInput = z.infer<typeof ticketAutoAssignInputSchema>;
 
-/**
- * 添加跟进 contract: one remark per actual customer contact, with an optional
- * next-contact plan. contactCount / nextContactTime and the assigned →
- * processing transition are all derived server-side from this single action;
- * the remark itself lands solely as a comment ProcessLog.
- */
+/** 每次跟进代表一次实际客户联系，联系计数和状态由服务端派生。 */
 export const ticketAddCommentInputSchema = z.object({
   ticketId: z.string().min(1),
   remark: z.string().trim().min(1, "请填写跟进备注").max(2000),
   /**
-   * 下次联系时间；ISO-8601 绝对时刻（客户端已按本地时区换算）。每次跟进整体
-   * 重写该字段：省略 = 清空上一条跟进留下的计划，而不是保留过期时间。
+   * 省略下次联系时间会清空上一条计划，不保留过期时间。
    */
   nextContactTime: z
     .string()
@@ -346,12 +297,7 @@ export const ticketAddCommentInputSchema = z.object({
 export type TicketAddCommentInput = z.input<typeof ticketAddCommentInputSchema>;
 export type TicketAddCommentData = z.output<typeof ticketAddCommentInputSchema>;
 
-/**
- * 完结工单 contract: the mandatory completion reason — a 完结状态目录 reference,
- * which must exist and be 启用 — plus the 完结备注 that becomes the resolve
- * log's remark. completionTime / the → completed transition and its ProcessLog
- * pair are derived server-side; completed is a 终态.
- */
+/** 完结状态目录项必须启用；completed 是终态。 */
 export const ticketResolveInputSchema = z.object({
   ticketId: z.string().min(1),
   completionStatusId: z.string().min(1, "请选择完结状态"),
@@ -372,15 +318,6 @@ export const POLICY_NUMBER_STATE_FILTER_LABELS: Record<PolicyNumberStateFilter, 
   none: "无保单号",
 };
 
-/**
- * Ticket-list query contract, shared by the list page's filter state and the
- * API input — one schema, both ends. All filters are multi-select (空数组 =
- * 不过滤) except firstResponse（单值枚举）. The 状态 filter accepts all 6
- * display statuses: computed ones are resolved to SQL predicates server-side,
- * never stored. Each multi filter tolerates a legacy single value (old
- * `?source=manual` links) by wrapping it.
- */
-
 const multiFilter = <T extends z.ZodTypeAny>(schema: T) =>
   z.array(schema).or(schema.transform((value): z.output<T>[] => [value]));
 
@@ -398,7 +335,7 @@ export const ticketListInputSchema = z.object({
   kindId: multiFilter(z.string().min(1)).optional(),
   /** 候选项与分配对话框同源（启用 + 非外部 + ticket.view&ticket.process）。 */
   assigneeId: multiFilter(z.string().min(1)).optional(),
-  /** 无 "全部" 字面值——缺省即不过滤。 */
+  creatorId: multiFilter(z.string().min(1)).optional(),
   firstResponse: z.enum(["pending"]).optional(),
   policyNumberState: multiFilter(policyNumberStateFilterSchema).optional(),
   /** 用户反馈渠道目录引用筛选；列表页无对应控件，仅随工单地图下钻链接生效。 */
@@ -410,7 +347,6 @@ export const ticketListInputSchema = z.object({
     .optional(),
   /** 缺省排除 file_import（归档单默认隐藏）；显式传 [] = 不过滤、归档单可见。 */
   source: multiFilter(ticketSourceSchema).default([...DEFAULT_TICKET_SOURCE_FILTER]),
-  /** 工单号 / 客户姓名 / 保单号；空白输入等同未搜索。 */
   search: z
     .string()
     .trim()
@@ -431,14 +367,7 @@ export const TICKET_EXPORT_FORMATS = ["xlsx", "csv"] as const;
 export const ticketExportFormatSchema = z.enum(TICKET_EXPORT_FORMATS);
 export type TicketExportFormat = (typeof TICKET_EXPORT_FORMATS)[number];
 
-/**
- * 导出工单 contract: the list's filter/sort set — pagination deliberately
- * absent, an export always covers *every* matching row — plus the file
- * format and the viewer's IANA time zone. Date columns are formatted
- * server-side, so the client sends its zone to keep the file consistent with
- * what the list page shows (local-time display convention); absent or invalid
- * zones fall back to UTC rather than failing the download.
- */
+/** 导出覆盖当前筛选全集；日期与列表本地时刻一致，缺省或非法时区回落 UTC。 */
 export const ticketExportInputSchema = ticketListInputSchema
   .omit({ page: true, pageSize: true })
   .extend({

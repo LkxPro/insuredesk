@@ -4,6 +4,11 @@ import { ticketExportFormatSchema } from "./ticket.ts";
 import { createdRangeFields } from "./time-range.ts";
 
 export const externalTicketSubmitInputSchema = z.object({
+  phone: z
+    .string()
+    .trim()
+    .min(1, "请填写投保人手机号")
+    .regex(/^1\d{10}$/, "请输入有效的 11 位手机号"),
   submissionText: z
     .string()
     .trim()
@@ -13,7 +18,10 @@ export const externalTicketSubmitInputSchema = z.object({
 
 export type ExternalTicketSubmitInput = z.infer<typeof externalTicketSubmitInputSchema>;
 
-/** 搜索域：工单号 / 工单原文 / 保单号。 */
+export const externalTicketFindRelatedInputSchema = externalTicketSubmitInputSchema.pick({
+  phone: true,
+});
+
 export const externalTicketListInputSchema = z.object({
   status: z.array(ticketStatusSchema).optional(),
   search: z.string().trim().optional(),
@@ -25,10 +33,7 @@ export const externalTicketListInputSchema = z.object({
 export type ExternalTicketListInput = z.infer<typeof externalTicketListInputSchema>;
 
 /**
- * 外部导出 contract：列表的筛选集 —— 翻页参数刻意缺席，导出一份当前筛选
- * 结果全集 —— 加文件格式与浏览器 IANA 时区（日期列服务端格式化，与列表
- * 本地时刻口径一致；非法时区回落 UTC 而不是让下载失败）。
- * querystring 是扁平字符串：status 逗号分隔（路由层拆分）。
+ * 导出必须覆盖当前筛选全集，不分页；日期与列表本地时刻一致，非法时区回落 UTC。
  */
 export const externalTicketExportInputSchema = externalTicketListInputSchema
   .omit({ offset: true, limit: true })

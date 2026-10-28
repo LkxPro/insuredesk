@@ -41,6 +41,7 @@ function respond(path: string): unknown {
     path === "channel.filterOptions" ||
     path === "ticketCategory.filterOptions" ||
     path === "sla.options" ||
+    path === "ticket.creatorOptions" ||
     path === "completionStatus.filterOptions"
   ) {
     return [];

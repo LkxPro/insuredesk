@@ -111,7 +111,6 @@ describe("列表页", () => {
     const row = (await screen.findByText("WO100001")).closest("tr") as HTMLElement;
     expect(within(row).queryByText("客服新发言")).not.toBeInTheDocument();
     const cells = within(row).getAllByRole("cell");
-    // 用户反馈渠道无值落横杠
     expect(cells[2]).toHaveTextContent("—");
     expect(cells[6]).toHaveTextContent("");
   });
@@ -214,8 +213,12 @@ describe("详情态（窄列 + 详情，同内部两态）", () => {
 });
 
 describe("新建工单", () => {
-  function openDialog() {
+  async function openDialog() {
     fireEvent.click(screen.getByRole("button", { name: "新建工单" }));
+    fireEvent.change(await screen.findByLabelText("投保人手机号（必填）"), {
+      target: { value: "13800001111" },
+    });
+    await screen.findByText("暂无关联工单");
     return screen.findByLabelText("工单原文");
   }
 
@@ -233,6 +236,7 @@ describe("新建工单", () => {
       expect(callsTo("externalTicket.submit")).toHaveLength(1);
     });
     expect(callsTo("externalTicket.submit")[0]?.input).toEqual({
+      phone: "13800001111",
       submissionText: "客户要求退保",
     });
     expect(toastSpies.success).toHaveBeenCalledWith("工单 WO100009 已提交");

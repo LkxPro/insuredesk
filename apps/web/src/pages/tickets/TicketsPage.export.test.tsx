@@ -28,7 +28,7 @@ describe("按列表当前筛选条件导出", () => {
       new Response("csv", { status: 200, headers: { "content-type": "text/csv" } }),
     );
     renderAt(
-      "/tickets?status=overdue,completed&channel=ch-pay,ch-bank&q=三丰&sortBy=dueAt&sortOrder=asc&page=3",
+      "/tickets?status=overdue,completed&channel=ch-pay,ch-bank&creatorId=creator-a,creator-b&q=三丰&sortBy=dueAt&sortOrder=asc&page=3",
     );
 
     await pickExport(/CSV/);
@@ -39,6 +39,7 @@ describe("按列表当前筛选条件导出", () => {
     expect(url.searchParams.get("format")).toBe("csv");
     expect(url.searchParams.get("status")).toBe("overdue,completed");
     expect(url.searchParams.get("channelId")).toBe("ch-pay,ch-bank");
+    expect(url.searchParams.get("creatorId")).toBe("creator-a,creator-b");
     expect(url.searchParams.get("search")).toBe("三丰");
     expect(url.searchParams.get("sortBy")).toBe("dueAt");
     expect(url.searchParams.get("sortOrder")).toBe("asc");

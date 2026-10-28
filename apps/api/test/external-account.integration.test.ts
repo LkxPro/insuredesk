@@ -1,3 +1,6 @@
+let phoneSequence = 0;
+const nextPhone = () => "138" + String(++phoneSequence).padStart(8, "0");
+
 import { type Permission, USER_PERMISSIONS } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedExternalUserRole } from "../prisma/seed-data.ts";
@@ -245,7 +248,7 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         await prisma.user.findUniqueOrThrow({ where: { id: created.id } }),
         externalRole,
       );
-      await asAccount.externalTicket.submit({ submissionText: "计数用一单" });
+      await asAccount.externalTicket.submit({ phone: nextPhone(), submissionText: "计数用一单" });
 
       rows = await manager().externalAccount.list();
       expect(rows.find((row) => row.id === created.id)?.ticketCount).toBe(1);
@@ -377,7 +380,10 @@ describe("外部账号管理 × external_account.manage (Testcontainers)", () =>
         sessionToken: null,
       });
 
-      const ticket = await asAccount.externalTicket.submit({ submissionText: "外部侧反馈一条" });
+      const ticket = await asAccount.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "外部侧反馈一条",
+      });
       await asAccount.externalTicket.addNote({ ticketId: ticket.id, content: "补充说明" });
 
       const detail = await asAccount.externalTicket.detail({ ticketId: ticket.id });

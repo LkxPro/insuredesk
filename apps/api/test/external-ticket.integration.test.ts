@@ -1,3 +1,6 @@
+let phoneSequence = 0;
+const nextPhone = () => "138" + String(++phoneSequence).padStart(8, "0");
+
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
@@ -69,6 +72,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("creates ticket with source=external_channel and the account's 6 prefill values stamped", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "客户反馈无法登录系统，需要重置密码",
       });
 
@@ -98,7 +102,10 @@ describe("external ticket API (Testcontainers)", () => {
 
     it("无预填账号提交 → 六字段全 null", async () => {
       const caller = externalCaller2();
-      const result = await caller.externalTicket.submit({ submissionText: "裸提交" });
+      const result = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "裸提交",
+      });
 
       const ticket = await prisma.ticket.findUnique({ where: { id: result.id } });
       expect(ticket).toMatchObject({ creatorId: externalUser2.id });
@@ -133,7 +140,7 @@ describe("external ticket API (Testcontainers)", () => {
 
       const result = await harness
         .callerFor(account, externalRole)
-        .externalTicket.submit({ submissionText: "停用渠道照样进单" });
+        .externalTicket.submit({ phone: nextPhone(), submissionText: "停用渠道照样进单" });
 
       const detail = await prisma.ticketComplaintDetail.findUniqueOrThrow({
         where: { ticketId: result.id },
@@ -144,6 +151,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("writes action=create ProcessLog", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试工单",
       });
 
@@ -160,6 +168,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("broadcasts external_submitted notification naming the account", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "需要通知的工单",
       });
 
@@ -178,19 +187,26 @@ describe("external ticket API (Testcontainers)", () => {
 
     it("rejects if submissionText is missing", async () => {
       const caller = externalCaller1();
-      await expect(caller.externalTicket.submit({ submissionText: "" })).rejects.toThrow();
+      await expect(
+        caller.externalTicket.submit({ phone: nextPhone(), submissionText: "" }),
+      ).rejects.toThrow();
     });
 
     it("rejects if submissionText exceeds 2000 characters", async () => {
       const caller = externalCaller1();
       const longText = "a".repeat(2001);
-      await expect(caller.externalTicket.submit({ submissionText: longText })).rejects.toThrow();
+      await expect(
+        caller.externalTicket.submit({ phone: nextPhone(), submissionText: longText }),
+      ).rejects.toThrow();
     });
 
     it("内部账号(含管理员)持有点也不能走外部入口", async () => {
       const asAdmin = harness.callerFor(seeded.users.admin, seeded.roles.admin);
       await expect(
-        asAdmin.externalTicket.submit({ submissionText: "管理员试图外部提交" }),
+        asAdmin.externalTicket.submit({
+          phone: nextPhone(),
+          submissionText: "管理员试图外部提交",
+        }),
       ).rejects.toMatchObject({ code: "FORBIDDEN", message: "该入口仅限外部账号使用" });
     });
   });
@@ -201,9 +217,11 @@ describe("external ticket API (Testcontainers)", () => {
       const caller2 = externalCaller2();
 
       const ticket1 = await caller1.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "账号1的工单",
       });
       const ticket2 = await caller2.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "账号2的工单",
       });
 
@@ -220,6 +238,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("exposes all ticket fields including sensitive ones", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试全量字段可见性",
       });
 
@@ -257,6 +276,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("all accounts see full fields regardless of legacy whitelist config", async () => {
       const caller = externalCaller2();
       const result = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试全量字段",
       });
 
@@ -295,7 +315,10 @@ describe("external ticket API (Testcontainers)", () => {
       });
       const caller = harness.callerFor(account, externalRole);
 
-      const created = await caller.externalTicket.submit({ submissionText: "旧配置工单" });
+      const created = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "旧配置工单",
+      });
       const list = await caller.externalTicket.list({ offset: 0, limit: 20 });
 
       const ticket = list.items.find((t) => t.id === created.id);
@@ -311,6 +334,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("excludes soft-deleted tickets", async () => {
       const caller = externalCaller1();
       const result = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "将被删除的工单",
       });
 
@@ -325,7 +349,10 @@ describe("external ticket API (Testcontainers)", () => {
 
     it("已完结单默认在列；显式 status 筛选可只看已完结", async () => {
       const caller = externalCaller1();
-      const done = await caller.externalTicket.submit({ submissionText: "已完结的单" });
+      const done = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "已完结的单",
+      });
       await prisma.ticket.update({ where: { id: done.id }, data: { status: "completed" } });
 
       const defaultList = await caller.externalTicket.list({ offset: 0, limit: 100 });
@@ -342,10 +369,22 @@ describe("external ticket API (Testcontainers)", () => {
 
     it("按创建日期范围筛选，起止边界均在列", async () => {
       const caller = externalCaller1();
-      const before = await caller.externalTicket.submit({ submissionText: "区间前的单" });
-      const from = await caller.externalTicket.submit({ submissionText: "起边界的单" });
-      const to = await caller.externalTicket.submit({ submissionText: "止边界的单" });
-      const after = await caller.externalTicket.submit({ submissionText: "区间后的单" });
+      const before = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "区间前的单",
+      });
+      const from = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "起边界的单",
+      });
+      const to = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "止边界的单",
+      });
+      const after = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "区间后的单",
+      });
 
       const fromAt = new Date("2026-07-06T00:00:00.000Z");
       const toAt = new Date("2026-07-12T23:59:59.999Z");
@@ -375,12 +414,18 @@ describe("external ticket API (Testcontainers)", () => {
 
     it("搜索命中保单号", async () => {
       const caller = externalCaller1();
-      const hit = await caller.externalTicket.submit({ submissionText: "带保单号的单" });
+      const hit = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "带保单号的单",
+      });
       await prisma.ticketComplaintDetail.update({
         where: { ticketId: hit.id },
         data: { policyNumbers: ["PX-2026-0001", "PX-2026-0002"] },
       });
-      const miss = await caller.externalTicket.submit({ submissionText: "不带保单号的单" });
+      const miss = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "不带保单号的单",
+      });
 
       const list = await caller.externalTicket.list({
         offset: 0,
@@ -403,7 +448,10 @@ describe("external ticket API (Testcontainers)", () => {
         },
       });
       const caller = harness.callerFor(account, externalRole);
-      const ticket = await caller.externalTicket.submit({ submissionText: "带跟进的单" });
+      const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "带跟进的单",
+      });
 
       await prisma.processLog.create({
         data: {
@@ -445,10 +493,18 @@ describe("external ticket API (Testcontainers)", () => {
       });
       const caller = harness.callerFor(account, externalRole);
 
-      // 提交顺序与最终序相反：旧 createdAt DESC 会给出 idle/noted/replied
-      const replied = await caller.externalTicket.submit({ submissionText: "客服回复了" });
-      const noted = await caller.externalTicket.submit({ submissionText: "我留言过" });
-      const idle = await caller.externalTicket.submit({ submissionText: "无动静" });
+      const replied = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "客服回复了",
+      });
+      const noted = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "我留言过",
+      });
+      const idle = await caller.externalTicket.submit({
+        phone: nextPhone(),
+        submissionText: "无动静",
+      });
 
       await prisma.processLog.create({
         data: {
@@ -486,6 +542,7 @@ describe("external ticket API (Testcontainers)", () => {
       const caller2 = externalCaller2();
 
       const ticket1 = await caller1.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "账号1的工单",
       });
 
@@ -498,6 +555,7 @@ describe("external ticket API (Testcontainers)", () => {
       const caller = externalCaller1();
 
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试 ProcessLog 过滤",
       });
 
@@ -557,6 +615,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("内部员工加的 internalOnly 跟进不出现在外部任何响应中", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "内部跟进可见性",
       });
 
@@ -587,6 +646,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("detail exposes all fields including sensitive ones", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试详情全量字段",
       });
 
@@ -621,6 +681,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("外部详情暴露时效策略名：提交恒为 null，客服补录后即显当前策略名", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "时效策略可见性",
       });
 
@@ -648,6 +709,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("returns 404 for soft-deleted ticket", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "将被删除的工单",
       });
 
@@ -666,6 +728,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("adds external_note ProcessLog without modifying ticket fields", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试外部留言",
       });
 
@@ -703,6 +766,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("notifies assignee when ticket is assigned", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试通知已分配工单",
       });
 
@@ -735,6 +799,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("broadcasts to ticket.assign holders when ticket is unassigned", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试通知未分配工单",
       });
 
@@ -756,6 +821,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("rejects addNote for completed ticket", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "将被完结的工单",
       });
 
@@ -777,6 +843,7 @@ describe("external ticket API (Testcontainers)", () => {
       const caller2 = externalCaller2();
 
       const ticket1 = await caller1.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "账号1的工单",
       });
 
@@ -791,6 +858,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("rejects if content is empty", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试空留言",
       });
 
@@ -805,6 +873,7 @@ describe("external ticket API (Testcontainers)", () => {
     it("rejects if content exceeds 2000 characters", async () => {
       const caller = externalCaller1();
       const ticket = await caller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试长留言",
       });
 
@@ -824,6 +893,7 @@ describe("external ticket API (Testcontainers)", () => {
       const internalCaller = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
 
       const ticket = await externalCaller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "等回复的单",
       });
       await prisma.ticket.update({
@@ -852,6 +922,7 @@ describe("external ticket API (Testcontainers)", () => {
       const internalCaller = harness.callerFor(seeded.users.manager, seeded.roles.csManager);
 
       const ticket = await externalCaller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "内部讨论的单",
       });
       await prisma.ticket.update({
@@ -881,6 +952,7 @@ describe("external ticket API (Testcontainers)", () => {
       if (!completionStatus) throw new Error("no active completion status seeded");
 
       const ticket = await externalCaller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "将被完结的外部单",
       });
       await prisma.ticket.update({
@@ -952,6 +1024,7 @@ describe("external ticket API (Testcontainers)", () => {
       const externalCaller = externalCaller1();
 
       const ticket = await externalCaller.externalTicket.submit({
+        phone: nextPhone(),
         submissionText: "测试 internalOnly 过滤",
       });
 

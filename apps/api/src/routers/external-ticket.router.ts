@@ -1,6 +1,7 @@
 import {
   externalTicketAddNoteInputSchema,
   externalTicketDetailInputSchema,
+  externalTicketFindRelatedInputSchema,
   externalTicketListInputSchema,
   externalTicketSubmitInputSchema,
   prioritySchema,
@@ -18,6 +19,7 @@ import {
   buildExternalSubmittedNotification,
   writeBulkNotifications,
 } from "../services/notification.service.ts";
+import { findDuplicateTickets } from "../services/ticket-duplicate.service.ts";
 import { requireTicketKindId } from "../services/ticket-kind.service.ts";
 import { requirePermission, router } from "../trpc.ts";
 
@@ -38,11 +40,6 @@ const catalogInclude = {
 
 type TicketWithCatalogs = Prisma.TicketGetPayload<{ include: typeof catalogInclude }>;
 
-/**
- * Wire shape for the external surface: dates as ISO-8601 strings (no
- * transformer on the tRPC link). 外部口子只服务投诉单（提交入口只产投诉单），
- * detail 缺行防御性置空。
- */
 function serializeExternalTicket(ticket: TicketWithCatalogs) {
   const detail = ticket.complaintDetail;
   return {
@@ -115,6 +112,17 @@ async function loadExternalAccountConfig(userId: string) {
 }
 
 export const externalTicketRouter = router({
+  findRelated: requirePermission("ticket.create_external")
+    .input(externalTicketFindRelatedInputSchema)
+    .query(({ ctx, input }) => {
+      requireExternalAccount(ctx.user.isExternal);
+      return findDuplicateTickets(
+        deps,
+        { policyNumbers: [], phone: input.phone, contactPhone: null },
+        { creatorId: ctx.user.id },
+      );
+    }),
+
   submit: requirePermission("ticket.create_external")
     .input(externalTicketSubmitInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -125,6 +133,19 @@ export const externalTicketRouter = router({
       const now = deps.clock.now();
 
       const ticket = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        // 同账号的并发提交必须串行查重，防止两个请求同时查空后各建一单。
+        await tx.$queryRaw`SELECT id FROM users WHERE id = ${user.id} FOR UPDATE`;
+        const related = await findDuplicateTickets(
+          { prisma: tx, clock: deps.clock },
+          { policyNumbers: [], phone: input.phone, contactPhone: null },
+          { creatorId: user.id },
+        );
+        if (related.length > 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "已有未完结的关联工单，请进入已有工单处理",
+          });
+        }
         const nextSeq = await tx.$queryRaw<
           [{ nextval: bigint }]
         >`SELECT nextval('work_order_number_seq')`;
@@ -143,6 +164,7 @@ export const externalTicketRouter = router({
             updatedAt: now,
             complaintDetail: {
               create: {
+                phone: input.phone,
                 feedbackTime: now,
                 channelId: account.prefillChannelId,
                 project: account.prefillProject,
@@ -319,6 +341,16 @@ export const externalTicketRouter = router({
 
       return {
         ticket: serializeExternalTicket(ticket),
+        relatedTickets: await findDuplicateTickets(
+          deps,
+          {
+            policyNumbers: ticket.complaintDetail?.policyNumbers ?? [],
+            phone: ticket.complaintDetail?.phone ?? null,
+            contactPhone: ticket.contactPhone,
+            excludeTicketId: ticket.id,
+          },
+          { creatorId: user.id },
+        ),
         processLogs: processLogs.map((log) => ({
           id: log.id,
           action: processLogActionSchema.parse(log.action),
