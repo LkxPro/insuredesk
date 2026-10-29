@@ -38,7 +38,6 @@ describe("dashboard (Testcontainers)", () => {
     refundKindId = (
       await prisma.ticketKind.findUniqueOrThrow({ where: { key: "refund_exception" } })
     ).id;
-    // harness 的 slaPolicies 种子只含投诉组；退费组默认策略由独立种子补插（同 bootstrap）。
     refundPolicyId = (await seedRefundDefaultSlaPolicy(prisma)).id;
   }, 180_000);
 
@@ -98,11 +97,10 @@ describe("dashboard (Testcontainers)", () => {
       const cs1 = seeded.users.cs1.id;
       const manager = seeded.users.manager.id;
       await createComplaintTickets(prisma, [
-        fixture({ createdAt: at(-3), dueAt: at(30) }), // 未分配·新
-        fixture({ createdAt: at(-10), slaPolicyId: null, dueAt: null }), // 未分配·无策略
-        fixture({ createdAt: at(-50), dueAt: at(-1) }), // 未分配·已超时（含未分配单）
+        fixture({ createdAt: at(-3), dueAt: at(30) }),
+        fixture({ createdAt: at(-10), slaPolicyId: null, dueAt: null }),
+        fixture({ createdAt: at(-50), dueAt: at(-1) }),
         fixture({
-          // 待超时 + 待首响未过线
           status: "assigned",
           assigneeId: cs1,
           createdAt: at(-0.5),
@@ -110,7 +108,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: at(1),
         }),
         fixture({
-          // 恰 2h 不预警（严格）；首响过线（121min > 120min）
           status: "assigned",
           assigneeId: cs1,
           createdAt: at(-2),
@@ -118,7 +115,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: new Date(NOW.getTime() + 2 * HOUR_MS),
         }),
         fixture({
-          // 恰在时限不超时（严格），但已入 2h 预警窗；已首响不待首响
           status: "assigned",
           assigneeId: cs1,
           createdAt: at(-2),
@@ -126,7 +122,6 @@ describe("dashboard (Testcontainers)", () => {
           contactCount: 1,
         }),
         fixture({
-          // 刚过时限即超时；首响 119min 未过线
           status: "processing",
           assigneeId: cs1,
           createdAt: at(-2),
@@ -134,7 +129,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: new Date(NOW.getTime() - 1),
         }),
         fixture({
-          // 在途超时；已首响
           status: "processing",
           assigneeId: manager,
           createdAt: at(-30),
@@ -142,7 +136,6 @@ describe("dashboard (Testcontainers)", () => {
           contactCount: 2,
         }),
         fixture({
-          // 完结即移出实时口径
           status: "completed",
           assigneeId: cs1,
           createdAt: at(-30),
@@ -150,7 +143,6 @@ describe("dashboard (Testcontainers)", () => {
           completionTime: at(-2),
         }),
         fixture({
-          // 无策略：待首响但永不判过线
           status: "assigned",
           assigneeId: manager,
           createdAt: at(-10),
@@ -159,7 +151,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: null,
         }),
         fixture({
-          // 特急 30min 首响线：31min 已过线
           status: "assigned",
           assigneeId: cs1,
           createdAt: new Date(NOW.getTime() - 31 * 60 * 1000),
@@ -209,7 +200,6 @@ describe("dashboard (Testcontainers)", () => {
         fixture({ status: "assigned", assigneeId: cs1, createdAt: at(-1), dueAt: at(47) }),
         fixture({ status: "processing", assigneeId: cs1, createdAt: at(-2), dueAt: at(46) }),
         fixture({
-          // 完结不计 inFlight
           status: "completed",
           assigneeId: cs1,
           createdAt: at(-30),
@@ -231,7 +221,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: at(1),
         }),
         fixture({
-          // 特急 dueAt 恒 null：多老都不出超时/预警
           status: "processing",
           assigneeId: cs1,
           createdAt: at(-500),
@@ -294,7 +283,7 @@ describe("dashboard (Testcontainers)", () => {
     it("无 dashboard.view_all 收窄为本人名下：unassigned 恒 0，策略桶同步收窄", async () => {
       const cs1 = seeded.users.cs1.id;
       await createComplaintTickets(prisma, [
-        fixture({ createdAt: at(-1), dueAt: at(47) }), // 未分配
+        fixture({ createdAt: at(-1), dueAt: at(47) }),
         fixture({ status: "assigned", assigneeId: cs1, createdAt: at(-1), dueAt: at(1) }),
         fixture({
           status: "processing",
@@ -334,10 +323,10 @@ describe("dashboard (Testcontainers)", () => {
         fixture({ createdAt: hour(3) }),
         fixture({ createdAt: hour(3.5) }),
         fixture({ createdAt: hour(15) }),
-        fixture({ createdAt: new Date(dayStart.getTime() - 21 * HOUR_MS) }), // 前一日 03:00
-        fixture({ createdAt: new Date(dayStart.getTime() - 9 * HOUR_MS) }), // 前一日 15:00
+        fixture({ createdAt: new Date(dayStart.getTime() - 21 * HOUR_MS) }),
+        fixture({ createdAt: new Date(dayStart.getTime() - 9 * HOUR_MS) }),
         fixture({ createdAt: new Date(dayStart.getTime() - 8.5 * HOUR_MS) }),
-        fixture({ createdAt: hour(5), source: "file_import" }), // file_import 排除
+        fixture({ createdAt: hour(5), source: "file_import" }),
       ]);
 
       const { trend } = await analysisStats({
@@ -357,8 +346,8 @@ describe("dashboard (Testcontainers)", () => {
       await createComplaintTickets(prisma, [
         fixture({ createdAt: new Date(from.getTime() + HOUR_MS) }),
         fixture({ createdAt: new Date(from.getTime() + 5 * DAY_MS) }),
-        fixture({ createdAt: new Date(from.getTime() - 58 * DAY_MS) }), // previous 桶 5
-        fixture({ createdAt: new Date(from.getTime() - 64 * DAY_MS) }), // previous 窗口之外
+        fixture({ createdAt: new Date(from.getTime() - 58 * DAY_MS) }),
+        fixture({ createdAt: new Date(from.getTime() - 64 * DAY_MS) }),
       ]);
       await makeRefundTicket({ createdAt: new Date(from.getTime() + 5 * DAY_MS + HOUR_MS) });
 
@@ -370,7 +359,7 @@ describe("dashboard (Testcontainers)", () => {
       expect(trend.points).toHaveLength(63);
       expect(trend.points[0]?.bucketStart).toBe(localIso(from));
       expect(trend.points[0]).toMatchObject({ created: 1, previous: 0 });
-      expect(trend.points[5]).toMatchObject({ created: 2, previous: 1 }); // 含全部种类
+      expect(trend.points[5]).toMatchObject({ created: 2, previous: 1 });
       expect(trend.points.reduce((sum, point) => sum + point.previous, 0)).toBe(1);
     });
 
@@ -380,7 +369,7 @@ describe("dashboard (Testcontainers)", () => {
       await createComplaintTickets(prisma, [
         fixture({ createdAt: new Date(from.getTime() + DAY_MS) }),
         fixture({ createdAt: to }),
-        fixture({ createdAt: new Date(from.getTime() - 65 * DAY_MS) }), // previous 桶 0
+        fixture({ createdAt: new Date(from.getTime() - 65 * DAY_MS) }),
       ]);
 
       const { trend } = await analysisStats({
@@ -402,7 +391,6 @@ describe("dashboard (Testcontainers)", () => {
       const stats = await analysisStats();
       expect(stats.trend.granularity).toBe("day");
       expect(stats.trend.points).toHaveLength(7);
-      // 周期块不叠 range：100 天前的工单仍计入 kinds
       expect(stats.kinds.find((kind) => kind.name === "投诉")?.count).toBe(1);
     });
   });
@@ -412,7 +400,7 @@ describe("dashboard (Testcontainers)", () => {
       await createComplaintTickets(prisma, [
         fixture({ createdAt: at(-24) }),
         fixture({ createdAt: at(-24) }),
-        fixture({ createdAt: at(-24 * 30) }), // 区间外
+        fixture({ createdAt: at(-24 * 30) }),
       ]);
       await makeRefundTicket({ createdAt: at(-24) });
 
@@ -474,6 +462,7 @@ describe("dashboard (Testcontainers)", () => {
         { source: "community", count: 0 },
         { source: "external_channel", count: 1 },
         { source: "jb-insurance", count: 0 },
+        { source: "huifu", count: 0 },
       ]);
     });
   });
@@ -483,7 +472,6 @@ describe("dashboard (Testcontainers)", () => {
       const ufcA = harness.userFeedbackChannelId("经纪400热线");
       const ufcB = harness.userFeedbackChannelId("保司400热线");
       const rows: { core: ComplaintCoreInput; detail: ComplaintDetailInput }[] = [];
-      // 保司：9 个项目（9..1 张）→ Top 8 + 其他(1)；1 张未填项目
       for (let index = 0; index < 9; index += 1) {
         const count = 9 - index;
         for (let i = 0; i < count; i += 1) {
@@ -509,7 +497,6 @@ describe("dashboard (Testcontainers)", () => {
           },
         ),
       );
-      // 经纪 / 支付：实体下钻；监管：无实体
       rows.push(
         fixture(
           { createdAt: at(-24) },
@@ -551,9 +538,7 @@ describe("dashboard (Testcontainers)", () => {
           { createdAt: at(-24) },
           { channelId: harness.channelId("监管"), userFeedbackChannelId: ufcB },
         ),
-        // 未填写行
         fixture({ createdAt: at(-24) }, { channelId: null, userFeedbackChannelId: ufcA }),
-        // 区间外：不计入
         fixture(
           { createdAt: at(-24 * 30) },
           { channelId: harness.channelId("保司"), project: "老项目", userFeedbackChannelId: ufcA },
@@ -586,7 +571,6 @@ describe("dashboard (Testcontainers)", () => {
         return row;
       };
 
-      // 行列和 = 周期内投诉单总数
       const grandTotal = matrix.rows.reduce((sum, row) => sum + sumCells(row.cells), 0);
       expect(grandTotal).toBe(46 + 3 + 1 + 2 + 1);
       for (const row of matrix.rows) {
@@ -596,7 +580,6 @@ describe("dashboard (Testcontainers)", () => {
       const insurance = rowByName("保司");
       expect(sumCells(insurance.cells)).toBe(46);
       expect(insurance.cells[DASHBOARD_MATRIX_UNFILLED_KEY]).toBe(1);
-      // Top 8（计数降序）+ 其他 + 未填写
       expect(insurance.entities.map((entity) => entity.name)).toEqual([
         "项目1",
         "项目2",
@@ -610,7 +593,7 @@ describe("dashboard (Testcontainers)", () => {
         "未填写",
       ]);
       expect(insurance.entities[0]?.cells[ufcA]).toBe(9);
-      expect(sumCells(insurance.entities[8]?.cells ?? {})).toBe(1); // 其他 = 项目9
+      expect(sumCells(insurance.entities[8]?.cells ?? {})).toBe(1);
       expect(insurance.entities[9]?.cells[DASHBOARD_MATRIX_UNFILLED_KEY]).toBe(1);
       const entityTotal = insurance.entities.reduce(
         (sum, entity) => sum + sumCells(entity.cells),
@@ -639,7 +622,6 @@ describe("dashboard (Testcontainers)", () => {
   describe("analysisStats agents", () => {
     it("责任人候选全集零填充（含无工单者），无 dashboard.view_all 只剩自己一行", async () => {
       const stats = await analysisStats();
-      // admin/manager/cs1 合规；observer 只读无 ticket.process 出局
       expect(stats.agents.map((agent) => agent.assigneeId).sort()).toEqual(
         [seeded.users.admin.id, seeded.users.manager.id, seeded.users.cs1.id].sort(),
       );
@@ -670,7 +652,6 @@ describe("dashboard (Testcontainers)", () => {
       };
       await createComplaintTickets(prisma, [
         fixture({
-          // 区间外创建：实时列照计，周期列不计
           status: "processing",
           assigneeId: seeded.users.cs1.id,
           createdAt: at(-24 * 30),
@@ -701,7 +682,6 @@ describe("dashboard (Testcontainers)", () => {
       const cs1 = seeded.users.cs1.id;
       await createComplaintTickets(prisma, [
         fixture({
-          // 按时完结：时长 1 天
           status: "completed",
           assigneeId: cs1,
           createdAt: at(-3 * 24),
@@ -709,7 +689,6 @@ describe("dashboard (Testcontainers)", () => {
           completionTime: at(-2 * 24),
         }),
         fixture({
-          // 超时完结：时长 3 天，曾超时
           status: "completed",
           assigneeId: cs1,
           createdAt: at(-4 * 24),
@@ -717,14 +696,12 @@ describe("dashboard (Testcontainers)", () => {
           completionTime: at(-24),
         }),
         fixture({
-          // 在途已超时：曾超时
           status: "processing",
           assigneeId: cs1,
           createdAt: at(-2 * 24),
           dueAt: at(-24),
         }),
         fixture({
-          // 特急在途：dueAt null 永不超时
           status: "processing",
           assigneeId: cs1,
           createdAt: at(-24),
@@ -738,7 +715,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: at(47),
         }),
         fixture({
-          // 区间外完结：不进周期列
           status: "completed",
           assigneeId: cs1,
           createdAt: at(-24 * 30),
@@ -761,7 +737,7 @@ describe("dashboard (Testcontainers)", () => {
         completed: 2,
         avgCompletionMs: 2 * DAY_MS,
         overdueCount: 2,
-        overdueRate: 0.5, // 分母 = 周期内创建名下单总数 4
+        overdueRate: 0.5,
         inFlight: 2,
         overdue: 1,
       });
@@ -771,7 +747,6 @@ describe("dashboard (Testcontainers)", () => {
       const cs1 = seeded.users.cs1.id;
       const rows = await createComplaintTickets(prisma, [
         fixture({
-          // 24h 检查点窗口 [23h,24h) 内，0/1 次 → 命中
           status: "assigned",
           assigneeId: cs1,
           createdAt: at(-23.5),
@@ -779,7 +754,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: at(24.5),
         }),
         fixture({
-          // 24h 窗口已过、48h 窗口未至 → 不命中
           status: "assigned",
           assigneeId: cs1,
           createdAt: at(-25),
@@ -787,7 +761,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: at(23),
         }),
         fixture({
-          // 特急：上条 comment 距今 13h ≥ 12h → 滚动命中
           status: "processing",
           assigneeId: cs1,
           createdAt: at(-30),
@@ -797,7 +770,6 @@ describe("dashboard (Testcontainers)", () => {
           contactCount: 1,
         }),
         fixture({
-          // 特急但无任何 comment：滚动不启动（待首响兜底）
           status: "assigned",
           assigneeId: cs1,
           createdAt: at(-30),
@@ -806,7 +778,6 @@ describe("dashboard (Testcontainers)", () => {
           dueAt: null,
         }),
         fixture({
-          // 检查点已达标（1/1）→ 不命中
           status: "processing",
           assigneeId: seeded.users.manager.id,
           createdAt: at(-23.5),
