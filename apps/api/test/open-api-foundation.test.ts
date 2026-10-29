@@ -4,7 +4,7 @@ import { openApiErrorBodySchema } from "@insuredesk/shared";
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { FastifyInstance } from "fastify";
 import { pino } from "pino";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { DEMO_PASSWORD, seedExternalUserRole } from "../prisma/seed-data.ts";
 import { apiDb } from "../src/db.ts";
 import { parseEnv } from "../src/env.ts";
@@ -272,20 +272,36 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
   describe("限流", () => {
     it("单 key 20 连发后第 21 次 429 rate_limited + Retry-After，429 落审计", async () => {
       const { token, keyId } = await issueKey(seeded.users.cs1.id);
-      for (let i = 0; i < 20; i += 1) {
-        const res = await getMe(app, { token });
-        expect(res.statusCode).toBe(200);
-      }
-      const limited = await getMe(app, { token });
-      expect(limited.statusCode).toBe(429);
-      expect(limited.json()).toMatchObject({ error: { code: "rate_limited" } });
-      expect(Number(limited.headers["retry-after"])).toBeGreaterThanOrEqual(1);
-      expect(limited.headers["cache-control"]).toBe("no-store");
+      const now = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+      const limitedApp = buildServer(
+        parseEnv({
+          DATABASE_URL: harness.databaseUrl,
+          SESSION_SECRET: "insuredesk-open-api-test-secret-0123456789",
+          NODE_ENV: "test",
+          LOG_LEVEL: "silent",
+          OPEN_API_ENABLED: "true",
+        }),
+      );
+      try {
+        await limitedApp.ready();
+        for (let i = 0; i < 20; i += 1) {
+          const res = await getMe(limitedApp, { token });
+          expect(res.statusCode).toBe(200);
+        }
+        const limited = await getMe(limitedApp, { token });
+        expect(limited.statusCode).toBe(429);
+        expect(limited.json()).toMatchObject({ error: { code: "rate_limited" } });
+        expect(Number(limited.headers["retry-after"])).toBeGreaterThanOrEqual(1);
+        expect(limited.headers["cache-control"]).toBe("no-store");
 
-      const audit = await prisma.apiAccessLog.findFirst({
-        where: { keyId, statusCode: 429, endpoint: "GET /api/v1/me" },
-      });
-      expect(audit).not.toBeNull();
+        const audit = await prisma.apiAccessLog.findFirst({
+          where: { keyId, statusCode: 429, endpoint: "GET /api/v1/me" },
+        });
+        expect(audit).not.toBeNull();
+      } finally {
+        await limitedApp.close();
+        now.mockRestore();
+      }
     });
 
     it("公开端点不限流：25 次发现文档全 200", async () => {
@@ -517,8 +533,7 @@ describe("开放 API /api/v1 基础设施 (Testcontainers)", () => {
         await logged.close();
       }
 
-      // Fastify 的 req 序列化器本就不带 headers；redact 是兜底，故用同一套
-      // logger 配置驱动裸 pino 直验。
+      // Fastify req 序列化器不带 headers，需直接调用 pino 才能覆盖 headers 脱敏。
       let redactProbe = "";
       const probeStream = new Writable({
         write(chunk, _encoding, callback) {

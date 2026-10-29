@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -21,14 +22,7 @@ function freePort(): Promise<number> {
   });
 }
 
-/**
- * Boots the real entrypoint (src/index.ts) the way `pnpm dev` does: the
- * database URL exists only in a `.env` file in the working directory, never in
- * the parent environment. Module-level singletons (src/db.ts) read process.env
- * while imports are still being evaluated, so the entrypoint must get `.env`
- * into process.env before any app module — buildServer-based tests can't see
- * this ordering, only a spawned boot can.
- */
+// A spawned entrypoint checks that .env loads before db singleton imports.
 describe("entrypoint boot with .env-only configuration", () => {
   let harness: IntegrationHarness;
   let child: ChildProcess | undefined;
@@ -73,9 +67,7 @@ describe("entrypoint boot with .env-only configuration", () => {
       try {
         const res = await fetch(`http://127.0.0.1:${port}/healthz`);
         if (res.ok) break;
-      } catch {
-        // not listening yet
-      }
+      } catch {}
       if (Date.now() > deadline) {
         throw new Error(`server never became ready:\n${childStderr}`);
       }
@@ -84,7 +76,11 @@ describe("entrypoint boot with .env-only configuration", () => {
   }, 180_000);
 
   afterAll(async () => {
-    child?.kill();
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, "close");
+      child.kill();
+      await closed;
+    }
     if (workDir) rmSync(workDir, { recursive: true, force: true });
     await harness?.stop();
   });
