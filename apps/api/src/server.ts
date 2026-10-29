@@ -12,6 +12,7 @@ import { prisma } from "./db.ts";
 import type { Env } from "./env.ts";
 import { type AppRouter, appRouter } from "./routers/index.ts";
 import { registerExternalTicketExportRoute } from "./routes/external-ticket-export.route.ts";
+import { registerHuifuWebhookRoute } from "./routes/huifu-webhook.route.ts";
 import { registerJbInsurancePushRoute } from "./routes/jb-insurance-push.route.ts";
 import { registerOpenApi } from "./routes/open-api/app.ts";
 import { registerTicketExportRoute } from "./routes/ticket-export.route.ts";
@@ -42,16 +43,10 @@ export function buildLoggerOptions(env: Env, options?: BuildServerOptions) {
 
 export function buildServer(env: Env, options?: BuildServerOptions) {
   const app = Fastify({
-    // httpBatchLink packs every procedure name of a batch into ONE path
-    // segment; Fastify's 100-char default rejects those with a 414 whose body
-    // isn't a tRPC envelope, so the client surfaces "Unable to transform
-    // response from server" instead of anything actionable. 工单管理 alone
-    // batches 5 procedures / 111 chars.
+    // tRPC 批处理把所有过程名拼进同一路径段，默认长度限制会返回无法解码的非 tRPC 响应。
     routerOptions: { maxParamLength: 5000 },
     // 拓扑上 API 前只有一跳反代（prod 绑 127.0.0.1 仅 nginx 可达，dev 经 vite
     // proxy）：只信任这一跳追加的 XFF 项，左侧更远的项一律视为客户端伪造。
-    // fastify 5.11+ 移除了数字形式（hop 计数无法校验对端，fail-closed），
-    // 用等价的 trust 函数表达"仅信任最近一跳"。
     trustProxy: (_address, hop) => hop === 0,
     logController: new LogController({ disableRequestLogging: env.NODE_ENV === "development" }),
     logger: buildLoggerOptions(env, options),
@@ -153,11 +148,8 @@ export function buildServer(env: Env, options?: BuildServerOptions) {
   registerTicketImportTemplateRoute(app);
   registerTicketImportRoute(app);
   registerJbInsurancePushRoute(app, env);
+  registerHuifuWebhookRoute(app, env);
   registerOpenApi(app, env);
-
-  // No CORS plugin: the web app talks to the API same-origin — via the Vite
-  // proxy in dev (see apps/web/vite.config.ts) and behind a shared reverse
-  // proxy in prod. A cross-origin deployment would add @fastify/cors here.
 
   app.register(fastifyTRPCPlugin, {
     prefix: "/trpc",
@@ -231,7 +223,6 @@ function registerStaticFrontend(app: FastifyInstance, env: Env) {
 
   app.register(fastifyStatic, {
     root,
-    // @fastify/static 按真实文件逐个注册路由而非 catch-all，不会遮蔽 /trpc/* 与 /healthz。
     wildcard: false,
     index: ["index.html"],
   });

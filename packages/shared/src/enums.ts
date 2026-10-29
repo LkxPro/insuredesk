@@ -1,15 +1,6 @@
 import { z } from "zod";
 
-/**
- * Domain enum constants, single-sourced here and imported by both apps so the
- * database, API, and UI can never drift apart on the allowed values. Enums the
- * business defines with Chinese literals (核身 status, …) keep those literals
- * as the canonical stored values — inventing English codes here would be
- * exactly the drift this file exists to prevent.
- */
-
-// Ticket lifecycle — the stored base statuses (computed statuses are derived at
-// read time and are not part of this enum).
+// 推导状态仅在读取时计算，不存入工单状态。
 export const TICKET_STATUSES = ["unassigned", "assigned", "processing", "completed"] as const;
 export const ticketStatusSchema = z.enum(TICKET_STATUSES);
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
@@ -20,11 +11,7 @@ export const TicketStatus = {
   Completed: "completed",
 } as const satisfies Record<string, TicketStatus>;
 
-/**
- * 已分配未完结 (assigned/processing) — the only states the 处理工单 actions
- * (添加跟进 / 完结) may act on: unassigned has nobody to act on it, completed
- * is a 终态.
- */
+// 未分配单不可处理，完结单不可再次处理。
 export function isTicketInFlight(status: TicketStatus): boolean {
   return status === "assigned" || status === "processing";
 }
@@ -61,9 +48,6 @@ export const REMINDER_RULE_TYPES = ["follow_up_checkpoint", "rolling_follow_up"]
 export const reminderRuleTypeSchema = z.enum(REMINDER_RULE_TYPES);
 export type ReminderRuleType = (typeof REMINDER_RULE_TYPES)[number];
 
-// Ticket source — how the ticket entered the system; doubles as the "who
-// created it" discriminator. `manual` and `file_import` are live; the external
-// sources ship with the Feishu/community integrations.
 export const TICKET_SOURCES = [
   "feishu_form",
   "manual",
@@ -71,27 +55,22 @@ export const TICKET_SOURCES = [
   "file_import",
   "external_channel",
   "jb-insurance",
+  "huifu",
 ] as const;
 export const ticketSourceSchema = z.enum(TICKET_SOURCES);
 export type TicketSource = (typeof TICKET_SOURCES)[number];
 
-/**
- * 来源筛选缺省值：导入入口只用于历史归档（纯留痕，不再处理），其工单按
- * createdAt 排序会压在整个列表最前，故列表/导出默认排除 file_import；显式
- * 筛选（含清空来源筛选 = 不过滤）时仍可见。
- */
+// 导入单仅供历史归档，列表和导出默认排除；显式筛选或清空筛选后仍可见。
 export const DEFAULT_TICKET_SOURCE_FILTER: readonly TicketSource[] = [
   "feishu_form",
   "manual",
   "community",
   "external_channel",
   "jb-insurance",
+  "huifu",
 ];
 
-/**
- * Display labels per source. For external sources this label IS the derived
- * "由谁创建"; for creator-backed sources the creator's current name wins.
- */
+// 外部来源以来源标签显示建单人；有 creatorId 的来源使用用户当前姓名。
 export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   feishu_form: "飞书",
   manual: "手工录入",
@@ -99,13 +78,10 @@ export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   file_import: "文件导入",
   external_channel: "外部渠道",
   "jb-insurance": "骏伯保险平台",
+  huifu: "汇付",
 };
 
-/**
- * Sources whose tickets carry a creatorId (手工录入的建单人 / 文件导入的导入者 /
- * 外部渠道的提交者). Their "由谁创建" derives from the creator's current name,
- * and the non-view_all data scope reaches them through creatorId.
- */
+// 这些来源的建单人显示当前姓名，且无 view_all 权限时仍可通过 creatorId 访问。
 export const CREATOR_BACKED_SOURCES: readonly TicketSource[] = [
   "manual",
   "file_import",
@@ -115,8 +91,7 @@ export function isCreatorBackedSource(source: TicketSource): boolean {
   return CREATOR_BACKED_SOURCES.includes(source);
 }
 
-// Priority — an independent free label: defaults to empty, set by hand, never
-// drives SLA or dueAt.
+// 紧急度不参与 SLA 或 dueAt 计算。
 export const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 export const prioritySchema = z.enum(PRIORITIES);
 export type Priority = (typeof PRIORITIES)[number];

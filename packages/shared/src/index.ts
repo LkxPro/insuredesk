@@ -9,6 +9,7 @@ export * from "./external-account.ts";
 export * from "./external-ticket.ts";
 export * from "./feedback-receive-channel.ts";
 export * from "./health.ts";
+export * from "./huifu-webhook.ts";
 export * from "./notification.ts";
 export * from "./open-api/index.ts";
 export * from "./permissions.ts";

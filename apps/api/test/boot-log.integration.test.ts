@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -19,11 +20,7 @@ function freePort(): Promise<number> {
   });
 }
 
-/**
- * 绑 0.0.0.0 时 fastify 默认按网卡逐条打 listen 日志，dev 终端一屏噪音。
- * 入口必须收敛到一条。只验启动日志与监听行为，不碰数据库——/healthz 不查库，
- * DATABASE_URL 只需过 zod 校验，不必真实可达。
- */
+// Fastify 绑定 0.0.0.0 默认按网卡分别输出 listen 日志。
 describe("entrypoint listen logging", () => {
   let child: ChildProcess | undefined;
   let childStdout = "";
@@ -68,9 +65,7 @@ describe("entrypoint listen logging", () => {
       try {
         const res = await fetch(`http://127.0.0.1:${port}/healthz`);
         if (res.ok) break;
-      } catch {
-        // not listening yet
-      }
+      } catch {}
       if (Date.now() > deadline) {
         throw new Error(`server never became ready:\n${childStderr}`);
       }
@@ -79,7 +74,11 @@ describe("entrypoint listen logging", () => {
   }, 90_000);
 
   afterAll(async () => {
-    child?.kill();
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, "close");
+      child.kill();
+      await closed;
+    }
     if (workDir) rmSync(workDir, { recursive: true, force: true });
   });
 

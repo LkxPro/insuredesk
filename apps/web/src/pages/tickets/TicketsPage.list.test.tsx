@@ -294,8 +294,9 @@ describe("归档工单默认隐藏（来源缺省）", () => {
       "community",
       "external_channel",
       "jb-insurance",
+      "huifu",
     ]);
-    expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("5");
+    expect(screen.getByRole("button", { name: "来源" })).toHaveTextContent("6");
   });
 
   it("清空来源 → 空值参数下传，服务端按不过滤处理", async () => {
@@ -320,6 +321,7 @@ describe("归档工单默认隐藏（来源缺省）", () => {
         "community",
         "external_channel",
         "jb-insurance",
+        "huifu",
         "file_import",
       ]),
     );
