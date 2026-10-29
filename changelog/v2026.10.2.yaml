@@ -1,0 +1,18 @@
+version: v2026.10.2
+date: 2026-10-29
+entries:
+  - category: 改进
+    user: 外部新建工单先按手机号查重，避免重复提交
+    full: 外部账号新建工单时需填写投保人手机号，系统先查找本人未完结工单中的相同投保人电话或联系人电话。有匹配时可直接进入已有工单，无需重复提交；没有匹配时可填写原文新建，已有工单完结后也可再次提交。
+    page: /external-tickets
+    screenshot: external-phone-check.png
+  - category: 新增
+    user: 外部工单详情可查看同一客户的关联工单
+    full: 外部工单详情会提示电话或任一保单号相同的本人未完结工单，支持展开记录并打开关联工单。提醒仅展示本人提交的工单与对外可见记录，不包含其他账号工单或内部跟进。
+    page: /external-tickets
+    screenshot: external-related.png
+  - category: 新增
+    user: 工单列表和导出支持按创建人筛选
+    full: 工单管理新增创建人多选筛选，可与搜索、来源等条件组合使用，导出沿用相同条件。候选仅来自当前可见工单，有历史工单的停用账号也可选择并标明已停用。
+    page: /tickets?q=发版演示
+    screenshot: tickets-creator-filter.png
