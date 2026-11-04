@@ -237,6 +237,7 @@ describe("ticket export (Testcontainers)", () => {
     "省",
     "市",
     "区县",
+    "创建人",
   ];
   const REFUND_HEADER = [
     "工单号",
@@ -263,7 +264,70 @@ describe("ticket export (Testcontainers)", () => {
     "省",
     "市",
     "区县",
+    "创建人",
   ];
+
+  describe("创建人", () => {
+    it.each(["csv", "xlsx"])("%s 两种工单均使用当前姓名或来源标签，缺失留空", async (format) => {
+      const creator = seeded.users.manager;
+      const currentName = "李主管（新姓名）";
+      const cases = [
+        { source: "manual", creatorId: creator.id, expected: currentName },
+        { source: "file_import", creatorId: creator.id, expected: currentName },
+        { source: "external_channel", creatorId: creator.id, expected: currentName },
+        { source: "feishu_form", creatorId: null, expected: "飞书" },
+        { source: "community", creatorId: null, expected: "社区" },
+        { source: "jb-insurance", creatorId: null, expected: "骏伯保险平台" },
+        { source: "huifu", creatorId: null, expected: "汇付" },
+        { source: "manual", creatorId: null, expected: "" },
+      ];
+      const expectedByNumber = new Map<string, string>();
+      for (const kindId of [complaintKindId, refundKindId]) {
+        for (const { source, creatorId, expected } of cases) {
+          const ticket = await makeTicket({}, { kindId, source, creatorId });
+          expectedByNumber.set(ticket.workOrderNumber, expected);
+        }
+      }
+
+      try {
+        await prisma.user.update({ where: { id: creator.id }, data: { name: currentName } });
+        const session = await sessionFor("manager");
+        const res = await exportRequest(session, { format, source: "" });
+        expect(res.statusCode).toBe(200);
+
+        const sheets: string[][][] = [];
+        if (format === "csv") {
+          for (const csv of (await splitCsvTexts(res.rawPayload)).values()) {
+            sheets.push(parseCsv(csv));
+          }
+        } else {
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(res.rawPayload as unknown as ArrayBuffer);
+          for (const sheet of workbook.worksheets) {
+            const rows: string[][] = [];
+            sheet.eachRow((row) => {
+              rows.push(
+                Array.from({ length: sheet.columnCount }, (_, i) => row.getCell(i + 1).text),
+              );
+            });
+            sheets.push(rows);
+          }
+        }
+
+        expect(sheets).toHaveLength(2);
+        for (const rows of sheets) {
+          expect(rows).toHaveLength(cases.length + 1);
+          const column = rows[0]?.indexOf("创建人") ?? -1;
+          expect(column).toBeGreaterThan(-1);
+          for (const row of rows.slice(1)) {
+            expect(row[column]).toBe(expectedByNumber.get(row[0] ?? ""));
+          }
+        }
+      } finally {
+        await prisma.user.update({ where: { id: creator.id }, data: { name: creator.name } });
+      }
+    });
+  });
 
   describe("权限校验 (UI 无入口之外，API 也拒绝)", () => {
     it("401 without a session, 403 without ticket.export, and neither writes a file", async () => {

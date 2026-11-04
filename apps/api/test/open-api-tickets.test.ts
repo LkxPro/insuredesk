@@ -991,7 +991,6 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
     });
 
     it("API 字段集 ⊇ 既有 Excel 导出列集（导出端点行为不变：列头逐字对上金样）", async () => {
-      // 每 sheet 的列头→canonical 字段映射；列头序即导出契约，逐字钉住
       const complaintHeaderToField: Record<string, string> = {
         工单号: "workOrderNumber",
         状态: "displayStatus",
@@ -1030,6 +1029,7 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
         省: "provinceName",
         市: "cityName",
         区县: "districtName",
+        创建人: "createdBy",
       };
       const refundHeaderToField: Record<string, string> = {
         工单号: "workOrderNumber",
@@ -1056,6 +1056,7 @@ describe("GET /api/v1/tickets (Testcontainers)", () => {
         省: "provinceName",
         市: "cityName",
         区县: "districtName",
+        创建人: "createdBy",
       };
 
       await createComplaintTicket(prisma, { createdAt: new Date("2026-08-01T00:00:00Z") });
