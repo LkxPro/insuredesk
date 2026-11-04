@@ -1,5 +1,6 @@
 import {
   deriveDisplayStatus,
+  isCreatorBackedSource,
   joinPolicyNumbers,
   PRIORITY_LABELS,
   prioritySchema,
@@ -31,7 +32,7 @@ import { TicketKindNotConfiguredError } from "./ticket-kind.service.ts";
 /** 导出不写 ProcessLog：列表级批量读，不是单票时间线事件。 */
 
 const exportInclude = {
-  // Current follow-up owner is derived via JOIN, never stored
+  creator: { select: { name: true } },
   assignee: { select: { name: true } },
   completionStatus: { select: { name: true } },
   slaPolicy: { select: { name: true } },
@@ -85,6 +86,13 @@ const sourceColumn: ExportColumn<TicketExportRow> = {
   header: "来源",
   value: (t) => TICKET_SOURCE_LABELS[ticketSourceSchema.parse(t.source)],
 };
+const createdByColumn: ExportColumn<TicketExportRow> = {
+  header: "创建人",
+  value: (t) => {
+    const source = ticketSourceSchema.parse(t.source);
+    return isCreatorBackedSource(source) ? (t.creator?.name ?? "") : TICKET_SOURCE_LABELS[source];
+  },
+};
 const assigneeColumn: ExportColumn<TicketExportRow> = {
   header: "责任人",
   value: (t) => t.assignee?.name ?? "",
@@ -133,14 +141,13 @@ const completionStatusColumn: ExportColumn<TicketExportRow> = {
   value: (t) => t.completionStatus?.name ?? "",
 };
 
-/** 地址三列追加在两 sheet 末尾：既有列序是对外契约，不插队。 */
+/** 既有导出列序是对外契约，新列仅在末尾追加。 */
 const ADDRESS_EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: TICKET_ADDRESS_EXPORT_HEADERS.province, value: (t) => t.provinceName ?? "" },
   { header: TICKET_ADDRESS_EXPORT_HEADERS.city, value: (t) => t.cityName ?? "" },
   { header: TICKET_ADDRESS_EXPORT_HEADERS.district, value: (t) => t.districtName ?? "" },
 ];
 
-/** 客户姓名/电话两 sheet 同列头同列位，取值源各属侧表，不可合并为单一定义。 */
 const complaintCustomerNameColumn: ExportColumn<TicketExportRow> = {
   header: ticketExportHeader("customerName"),
   value: (t) => t.complaintDetail?.customerName ?? "",
@@ -158,7 +165,6 @@ const refundPhoneColumn: ExportColumn<TicketExportRow> = {
   value: (t) => t.refundDetail?.holderPhone ?? "",
 };
 
-/** 投诉 sheet 列集：列序与系统列表头是对外契约，手写维持现状。 */
 const COMPLAINT_EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   workOrderNumberColumn,
   statusColumn,
@@ -246,6 +252,7 @@ const COMPLAINT_EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   completionTimeColumn,
   completionStatusColumn,
   ...ADDRESS_EXPORT_COLUMNS,
+  createdByColumn,
 ];
 
 /** 退费 sheet 列集：投诉专有列不下沉；refundDetail 其余字段不进导出。 */
@@ -272,6 +279,7 @@ const REFUND_EXPORT_COLUMNS: ReadonlyArray<ExportColumn<TicketExportRow>> = [
   { header: "应退金额", value: (t) => t.refundDetail?.expectedAmount ?? "" },
   { header: "补偿金", value: (t) => t.refundDetail?.compensationAmount ?? "" },
   ...ADDRESS_EXPORT_COLUMNS,
+  createdByColumn,
 ];
 
 /**

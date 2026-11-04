@@ -11,7 +11,6 @@ import {
 import { type Clock, fixedClock, systemClock } from "../src/clock.ts";
 // 静态 import 应用模块之所以安全：src/db 的客户端在首次属性访问才读
 // DATABASE_URL（lazy Proxy），而 start 在任何查询与播种之前已把它指向容器。
-// 若 db 客户端失去惰性，这里必须退回「先设 env、再动态 import」的时序。
 import { prisma } from "../src/db.ts";
 import type { Prisma, PrismaClient, Role, Ticket, User } from "../src/generated/prisma/client.ts";
 import { appRouter } from "../src/routers/index.ts";
@@ -49,7 +48,6 @@ export async function createComplaintTicket(
   });
 }
 
-/** core/detail 批量 helper：RETURNING 保序配对（与导入路径同一依据）。 */
 export async function createComplaintTickets(
   prisma: PrismaClient,
   rows: { core: ComplaintCoreInput; detail?: ComplaintDetailInput }[],
@@ -70,12 +68,6 @@ export async function createComplaintTickets(
   return created.map((row) => row.id);
 }
 
-/**
- * real-migrations：保证每次真跑 `prisma migrate deploy`（在共享容器的全新
- * 空库上），供迁移管线类测试（它们证明的就是迁移本身）。fast：只承诺
- * 「已迁移的库」这一结果，不承诺如何得到——实现为克隆 global setup 里
- * 已迁移的 template 库。
- */
 export type IntegrationHarnessMode = "real-migrations" | "fast";
 
 export type SeedSetName =
@@ -87,9 +79,7 @@ export type SeedSetName =
 
 export interface IntegrationHarnessOptions {
   mode?: IntegrationHarnessMode;
-  /** 声明式选择需要的 seed 集；未声明的集在 harness 上不可访问。 */
   seed?: readonly SeedSetName[];
-  /** createCaller 上下文的 traceId，便于日志区分测试来源。 */
   traceId?: string;
 }
 
@@ -101,26 +91,16 @@ export interface IntegrationHarness {
   prisma: PrismaClient;
   appRouter: typeof appRouter;
   databaseUrl: string;
-  /** 直接调 service 的 deps，系统时钟。 */
   deps: ServiceDeps;
-  /** 固定 clock 注入：钉在 `at` 时刻的 service deps。 */
   depsAt(at: Date): ServiceDeps;
-  /** 出厂角色与 demo 用户；需声明 seed 集 "rolesAndUsers"。 */
   seeded: SeededRolesAndUsers;
-  /** 时效策略名 → id；需声明 seed 集 "slaPolicies"。 */
   slaPolicyId(name: string): string;
-  /** 渠道名 → id；需声明 seed 集 "channels"。 */
   channelId(name: string): string;
-  /** 类别名 → id；需声明 seed 集 "categories"。 */
   categoryId(name: string): string;
-  /** 用户反馈渠道名 → id；目录行由迁移插入，无需声明 seed 集。 */
   userFeedbackChannelId(name: string): string;
-  /** 反馈信息接收渠道名 → id；目录行由迁移插入，无需声明 seed 集。 */
   feedbackReceiveChannelId(name: string): string;
-  /** 与真实登录同口径的身份（系统角色展开全量权限），可显式覆盖权限集。 */
   authUserFor(user: User, role: Role, permissions?: Permission[]): AuthenticatedUser;
   callerFor(user: User, role: Role): Caller;
-  /** 身份取自 user + role，权限用显式集合替换。 */
   callerWith(user: User, role: Role, permissions: Permission[]): Caller;
   stop(): Promise<void>;
 }
@@ -147,11 +127,6 @@ function idLookup(
 
 let startedInThisProcess = false;
 
-/**
- * 在共享 Postgres 容器上给出一个已迁移、按声明播种的隔离库，并把应用自己的
- * Prisma 客户端接上去。调用方只拿返回的句柄，不接触容器、migrate deploy 或
- * 模块加载时序。
- */
 export async function startIntegrationHarness(
   options: IntegrationHarnessOptions = {},
 ): Promise<IntegrationHarness> {
@@ -176,15 +151,13 @@ export async function startIntegrationHarness(
       : `CREATE DATABASE "${dbName}" TEMPLATE "${TEMPLATE_DB}"`,
   );
 
-  // WITH (FORCE)：库上可能还挂着测试自己拉起的连接（如 boot-env 起的子进程
-  // 崩了没断连），强断后照样能删。
   const dropDatabase = () =>
     runAdminSql(baseUri, `DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
 
   process.env.DATABASE_URL = databaseUrl;
   try {
     if (mode === "real-migrations") {
-      migrateDeploy(databaseUrl);
+      await migrateDeploy(databaseUrl, baseUri);
     }
 
     const selected = new Set<SeedSetName>(seed);

@@ -225,7 +225,7 @@ describe("工单地址 (Testcontainers)", () => {
     expect((await manager().ticket.detail({ id: without })).address).toBeNull();
   });
 
-  it("导出两 sheet 末尾追加省/市/区县三列", async () => {
+  it("导出保留省/市/区县三列", async () => {
     const id = await createWithAddress(NANSHAN);
     const workOrderNumber = (await prisma.ticket.findUniqueOrThrow({ where: { id } }))
       .workOrderNumber;
@@ -252,7 +252,11 @@ describe("工单地址 (Testcontainers)", () => {
       }),
     );
     const [header = "", row = ""] = file.body.toString("utf8").replace(/^﻿/, "").split(/\r?\n/);
-    expect(header.endsWith("完结状态,省,市,区县")).toBe(true);
-    expect(row.endsWith(",广东省,深圳市,南山区")).toBe(true);
+    const headers = header.split(",");
+    const cells = row.split(",");
+    const addressColumn = headers.indexOf("省");
+    expect(addressColumn).toBeGreaterThan(-1);
+    expect(headers.slice(addressColumn, addressColumn + 3)).toEqual(["省", "市", "区县"]);
+    expect(cells.slice(addressColumn, addressColumn + 3)).toEqual(["广东省", "深圳市", "南山区"]);
   });
 });
