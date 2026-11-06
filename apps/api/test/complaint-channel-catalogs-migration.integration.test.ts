@@ -2,11 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../src/generated/prisma/client.ts";
 import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
 
-/**
- * complaint_channel_catalogs 迁移的内容金样：两个目录无应用层种子，迁移即
- * 目录真相源——初始条目（映射表目标全集，全部启用，displayOrder 按目标首次
- * 出现顺序）只在这里逐字钉住；旧文本列的下线一并钉住。
- */
 describe("complaint_channel_catalogs migration (Testcontainers)", () => {
   let harness: IntegrationHarness;
   let prisma: PrismaClient;
@@ -43,7 +38,7 @@ describe("complaint_channel_catalogs migration (Testcontainers)", () => {
     ]);
   });
 
-  it("feedback_receive_channels = 映射表目标全集（36 项，全启用，声明序）", async () => {
+  it("feedback_receive_channels = 映射表与汇付渠道（37 项，全启用，声明序）", async () => {
     const rows = await prisma.feedbackReceiveChannel.findMany({
       orderBy: { displayOrder: "asc" },
     });
@@ -84,6 +79,7 @@ describe("complaint_channel_catalogs migration (Testcontainers)", () => {
       ["（微信）众安安心保-东方大地-客诉处理群", true, 34],
       ["（微信）骏伯保东方大地-融盛 客户服务沟通群", true, 35],
       ["（微信）东方大地、陕西凯森&快钱支付客诉", true, 36],
+      ["汇付400工单投诉", true, 37],
     ]);
   });
 

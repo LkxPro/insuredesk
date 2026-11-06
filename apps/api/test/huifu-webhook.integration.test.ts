@@ -74,7 +74,7 @@ describe("汇付 Webhook 接收及建单", () => {
   }
 
   beforeAll(async () => {
-    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies"] });
+    harness = await startIntegrationHarness({ seed: ["rolesAndUsers", "slaPolicies", "channels"] });
     const base = {
       DATABASE_URL: harness.databaseUrl,
       SESSION_SECRET: "huifu-webhook-test-secret-0123456789abcdef",
@@ -151,6 +151,105 @@ describe("汇付 Webhook 接收及建单", () => {
     expect(await harness.prisma.huifuWebhookEvent.count()).toBe(0);
   });
 
+  it("无签名空对象端点校验只应答，不保存事件或创建工单", async () => {
+    for (const payload of ["{}", " \r\n{ \t}\n"]) {
+      const response = await app.inject({
+        method: "POST",
+        url: HUIFU_WEBHOOK_PATH,
+        headers: { "content-type": "application/json" },
+        payload,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toBe("success");
+      expect(response.headers["content-type"]).toContain("text/plain");
+    }
+    expect(await harness.prisma.huifuWebhookEvent.count()).toBe(0);
+    expect(await harness.prisma.ticket.count()).toBe(0);
+    expect(
+      (
+        await disabled.inject({
+          method: "POST",
+          url: HUIFU_WEBHOOK_PATH,
+          headers: { "content-type": "application/json" },
+          payload: "{}",
+        })
+      ).statusCode,
+    ).toBe(503);
+  });
+
+  it("探测兼容不放行非空报文或带错误签名的空对象", async () => {
+    for (const payload of ["[]", "null", '""', '{"test":true}', "{}invalid", "\u00a0{}"]) {
+      const response = await app.inject({
+        method: "POST",
+        url: HUIFU_WEBHOOK_PATH,
+        headers: { "content-type": "application/json" },
+        payload,
+      });
+      expect(response.statusCode).toBe(401);
+    }
+    for (const signature of ["", "0".repeat(32)]) {
+      const response = await app.inject({
+        method: "POST",
+        url: HUIFU_WEBHOOK_PATH,
+        headers: { "content-type": "application/json", sign: signature },
+        payload: "{}",
+      });
+      expect(response.statusCode).toBe(401);
+      const queryResponse = await app.inject({
+        method: "POST",
+        url: `${HUIFU_WEBHOOK_PATH}?sign=${signature}`,
+        headers: { "content-type": "application/json" },
+        payload: "{}",
+      });
+      expect(queryResponse.statusCode).toBe(401);
+    }
+    expect(await harness.prisma.huifuWebhookEvent.count()).toBe(0);
+    expect(await harness.prisma.ticket.count()).toBe(0);
+  });
+
+  it("400 投诉按商户映射业务信息，后续事件不覆盖客服修改", async () => {
+    await send(hotline({ merchantName: "陕西凯森保险代理有限公司" }));
+    expect(await tick()).toEqual({ processed: 1, retried: 0 });
+    const detail = await harness.prisma.ticketComplaintDetail.findFirstOrThrow({
+      include: { channel: true, feedbackReceiveChannel: true },
+    });
+    expect(detail.channel?.name).toBe("支付");
+    expect(detail.brokerageEntity).toBe("凯森");
+    expect(detail.paymentChannel).toBe("汇付");
+    expect(detail.feedbackReceiveChannel?.name).toBe("汇付400工单投诉");
+    await harness.prisma.ticketComplaintDetail.update({
+      where: { ticketId: detail.ticketId },
+      data: { brokerageEntity: "人工核实主体", paymentChannel: "人工核实渠道" },
+    });
+    await send(hotline({ merchantName: "东方大地保险经纪有限公司", event: "3" }));
+    expect(await tick()).toEqual({ processed: 1, retried: 0 });
+    expect(
+      await harness.prisma.ticketComplaintDetail.findUniqueOrThrow({
+        where: { ticketId: detail.ticketId },
+      }),
+    ).toMatchObject({ brokerageEntity: "人工核实主体", paymentChannel: "人工核实渠道" });
+  });
+
+  it("400 接收渠道停用时保留消息重试，不绕过目录约束", async () => {
+    const channel = await harness.prisma.feedbackReceiveChannel.findUniqueOrThrow({
+      where: { name: "汇付400工单投诉" },
+    });
+    await harness.prisma.feedbackReceiveChannel.update({
+      where: { id: channel.id },
+      data: { active: false },
+    });
+    try {
+      await send(hotline());
+      expect(await tick()).toEqual({ processed: 0, retried: 1 });
+      expect(await harness.prisma.ticket.count()).toBe(0);
+    } finally {
+      await harness.prisma.feedbackReceiveChannel.update({
+        where: { id: channel.id },
+        data: { active: true },
+      });
+    }
+  });
+
   it("配置 SLA 时从接收时间盖章，不从后台处理时间重新计时", async () => {
     await send(wechat());
     const row = await harness.prisma.huifuWebhookEvent.findFirstOrThrow();
@@ -184,6 +283,25 @@ describe("汇付 Webhook 接收及建单", () => {
     expect(conflicting.statusCode).toBe(401);
     const login = await app.inject({ method: "POST", url: "/api/auth/login", payload: {} });
     expect(login.statusCode).toBe(400);
+  });
+
+  it("附件数组通过原文验签并保存，等价字符串重推不重复建单", async () => {
+    const attachments = ["https://example.com/complaint.png"];
+    const payload = hotline({ attachmentList: attachments, merchantName: "中融保险经纪有限公司" });
+    const response = await send(payload);
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe("success");
+    const row = await harness.prisma.huifuWebhookEvent.findFirstOrThrow();
+    expect(JSON.parse(row.rawBody).attachmentList).toEqual(attachments);
+    expect(await tick()).toEqual({ processed: 1, retried: 0 });
+    const detail = await harness.prisma.ticketComplaintDetail.findFirstOrThrow();
+    expect(detail.brokerageEntity).toBe("中融");
+    expect(detail.customerRequest).toContain(JSON.stringify(attachments));
+    expect(
+      (await send({ ...payload, attachmentList: JSON.stringify(attachments) })).statusCode,
+    ).toBe(200);
+    expect(await harness.prisma.huifuWebhookEvent.count()).toBe(1);
+    expect(await harness.prisma.ticket.count()).toBe(1);
   });
 
   it("保存失败不应答 success", async () => {

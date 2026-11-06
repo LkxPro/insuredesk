@@ -92,6 +92,29 @@ function shanghaiDate(value: string): Date {
   return new Date(`${value.replace(" ", "T")}+08:00`);
 }
 
+export function huifuBrokerageEntity(merchantName: string | undefined): string | null {
+  const matches = ["凯森", "东方大地", "中融"].filter((name) => merchantName?.includes(name));
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
+async function hotlineBusinessFields(tx: Prisma.TransactionClient, event: HuifuWebhookEvent) {
+  if (event.event_define_no !== "hotline.complaint") return {};
+  const [channel, receiveChannel] = await Promise.all([
+    tx.channel.findFirst({ where: { name: "支付", active: true }, select: { id: true } }),
+    tx.feedbackReceiveChannel.findFirst({
+      where: { name: "汇付400工单投诉", active: true },
+      select: { id: true },
+    }),
+  ]);
+  if (!channel || !receiveChannel) throw new Error("汇付400投诉渠道未配置或已停用");
+  return {
+    channelId: channel.id,
+    brokerageEntity: huifuBrokerageEntity(event.merchantName),
+    paymentChannel: "汇付",
+    feedbackReceiveChannelId: receiveChannel.id,
+  };
+}
+
 function describe(event: HuifuWebhookEvent) {
   if (event.event_define_no === "wechat.complaint") {
     return {
@@ -186,6 +209,7 @@ async function processEvent(deps: TicketServiceDeps, id: string, slaPolicyId?: s
     if (!ticket) {
       const kindId = await requireTicketKindId(tx, TicketKindKey.Complaint);
       const slaStamp = await computeSlaStamp(tx, slaPolicyId ?? null, row.receivedAt, kindId);
+      const businessFields = await hotlineBusinessFields(tx, event);
       ticket = await tx.ticket.create({
         data: {
           source: HUIFU_SOURCE,
@@ -196,6 +220,7 @@ async function processEvent(deps: TicketServiceDeps, id: string, slaPolicyId?: s
           ...slaStamp,
           complaintDetail: {
             create: {
+              ...businessFields,
               feedbackTime: detail.feedbackTime,
               customerName: detail.customerName,
               customerRequest: detail.text.slice(0, 2000),

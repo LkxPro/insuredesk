@@ -25,6 +25,15 @@ export function registerHuifuWebhookRoute(app: FastifyInstance, env: Env) {
         }
         const headerSign = req.headers.sign;
         const querySign = req.query.sign;
+        // 汇付控台用无签名空对象探测端点，不进入事件接收和建单流程。
+        if (
+          headerSign === undefined &&
+          querySign === undefined &&
+          typeof req.body === "string" &&
+          /^[\t\n\r ]*\{[\t\n\r ]*\}[\t\n\r ]*$/.test(req.body)
+        ) {
+          return reply.type("text/plain").send("success");
+        }
         if (
           (headerSign !== undefined && typeof headerSign !== "string") ||
           (querySign !== undefined && typeof querySign !== "string") ||
