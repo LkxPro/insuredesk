@@ -43,7 +43,6 @@ export const huifuWebhookEventSchema = z.discriminatedUnion("event_define_no", [
     transactionNo: text,
     externalTransactionNo: text,
     transactionAmount: amount,
-    attachmentList: text,
     priority: text,
     complaintSource: text,
     category: text,

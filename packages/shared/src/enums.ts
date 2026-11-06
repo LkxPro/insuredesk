@@ -78,7 +78,7 @@ export const TICKET_SOURCE_LABELS: Record<TicketSource, string> = {
   file_import: "文件导入",
   external_channel: "外部渠道",
   "jb-insurance": "骏伯保险平台",
-  huifu: "汇付",
+  huifu: "汇付工单系统",
 };
 
 // 这些来源的建单人显示当前姓名，且无 view_all 权限时仍可通过 creatorId 访问。

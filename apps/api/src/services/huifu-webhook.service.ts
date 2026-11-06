@@ -79,10 +79,20 @@ export async function receiveHuifuWebhook(
     throw new HuifuWebhookError(403, "merchant not allowed");
   }
   const digest = createHash("sha256").update(JSON.stringify(event)).digest("hex");
+  // 验签必须使用完整原文；附件只在验签后从保存的报文中移除。
+  const retained = { ...payload };
+  Reflect.deleteProperty(retained, "attachmentList");
+  Reflect.deleteProperty(retained, "attachment_list");
   const now = deps.clock.now();
   await deps.prisma.huifuWebhookEvent.upsert({
     where: { digest },
-    create: { digest, ...key, rawBody: input.rawBody, receivedAt: now, nextAttemptAt: now },
+    create: {
+      digest,
+      ...key,
+      rawBody: JSON.stringify(retained),
+      receivedAt: now,
+      nextAttemptAt: now,
+    },
     update: {},
   });
   return { accepted: true };
@@ -90,6 +100,64 @@ export async function receiveHuifuWebhook(
 
 function shanghaiDate(value: string): Date {
   return new Date(`${value.replace(" ", "T")}+08:00`);
+}
+
+export function huifuBrokerageEntity(merchantName: string | undefined): string | null {
+  const matches = ["凯森", "东方大地", "中融"].filter((name) => merchantName?.includes(name));
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
+const huifuFeedbackChannelNames = new Map([
+  ["01", "支付400热线"],
+  ["02", "在线客服"],
+  ["03", "客服邮箱"],
+  ["04", "黑猫"],
+  ["05", "人行专线"],
+  ["06", "消保委市监局"],
+  ["07", "汇付官网"],
+  ["08", "微信"],
+  ["09", "支付宝"],
+  ["11", "企微群投诉"],
+  ["12", "小程序投诉"],
+  ["13", "人行消保"],
+  ["14", "人行信访"],
+  ["15", "协会"],
+  ["16", "服务号"],
+  ["17", "银行"],
+  ["18", "消费保"],
+]);
+
+export function huifuUserFeedbackChannelName(code: string | undefined): string | null {
+  return huifuFeedbackChannelNames.get(code?.trim() ?? "") ?? null;
+}
+
+async function hotlineBusinessFields(tx: Prisma.TransactionClient, event: HuifuWebhookEvent) {
+  if (event.event_define_no !== "hotline.complaint") return {};
+  const feedbackChannelName = huifuUserFeedbackChannelName(event.complaintSource);
+  const [channel, receiveChannel, feedbackChannel] = await Promise.all([
+    tx.channel.findFirst({ where: { name: "支付", active: true }, select: { id: true } }),
+    tx.feedbackReceiveChannel.findFirst({
+      where: { name: "汇付400工单投诉", active: true },
+      select: { id: true },
+    }),
+    feedbackChannelName
+      ? tx.userFeedbackChannel.findFirst({
+          where: { name: feedbackChannelName, active: true },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
+  ]);
+  if (!channel || !receiveChannel) throw new Error("汇付400投诉渠道未配置或已停用");
+  if (feedbackChannelName && !feedbackChannel) {
+    throw new Error("汇付用户反馈渠道未配置或已停用");
+  }
+  return {
+    channelId: channel.id,
+    brokerageEntity: huifuBrokerageEntity(event.merchantName),
+    paymentChannel: "汇付",
+    feedbackReceiveChannelId: receiveChannel.id,
+    userFeedbackChannelId: feedbackChannel?.id ?? null,
+  };
 }
 
 function describe(event: HuifuWebhookEvent) {
@@ -129,7 +197,6 @@ function describe(event: HuifuWebhookEvent) {
       `操作时间：${event.operationTime ?? event.complaintTime}`,
       `投诉人电话（汇付原值）：${event.userPhoneNumber ?? "未提供"}`,
       ...(event.remark ? [`备注：${event.remark}`] : []),
-      ...(event.attachmentList ? [`附件（汇付原值）：${event.attachmentList}`] : []),
     ].join("\n"),
   };
 }
@@ -186,6 +253,7 @@ async function processEvent(deps: TicketServiceDeps, id: string, slaPolicyId?: s
     if (!ticket) {
       const kindId = await requireTicketKindId(tx, TicketKindKey.Complaint);
       const slaStamp = await computeSlaStamp(tx, slaPolicyId ?? null, row.receivedAt, kindId);
+      const businessFields = await hotlineBusinessFields(tx, event);
       ticket = await tx.ticket.create({
         data: {
           source: HUIFU_SOURCE,
@@ -196,6 +264,7 @@ async function processEvent(deps: TicketServiceDeps, id: string, slaPolicyId?: s
           ...slaStamp,
           complaintDetail: {
             create: {
+              ...businessFields,
               feedbackTime: detail.feedbackTime,
               customerName: detail.customerName,
               customerRequest: detail.text.slice(0, 2000),
@@ -244,7 +313,7 @@ export async function tickHuifuWebhooks(deps: TicketServiceDeps & { slaPolicyId?
         data: {
           attempts: { increment: 1 },
           nextAttemptAt: new Date(deps.clock.now().getTime() + delay),
-          lastError: "建单失败；检查投诉种类、时效策略和数据库连接后等待重试",
+          lastError: "建单失败；检查投诉种类、渠道、时效策略和数据库连接后等待重试",
         },
       });
       summary.retried += result.count;

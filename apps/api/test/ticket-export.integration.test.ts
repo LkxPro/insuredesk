@@ -278,7 +278,7 @@ describe("ticket export (Testcontainers)", () => {
         { source: "feishu_form", creatorId: null, expected: "飞书" },
         { source: "community", creatorId: null, expected: "社区" },
         { source: "jb-insurance", creatorId: null, expected: "骏伯保险平台" },
-        { source: "huifu", creatorId: null, expected: "汇付" },
+        { source: "huifu", creatorId: null, expected: "汇付工单系统" },
         { source: "manual", creatorId: null, expected: "" },
       ];
       const expectedByNumber = new Map<string, string>();
