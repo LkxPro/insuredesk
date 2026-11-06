@@ -97,21 +97,56 @@ export function huifuBrokerageEntity(merchantName: string | undefined): string |
   return matches.length === 1 ? (matches[0] ?? null) : null;
 }
 
+const huifuFeedbackChannelNames = new Map([
+  ["01", "支付400热线"],
+  ["02", "在线客服"],
+  ["03", "客服邮箱"],
+  ["04", "黑猫"],
+  ["05", "人行专线"],
+  ["06", "消保委市监局"],
+  ["07", "汇付官网"],
+  ["08", "微信"],
+  ["09", "支付宝"],
+  ["11", "企微群投诉"],
+  ["12", "小程序投诉"],
+  ["13", "人行消保"],
+  ["14", "人行信访"],
+  ["15", "协会"],
+  ["16", "服务号"],
+  ["17", "银行"],
+  ["18", "消费保"],
+]);
+
+export function huifuUserFeedbackChannelName(code: string | undefined): string | null {
+  return huifuFeedbackChannelNames.get(code?.trim() ?? "") ?? null;
+}
+
 async function hotlineBusinessFields(tx: Prisma.TransactionClient, event: HuifuWebhookEvent) {
   if (event.event_define_no !== "hotline.complaint") return {};
-  const [channel, receiveChannel] = await Promise.all([
+  const feedbackChannelName = huifuUserFeedbackChannelName(event.complaintSource);
+  const [channel, receiveChannel, feedbackChannel] = await Promise.all([
     tx.channel.findFirst({ where: { name: "支付", active: true }, select: { id: true } }),
     tx.feedbackReceiveChannel.findFirst({
       where: { name: "汇付400工单投诉", active: true },
       select: { id: true },
     }),
+    feedbackChannelName
+      ? tx.userFeedbackChannel.findFirst({
+          where: { name: feedbackChannelName, active: true },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
   ]);
   if (!channel || !receiveChannel) throw new Error("汇付400投诉渠道未配置或已停用");
+  if (feedbackChannelName && !feedbackChannel) {
+    throw new Error("汇付用户反馈渠道未配置或已停用");
+  }
   return {
     channelId: channel.id,
     brokerageEntity: huifuBrokerageEntity(event.merchantName),
     paymentChannel: "汇付",
     feedbackReceiveChannelId: receiveChannel.id,
+    userFeedbackChannelId: feedbackChannel?.id ?? null,
   };
 }
 
@@ -269,7 +304,7 @@ export async function tickHuifuWebhooks(deps: TicketServiceDeps & { slaPolicyId?
         data: {
           attempts: { increment: 1 },
           nextAttemptAt: new Date(deps.clock.now().getTime() + delay),
-          lastError: "建单失败；检查投诉种类、时效策略和数据库连接后等待重试",
+          lastError: "建单失败；检查投诉种类、渠道、时效策略和数据库连接后等待重试",
         },
       });
       summary.retried += result.count;

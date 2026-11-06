@@ -15,7 +15,7 @@ describe("complaint_channel_catalogs migration (Testcontainers)", () => {
     await harness?.stop();
   });
 
-  it("user_feedback_channels = 映射表目标全集（15 项，全启用，声明序）", async () => {
+  it("user_feedback_channels = 原目录与汇付细分来源（30 项，全启用，声明序）", async () => {
     const rows = await prisma.userFeedbackChannel.findMany({
       orderBy: { displayOrder: "asc" },
     });
@@ -35,6 +35,21 @@ describe("complaint_channel_catalogs migration (Testcontainers)", () => {
       ["消保平台", true, 13],
       ["微信商户", true, 14],
       ["政府转办", true, 15],
+      ["在线客服", true, 16],
+      ["客服邮箱", true, 17],
+      ["人行专线", true, 18],
+      ["消保委市监局", true, 19],
+      ["汇付官网", true, 20],
+      ["微信", true, 21],
+      ["支付宝", true, 22],
+      ["企微群投诉", true, 23],
+      ["小程序投诉", true, 24],
+      ["人行消保", true, 25],
+      ["人行信访", true, 26],
+      ["协会", true, 27],
+      ["服务号", true, 28],
+      ["银行", true, 29],
+      ["消费保", true, 30],
     ]);
   });
 

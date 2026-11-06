@@ -1,10 +1,34 @@
 import { huifuWebhookEventSchema } from "@insuredesk/shared";
 import { describe, expect, it } from "vitest";
-import { huifuBrokerageEntity, verifyHuifuSignature } from "./huifu-webhook.service.ts";
+import {
+  huifuBrokerageEntity,
+  huifuUserFeedbackChannelName,
+  verifyHuifuSignature,
+} from "./huifu-webhook.service.ts";
 
 const SECRET = "0123456789abcdef0123456789abcdef";
 const BODY = '{"namespace":"opps-webhook","event_define_no":"test","value":"中文 0.00"}';
 const SIGN = "5C268F44AAD9E91CA5FF8C82DB13D5B8";
+
+describe("汇付用户反馈渠道", () => {
+  it.each([
+    ["01", "支付400热线"],
+    ["04", "黑猫"],
+    ["05", "人行专线"],
+    ["13", "人行消保"],
+    ["14", "人行信访"],
+    ["17", "银行"],
+    ["18", "消费保"],
+    [" 04 ", "黑猫"],
+    ["1", null],
+    ["10", null],
+    ["99", null],
+    ["__proto__", null],
+    [undefined, null],
+  ])("%s 映射为 %s", (code, expected) => {
+    expect(huifuUserFeedbackChannelName(code)).toBe(expected);
+  });
+});
 
 describe("汇付商户主体", () => {
   it.each([

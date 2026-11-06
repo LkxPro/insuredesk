@@ -208,26 +208,84 @@ describe("汇付 Webhook 接收及建单", () => {
   });
 
   it("400 投诉按商户映射业务信息，后续事件不覆盖客服修改", async () => {
-    await send(hotline({ merchantName: "陕西凯森保险代理有限公司" }));
+    await send(hotline({ merchantName: "陕西凯森保险代理有限公司", complaintSource: "04" }));
     expect(await tick()).toEqual({ processed: 1, retried: 0 });
     const detail = await harness.prisma.ticketComplaintDetail.findFirstOrThrow({
-      include: { channel: true, feedbackReceiveChannel: true },
+      include: { channel: true, feedbackReceiveChannel: true, userFeedbackChannel: true },
     });
     expect(detail.channel?.name).toBe("支付");
     expect(detail.brokerageEntity).toBe("凯森");
     expect(detail.paymentChannel).toBe("汇付");
     expect(detail.feedbackReceiveChannel?.name).toBe("汇付400工单投诉");
+    expect(detail.userFeedbackChannel?.name).toBe("黑猫");
+    const manualChannel = await harness.prisma.userFeedbackChannel.findUniqueOrThrow({
+      where: { name: "政府转办" },
+    });
     await harness.prisma.ticketComplaintDetail.update({
       where: { ticketId: detail.ticketId },
-      data: { brokerageEntity: "人工核实主体", paymentChannel: "人工核实渠道" },
+      data: {
+        brokerageEntity: "人工核实主体",
+        paymentChannel: "人工核实渠道",
+        userFeedbackChannelId: manualChannel.id,
+      },
     });
-    await send(hotline({ merchantName: "东方大地保险经纪有限公司", event: "3" }));
+    await send(
+      hotline({ merchantName: "东方大地保险经纪有限公司", event: "3", complaintSource: "05" }),
+    );
     expect(await tick()).toEqual({ processed: 1, retried: 0 });
     expect(
       await harness.prisma.ticketComplaintDetail.findUniqueOrThrow({
         where: { ticketId: detail.ticketId },
       }),
-    ).toMatchObject({ brokerageEntity: "人工核实主体", paymentChannel: "人工核实渠道" });
+    ).toMatchObject({
+      brokerageEntity: "人工核实主体",
+      paymentChannel: "人工核实渠道",
+      userFeedbackChannelId: manualChannel.id,
+    });
+  });
+
+  it.each([
+    ["01", "支付400热线"],
+    ["05", "人行专线"],
+    ["13", "人行消保"],
+    ["14", "人行信访"],
+    ["18", "消费保"],
+  ])("来源 %s 写入用户反馈渠道 %s", async (code, name) => {
+    expect((await send(hotline({ complaintSource: code }))).statusCode).toBe(200);
+    expect(await tick()).toEqual({ processed: 1, retried: 0 });
+    const detail = await harness.prisma.ticketComplaintDetail.findFirstOrThrow({
+      include: { userFeedbackChannel: true },
+    });
+    expect(detail.userFeedbackChannel?.name).toBe(name);
+  });
+
+  it.each([undefined, "10", "99"])("缺省或未知来源 %s 仍接单，原码保留", async (code) => {
+    expect((await send(hotline({ complaintSource: code }))).statusCode).toBe(200);
+    expect(await tick()).toEqual({ processed: 1, retried: 0 });
+    const detail = await harness.prisma.ticketComplaintDetail.findFirstOrThrow();
+    expect(detail.userFeedbackChannelId).toBeNull();
+    const event = await harness.prisma.huifuWebhookEvent.findFirstOrThrow();
+    expect(JSON.parse(event.rawBody).complaintSource).toBe(code);
+  });
+
+  it("已知来源渠道停用时不强行启用或写入，保留事件重试", async () => {
+    const channel = await harness.prisma.userFeedbackChannel.findUniqueOrThrow({
+      where: { name: "黑猫" },
+    });
+    await harness.prisma.userFeedbackChannel.update({
+      where: { id: channel.id },
+      data: { active: false },
+    });
+    try {
+      await send(hotline({ complaintSource: "04" }));
+      expect(await tick()).toEqual({ processed: 0, retried: 1 });
+      expect(await harness.prisma.ticket.count()).toBe(0);
+    } finally {
+      await harness.prisma.userFeedbackChannel.update({
+        where: { id: channel.id },
+        data: { active: true },
+      });
+    }
   });
 
   it("400 接收渠道停用时保留消息重试，不绕过目录约束", async () => {
