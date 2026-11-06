@@ -78,31 +78,20 @@ describe("汇付投诉事件时间", () => {
   });
 });
 
-describe("汇付附件格式", () => {
-  const event = {
-    namespace: "opps-webhook",
-    event_define_no: "hotline.complaint",
-    ticketId: "attachment-test",
-    merchantNo: "test-merchant",
-    complaintTime: "2026-11-06 14:00:00",
-  };
-
-  it.each([{ attachments: [] }, { attachments: ["https://example.com/complaint.png"] }])(
-    "兼容数组 $attachments 并归一为 JSON 字符串",
-    ({ attachments }) => {
-      expect(
-        huifuWebhookEventSchema.parse({ ...event, attachmentList: attachments }),
-      ).toMatchObject({ attachmentList: JSON.stringify(attachments) });
-    },
-  );
-
-  it("仍接受原字符串，并限制归一后的附件长度", () => {
-    expect(huifuWebhookEventSchema.parse({ ...event, attachmentList: "[]" })).toMatchObject({
-      attachmentList: "[]",
+describe("汇付附件不保留", () => {
+  it.each(
+    [[], ["https://example.com/a.png"], "[]", '[ "https://example.com/a.png" ]', null, {}].map(
+      (attachmentList) => ({ attachmentList }),
+    ),
+  )("附件值 %j 不进入业务字段", ({ attachmentList }) => {
+    const result = huifuWebhookEventSchema.parse({
+      namespace: "opps-webhook",
+      event_define_no: "hotline.complaint",
+      ticketId: "attachment-test",
+      merchantNo: "test-merchant",
+      complaintTime: "2026-11-06 14:00:00",
+      attachmentList,
     });
-    expect(
-      huifuWebhookEventSchema.safeParse({ ...event, attachmentList: ["x".repeat(10_000)] }).success,
-    ).toBe(false);
-    expect(huifuWebhookEventSchema.safeParse({ ...event, attachmentList: {} }).success).toBe(false);
+    expect(result).not.toHaveProperty("attachmentList");
   });
 });

@@ -43,10 +43,6 @@ export const huifuWebhookEventSchema = z.discriminatedUnion("event_define_no", [
     transactionNo: text,
     externalTransactionNo: text,
     transactionAmount: amount,
-    attachmentList: z.preprocess(
-      (value) => (Array.isArray(value) ? JSON.stringify(value) : value),
-      text,
-    ),
     priority: text,
     complaintSource: text,
     category: text,

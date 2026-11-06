@@ -79,10 +79,20 @@ export async function receiveHuifuWebhook(
     throw new HuifuWebhookError(403, "merchant not allowed");
   }
   const digest = createHash("sha256").update(JSON.stringify(event)).digest("hex");
+  // 验签必须使用完整原文；附件只在验签后从保存的报文中移除。
+  const retained = { ...payload };
+  Reflect.deleteProperty(retained, "attachmentList");
+  Reflect.deleteProperty(retained, "attachment_list");
   const now = deps.clock.now();
   await deps.prisma.huifuWebhookEvent.upsert({
     where: { digest },
-    create: { digest, ...key, rawBody: input.rawBody, receivedAt: now, nextAttemptAt: now },
+    create: {
+      digest,
+      ...key,
+      rawBody: JSON.stringify(retained),
+      receivedAt: now,
+      nextAttemptAt: now,
+    },
     update: {},
   });
   return { accepted: true };
@@ -187,7 +197,6 @@ function describe(event: HuifuWebhookEvent) {
       `操作时间：${event.operationTime ?? event.complaintTime}`,
       `投诉人电话（汇付原值）：${event.userPhoneNumber ?? "未提供"}`,
       ...(event.remark ? [`备注：${event.remark}`] : []),
-      ...(event.attachmentList ? [`附件（汇付原值）：${event.attachmentList}`] : []),
     ].join("\n"),
   };
 }

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { fixedClock } from "../src/clock.ts";
 import { parseEnv } from "../src/env.ts";
 import { buildServer } from "../src/server.ts";
+import { removeStoredHuifuAttachments } from "../src/services/huifu-attachment-cleanup.service.ts";
 import { tickHuifuWebhooks } from "../src/services/huifu-webhook.service.ts";
 import {
   createComplaintTicket,
@@ -104,7 +105,7 @@ describe("汇付 Webhook 接收及建单", () => {
     await harness?.stop();
   });
 
-  it("原文先保存后应答；worker 才创建摘要工单和通知", async () => {
+  it("接收报文先保存后应答；worker 才创建摘要工单和通知", async () => {
     const response = await send(wechat());
     expect(response.statusCode).toBe(200);
     expect(response.body).toBe("success");
@@ -343,22 +344,128 @@ describe("汇付 Webhook 接收及建单", () => {
     expect(login.statusCode).toBe(400);
   });
 
-  it("附件数组通过原文验签并保存，等价字符串重推不重复建单", async () => {
+  it("完整报文验签后丢弃附件，不保存或展示，附件变化不重复入库", async () => {
     const attachments = ["https://example.com/complaint.png"];
     const payload = hotline({ attachmentList: attachments, merchantName: "中融保险经纪有限公司" });
     const response = await send(payload);
     expect(response.statusCode).toBe(200);
     expect(response.body).toBe("success");
     const row = await harness.prisma.huifuWebhookEvent.findFirstOrThrow();
-    expect(JSON.parse(row.rawBody).attachmentList).toEqual(attachments);
+    expect(JSON.parse(row.rawBody)).not.toHaveProperty("attachmentList");
+    expect(JSON.parse(row.rawBody).content).toBe(payload.content);
     expect(await tick()).toEqual({ processed: 1, retried: 0 });
     const detail = await harness.prisma.ticketComplaintDetail.findFirstOrThrow();
     expect(detail.brokerageEntity).toBe("中融");
-    expect(detail.customerRequest).toContain(JSON.stringify(attachments));
-    expect(
-      (await send({ ...payload, attachmentList: JSON.stringify(attachments) })).statusCode,
-    ).toBe(200);
+    expect(detail.customerRequest).not.toContain("附件");
+    expect(detail.customerRequest).not.toContain(attachments[0]);
+    for (const attachmentList of [
+      undefined,
+      null,
+      [],
+      "[]",
+      JSON.stringify(attachments),
+      '[ "different" ]',
+      { url: "ignored" },
+    ]) {
+      expect((await send({ ...payload, attachmentList })).statusCode).toBe(200);
+    }
     expect(await harness.prisma.huifuWebhookEvent.count()).toBe(1);
+    expect(await harness.prisma.ticket.count()).toBe(1);
+    expect(await harness.prisma.processLog.count()).toBe(1);
+    const wrongSign = sign(JSON.stringify({ ...payload, attachmentList: [] }));
+    expect((await send(payload, wrongSign)).statusCode).toBe(401);
+  });
+
+  it("历史附件清理保持记录、非附件字段和客服备注，摘要重建后重推不重复", async () => {
+    const payload = hotline({
+      content: "原始诉求",
+      attachmentList: ["https://example.com/private-file"],
+    });
+    await send(payload);
+    await tick();
+    const event = await harness.prisma.huifuWebhookEvent.findFirstOrThrow();
+    const log = await harness.prisma.processLog.findFirstOrThrow();
+    const detail = await harness.prisma.ticketComplaintDetail.findFirstOrThrow();
+    const suffix = `\n附件（汇付原值）：${JSON.stringify(payload.attachmentList)}`;
+    await harness.prisma.huifuWebhookEvent.update({
+      where: { id: event.id },
+      data: {
+        rawBody: JSON.stringify({ ...payload, extra: "保留字段" }),
+        digest: "legacy-original",
+      },
+    });
+    await harness.prisma.huifuWebhookEvent.create({
+      data: {
+        digest: "legacy-copy",
+        eventType: event.eventType,
+        merchantId: event.merchantId,
+        complaintId: event.complaintId,
+        rawBody: JSON.stringify(payload),
+        status: "pending",
+        receivedAt: NOW,
+        nextAttemptAt: NOW,
+      },
+    });
+    await harness.prisma.processLog.update({
+      where: { id: log.id },
+      data: { remark: log.remark + suffix },
+    });
+    await harness.prisma.ticketComplaintDetail.update({
+      where: { ticketId: detail.ticketId },
+      data: { customerRequest: `${detail.customerRequest}${suffix}\n客服补充` },
+    });
+    const manual = await harness.prisma.processLog.create({
+      data: {
+        ticketId: detail.ticketId,
+        operatorId: "manual",
+        action: "comment",
+        remark: `客服写入${suffix}`,
+        at: NOW,
+      },
+    });
+    expect(await removeStoredHuifuAttachments(harness.prisma)).toMatchObject({
+      changedEvents: 2,
+      changedLogs: 1,
+      changedDetails: 1,
+    });
+    expect(
+      (await harness.prisma.huifuWebhookEvent.findUniqueOrThrow({ where: { id: event.id } }))
+        .rawBody,
+    ).toContain("private-file");
+    expect(await removeStoredHuifuAttachments(harness.prisma, true)).toMatchObject({
+      changedEvents: 2,
+    });
+    const rows = await harness.prisma.huifuWebhookEvent.findMany();
+    expect(rows).toHaveLength(2);
+    expect(
+      rows.every(
+        (row) => !row.rawBody.includes("private-file") && !row.rawBody.includes("attachmentList"),
+      ),
+    ).toBe(true);
+    expect(JSON.parse(rows.find((row) => row.id === event.id)?.rawBody ?? "{}").extra).toBe(
+      "保留字段",
+    );
+    expect(
+      (await harness.prisma.processLog.findUniqueOrThrow({ where: { id: manual.id } })).remark,
+    ).toBe(`客服写入${suffix}`);
+    expect(
+      (await harness.prisma.processLog.findUniqueOrThrow({ where: { id: log.id } })).remark,
+    ).toBe(log.remark);
+    expect(
+      (
+        await harness.prisma.ticketComplaintDetail.findUniqueOrThrow({
+          where: { ticketId: detail.ticketId },
+        })
+      ).customerRequest,
+    ).toBe(`${detail.customerRequest}\n客服补充`);
+    expect(await removeStoredHuifuAttachments(harness.prisma, true)).toMatchObject({
+      changedEvents: 0,
+      changedLogs: 0,
+      changedDetails: 0,
+    });
+    expect((await send(payload)).statusCode).toBe(200);
+    expect(await tick()).toEqual({ processed: 0, retried: 0 });
+    expect(await harness.prisma.huifuWebhookEvent.count()).toBe(2);
     expect(await harness.prisma.ticket.count()).toBe(1);
   });
 
