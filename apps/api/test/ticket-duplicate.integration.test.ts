@@ -1,7 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../src/generated/prisma/client.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type IntegrationHarness,
+  seedManualTicket,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 describe("ticket 查重（Testcontainers）", () => {
   let harness: IntegrationHarness;
@@ -127,7 +131,7 @@ describe("ticket 查重（Testcontainers）", () => {
     let oldestId = "";
     const ids: string[] = [];
     for (let index = 0; index < 21; index++) {
-      const created = await manager().ticket.create({
+      const created = await seedManualTicket(harness, {
         customerName: `上限-${index}`,
         phone: "13300000007",
         allowDuplicate: true,
@@ -160,7 +164,7 @@ describe("ticket 查重（Testcontainers）", () => {
     await expect(attempt).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("create 提交兜底：命中 409，allowDuplicate 放行，全空查重字段不触发", async () => {
+  it("create 提交兜底：命中 409，allowDuplicate 不能绕过，全空查重字段不触发", async () => {
     await manager().ticket.create({
       customerName: "兜底",
       phone: "13411112222",
@@ -174,12 +178,13 @@ describe("ticket 查重（Testcontainers）", () => {
       manager().ticket.create({ customerName: "撞保单", policyNumbers: ["PXD400"] }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
 
-    const forced = await manager().ticket.create({
-      customerName: "撞手机",
-      phone: "13411112222",
-      allowDuplicate: true,
-    });
-    expect(forced.workOrderNumber).toBeDefined();
+    await expect(
+      manager().ticket.create({
+        customerName: "撞手机",
+        phone: "13411112222",
+        allowDuplicate: true,
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
 
     const blank = await manager().ticket.create({ customerName: "无查重字段" });
     expect(blank.id).toBeDefined();
@@ -211,7 +216,6 @@ describe("ticket 查重（Testcontainers）", () => {
     });
     expect(forced.changedFields).toEqual(["phone"]);
 
-    // 查重字段未动的编辑不被存量重复阻塞（此刻 mine.phone 与他人相同）
     const unrelated = await manager().ticket.editComplaint({
       ticketId: mine.id,
       customerName: "编辑-我2",
@@ -243,7 +247,7 @@ describe("ticket 查重（Testcontainers）", () => {
     await manager().ticket.assign({ ticketId: open.id, assigneeId: seeded.users.manager.id });
     await manager().ticket.addComment({ ticketId: open.id, remark: "已电话联系客户" });
 
-    const done = await manager().ticket.create({
+    const done = await seedManualTicket(harness, {
       customerName: "活动-完结",
       phone: "13199990000",
       allowDuplicate: true,
@@ -256,7 +260,7 @@ describe("ticket 查重（Testcontainers）", () => {
       remark: "已按原路退回保费",
     });
 
-    await manager().ticket.create({
+    await seedManualTicket(harness, {
       customerName: "活动-无记录",
       phone: "13199990000",
       allowDuplicate: true,

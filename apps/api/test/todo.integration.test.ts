@@ -3,7 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
 import { appRouter } from "../src/routers/index.ts";
 import { listMyTodos } from "../src/services/todo.service.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type IntegrationHarness,
+  seedManualTicket,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -82,7 +86,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
   } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   async function createTicket(policyName = "一般投诉") {
-    const created = await manager().ticket.create({
+    const created = await seedManualTicket(harness, {
       ...baseInput,
       slaPolicyId: harness.slaPolicyId(policyName),
     });
@@ -179,7 +183,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
   describe("待首响 (常驻 + 染红阈值)", () => {
     it("从被分配起常驻待办；严格超过 firstResponseMinutes 由黄转红，仅严重度提升", async () => {
       const owner = await createAssignee();
-      const ticket = await createTicket(); // 一般投诉: 红线 120 分钟
+      const ticket = await createTicket();
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
 
       const fresh = await todosAt(owner, seeded.roles.frontline, plus(ticket.createdAt, MINUTE));
@@ -243,7 +247,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
 
     it("补齐跟进自动掉出；后续检查点按自 createdAt 的累计数判定", async () => {
       const owner = await createAssignee();
-      const ticket = await createTicket(); // 一般投诉: {24h,1次}、{48h,2次,提前180min}
+      const ticket = await createTicket();
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
       await callerFor(owner, seeded.roles.frontline).ticket.addComment({
         ticketId: ticket.id,
@@ -262,7 +266,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
     it("累计跨责任人：改派后新责任人看到全单累计次数", async () => {
       const first = await createAssignee();
       const second = await createAssignee();
-      const ticket = await createTicket("加急投诉"); // {24h,2次,提前60min}
+      const ticket = await createTicket("加急投诉");
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: first.id });
       await callerFor(first, seeded.roles.frontline).ticket.addComment({
         ticketId: ticket.id,
@@ -286,9 +290,8 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
   describe("slaAnchorAt 计时锚（首响/检查点按锚点起算）", () => {
     it("锚早于录入 12h：首响红线与 24h 检查点按锚点判定，不按录入时刻", async () => {
       const owner = await createAssignee();
-      const ticket = await createTicket(); // 一般投诉: 红线 120min; {24h,1次,提前60min}
+      const ticket = await createTicket();
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
-      // 退费口径：slaAnchorAt = 平台 refundCreateTime，可早于录入 12h
       const anchor = plus(ticket.createdAt, -12 * HOUR);
       await prisma.ticket.update({ where: { id: ticket.id }, data: { slaAnchorAt: anchor } });
 
@@ -323,7 +326,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
 
     it("距上一条 comment 满 intervalHours 进入待办（含边界）；特急永无 due_soon/overdue", async () => {
       const owner = await createAssignee();
-      const ticket = await createTicket("特急投诉"); // intervalHours = 12
+      const ticket = await createTicket("特急投诉");
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
       await callerFor(owner, seeded.roles.frontline).ticket.addComment({
         ticketId: ticket.id,
@@ -361,11 +364,9 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
   describe("due_soon / overdue (复用时间谓词单一真源)", () => {
     it("与列表计算状态同刻变化：不足 2h 严格进入、dueAt 瞬间仍 due_soon、严格超过才 overdue", async () => {
       const owner = await createAssignee();
-      const ticket = await createTicket(); // 一般投诉: dueAt = createdAt + 48h
+      const ticket = await createTicket();
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
       const caller = callerFor(owner, seeded.roles.frontline);
-      // two comments satisfy both checkpoints (1@24h, 2@48h) and 待首响, so
-      // only the deadline predicates remain in play
       await caller.ticket.addComment({ ticketId: ticket.id, remark: "第一次跟进" });
       await caller.ticket.addComment({ ticketId: ticket.id, remark: "第二次跟进" });
       const todoTypesAt = async (offsetMs: number) => {
@@ -387,7 +388,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
   describe("改等级 (规则随当前 SLAPolicy)", () => {
     it("已过检查点不补发；dueAt、染红线与后续检查点按新等级判定", async () => {
       const owner = await createAssignee();
-      const ticket = await createTicket(); // born 一般投诉 (dueAt 48h, 红线 120min)
+      const ticket = await createTicket();
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
       await manager().ticket.editComplaint({
         ...baseInput,
@@ -418,7 +419,7 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
   describe("策略停用语义 (引用停用策略的工单走缺行降级路径，不抛错)", () => {
     it("停用后：检查点/染红消失，待首响与 due_soon/overdue 照常", async () => {
       const owner = await createAssignee();
-      const ticket = await createTicket(); // 一般投诉: dueAt 48h, 红线 120min, {24h,1次,提前60min}
+      const ticket = await createTicket();
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
       const policy = await prisma.slaPolicy.findUniqueOrThrow({
         where: { name: "一般投诉" },
@@ -460,8 +461,6 @@ describe("我的待办 read-time alerts (Testcontainers)", () => {
       const ticket = await createTicket();
       await manager().ticket.assign({ ticketId: ticket.id, assigneeId: owner.id });
 
-      // Under the real clock the freshly assigned ticket sits in the todo via
-      // the threshold-free 常驻 待首响 — deterministic seconds after creation
       const poll = await callerFor(owner, seeded.roles.frontline).notification.list();
       expect(poll.unreadCount).toBe(1);
       expect(poll.items[0]?.type).toBe("assigned");

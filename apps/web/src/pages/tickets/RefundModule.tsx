@@ -40,7 +40,7 @@ type InlineEditor = {
   save: () => void;
 };
 
-function useCompensationEditor(ticket: TicketDetail): InlineEditor {
+function useCompensationEditor(ticket: TicketDetail, readOnly: boolean): InlineEditor {
   const { hasPermission } = useAuth();
   const utils = trpc.useUtils();
   const [editing, setEditing] = useState(false);
@@ -74,7 +74,7 @@ function useCompensationEditor(ticket: TicketDetail): InlineEditor {
     error,
     pending: mutation.isPending,
     current,
-    canEdit: hasPermission("ticket.process") && ticket.status !== "completed",
+    canEdit: !readOnly && hasPermission("ticket.process") && ticket.status !== "completed",
     start: () => {
       setDraft(current ?? "");
       setError(null);
@@ -88,7 +88,7 @@ function useCompensationEditor(ticket: TicketDetail): InlineEditor {
   };
 }
 
-function useContactPhoneEditor(ticket: TicketDetail): InlineEditor {
+function useContactPhoneEditor(ticket: TicketDetail, readOnly: boolean): InlineEditor {
   const { hasPermission } = useAuth();
   const utils = trpc.useUtils();
   const [editing, setEditing] = useState(false);
@@ -127,7 +127,7 @@ function useContactPhoneEditor(ticket: TicketDetail): InlineEditor {
     error,
     pending: mutation.isPending,
     current,
-    canEdit: hasPermission("ticket.edit"),
+    canEdit: !readOnly && hasPermission("ticket.edit"),
     start: () => {
       setDraft(current ?? "");
       setError(null);
@@ -287,13 +287,15 @@ function ContactSection({
   ticket,
   detail,
   contactPhoneField,
+  readOnly,
 }: {
   ticket: TicketDetail;
   detail: RefundDetail;
   contactPhoneField?: ReactNode;
+  readOnly: boolean;
 }) {
-  const compensation = useCompensationEditor(ticket);
-  const contactPhone = useContactPhoneEditor(ticket);
+  const compensation = useCompensationEditor(ticket, readOnly);
+  const contactPhone = useContactPhoneEditor(ticket, readOnly);
   return (
     <SectionShell title="客户与补偿">
       <dl className="m-0 grid gap-x-6 gap-y-3 sm:grid-cols-[repeat(2,minmax(0,1fr))]">
@@ -317,7 +319,13 @@ function ContactSection({
   );
 }
 
-function DeliveryCell({ delivery }: { delivery: NonNullable<TicketDetail["callbackDelivery"]> }) {
+function DeliveryCell({
+  delivery,
+  readOnly,
+}: {
+  delivery: NonNullable<TicketDetail["callbackDelivery"]>;
+  readOnly: boolean;
+}) {
   const { hasPermission } = useAuth();
   const utils = trpc.useUtils();
   const redeliver = trpc.ticket.redeliverCallback.useMutation({
@@ -335,7 +343,7 @@ function DeliveryCell({ delivery }: { delivery: NonNullable<TicketDetail["callba
         {delivery.status === "delivered" && delivery.deliveredAt !== null && (
           <span className="text-muted-foreground">{formatDateTime(delivery.deliveredAt)}</span>
         )}
-        {delivery.status === "dead" && hasPermission("ticket.process") && (
+        {!readOnly && delivery.status === "dead" && hasPermission("ticket.process") && (
           <Button
             type="button"
             variant="outline"
@@ -376,7 +384,15 @@ function TradesTable({ trades }: { trades: RefundDetail["refundTrades"] }) {
   );
 }
 
-function RefundLedger({ ticket, detail }: { ticket: TicketDetail; detail: RefundDetail }) {
+function RefundLedger({
+  ticket,
+  detail,
+  readOnly,
+}: {
+  ticket: TicketDetail;
+  detail: RefundDetail;
+  readOnly: boolean;
+}) {
   return (
     <dl className="m-0 divide-y divide-border">
       <LedgerRow label="工单类型">{detail.workOrderType}</LedgerRow>
@@ -396,7 +412,7 @@ function RefundLedger({ ticket, detail }: { ticket: TicketDetail; detail: Refund
       <LedgerRow label="产品名称">{detail.productName}</LedgerRow>
       <LedgerRow label="回调投递状态">
         {ticket.callbackDelivery === null ? null : (
-          <DeliveryCell delivery={ticket.callbackDelivery} />
+          <DeliveryCell delivery={ticket.callbackDelivery} readOnly={readOnly} />
         )}
       </LedgerRow>
       <div className="py-1.5">
@@ -412,9 +428,11 @@ function RefundLedger({ ticket, detail }: { ticket: TicketDetail; detail: Refund
 export function RefundModule({
   ticket,
   contactPhoneField,
+  readOnly = false,
 }: {
   ticket: TicketDetail;
   contactPhoneField?: ReactNode;
+  readOnly?: boolean;
 }) {
   const detail = ticket.refundDetail;
   if (detail === null) {
@@ -422,9 +440,14 @@ export function RefundModule({
   }
   return (
     <>
-      <ContactSection ticket={ticket} detail={detail} contactPhoneField={contactPhoneField} />
+      <ContactSection
+        ticket={ticket}
+        detail={detail}
+        contactPhoneField={contactPhoneField}
+        readOnly={readOnly}
+      />
       <SectionShell title="退费信息">
-        <RefundLedger ticket={ticket} detail={detail} />
+        <RefundLedger ticket={ticket} detail={detail} readOnly={readOnly} />
       </SectionShell>
     </>
   );

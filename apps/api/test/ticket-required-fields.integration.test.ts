@@ -104,11 +104,12 @@ describe("role required ticket fields (Testcontainers)", () => {
     return callerFor(userWithRequired, roleWithRequired);
   }
 
+  let fixtureNumber = 0;
   const validInput = (): TicketCreateInput & { allowDuplicate?: boolean } => ({
     feedbackTime: "2026-07-15T10:00:00.000Z",
     channelId: channelBaosi.id,
     customerName: "张三",
-    phone: "13900000000",
+    phone: `139${String(++fixtureNumber).padStart(8, "0")}`,
     hasContacted: true,
     slaPolicyId: harness.slaPolicyId("一般投诉"),
     allowDuplicate: true,
@@ -157,12 +158,13 @@ describe("role required ticket fields (Testcontainers)", () => {
 
   describe("ticket.create with required fields", () => {
     it("accepts ticket when all required fields are provided", async () => {
-      const result = await requiredUser().ticket.create(validInput());
+      const input = validInput();
+      const result = await requiredUser().ticket.create(input);
       expect(result.workOrderNumber).toMatch(/^WO\d{6,}$/);
 
       const detail = await requiredUser().ticket.detail({ id: result.id });
       expect(detail.customerName).toBe("张三");
-      expect(detail.phone).toBe("13900000000");
+      expect(detail.phone).toBe(input.phone);
       expect(detail.channel?.name).toBe("保司");
       expect(detail.hasContacted).toBe(true);
     });

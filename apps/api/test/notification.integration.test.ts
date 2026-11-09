@@ -2,7 +2,11 @@ import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
 import { appRouter } from "../src/routers/index.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type IntegrationHarness,
+  seedManualTicket,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 describe("assigned notifications (Testcontainers)", () => {
   let harness: IntegrationHarness;
@@ -70,7 +74,10 @@ describe("assigned notifications (Testcontainers)", () => {
   } satisfies TicketCreateInput & { allowDuplicate?: boolean };
 
   async function createTicket(policyName = "一般投诉") {
-    return manager().ticket.create({ ...baseInput, slaPolicyId: harness.slaPolicyId(policyName) });
+    return seedManualTicket(harness, {
+      ...baseInput,
+      slaPolicyId: harness.slaPolicyId(policyName),
+    });
   }
 
   describe("assignment writes the notification (轨 1, same transaction)", () => {
@@ -109,7 +116,6 @@ describe("assigned notifications (Testcontainers)", () => {
       const newInbox = await callerFor(newOwner, seeded.roles.frontline).notification.list();
       expect(newInbox.items).toHaveLength(1);
       expect(newInbox.items[0]?.title).toBe("工单改派");
-      // 一般投诉 dueAt = createdAt + 48h, reassigned moments later → hours remain
       expect(newInbox.items[0]?.content).toMatch(
         new RegExp(
           `^${seeded.users.manager.name} 将工单 ${created.workOrderNumber} 改派给你（剩余处理时间 .+）$`,

@@ -17,6 +17,7 @@ import {
 } from "@insuredesk/shared";
 import { CheckIcon } from "lucide-react";
 import { Select as SelectPrimitive } from "radix-ui";
+import type { ReactNode } from "react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 import { DateTimePicker } from "@/components/DateTimePicker";
@@ -52,16 +53,6 @@ import { RegionCascader } from "./RegionCascader";
 import { SearchableCombobox } from "./SearchableCombobox";
 import { DuplicateFieldHint, useTicketDuplicates } from "./TicketDuplicates";
 
-/**
- * Every field is optional: a fully blank form submits cleanly and unfilled
- * fields reach the server as null. No label says 选填 — optional is the rule,
- * not the exception. Validation is the shared ticketCreateInputSchema — the
- * contract the API parses — with one form-side deviation: datetime fields are
- * held as local datetime strings ("" = unfilled) until submit, when the
- * caller converts them to absolute instants or null.
- *
- * 动态必填：建单表单据用户角色的必填集生成校验。必填字段标签后显示星号。
- */
 export function buildTicketFormSchema(requiredFields: readonly string[]) {
   let schema = ticketFormSchema;
 
@@ -101,7 +92,6 @@ function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFiel
     case "textList":
       return z.string(message).trim().min(1, message).superRefine(refinePolicyNumbersText);
     case "enum":
-      // 布尔取值的三态字段（客户曾进线）在表单里就是 boolean|null
       return typeof descriptor.options[0]?.value === "boolean"
         ? z.boolean({ error: message })
         : z.string(message).min(1, message);
@@ -112,10 +102,6 @@ function requiredFieldSchema(descriptor: (typeof TICKET_FIELDS)[TicketCreateFiel
   }
 }
 
-/**
- * Empty is valid for optional datetime fields. Once either half is present,
- * both date and minute must be present before the form can submit.
- */
 function localDateTimeFieldSchema(label: string, required: boolean) {
   return z.string().superRefine((value, ctx) => {
     if (!value) {
@@ -155,10 +141,6 @@ const refinePolicyNumbersText = (value: string, ctx: z.RefinementCtx) => {
   }
 };
 
-/**
- * complete 由级联控件按区划树判定（是否选到叶子）；表单 schema 不引用区划树，
- * 完整路径校验在服务端。
- */
 const addressFormSchema = z
   .object({
     provinceCode: z.string(),
@@ -211,7 +193,6 @@ export const refundEditFormSchema = editRefundInputSchema
 
 export type RefundEditFormValues = z.input<typeof refundEditFormSchema>;
 
-/** Radix Select forbids `value=""` items; stand-in for the "未设置" choice. */
 export const UNSET = "__unset__";
 
 /**
@@ -252,7 +233,6 @@ export function PolicyNumbersControl({
   );
 }
 
-/** hasContacted is tri-state (是/否/未知) — a checkbox can't say "unknown". Radix 不收布尔 value，转码为哨兵串。 */
 export const HAS_CONTACTED_OPTIONS = TICKET_FIELDS.hasContacted.options.map((option) => ({
   value: option.value ? "yes" : "no",
   label: option.label,
@@ -283,10 +263,6 @@ export function withCurrentOption(
   ];
 }
 
-/**
- * 时效策略下拉项：名称为主、说明小字随行。说明不进 ItemText——触发器回显只有
- * 名称一行；小字只在展开的选项列表里（内部选型控件的统一口径）。
- */
 export function SlaPolicyOptionItem({
   option,
 }: {
@@ -355,10 +331,12 @@ export function TicketFormFields({
   form,
   currentCategory,
   currentChannel,
+  fieldAddon,
 }: {
   form: UseFormReturn<TicketFormValues>;
   currentCategory?: CurrentCatalogOption | null;
   currentChannel?: CurrentCatalogOption | null;
+  fieldAddon?: (field: "phone" | "contactPhone" | "policyNumbers") => ReactNode;
 }) {
   const {
     register,
@@ -382,7 +360,7 @@ export function TicketFormFields({
   const userFeedbackChannelOptions = trpc.userFeedbackChannel.options.useQuery().data ?? [];
   const feedbackReceiveChannelOptions = trpc.feedbackReceiveChannel.options.useQuery().data ?? [];
 
-  const duplicates = useTicketDuplicates(form);
+  const duplicates = useTicketDuplicates(form, { enabled: !fieldAddon });
 
   return (
     <>
@@ -511,7 +489,11 @@ export function TicketFormFields({
             </FieldLabel>
             <PolicyNumbersControl form={form} invalid={!!errors.policyNumbers} />
             <FieldError errors={[errors.policyNumbers]} />
-            <DuplicateFieldHint field="policyNumbers" duplicates={duplicates} />
+            {fieldAddon ? (
+              fieldAddon("policyNumbers")
+            ) : (
+              <DuplicateFieldHint field="policyNumbers" duplicates={duplicates} />
+            )}
           </Field>
           <Field data-invalid={!!errors.userFeedbackChannelId}>
             <FieldLabel htmlFor="userFeedbackChannelId">
@@ -582,7 +564,11 @@ export function TicketFormFields({
             </FieldLabel>
             <Input id="phone" type="tel" aria-invalid={!!errors.phone} {...register("phone")} />
             <FieldError errors={[errors.phone]} />
-            <DuplicateFieldHint field="phone" duplicates={duplicates} />
+            {fieldAddon ? (
+              fieldAddon("phone")
+            ) : (
+              <DuplicateFieldHint field="phone" duplicates={duplicates} />
+            )}
           </Field>
           <Field data-invalid={!!errors.contactPhone}>
             <FieldLabel htmlFor="contactPhone">
@@ -596,7 +582,11 @@ export function TicketFormFields({
               {...register("contactPhone")}
             />
             <FieldError errors={[errors.contactPhone]} />
-            <DuplicateFieldHint field="contactPhone" duplicates={duplicates} />
+            {fieldAddon ? (
+              fieldAddon("contactPhone")
+            ) : (
+              <DuplicateFieldHint field="contactPhone" duplicates={duplicates} />
+            )}
           </Field>
           <Field data-invalid={!!errors.nuclearBodyStatus}>
             <FieldLabel htmlFor="nuclearBodyStatus">

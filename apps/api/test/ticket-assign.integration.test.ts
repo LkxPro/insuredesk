@@ -5,7 +5,11 @@ import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts
 import { appRouter } from "../src/routers/index.ts";
 import { localDateTimeParts } from "../src/services/schedule.service.ts";
 import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type IntegrationHarness,
+  seedManualTicket,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 describe("ticket assignment (Testcontainers)", () => {
   let harness: IntegrationHarness;
@@ -111,7 +115,7 @@ describe("ticket assignment (Testcontainers)", () => {
   let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
   async function createTicket() {
-    const created = await manager().ticket.create(baseInput);
+    const created = await seedManualTicket(harness, baseInput);
     return created.id;
   }
 
@@ -191,7 +195,6 @@ describe("ticket assignment (Testcontainers)", () => {
     it("keeps a processing ticket processing (no status_change on reassign)", async () => {
       const ticketId = await createTicket();
       await manager().ticket.assign({ ticketId, assigneeId: seeded.users.cs1.id });
-      // 处理中 normally arrives with the follow-up action; simulate the state here
       await prisma.ticket.update({ where: { id: ticketId }, data: { status: "processing" } });
 
       await manager().ticket.assign({ ticketId, assigneeId: cs2.id });
@@ -319,7 +322,7 @@ describe("ticket assignment (Testcontainers)", () => {
     });
 
     it("applies the data scope: ticket.assign without ticket.view_all cannot reach others' tickets", async () => {
-      const ticketId = await createTicket(); // unassigned → outside cs1's scope
+      const ticketId = await createTicket();
       const scopedAssigner = callerWith(seeded.users.cs1, "受限分配员", [
         "ticket.view",
         "ticket.assign",
@@ -336,7 +339,11 @@ describe("ticket assignment (Testcontainers)", () => {
         "ticket.create",
         "ticket.assign",
       ]);
-      const created = await creatorAssigner.ticket.create(baseInput);
+      const created = await creatorAssigner.ticket.create({
+        ...baseInput,
+        phone: null,
+        policyNumbers: [],
+      });
 
       const result = await creatorAssigner.ticket.assign({
         ticketId: created.id,
@@ -480,8 +487,16 @@ describe("ticket assignment (Testcontainers)", () => {
         "ticket.create",
         "ticket.batch_assign",
       ]);
-      const first = await creatorBatchAssigner.ticket.create(baseInput);
-      const second = await creatorBatchAssigner.ticket.create(baseInput);
+      const first = await creatorBatchAssigner.ticket.create({
+        ...baseInput,
+        phone: null,
+        policyNumbers: [],
+      });
+      const second = await creatorBatchAssigner.ticket.create({
+        ...baseInput,
+        phone: null,
+        policyNumbers: [],
+      });
 
       const result = await creatorBatchAssigner.ticket.batchAssign({
         ticketIds: [first.id, second.id],

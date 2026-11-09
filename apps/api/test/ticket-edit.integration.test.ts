@@ -3,7 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
 import { appRouter } from "../src/routers/index.ts";
 import { effectivePermissions } from "../src/services/auth.service.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type IntegrationHarness,
+  seedManualTicket,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -84,7 +88,7 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
   }
 
   async function createTicket(overrides: Partial<TicketCreateInput> = {}) {
-    const created = await manager().ticket.create({ ...baseInput(), ...overrides });
+    const created = await seedManualTicket(harness, { ...baseInput(), ...overrides });
     return created.id;
   }
 
@@ -539,7 +543,6 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
       await expect(
         observer().ticket.editComplaint(editInput(ticketId, { customerName: "无权编辑" })),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      // 客服主管 deliberately lacks the dangerous ticket.delete
       await expect(manager().ticket.delete({ ticketId })).rejects.toMatchObject({
         code: "FORBIDDEN",
       });
@@ -579,16 +582,24 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
     it("lets the creator without ticket.view_all edit their own ticket — unassigned and after handoff", async () => {
       const creatorEditor = () =>
         callerWith(seeded.users.cs1, "受限创建人", ["ticket.view", "ticket.create", "ticket.edit"]);
-      const created = await creatorEditor().ticket.create(baseInput());
+      const created = await creatorEditor().ticket.create({
+        ...baseInput(),
+        phone: null,
+        policyNumbers: [],
+      });
 
       const whileUnassigned = await creatorEditor().ticket.editComplaint(
-        editInput(created.id, { customerName: "创建人未指派时改" }),
+        editInput(created.id, { customerName: "创建人未指派时改", phone: null, policyNumbers: [] }),
       );
       expect(whileUnassigned.changedFields).toEqual(["customerName"]);
 
       await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
       const afterHandoff = await creatorEditor().ticket.editComplaint(
-        editInput(created.id, { customerName: "创建人他人处理时改" }),
+        editInput(created.id, {
+          customerName: "创建人他人处理时改",
+          phone: null,
+          policyNumbers: [],
+        }),
       );
       expect(afterHandoff.changedFields).toEqual(["customerName"]);
     });
@@ -600,7 +611,11 @@ describe("ticket edit + soft delete (Testcontainers)", () => {
           "ticket.create",
           "ticket.delete",
         ]);
-      const created = await creatorDeleter().ticket.create(baseInput());
+      const created = await creatorDeleter().ticket.create({
+        ...baseInput(),
+        phone: null,
+        policyNumbers: [],
+      });
       await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
 
       const result = await creatorDeleter().ticket.delete({ ticketId: created.id });

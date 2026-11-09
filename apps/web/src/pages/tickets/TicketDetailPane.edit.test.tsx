@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { auth, callsTo, renderApp, toastSpies, userWith } from "@/test/renderApp";
+import "./TicketsPage";
 import { TEST_ROLES } from "@/test/roles";
 import { categoryOptions, channelOptions, detailPayload, listItem } from "./detail-pane-fixtures";
 

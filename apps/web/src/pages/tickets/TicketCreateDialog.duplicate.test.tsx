@@ -1,6 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatDateTime } from "@/lib/datetime";
 // renderApp 模块在求值时注册 auth/toast 的 vi.mock，必须先于依赖它们的模块导入
 import { auth, callsTo, renderApp, userWith } from "@/test/renderApp";
 import { TEST_ROLES } from "@/test/roles";
@@ -89,7 +88,7 @@ function renderCreate(trpc: Record<string, unknown> = {}) {
   return renderApp({
     path: "/tickets/new",
     trpc: {
-      "ticket.findDuplicates": dupResolver,
+      "ticket.findRelated": dupResolver,
       "channel.options": [],
       "ticketCategory.options": [],
       ...trpc,
@@ -108,7 +107,7 @@ afterEach(() => {
 });
 
 describe("建单即时查重提示", () => {
-  it("客户电话满 11 位触发查重，提示挂在该字段下、始终展开、行新标签打开", async () => {
+  it("客户电话满 11 位触发关联，字段提示可打开已有工单并禁止创建", async () => {
     renderCreate();
     await screen.findByRole("heading", { name: "新建工单" });
 
@@ -116,14 +115,9 @@ describe("建单即时查重提示", () => {
       target: { value: "13800001111" },
     });
 
-    expect(await screen.findByText("1 个工单使用相同客户电话，确认后再提交")).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: "WO100090" });
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("href", "/tickets/dup-1");
-    const row = link.closest("li") as HTMLElement;
-    expect(row).toHaveTextContent(formatDateTime(dupRow().activityAt));
-    expect(row).not.toHaveTextContent(formatDateTime(dupRow().createdAt));
-    expect(screen.queryByText(/个工单使用相同保单号/)).not.toBeInTheDocument();
+    expect(await screen.findByText("发现 1 个关联工单，请追加备注")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "WO100090" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建工单" })).toBeDisabled();
   });
 
   it("保单号按非字母数字分隔符拆分后参与查重", async () => {
@@ -134,8 +128,8 @@ describe("建单即时查重提示", () => {
       target: { value: "PA1，PA2" },
     });
 
-    expect(await screen.findByText(/个工单使用相同保单号/)).toBeInTheDocument();
-    const query = callsTo("ticket.findDuplicates").at(-1);
+    expect(await screen.findByText(/发现 1 个关联工单/)).toBeInTheDocument();
+    const query = callsTo("ticket.findRelated").at(-1);
     expect(query?.input).toMatchObject({ policyNumbers: ["PA1", "PA2"] });
   });
 
@@ -146,27 +140,27 @@ describe("建单即时查重提示", () => {
     const phoneInput = screen.getByLabelText("客户电话（投保人）");
     fireEvent.change(phoneInput, { target: { value: "138" } });
     vi.advanceTimersByTime(1000);
-    expect(callsTo("ticket.findDuplicates")).toEqual([]);
+    expect(callsTo("ticket.findRelated")).toEqual([]);
 
     fireEvent.blur(phoneInput);
-    expect(await screen.findByText(/个工单使用相同客户电话/)).toBeInTheDocument();
-    expect(callsTo("ticket.findDuplicates").at(-1)?.input).toMatchObject({ phone: "138" });
+    expect(await screen.findByText(/发现 1 个关联工单/)).toBeInTheDocument();
+    expect(callsTo("ticket.findRelated").at(-1)?.input).toMatchObject({ phone: "138" });
   });
 });
 
 describe("建单提交 409 兜底", () => {
   function renderCreateConflict() {
+    let conflicted = false;
     renderCreate({
-      "ticket.create": (input: unknown) => {
-        if ((input as { allowDuplicate?: boolean }).allowDuplicate) {
-          return { id: "t9", workOrderNumber: "WO100099" };
-        }
+      "ticket.findRelated": () => (conflicted ? [dupRow()] : []),
+      "ticket.create": () => {
+        conflicted = true;
         throw conflictError();
       },
     });
   }
 
-  it("确认框列出重复工单，仍要创建带 allowDuplicate 重发", async () => {
+  it("提交命中后刷新关联结果，禁止重试创建", async () => {
     renderCreateConflict();
     await screen.findByRole("heading", { name: "新建工单" });
     fireEvent.change(screen.getByLabelText("客户电话（投保人）"), {
@@ -174,25 +168,13 @@ describe("建单提交 409 兜底", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
 
-    const confirmButton = await screen.findByRole("button", { name: "仍要创建" });
-    const confirmDialog = confirmButton.closest('[role="dialog"]') as HTMLElement;
-    expect(await within(confirmDialog).findByRole("link", { name: "WO100090" })).toHaveAttribute(
-      "target",
-      "_blank",
-    );
-
-    fireEvent.click(confirmButton);
-    await waitFor(() => expect(callsTo("ticket.create")).toHaveLength(2));
-    expect(callsTo("ticket.create")[1]?.input).toMatchObject({
-      phone: "13800001111",
-      allowDuplicate: true,
-    });
-    await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "新建工单" })).not.toBeInTheDocument(),
-    );
+    expect(await screen.findByRole("button", { name: "WO100090" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建工单" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "仍要创建" })).not.toBeInTheDocument();
+    expect(callsTo("ticket.create")).toHaveLength(1);
   });
 
-  it("取消确认框则不再提交，回到表单继续编辑", async () => {
+  it("提交冲突后保留录入内容，不自动创建", async () => {
     renderCreateConflict();
     await screen.findByRole("heading", { name: "新建工单" });
     fireEvent.change(screen.getByLabelText("客户电话（投保人）"), {
@@ -200,13 +182,8 @@ describe("建单提交 409 兜底", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
 
-    const confirmButton = await screen.findByRole("button", { name: "仍要创建" });
-    const confirmDialog = confirmButton.closest('[role="dialog"]') as HTMLElement;
-    fireEvent.click(within(confirmDialog).getByRole("button", { name: "取消" }));
-
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "仍要创建" })).not.toBeInTheDocument(),
-    );
+    await screen.findByRole("button", { name: "WO100090" });
+    expect(screen.getByLabelText("客户电话（投保人）")).toHaveValue("13800001111");
     expect(callsTo("ticket.create")).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "新建工单" })).toBeInTheDocument();
   });

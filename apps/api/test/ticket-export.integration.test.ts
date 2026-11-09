@@ -9,7 +9,11 @@ import type { Prisma, PrismaClient, Role, User } from "../src/generated/prisma/c
 import { appRouter } from "../src/routers/index.ts";
 import { buildServer } from "../src/server.ts";
 import { hashPassword } from "../src/services/auth.service.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type IntegrationHarness,
+  seedManualTicket,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -141,7 +145,7 @@ describe("ticket export (Testcontainers)", () => {
     input: Partial<TicketCreateInput> = {},
     row: Prisma.TicketUncheckedUpdateInput = {},
   ) {
-    const created = await manager().ticket.create({
+    const created = await seedManualTicket(harness, {
       ...baseInput,
       channelId: channelId("保司"),
       ...input,

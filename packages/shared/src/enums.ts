@@ -25,6 +25,7 @@ export const PROCESS_LOG_ACTIONS = [
   "resolve",
   "edit",
   "external_note",
+  "internal_note",
 ] as const;
 export const processLogActionSchema = z.enum(PROCESS_LOG_ACTIONS);
 export type ProcessLogAction = (typeof PROCESS_LOG_ACTIONS)[number];
@@ -38,6 +39,7 @@ export const PROCESS_LOG_ACTION_LABELS: Record<ProcessLogAction, string> = {
   resolve: "确认完结",
   edit: "编辑工单",
   external_note: "外部留言",
+  internal_note: "补充备注",
 };
 
 export const SHIFTS = ["day", "night"] as const;

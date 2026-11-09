@@ -64,16 +64,17 @@ describe("ticket creation + detail (Testcontainers)", () => {
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
 
+  let fixtureNumber = 0;
   const baseInput = () =>
     ({
       feedbackTime: "2026-07-09T02:00:00.000Z",
       project: "融盛",
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
-      policyNumbers: ["P2026070900123"],
+      policyNumbers: [`FIXTURE${++fixtureNumber}`],
       userFeedbackChannelId: harness.userFeedbackChannelId("保司400热线"),
       customerName: "王小明",
-      phone: "13800000000",
+      phone: `138${String(fixtureNumber).padStart(8, "0")}`,
       customerRequest: "对保费收取金额有异议，要求核实并回复",
       nuclearBodyStatus: "待核实",
       hasContacted: false,
@@ -265,8 +266,6 @@ describe("ticket creation + detail (Testcontainers)", () => {
   });
 
   it("keeps full digits past sequence value 999999 (no lpad truncation)", async () => {
-    // Jump the global sequence to the 6→7 digit boundary; gaps are allowed,
-    // so later tests are unaffected.
     await prisma.$executeRaw`SELECT setval('work_order_number_seq', 999999)`;
 
     const first = await manager().ticket.create(baseInput());
@@ -287,13 +286,10 @@ describe("ticket creation + detail (Testcontainers)", () => {
     it("data scope hides other people's tickets from users without ticket.view_all", async () => {
       const created = await manager().ticket.create(baseInput());
 
-      // cs1 holds ticket.view but not ticket.view_all, and the ticket is not
-      // assigned to them → invisible, surfaced as NOT_FOUND (no existence leak)
       await expect(frontline().ticket.detail({ id: created.id })).rejects.toMatchObject({
         code: "NOT_FOUND",
       });
 
-      // the read-only observer holds ticket.view_all → full detail visible
       const detail = await observer().ticket.detail({ id: created.id });
       expect(detail.workOrderNumber).toBe(created.workOrderNumber);
     });

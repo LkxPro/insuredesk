@@ -2,7 +2,11 @@ import type { Permission, TicketCreateInput } from "@insuredesk/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient, Role, User } from "../src/generated/prisma/client.ts";
 import { appRouter } from "../src/routers/index.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type IntegrationHarness,
+  seedManualTicket,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 describe("ticket resolve 完结 (Testcontainers)", () => {
   let harness: IntegrationHarness;
@@ -80,7 +84,7 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
   let baseInput: TicketCreateInput & { allowDuplicate?: boolean };
 
   async function createTicket() {
-    const created = await manager().ticket.create(baseInput);
+    const created = await seedManualTicket(harness, baseInput);
     return created.id;
   }
 
@@ -292,7 +296,11 @@ describe("ticket resolve 完结 (Testcontainers)", () => {
           "ticket.create",
           "ticket.process",
         ]);
-      const created = await creator().ticket.create(baseInput);
+      const created = await creator().ticket.create({
+        ...baseInput,
+        phone: null,
+        policyNumbers: [],
+      });
       await manager().ticket.assign({ ticketId: created.id, assigneeId: cs2.id });
 
       const result = await creator().ticket.resolve({

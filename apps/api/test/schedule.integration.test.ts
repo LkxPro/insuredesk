@@ -6,7 +6,11 @@ import { appRouter } from "../src/routers/index.ts";
 import type { AuthenticatedUser } from "../src/services/auth.service.ts";
 import { findOnDutyUserIds } from "../src/services/schedule.service.ts";
 import { autoAssignTicketsBySchedule } from "../src/services/ticket-assign.service.ts";
-import { type IntegrationHarness, startIntegrationHarness } from "./integration-harness.ts";
+import {
+  type IntegrationHarness,
+  seedManualTicket,
+  startIntegrationHarness,
+} from "./integration-harness.ts";
 
 describe("schedule workflow and schedule-based auto assignment (Testcontainers)", () => {
   let harness: IntegrationHarness;
@@ -20,7 +24,6 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
     });
     prisma = harness.prisma;
     seeded = harness.seeded;
-    // 渠道只是分类维度：造一张带渠道的单，证明路由对它视而不见
     seededChannelId = harness.channelId("保司");
   }, 180_000);
 
@@ -89,7 +92,7 @@ describe("schedule workflow and schedule-based auto assignment (Testcontainers)"
 
   async function createTicket(channelId: string | null = null) {
     return (
-      await manager().ticket.create({
+      await seedManualTicket(harness, {
         ...baseTicketInput,
         channelId,
         slaPolicyId: harness.slaPolicyId("一般投诉"),

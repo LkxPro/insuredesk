@@ -10,6 +10,7 @@ export const TICKET_PERMISSIONS = [
   "ticket.view",
   "ticket.view_all", // without this, only see tickets assigned to or created by oneself
   "ticket.create",
+  "ticket.relate_all",
   "ticket.edit",
   "ticket.process",
   "ticket.assign",
@@ -46,12 +47,6 @@ export const EXTERNAL_ROLE_PERMISSIONS = [
   "ticket.process_external",
 ] as const;
 
-/**
- * 外部角色判定. Never feed this the expanded permission set of a system role:
- * 管理员 expands to every positive point (external ones included) yet is an
- * internal account — pass the role's stored array, and treat system roles as
- * internal outright.
- */
 export function isExternalRole(role: { system: boolean; permissions: readonly string[] }): boolean {
   if (role.system) {
     return false;
@@ -76,9 +71,6 @@ export const SYSTEM_PERMISSIONS = [
   "dictionary.manage",
 ] as const;
 
-// Restrictive permissions: checked = forbidden, the inverse of every other
-// point. Kept in their own list so positive-permission consumers (admin
-// expansion, menu gating) can exclude them wholesale.
 export const RESTRICTIVE_PERMISSIONS = ["user.forbid_change_own_password"] as const;
 
 // All positive (grant-type) permissions — what the 管理员 system role expands
@@ -99,12 +91,6 @@ export const ALL_PERMISSIONS = [...POSITIVE_PERMISSIONS, ...RESTRICTIVE_PERMISSI
 export const permissionSchema = z.enum(ALL_PERMISSIONS);
 export type Permission = (typeof ALL_PERMISSIONS)[number];
 
-/**
- * Human-readable labels for the 权限点清单, used by the 角色权限 checklist UI.
- * user.delete is labelled 禁用/启用 rather than "删除用户": accounts are never
- * hard deleted (they anchor tickets, logs, and rosters), so the label says what
- * the permission actually grants.
- */
 export const PERMISSION_LABELS: Record<Permission, string> = {
   "dashboard.view": "访问数据看板",
   "dashboard.view_all": "查看全部数据",
@@ -112,6 +98,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "ticket.view": "访问工单列表",
   "ticket.view_all": "查看全部工单",
   "ticket.create": "新增工单",
+  "ticket.relate_all": "跨范围关联并追加备注",
   "ticket.edit": "编辑工单基本信息",
   "ticket.process": "处理工单",
   "ticket.assign": "分配工单",
