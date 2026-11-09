@@ -4,6 +4,27 @@ import { auth, callsTo, renderApp, userWith } from "@/test/renderApp";
 import "./TicketsPage";
 import { detailPayload } from "./detail-pane-fixtures";
 
+it("勾选无保单号清空输入，取消勾选不恢复原号码", async () => {
+  auth.user = userWith({ name: "录入", permissions: ["ticket.view", "ticket.create"] });
+  renderApp({ path: "/tickets/new" });
+  const input = await screen.findByRole("textbox", { name: "保单号" });
+  fireEvent.change(input, { target: { value: "POL20261109001" } });
+  const checkbox = screen.getByRole("checkbox", { name: "无保单号" });
+  fireEvent.click(checkbox);
+  expect(input).toHaveValue("");
+  expect(input).toBeDisabled();
+  fireEvent.click(checkbox);
+  expect(input).toBeEnabled();
+  expect(input).toHaveValue("");
+  fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "创建工单" }));
+  await waitFor(() => expect(callsTo("ticket.create")).toHaveLength(1));
+  expect(callsTo("ticket.create")[0]?.input).toMatchObject({
+    noPolicyNumber: true,
+    policyNumbers: [],
+  });
+});
+
 it("命中后禁止新建，可查看原单并追加内部备注，成功后停留原单", async () => {
   auth.user = userWith({
     name: "录入",
