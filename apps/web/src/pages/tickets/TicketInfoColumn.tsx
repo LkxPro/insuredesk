@@ -46,11 +46,13 @@ function RefundInfoColumn({
   editing,
   form,
   fieldAddon,
+  readOnly,
 }: {
   ticket: TicketDetail;
   editing: boolean;
   form: UseFormReturn<RefundEditFormValues>;
   fieldAddon?: (name: TicketCreateFieldKey) => ReactNode;
+  readOnly?: boolean;
 }) {
   const { dirtyFields, errors } = form.formState;
   const field = (name: "contactPhone" | "slaPolicyId") => (
@@ -90,6 +92,7 @@ function RefundInfoColumn({
 
       <RefundModule
         ticket={ticket}
+        readOnly={readOnly}
         contactPhoneField={editing ? field("contactPhone") : undefined}
       />
 
@@ -110,12 +113,14 @@ export function TicketInfoColumn({
   form,
   refundForm,
   fieldAddon,
+  readOnly,
 }: {
   ticket: TicketDetail;
   editing: boolean;
   form: UseFormReturn<TicketFormValues>;
   refundForm: UseFormReturn<RefundEditFormValues>;
   fieldAddon?: (name: TicketCreateFieldKey) => ReactNode;
+  readOnly?: boolean;
 }) {
   const { dirtyFields, errors } = form.formState;
   const field = (name: TicketCreateFieldKey) => (
@@ -136,6 +141,7 @@ export function TicketInfoColumn({
         ticket={ticket}
         editing={editing}
         form={refundForm}
+        readOnly={readOnly}
         fieldAddon={fieldAddon}
       />
     );
@@ -143,7 +149,6 @@ export function TicketInfoColumn({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* 工单号不在这里：头部已经挂着它，重复一遍白占一格 */}
       <Section title="基本信息">
         <Item label="创建时间">{formatDateTime(ticket.createdAt)}</Item>
         <Item label="更新时间">{formatDateTime(ticket.updatedAt)}</Item>

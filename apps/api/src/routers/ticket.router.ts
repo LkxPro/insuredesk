@@ -2,6 +2,7 @@ import {
   editComplaintInputSchema,
   editRefundInputSchema,
   ticketAddCommentInputSchema,
+  ticketAddRelatedNoteInputSchema,
   ticketAssignInputSchema,
   ticketAutoAssignInputSchema,
   ticketBatchAssignInputSchema,
@@ -11,6 +12,8 @@ import {
   ticketImportBatchListInputSchema,
   ticketImportRevokeInputSchema,
   ticketListInputSchema,
+  ticketRelatedDetailInputSchema,
+  ticketRelatedMatchSchema,
   ticketResolveInputSchema,
   ticketUpdateRefundCompensationInputSchema,
 } from "@insuredesk/shared";
@@ -64,6 +67,7 @@ import {
   listImportBatches,
   revokeImportBatch,
 } from "../services/ticket-import-batch.service.ts";
+import { addRelatedTicketNote, findRelatedTickets } from "../services/ticket-related.service.ts";
 import { resolveTicket, TicketNotResolvableError } from "../services/ticket-resolve.service.ts";
 import { requireAnyPermission, requirePermission, router } from "../trpc.ts";
 
@@ -115,8 +119,8 @@ export const ticketRouter = router({
     .input(ticketCreateInputSchema.extend({ allowDuplicate: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       try {
-        const { allowDuplicate, ...data } = input;
-        const ticket = await createTicket(deps, ctx.user, data, { allowDuplicate });
+        const { allowDuplicate: _allowDuplicate, ...data } = input;
+        const ticket = await createTicket(deps, ctx.user, data);
         return { id: ticket.id, workOrderNumber: ticket.workOrderNumber };
       } catch (error) {
         if (error instanceof SlaPolicyNotConfiguredError) {
@@ -146,6 +150,26 @@ export const ticketRouter = router({
   findDuplicates: requirePermission("ticket.view")
     .input(ticketFindDuplicatesInputSchema)
     .query(({ input }) => findDuplicateTickets(deps, input)),
+
+  findRelated: requirePermission("ticket.create")
+    .input(ticketRelatedMatchSchema)
+    .query(({ ctx, input }) => findRelatedTickets(deps, ctx.user, input)),
+
+  relatedDetail: requirePermission("ticket.create")
+    .input(ticketRelatedDetailInputSchema)
+    .query(async ({ ctx, input }) => {
+      const detail = await getTicketDetail(deps, ctx.user, input.ticketId, input.match);
+      if (!detail)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "工单已完结、已删除或不再符合关联权限和条件",
+        });
+      return detail;
+    }),
+
+  addRelatedNote: requirePermission("ticket.create")
+    .input(ticketAddRelatedNoteInputSchema)
+    .mutation(({ ctx, input }) => addRelatedTicketNote(deps, ctx.user, input)),
 
   list: requirePermission("ticket.view")
     .input(ticketListInputSchema)

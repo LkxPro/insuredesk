@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { isExternalRole, type Permission, TicketKindKey } from "@insuredesk/shared";
+import {
+  isExternalRole,
+  type Permission,
+  type TicketCreateInput,
+  TicketKindKey,
+  ticketCreateInputSchema,
+} from "@insuredesk/shared";
 import { inject } from "vitest";
 import {
   seedChannels,
@@ -15,6 +21,7 @@ import { prisma } from "../src/db.ts";
 import type { Prisma, PrismaClient, Role, Ticket, User } from "../src/generated/prisma/client.ts";
 import { appRouter } from "../src/routers/index.ts";
 import { type AuthenticatedUser, effectivePermissions } from "../src/services/auth.service.ts";
+import { createTicket } from "../src/services/ticket.service.ts";
 import { requireTicketKindId } from "../src/services/ticket-kind.service.ts";
 import { migrateDeploy, runAdminSql, TEMPLATE_DB, uriForDatabase } from "./shared-postgres.ts";
 
@@ -103,6 +110,18 @@ export interface IntegrationHarness {
   callerFor(user: User, role: Role): Caller;
   callerWith(user: User, role: Role, permissions: Permission[]): Caller;
   stop(): Promise<void>;
+}
+
+export function seedManualTicket(
+  harness: IntegrationHarness,
+  input: TicketCreateInput & { allowDuplicate?: boolean },
+) {
+  return createTicket(
+    harness.deps,
+    harness.authUserFor(harness.seeded.users.manager, harness.seeded.roles.csManager),
+    ticketCreateInputSchema.parse(input),
+    { allowDuplicate: true },
+  );
 }
 
 function seedSetNotDeclared(seedSet: SeedSetName): Error {

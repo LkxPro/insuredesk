@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { TicketCreateInput } from "@insuredesk/shared";
+import type { TicketDuplicateMatchField, TicketRelatedMatch } from "@insuredesk/shared";
 import { format } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -20,7 +20,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
-import { DuplicateConfirmDialog } from "./TicketDuplicates";
+import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
+import { TicketDetailPane } from "./TicketDetailPane";
+import { useTicketMatchInput } from "./TicketDuplicates";
 import {
   buildTicketFormSchema,
   TicketFormFields,
@@ -28,14 +30,6 @@ import {
   ticketFormValuesToInput,
 } from "./TicketFormFields";
 
-/**
- * 手工建单多在客户刚反馈后，默认 feedbackTime 为当前时间省一步操作；清空按钮
- * 兜住"反馈时间未知"的少数场景，提交为 null。
- *
- * Every field is listed so isDirty compares against a complete baseline: a
- * pristine form (仅默认 feedbackTime) or one typed into and erased back is
- * not dirty, and closing it never asks 丢弃修改？.
- */
 function createDefaults(): TicketFormValues {
   return {
     feedbackTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
@@ -75,8 +69,9 @@ export function TicketCreateDialog({
   const { user } = useAuth();
   const utils = trpc.useUtils();
   const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
-  const [duplicateConflict, setDuplicateConflict] = useState<{
-    payload: TicketCreateInput & { allowDuplicate?: boolean };
+  const [relatedSelection, setRelatedSelection] = useState<{
+    id: string;
+    match: TicketRelatedMatch;
   } | null>(null);
 
   const requiredFields = user?.requiredTicketFields ?? [];
@@ -87,6 +82,42 @@ export function TicketCreateDialog({
     defaultValues: createDefaults(),
   });
   const { isDirty, isSubmitting } = form.formState;
+  const match = useTicketMatchInput(form);
+  const queryable =
+    match.policyNumbers.length > 0 || match.phone !== null || match.contactPhone !== null;
+  const related = trpc.ticket.findRelated.useQuery(match, {
+    enabled: open && queryable,
+    retry: false,
+  });
+  const matches = queryable ? (related.data ?? []) : [];
+
+  function fieldAddon(field: TicketDuplicateMatchField) {
+    const hits = matches.filter((ticket) => ticket.matchedFields.includes(field));
+    if (hits.length === 0) return null;
+    return (
+      <Alert>
+        <AlertTitle>发现 {hits.length} 个关联工单，请追加备注</AlertTitle>
+        <AlertDescription>
+          <ul className="flex max-h-48 flex-col gap-2 overflow-y-auto">
+            {hits.map((ticket) => (
+              <li key={ticket.id} className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  onClick={() => setRelatedSelection({ id: ticket.id, match })}
+                >
+                  {ticket.workOrderNumber}
+                </Button>
+                <StatusBadge status={ticket.displayStatus} />
+                <span>{ticket.customerName ?? "—"}</span>
+              </li>
+            ))}
+          </ul>
+        </AlertDescription>
+      </Alert>
+    );
+  }
 
   // /tickets and /tickets/new render this same page without remounting, so the
   // page-load defaultValues would keep a stale feedbackTime; resetting on open
@@ -94,6 +125,7 @@ export function TicketCreateDialog({
   useEffect(() => {
     if (open) {
       form.reset(createDefaults());
+      setRelatedSelection(null);
     }
   }, [open, form]);
 
@@ -101,15 +133,12 @@ export function TicketCreateDialog({
     onSuccess: (ticket) => {
       toast.success(`工单 ${ticket.workOrderNumber} 已创建`);
       utils.ticket.list.invalidate();
-      setDuplicateConflict(null);
       onCreated?.(ticket);
       onOpenChange(false);
     },
-    onError: (error, variables) => {
-      // 409 = 服务端兜底查重命中：拦下创建，弹阻断确认框；其余错误走底部 Alert
+    onError: (error) => {
       if (error.data?.code === "CONFLICT") {
-        create.reset();
-        setDuplicateConflict({ payload: variables });
+        utils.ticket.findRelated.invalidate();
       }
     },
   });
@@ -118,8 +147,6 @@ export function TicketCreateDialog({
 
   const busy = isSubmitting || create.isPending;
 
-  // Every close path (outside click, X, Esc, 取消) funnels through Radix's
-  // onOpenChange; a dirty form diverts to the 丢弃修改？ confirmation.
   const requestClose = () => {
     if (busy) return;
     if (isDirty) {
@@ -132,7 +159,7 @@ export function TicketCreateDialog({
   return (
     <>
       <Dialog
-        open={open}
+        open={open && !relatedSelection}
         onOpenChange={(next) => {
           if (!next) requestClose();
         }}
@@ -147,7 +174,7 @@ export function TicketCreateDialog({
 
           <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col" noValidate>
             <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
-              <TicketFormFields form={form} />
+              <TicketFormFields form={form} fieldAddon={fieldAddon} />
             </div>
 
             <div className="flex flex-col gap-3 border-t px-6 py-4">
@@ -164,7 +191,7 @@ export function TicketCreateDialog({
                     取消
                   </Button>
                 </DialogClose>
-                <Button type="submit" disabled={busy}>
+                <Button type="submit" disabled={busy || matches.length > 0}>
                   {create.isPending && <Spinner data-icon="inline-start" />}
                   {create.isPending ? "创建中…" : "创建工单"}
                 </Button>
@@ -183,23 +210,41 @@ export function TicketCreateDialog({
         }}
       />
 
-      <DuplicateConfirmDialog
-        values={
-          duplicateConflict
-            ? {
-                policyNumbers: duplicateConflict.payload.policyNumbers ?? [],
-                phone: duplicateConflict.payload.phone ?? null,
-                contactPhone: duplicateConflict.payload.contactPhone ?? null,
-              }
-            : null
-        }
-        confirmLabel="仍要创建"
-        confirming={create.isPending}
-        onConfirm={() =>
-          duplicateConflict && create.mutate({ ...duplicateConflict.payload, allowDuplicate: true })
-        }
-        onCancel={() => setDuplicateConflict(null)}
-      />
+      <Dialog
+        open={open && !!relatedSelection}
+        onOpenChange={(next) => {
+          if (!next) setRelatedSelection(null);
+        }}
+      >
+        <DialogContent
+          className="flex h-[90svh] flex-col gap-0 p-0 sm:max-w-6xl"
+          showCloseButton={false}
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>关联工单详情</DialogTitle>
+            <DialogDescription>查看已有工单并追加内部备注</DialogDescription>
+          </DialogHeader>
+          {relatedSelection && (
+            <TicketDetailPane
+              ticketId={relatedSelection.id}
+              relatedMatch={relatedSelection.match}
+              onClose={() => {
+                setRelatedSelection(null);
+                utils.ticket.findRelated.invalidate();
+              }}
+              onSwitch={() => {}}
+              onCrossPage={() => {}}
+              nav={{
+                prev: null,
+                next: null,
+                inSlice: false,
+                hasPrevPage: false,
+                hasNextPage: false,
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

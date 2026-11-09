@@ -1,3 +1,4 @@
+import type { TicketRelatedMatch } from "@insuredesk/shared";
 import {
   applyNoPolicyNumber,
   CALLBACK_DELIVERY_STATUSES,
@@ -34,8 +35,13 @@ import { feedbackReceiveChannelCatalog } from "./feedback-receive-channel.servic
 import { toTicketAddressColumns } from "./ticket-address.service.ts";
 import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { displayStatusTicketWhere } from "./ticket-display-status.ts";
-import { assertNoDuplicateTickets } from "./ticket-duplicate.service.ts";
+import { DuplicateTicketsFoundError } from "./ticket-duplicate.service.ts";
 import { requireTicketKindId } from "./ticket-kind.service.ts";
+import {
+  findRelatedTickets,
+  lockRelatedTicketMatch,
+  relatedTicketWhere,
+} from "./ticket-related.service.ts";
 import { userFeedbackChannelCatalog } from "./user-feedback-channel.service.ts";
 
 export interface TicketServiceDeps {
@@ -197,16 +203,15 @@ export async function createTicket(
 
   return prisma.$transaction(async (tx) => {
     // 提交兜底查重：与插入同事务，命中即整体回滚；批量导入不经此路，天然豁免
-    if (!options?.allowDuplicate) {
-      await assertNoDuplicateTickets(
-        { prisma: tx, clock },
-        {
+    if (!options?.allowDuplicate) await lockRelatedTicketMatch(tx, data);
+    const related = options?.allowDuplicate
+      ? []
+      : await findRelatedTickets({ prisma: tx, clock }, creator, {
           policyNumbers: data.policyNumbers,
           phone: data.phone,
           contactPhone: data.contactPhone,
-        },
-      );
-    }
+        });
+    if (related.length > 0) throw new DuplicateTicketsFoundError(related.length);
     // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
     await ticketCategoryCatalog.resolveNewRef(tx, data.categoryId);
     await channelCatalog.resolveNewRef(tx, data.channelId);
@@ -438,7 +443,6 @@ export function buildTicketListOrderBy(
     query.sortBy === "dueAt"
       ? { dueAt: { sort: query.sortOrder, nulls: "last" } }
       : { createdAt: query.sortOrder };
-  // id breaks ordering ties so pagination never skips or repeats a row
   return [orderBy, { id: "desc" }];
 }
 
@@ -510,7 +514,6 @@ const detailInclude = {
   assignee: { select: { name: true } },
   slaPolicy: { select: { id: true, name: true, active: true } },
   kind: { select: { key: true } },
-  // 完结状态 is display-only on the detail page — the CURRENT name suffices
   completionStatus: { select: { name: true } },
   // 退费行无 detail：详情 DTO 的下沉字段键保留、值恒为 null（web 形状契约）
   complaintDetail: {
@@ -536,9 +539,14 @@ export async function getTicketDetail(
   { prisma, clock }: TicketServiceDeps,
   viewer: AuthenticatedUser,
   ticketId: string,
+  relatedMatch?: TicketRelatedMatch,
 ) {
   const ticket = await prisma.ticket.findFirst({
-    where: { id: ticketId, deletedAt: null, ...applyTicketDataScope(viewer) },
+    where: {
+      id: ticketId,
+      deletedAt: null,
+      ...(relatedMatch ? relatedTicketWhere(viewer, relatedMatch) : applyTicketDataScope(viewer)),
+    },
     include: detailInclude,
   });
   return ticket === null ? null : serializeTicketDetail(ticket, clock.now());

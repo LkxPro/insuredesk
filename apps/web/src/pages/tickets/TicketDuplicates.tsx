@@ -47,10 +47,7 @@ interface DuplicatesWatchForm {
   formState: { touchedFields: Partial<Record<"phone" | "contactPhone", boolean>> };
 }
 
-export function useTicketDuplicates(
-  form: DuplicatesWatchForm,
-  options?: { excludeTicketId?: string; enabled?: boolean },
-) {
+export function useTicketMatchInput(form: DuplicatesWatchForm) {
   const policyNumbersText = form.watch("policyNumbers");
   const phone = form.watch("phone");
   const contactPhone = form.watch("contactPhone");
@@ -82,6 +79,15 @@ export function useTicketDuplicates(
     const timer = setTimeout(() => setDebounced(input), DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [input]);
+
+  return debounced;
+}
+
+export function useTicketDuplicates(
+  form: DuplicatesWatchForm,
+  options?: { excludeTicketId?: string; enabled?: boolean },
+) {
+  const debounced = useTicketMatchInput(form);
 
   const queryable =
     debounced.policyNumbers.length > 0 ||

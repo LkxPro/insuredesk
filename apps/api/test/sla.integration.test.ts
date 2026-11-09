@@ -69,16 +69,17 @@ describe("SLA 策略配置 (Testcontainers)", () => {
   const frontline = () => callerFor(seeded.users.cs1, seeded.roles.frontline);
   const observer = () => callerFor(seeded.users.observer, seeded.roles.readOnly);
 
+  let fixtureNumber = 0;
   const baseInput = () =>
     ({
       feedbackTime: "2026-07-09T02:00:00.000Z",
       project: "融盛",
       brokerageEntity: "东方大地",
       paymentChannel: "连连支付",
-      policyNumbers: ["SLA2026071000001"],
+      policyNumbers: [`FIXTURE${++fixtureNumber}`],
       userFeedbackChannelId: null,
       customerName: "王小明",
-      phone: "13800000000",
+      phone: `138${String(fixtureNumber).padStart(8, "0")}`,
       customerRequest: "对保费收取金额有异议，要求核实并回复",
       nuclearBodyStatus: "待核实",
       hasContacted: false,
@@ -98,7 +99,6 @@ describe("SLA 策略配置 (Testcontainers)", () => {
   }
 
   it("registers sla.view / sla.edit and factory-grants them to 管理员 only", () => {
-    // 管理员动态持有全量权限点,两个点进 ALL_PERMISSIONS 即归管理员
     expect(ALL_PERMISSIONS).toContain("sla.view");
     expect(ALL_PERMISSIONS).toContain("sla.edit");
     for (const role of [seeded.roles.csManager, seeded.roles.frontline, seeded.roles.readOnly]) {
@@ -236,14 +236,11 @@ describe("SLA 策略配置 (Testcontainers)", () => {
         where: { ticketId: created.id, action: "comment" },
         orderBy: { at: "desc" },
       });
-      // One frozen instant 3h after the comment, evaluated before and after
-      // the policy change — only the rule differs between the two reads.
       const clock = { now: () => new Date(comment.at.getTime() + 3 * HOUR_MS) };
       const viewer = identityOf(seeded.users.cs1, seeded.roles.frontline);
 
       const before = await listMyTodos({ prisma, clock }, viewer);
       const beforeAlerts = before.items.find((item) => item.ticketId === created.id)?.alerts ?? [];
-      // Default rule is every 12h — a 3h gap alerts nobody
       expect(beforeAlerts.some((alert) => alert.type === "rolling_follow_up")).toBe(false);
 
       await admin().sla.update({

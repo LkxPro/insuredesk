@@ -77,7 +77,11 @@ function defaultData(path: string): unknown {
   if (path === "ticket.assigneeOptions" || path === "ticket.creatorOptions") {
     return [];
   }
-  if (path === "ticket.findDuplicates" || path === "externalTicket.findRelated") {
+  if (
+    path === "ticket.findDuplicates" ||
+    path === "ticket.findRelated" ||
+    path === "externalTicket.findRelated"
+  ) {
     return [];
   }
   return { items: [], total: 0, page: 1, pageSize: 20 };

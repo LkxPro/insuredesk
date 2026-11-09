@@ -12,14 +12,15 @@ export type TimelineLog = {
   remark: string | null;
 };
 
-type CommunicationAction = Extract<ProcessLogAction, "external_note" | "comment">;
+type CommunicationAction = Extract<ProcessLogAction, "external_note" | "comment" | "internal_note">;
 
 function isCommunication(action: ProcessLogAction): action is CommunicationAction {
-  return action === "external_note" || action === "comment";
+  return action === "external_note" || action === "comment" || action === "internal_note";
 }
 
 /** 类型色只表达留言/跟进分类；"谁发的"由气泡左右位置表达，不在颜色里。 */
 const COMM_TINT: Record<CommunicationAction, { badge: string; box: string }> = {
+  internal_note: { badge: "bg-muted text-muted-foreground", box: "bg-muted" },
   external_note: {
     badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300",
     box: "bg-blue-50 dark:bg-blue-950/40",
@@ -32,10 +33,6 @@ const COMM_TINT: Record<CommunicationAction, { badge: string; box: string }> = {
 
 type EditDiffSegment = { label: string; from: string | null; to: string | null; raw: string };
 
-/**
- * edit 留痕 remark 是审计串（"字段: 旧值→新值；…"），不是结构化数据——值里
- * 若含 "→"/"；" 会切错。按首个 ": " 与首个 "→" 解析，解析失败的段整段原文兜底。
- */
 function parseEditRemark(remark: string): EditDiffSegment[] {
   return remark
     .split("；")
@@ -120,7 +117,6 @@ export function TicketTimelineColumn({
 }: {
   logs: readonly TimelineLog[];
   composer?: ReactNode;
-  /** 从当前查看者视角"对方发出"的 action。 */
   incomingActions?: readonly ProcessLogAction[];
   completionStatus?: string | null;
 }) {

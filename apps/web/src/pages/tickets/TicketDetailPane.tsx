@@ -4,6 +4,7 @@ import {
   type EditRefundInput,
   isTicketInFlight,
   TicketKindKey,
+  type TicketRelatedMatch,
 } from "@insuredesk/shared";
 import { AlertCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,6 +26,7 @@ import type {
 import { StatusBadge } from "@/pages/ticket-surface/StatusBadge";
 import { TicketTimelineColumn } from "@/pages/ticket-surface/TicketTimelineColumn";
 import { AddCommentCard } from "./AddCommentCard";
+import { AddRelatedNoteCard } from "./AddRelatedNoteCard";
 import { AssignTicketDialog } from "./AssignTicketDialog";
 import { DeleteTicketDialog } from "./DeleteTicketDialog";
 import { ResolveTicketDialog } from "./ResolveTicketDialog";
@@ -62,12 +64,14 @@ export function TicketDetailPane({
   onSwitch,
   onCrossPage,
   nav,
+  relatedMatch,
 }: {
   ticketId: string;
   onClose: () => void;
   onSwitch: (ticketId: string) => void;
   onCrossPage: (direction: CrossPageDirection) => void;
   nav: DetailNav;
+  relatedMatch?: TicketRelatedMatch;
 }) {
   const { hasPermission } = useAuth();
   const utils = trpc.useUtils();
@@ -78,8 +82,16 @@ export function TicketDetailPane({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [duplicateConflict, setDuplicateConflict] = useState<DuplicateConflict | null>(null);
 
-  const detailQuery = trpc.ticket.detail.useQuery({ id: ticketId }, { enabled: !!ticketId });
-  const ticket = detailQuery.data ?? null;
+  const ordinaryQuery = trpc.ticket.detail.useQuery(
+    { id: ticketId },
+    { enabled: !!ticketId && !relatedMatch },
+  );
+  const relatedQuery = trpc.ticket.relatedDetail.useQuery(
+    { ticketId, match: relatedMatch ?? {} },
+    { enabled: !!ticketId && !!relatedMatch, retry: false },
+  );
+  const detailQuery = relatedMatch ? relatedQuery : ordinaryQuery;
+  const ticket = detailQuery.error ? null : (detailQuery.data ?? null);
   const isRefund = ticket?.kindKey === TicketKindKey.RefundException;
 
   const form = useForm<TicketFormValues>({
@@ -101,7 +113,6 @@ export function TicketDetailPane({
   });
   const duplicates = isRefund ? refundDuplicates : complaintDuplicates;
 
-  // 字段、SLA 派生与时间线都在服务端变，回读而非本地拼
   function onEditSuccess(result: { workOrderNumber: string }) {
     toast.success(`工单 ${result.workOrderNumber} 已更新`);
     setEditing(false);
@@ -113,7 +124,6 @@ export function TicketDetailPane({
   const editComplaint = trpc.ticket.editComplaint.useMutation({
     onSuccess: onEditSuccess,
     onError: (error, variables) => {
-      // 409 = 服务端兜底查重命中：拦下保存，弹阻断确认框；其余错误走顶部 Alert
       if (error.data?.code === "CONFLICT") {
         editComplaint.reset();
         setDuplicateConflict({ kind: "complaint", payload: variables });
@@ -180,7 +190,6 @@ export function TicketDetailPane({
   }
 
   function guardEmptyDiff(isDirty: boolean): boolean {
-    // 服务端也会把空 diff 判成无效编辑，这里省一次往返并说清楚
     if (isDirty) return false;
     toast.warning("未修改任何字段");
     setEditing(false);
@@ -217,7 +226,8 @@ export function TicketDetailPane({
       title={ticket?.workOrderNumber}
       status={ticket && <StatusBadge status={ticket.displayStatus} />}
       actions={
-        ticket && (
+        ticket &&
+        !relatedMatch && (
           <>
             {editing && (
               <>
@@ -294,7 +304,7 @@ export function TicketDetailPane({
         </Button>
       }
     >
-      {ticket && <DuplicateTicketsBanner ticket={ticket} />}
+      {ticket && !relatedMatch && <DuplicateTicketsBanner ticket={ticket} />}
 
       {detailQuery.error ? (
         <Alert variant="destructive" className="m-4">
@@ -322,6 +332,7 @@ export function TicketDetailPane({
               editing={editing}
               form={form}
               refundForm={refundForm}
+              readOnly={!!relatedMatch}
               fieldAddon={(name) =>
                 name === "policyNumbers" || name === "phone" || name === "contactPhone" ? (
                   <DuplicateFieldHint field={name} duplicates={duplicates} />
@@ -339,7 +350,9 @@ export function TicketDetailPane({
               logs={ticket.processLogs}
               completionStatus={ticket.completionStatus}
               composer={
-                hasPermission("ticket.process") && isTicketInFlight(ticket.status) ? (
+                relatedMatch ? (
+                  <AddRelatedNoteCard key={ticket.id} ticketId={ticket.id} match={relatedMatch} />
+                ) : hasPermission("ticket.process") && isTicketInFlight(ticket.status) ? (
                   <AddCommentCard ticketId={ticket.id} />
                 ) : undefined
               }

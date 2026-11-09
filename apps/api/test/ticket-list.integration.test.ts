@@ -6,6 +6,7 @@ import { listTickets } from "../src/services/ticket.service.ts";
 import {
   createComplaintTickets,
   type IntegrationHarness,
+  seedManualTicket,
   startIntegrationHarness,
 } from "./integration-harness.ts";
 
@@ -72,7 +73,7 @@ describe("ticket list (Testcontainers)", () => {
     input: Partial<TicketCreateInput> = {},
     row: Prisma.TicketUncheckedUpdateInput = {},
   ) {
-    const created = await manager().ticket.create({
+    const created = await seedManualTicket(harness, {
       ...baseInput(),
       channelId: channelId("保司"),
       ...input,
@@ -435,6 +436,8 @@ describe("ticket list (Testcontainers)", () => {
       );
       const createdByMe = await creator().ticket.create({
         ...baseInput(),
+        phone: null,
+        policyNumbers: [],
         customerName: "我创建主管处理",
       });
       await manager().ticket.assign({

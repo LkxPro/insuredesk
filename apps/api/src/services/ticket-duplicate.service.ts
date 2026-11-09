@@ -56,11 +56,7 @@ function matchedFieldsOf(
   return fields;
 }
 
-export async function findDuplicateTickets(
-  { prisma, clock }: TicketDuplicateDeps,
-  query: TicketFindDuplicatesQuery,
-  externalScope?: { creatorId: string },
-) {
+export function ticketMatchWhere(query: TicketFindDuplicatesQuery): Prisma.TicketWhereInput {
   const policyNumbers = query.policyNumbers.filter((value) => MATCHABLE_POLICY_NUMBER.test(value));
   const phones = [query.phone, query.contactPhone].filter(
     (value): value is string => value !== null,
@@ -72,9 +68,16 @@ export async function findDuplicateTickets(
   if (phones.length > 0) {
     branches.push({ complaintDetail: { phone: { in: phones } } }, { contactPhone: { in: phones } });
   }
-  if (branches.length === 0) {
-    return [];
-  }
+  return branches.length ? { OR: branches } : { id: { in: [] } };
+}
+
+export async function findDuplicateTickets(
+  { prisma, clock }: TicketDuplicateDeps,
+  query: TicketFindDuplicatesQuery,
+  externalScope?: { creatorId: string },
+  relatedScope?: Prisma.TicketWhereInput,
+) {
+  const policyNumbers = query.policyNumbers.filter((value) => MATCHABLE_POLICY_NUMBER.test(value));
 
   const rows = await prisma.ticket.findMany({
     where: {
@@ -83,7 +86,7 @@ export async function findDuplicateTickets(
         ? { creatorId: externalScope.creatorId, status: { not: "completed" } }
         : {}),
       ...(query.excludeTicketId ? { id: { not: query.excludeTicketId } } : {}),
-      OR: branches,
+      AND: [ticketMatchWhere(query), ...(relatedScope ? [relatedScope] : [])],
     },
     select: {
       id: true,
@@ -103,7 +106,16 @@ export async function findDuplicateTickets(
                 { action: "comment", internalOnly: false },
               ],
             }
-          : { action: { in: ["resolve", "comment", "external_note"] } },
+          : {
+              action: {
+                in: [
+                  "resolve",
+                  "comment",
+                  "external_note",
+                  ...(relatedScope ? ["internal_note"] : []),
+                ],
+              },
+            },
         orderBy: [{ at: "desc" }, { id: "desc" }],
         take: 1,
       },
@@ -135,7 +147,7 @@ export async function findDuplicateTickets(
       b.createdAt.getTime() - a.createdAt.getTime() ||
       b.id.localeCompare(a.id),
   );
-  return mapped.slice(0, TICKET_DUPLICATES_LIMIT).map((row) => ({
+  return (relatedScope ? mapped : mapped.slice(0, TICKET_DUPLICATES_LIMIT)).map((row) => ({
     ...row,
     createdAt: row.createdAt.toISOString(),
     activityAt: row.activityAt.toISOString(),
