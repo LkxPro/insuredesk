@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 import { DateTimePicker } from "@/components/DateTimePicker";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
   FieldError,
@@ -200,14 +201,32 @@ export function PolicyNumbersControl({
   form: UseFormReturn<TicketFormValues>;
   invalid: boolean;
 }) {
+  const none = form.watch("noPolicyNumber") === true;
   return (
-    <Input
-      id="policyNumbers"
-      aria-invalid={invalid}
-      {...form.register("policyNumbers", {
-        onChange: () => form.setValue("noPolicyNumber", false, { shouldDirty: true }),
-      })}
-    />
+    <div className="flex flex-col gap-1.5">
+      <Input
+        id="policyNumbers"
+        aria-invalid={invalid}
+        disabled={none}
+        {...form.register("policyNumbers")}
+      />
+      <div className="flex items-center gap-1.5">
+        <Checkbox
+          id="noPolicyNumber"
+          checked={none}
+          onCheckedChange={(checked) => {
+            const next = checked === true;
+            form.setValue("noPolicyNumber", next, { shouldDirty: true, shouldValidate: true });
+            if (next) {
+              form.setValue("policyNumbers", "", { shouldDirty: true, shouldValidate: true });
+            }
+          }}
+        />
+        <FieldLabel htmlFor="noPolicyNumber" className="font-normal text-muted-foreground">
+          无保单号
+        </FieldLabel>
+      </div>
+    </div>
   );
 }
 
