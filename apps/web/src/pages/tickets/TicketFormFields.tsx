@@ -21,7 +21,6 @@ import type { ReactNode } from "react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 import { DateTimePicker } from "@/components/DateTimePicker";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
   FieldError,
@@ -58,7 +57,6 @@ export function buildTicketFormSchema(requiredFields: readonly string[]) {
 
   const requiredExtension: Record<string, z.ZodTypeAny> = {};
   for (const key of TICKET_CREATE_FIELD_KEYS) {
-    // 保单号的必填判定在对象级（勾选「无保单号」算明确表态）
     if (requiredFields.includes(key) && key !== "policyNumbers") {
       requiredExtension[key] = requiredFieldSchema(TICKET_FIELDS[key]);
     }
@@ -195,10 +193,6 @@ export type RefundEditFormValues = z.input<typeof refundEditFormSchema>;
 
 export const UNSET = "__unset__";
 
-/**
- * 「无保单号」勾选框：无 = 明确没有保单号（与留空未填写不同）；
- * 取消勾选不恢复已清空的原文。
- */
 export function PolicyNumbersControl({
   form,
   invalid,
@@ -206,30 +200,14 @@ export function PolicyNumbersControl({
   form: UseFormReturn<TicketFormValues>;
   invalid: boolean;
 }) {
-  const none = form.watch("noPolicyNumber") === true;
   return (
-    <div className="flex flex-col gap-1.5">
-      <Input
-        id="policyNumbers"
-        aria-invalid={invalid}
-        disabled={none}
-        {...form.register("policyNumbers")}
-      />
-      {/* biome-ignore lint/a11y/noLabelWithoutControl: Radix Checkbox 渲染为 button（可标签元素），整行点击经 label 激活它；biome 只认原生 input */}
-      <label className="flex w-fit cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
-        <Checkbox
-          checked={none}
-          onCheckedChange={(checked) => {
-            const next = checked === true;
-            form.setValue("noPolicyNumber", next, { shouldDirty: true });
-            if (next) {
-              form.setValue("policyNumbers", "", { shouldDirty: true });
-            }
-          }}
-        />
-        无保单号
-      </label>
-    </div>
+    <Input
+      id="policyNumbers"
+      aria-invalid={invalid}
+      {...form.register("policyNumbers", {
+        onChange: () => form.setValue("noPolicyNumber", false, { shouldDirty: true }),
+      })}
+    />
   );
 }
 

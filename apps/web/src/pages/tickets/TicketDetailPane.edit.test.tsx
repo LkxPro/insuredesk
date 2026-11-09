@@ -91,6 +91,30 @@ describe("编辑态的进入与退出", () => {
 });
 
 describe("保存", () => {
+  it("历史无保单号工单可补填保单，保存清除旧标记", async () => {
+    renderApp({
+      path: "/tickets/t1",
+      trpc: {
+        "ticket.detail": detailPayload({ noPolicyNumber: true, policyNumbers: [] }),
+        "ticket.editComplaint": { id: "t1", workOrderNumber: "WO100001" },
+        "channel.options": channelOptions,
+        "ticketCategory.options": categoryOptions,
+      },
+    });
+    const pane = await findPane();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    const policyInput = await within(pane).findByRole("textbox", { name: "保单号" });
+    expect(policyInput).toBeEnabled();
+    expect(within(pane).queryByRole("checkbox", { name: "无保单号" })).not.toBeInTheDocument();
+    fireEvent.change(policyInput, { target: { value: "PA20261109001" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(editInputs()).toHaveLength(1));
+    expect(editInputs()[0]).toMatchObject({
+      policyNumbers: ["PA20261109001"],
+      noPolicyNumber: false,
+    });
+  });
+
   it("一次保存 = 一次 ticket.editComplaint，带整单字段与工单 id", async () => {
     const pane = await enterEditing();
 
