@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
@@ -35,6 +36,7 @@ import { TicketExportButton } from "@/pages/ticket-surface/TicketExportButton";
 import { TicketListSearch } from "@/pages/ticket-surface/TicketListSearch";
 import {
   type SurfaceColumn,
+  type SurfaceOverlay,
   type SurfaceSelection,
   TicketSurface,
 } from "@/pages/ticket-surface/TicketSurface";
@@ -47,9 +49,20 @@ import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { TicketDetailPane } from "./TicketDetailPane";
 import { TicketImportDialog } from "./TicketImportDialog";
+import { TicketMessagePreview } from "./TicketMessagePreview";
 import { parseTicketListQuery, serializeSelection } from "./ticket-list-query";
 
 type ListItem = inferRouterOutputs<AppRouter>["ticket"]["list"]["items"][number];
+
+const MESSAGE_PREVIEW_STORAGE_KEY = "insuredesk:ticket-message-preview";
+
+function readMessagePreview() {
+  try {
+    return localStorage.getItem(MESSAGE_PREVIEW_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
 
 function useTicketList(query: TicketListQuery) {
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
@@ -105,6 +118,17 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [showMessages, setShowMessages] = useState(readMessagePreview);
+
+  function toggleMessages() {
+    const next = !showMessages;
+    setShowMessages(next);
+    try {
+      localStorage.setItem(MESSAGE_PREVIEW_STORAGE_KEY, String(next));
+    } catch {
+      // 浏览器禁用存储时，当前页面仍可切换预览。
+    }
+  }
 
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
   const kindOptions = trpc.ticketKind.filterOptions.useQuery().data ?? [];
@@ -351,6 +375,35 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
     [canBatchAssign],
   );
 
+  const messageOverlay = useMemo<SurfaceOverlay<ListItem, TicketListQuery> | undefined>(() => {
+    if (!showMessages) return undefined;
+    return {
+      fromColumn: "createdAt",
+      header: (
+        <div className="grid h-full grid-cols-[9rem_minmax(0,1fr)] items-center">
+          <span className="px-2">最后更新时间</span>
+          <span className="border-l px-2">最新消息</span>
+        </div>
+      ),
+      render: (ticket, ctx) => (
+        <div className="grid h-full grid-cols-[9rem_minmax(0,1fr)] items-center">
+          <div className="truncate px-2 text-xs tabular-nums">
+            {ticket.latestMessageAt ? formatDateTime(ticket.latestMessageAt) : "—"}
+          </div>
+          <div className="flex h-full min-w-0 items-center border-l px-2">
+            <TicketMessagePreview
+              ticketId={ticket.id}
+              message={ticket.latestMessage}
+              action={ticket.latestMessageAction}
+              author={ticket.latestMessageAuthor}
+              path={ctx.ticketPath(ticket.id)}
+            />
+          </div>
+        </div>
+      ),
+    };
+  }, [showMessages]);
+
   return (
     <TicketSurface
       basePath="/tickets"
@@ -358,8 +411,22 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       useList={useTicketList}
       title="工单管理"
       subtitle="客诉工单的创建、分配与跟进。"
-      headerActions={({ query }) => (
+      headerActions={({ query, detailOpen }) => (
         <>
+          {!detailOpen && (
+            <label
+              htmlFor="ticket-message-preview"
+              className="flex cursor-pointer items-center gap-2 px-2 text-sm"
+            >
+              <Switch
+                id="ticket-message-preview"
+                checked={showMessages}
+                onCheckedChange={toggleMessages}
+                aria-label="最新消息"
+              />
+              最新消息
+            </label>
+          )}
           {canExport && (
             <TicketExportButton onExport={(format) => downloadTicketExport(query, format)} />
           )}
@@ -511,6 +578,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
         ].filter((count) => (count ?? 0) > 0).length
       }
       columns={columns}
+      overlay={messageOverlay}
       emptyState={{
         icon: <Ticket />,
         title: "暂无匹配的工单",

@@ -3,6 +3,7 @@ import { ArrowDown, ChevronDown, CircleCheck } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
+import { TICKET_MESSAGE_TINT, ticketMessageBubbleClassName } from "./ticket-message-style";
 
 export type TimelineLog = {
   id: string;
@@ -17,19 +18,6 @@ type CommunicationAction = Extract<ProcessLogAction, "external_note" | "comment"
 function isCommunication(action: ProcessLogAction): action is CommunicationAction {
   return action === "external_note" || action === "comment" || action === "internal_note";
 }
-
-/** 类型色只表达留言/跟进分类；"谁发的"由气泡左右位置表达，不在颜色里。 */
-const COMM_TINT: Record<CommunicationAction, { badge: string; box: string }> = {
-  internal_note: { badge: "bg-muted text-muted-foreground", box: "bg-muted" },
-  external_note: {
-    badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300",
-    box: "bg-blue-50 dark:bg-blue-950/40",
-  },
-  comment: {
-    badge: "bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300",
-    box: "bg-amber-50 dark:bg-amber-950/40",
-  },
-};
 
 type EditDiffSegment = { label: string; from: string | null; to: string | null; raw: string };
 
@@ -263,7 +251,7 @@ function CommunicationItem({
   action: CommunicationAction;
   incoming: boolean;
 }) {
-  const tint = COMM_TINT[action];
+  const tint = TICKET_MESSAGE_TINT[action];
   return (
     <li className={cn("flex items-end gap-2", !incoming && "justify-end")}>
       {incoming && (
@@ -284,12 +272,7 @@ function CommunicationItem({
           {log.operatorName && <span>{log.operatorName}</span>}
           <span>{formatDateTime(log.at)}</span>
         </div>
-        <div
-          className={cn(
-            "whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm shadow-sm",
-            incoming ? cn("rounded-bl-sm border", tint.box) : "rounded-br-sm bg-muted",
-          )}
-        >
+        <div className={cn("whitespace-pre-wrap", ticketMessageBubbleClassName(action, incoming))}>
           {log.remark ?? "（无留言内容）"}
         </div>
       </div>

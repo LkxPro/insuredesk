@@ -26,6 +26,7 @@ export * from "./ticket-fields.ts";
 export * from "./ticket-filter.ts";
 export * from "./ticket-kind.ts";
 export * from "./ticket-map.ts";
+export * from "./ticket-message.ts";
 export * from "./ticket-status.ts";
 export * from "./time-range.ts";
 export * from "./todo.ts";
