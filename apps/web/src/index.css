@@ -131,3 +131,12 @@
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   }
 }
+
+@keyframes surface-overlay-reveal {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}

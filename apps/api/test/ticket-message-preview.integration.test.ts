@@ -34,6 +34,7 @@ describe("工单列表消息预览", () => {
         ...log,
         ticketId: ticket.id,
         operatorId: seeded.users.manager.id,
+        operatorName: "测试发送人",
         at: new Date(Date.UTC(2026, 10, 10, 0, index)),
       })),
     });
@@ -46,6 +47,8 @@ describe("工单列表消息预览", () => {
         id: ticket.id,
         latestMessage: "客户确认\n等待退款",
         latestMessageAction: "external_note",
+        latestMessageAuthor: "测试发送人",
+        latestMessageAt: "2026-11-10T00:02:00.000Z",
       }),
     ]);
   });

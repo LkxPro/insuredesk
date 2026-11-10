@@ -1,5 +1,13 @@
 import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, SlidersHorizontal } from "lucide-react";
-import { memo, type ReactElement, type ReactNode, useCallback, useMemo, useState } from "react";
+import {
+  memo,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -57,7 +65,6 @@ export type SurfaceCtx<TItem, TQuery extends SurfaceQuery> = {
   setParam: (key: string, value: string | null, opts?: { resetPage?: boolean }) => void;
   setParams: (updates: Readonly<Record<string, string | null>>) => void;
   detailOpen: boolean;
-  /** 换单路径：basePath/:id + 当前筛选串；处理态内 replace（翻单是扫描动作），列表态 push。 */
   select: (ticketId: string) => void;
   ticketPath: (ticketId: string) => string;
   selected: ReadonlyMap<string, TItem>;
@@ -80,6 +87,12 @@ export type SurfaceSelection<TItem, TQuery extends SurfaceQuery> = {
   bar: (selected: ReadonlyMap<string, TItem>, ctx: SurfaceCtx<TItem, TQuery>) => ReactNode;
 };
 
+export type SurfaceOverlay<TItem, TQuery extends SurfaceQuery> = {
+  fromColumn: string;
+  header: ReactNode;
+  render: (item: TItem, ctx: SurfaceCtx<TItem, TQuery>) => ReactNode;
+};
+
 export type SurfaceDetailProps = {
   ticketId: string;
   nav: DetailNav;
@@ -98,6 +111,7 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   filters,
   activeFilterCount,
   columns,
+  overlay,
   emptyState,
   narrowItem,
   renderDetail,
@@ -115,6 +129,7 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   filters: (ctx: SurfaceCtx<TItem, TQuery>) => ReactNode;
   activeFilterCount: (query: TQuery) => number;
   columns: ReadonlyArray<SurfaceColumn<TItem, TQuery>>;
+  overlay?: SurfaceOverlay<TItem, TQuery> | undefined;
   emptyState: {
     icon: ReactNode;
     title: string;
@@ -137,6 +152,25 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
   const [selected, setSelected] = useState<ReadonlyMap<string, TItem>>(new Map());
 
   const detailOpen = detailId !== undefined;
+  const [table, setTable] = useState<HTMLTableElement | null>(null);
+  useLayoutEffect(() => {
+    if (!table || !overlay || detailOpen) return;
+    const measure = () => {
+      const head = Array.from(table.querySelectorAll<HTMLElement>("thead [data-column]")).find(
+        (cell) => cell.dataset.column === overlay.fromColumn,
+      );
+      if (head)
+        table.style.setProperty(
+          "--surface-overlay-width",
+          `${table.getBoundingClientRect().right - head.getBoundingClientRect().left}px`,
+        );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(table);
+    for (const cell of table.querySelectorAll("thead th")) observer.observe(cell);
+    return () => observer.disconnect();
+  }, [table, overlay, detailOpen]);
   const list = useList(query);
   const items = list.items;
   const total = list.total;
@@ -259,6 +293,9 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
     ],
   );
 
+  const overlayIndex = overlay
+    ? columns.findIndex((column) => column.key === overlay.fromColumn)
+    : -1;
   const columnCount = columns.length + (selection ? 1 : 0);
   const filterCount = activeFilterCount(query);
 
@@ -333,8 +370,7 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-md border">
-          <Table>
-            {/* 表头随行滚动会丢失列语义，钉在滚动容器顶部 */}
+          <Table ref={setTable}>
             <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
               <TableRow>
                 {selection && (
@@ -347,19 +383,38 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
                     />
                   </TableHead>
                 )}
-                {columns.map((column) => (
-                  <TableHead key={column.key} className={column.headClassName}>
-                    {column.sort ? (
-                      <SortHead
-                        label={column.header}
-                        active={query.sortBy === column.sort.field}
-                        order={query.sortBy === column.sort.field ? query.sortOrder : undefined}
-                        onToggle={() =>
-                          column.sort && toggleSort(column.sort.field, column.sort.initialOrder)
-                        }
-                      />
-                    ) : (
-                      column.header
+                {columns.map((column, index) => (
+                  <TableHead
+                    key={column.key}
+                    data-column={column.key}
+                    aria-hidden={(overlayIndex >= 0 && index > overlayIndex) || undefined}
+                    className={cn(
+                      column.headClassName,
+                      overlay?.fromColumn === column.key && "z-20!",
+                    )}
+                  >
+                    <span
+                      className={
+                        overlayIndex >= 0 && index >= overlayIndex ? "invisible" : undefined
+                      }
+                    >
+                      {column.sort ? (
+                        <SortHead
+                          label={column.header}
+                          active={query.sortBy === column.sort.field}
+                          order={query.sortBy === column.sort.field ? query.sortOrder : undefined}
+                          onToggle={() =>
+                            column.sort && toggleSort(column.sort.field, column.sort.initialOrder)
+                          }
+                        />
+                      ) : (
+                        column.header
+                      )}
+                    </span>
+                    {overlay?.fromColumn === column.key && (
+                      <div className="absolute inset-y-0 left-0 w-(--surface-overlay-width) overflow-hidden border-l bg-background shadow-[-4px_0_6px_-4px_var(--color-border)] motion-safe:animate-[surface-overlay-reveal_200ms_ease-out]">
+                        <div className="h-full">{overlay.header}</div>
+                      </div>
                     )}
                   </TableHead>
                 ))}
@@ -386,6 +441,7 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
                     key={item.id}
                     item={item}
                     columns={columns}
+                    overlay={overlay}
                     ctx={ctx}
                     selection={selection}
                     isSelected={selected.has(item.id)}
@@ -419,6 +475,7 @@ export function TicketSurface<TItem extends { id: string }, TQuery extends Surfa
 type SurfaceRowProps<TItem, TQuery extends SurfaceQuery> = {
   item: TItem;
   columns: ReadonlyArray<SurfaceColumn<TItem, TQuery>>;
+  overlay?: SurfaceOverlay<TItem, TQuery> | undefined;
   ctx: SurfaceCtx<TItem, TQuery>;
   selection?: SurfaceSelection<TItem, TQuery> | undefined;
   isSelected: boolean;
@@ -435,6 +492,7 @@ const SurfaceRow = memo(function SurfaceRow<
 >({
   item,
   columns,
+  overlay,
   ctx,
   selection,
   isSelected,
@@ -444,6 +502,9 @@ const SurfaceRow = memo(function SurfaceRow<
   onToggleSelected,
 }: SurfaceRowProps<TItem, TQuery>) {
   const navigate = useNavigate();
+  const overlayIndex = overlay
+    ? columns.findIndex((column) => column.key === overlay.fromColumn)
+    : -1;
   return (
     <TableRow
       data-highlighted={highlighted || undefined}
@@ -451,7 +512,6 @@ const SurfaceRow = memo(function SurfaceRow<
       onClick={() => navigate(path)}
     >
       {selection && (
-        // onClick swallows the row's navigation click; the checkbox inside is keyboard-operable
         <TableCell onClick={(event) => event.stopPropagation()}>
           <Checkbox
             aria-label={selection.rowLabel(item)}
@@ -461,8 +521,21 @@ const SurfaceRow = memo(function SurfaceRow<
           />
         </TableCell>
       )}
-      {columns.map((column) => (
-        <TableCell key={column.key}>{column.render(item, ctx)}</TableCell>
+      {columns.map((column, index) => (
+        <TableCell
+          key={column.key}
+          className={overlay?.fromColumn === column.key ? "relative" : undefined}
+          aria-hidden={(overlayIndex >= 0 && index > overlayIndex) || undefined}
+        >
+          <div className={overlayIndex >= 0 && index >= overlayIndex ? "invisible" : undefined}>
+            {column.render(item, ctx)}
+          </div>
+          {overlay?.fromColumn === column.key && (
+            <div className="absolute inset-y-0 left-0 z-10 w-(--surface-overlay-width) overflow-hidden border-l bg-background shadow-[-4px_0_6px_-4px_var(--color-border)] motion-safe:animate-[surface-overlay-reveal_200ms_ease-out]">
+              <div className="h-full">{overlay.render(item, ctx)}</div>
+            </div>
+          )}
+        </TableCell>
       ))}
     </TableRow>
   );

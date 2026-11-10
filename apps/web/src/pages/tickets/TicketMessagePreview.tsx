@@ -3,6 +3,7 @@ import { HoverCard } from "radix-ui";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { ticketMessageBubbleClassName } from "@/pages/ticket-surface/ticket-message-style";
@@ -13,11 +14,13 @@ export function TicketMessagePreview({
   ticketId,
   message,
   action,
+  author,
   path,
 }: {
   ticketId: string;
   message: string | null;
   action: TicketMessageAction | null;
+  author: string | null;
   path: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -29,16 +32,20 @@ export function TicketMessagePreview({
       <HoverCard.Trigger asChild>
         <Link
           to={path}
+          aria-label={message}
           className="block w-0 min-w-full outline-offset-2"
           onClick={(event) => event.stopPropagation()}
         >
           <span
             className={cn(
               ticketMessageBubbleClassName(action ?? "internal_note", action === "external_note"),
-              "inline-block max-w-full truncate py-1 align-middle",
+              "flex max-w-full min-w-0 items-center gap-2 py-1",
             )}
           >
-            {message}
+            <span className="max-w-20 shrink-0 truncate text-xs text-muted-foreground">
+              {author ?? "未知发送人"}
+            </span>
+            <span className="min-w-0 flex-1 truncate">{message}</span>
           </span>
         </Link>
       </HoverCard.Trigger>
@@ -101,12 +108,22 @@ function MessageHistory({
           <li
             key={log.id}
             className={cn(
-              ticketMessageBubbleClassName(log.action, log.action === "external_note"),
-              "max-w-[90%] whitespace-pre-wrap wrap-anywhere",
+              "flex max-w-[90%] flex-col gap-1",
               log.action === "external_note" ? "self-start" : "self-end",
             )}
           >
-            {log.remark}
+            <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+              <span>{log.operatorName ?? "未知发送人"}</span>
+              {log.at && <time dateTime={log.at}>{formatDateTime(log.at)}</time>}
+            </div>
+            <div
+              className={cn(
+                ticketMessageBubbleClassName(log.action, log.action === "external_note"),
+                "whitespace-pre-wrap wrap-anywhere",
+              )}
+            >
+              {log.remark}
+            </div>
           </li>
         ))}
       </ol>

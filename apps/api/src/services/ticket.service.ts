@@ -476,6 +476,8 @@ export async function listTickets(
       ...serializeTicketListItem(row, now),
       latestMessage: latestMessages.get(row.id)?.remark ?? null,
       latestMessageAction: latestMessages.get(row.id)?.action ?? null,
+      latestMessageAuthor: latestMessages.get(row.id)?.operatorName ?? null,
+      latestMessageAt: latestMessages.get(row.id)?.at.toISOString() ?? null,
     })),
     total,
     page: query.page,

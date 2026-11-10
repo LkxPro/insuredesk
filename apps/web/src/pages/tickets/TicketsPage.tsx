@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/datetime";
 import { trpc } from "@/lib/trpc";
@@ -35,6 +36,7 @@ import { TicketExportButton } from "@/pages/ticket-surface/TicketExportButton";
 import { TicketListSearch } from "@/pages/ticket-surface/TicketListSearch";
 import {
   type SurfaceColumn,
+  type SurfaceOverlay,
   type SurfaceSelection,
   TicketSurface,
 } from "@/pages/ticket-surface/TicketSurface";
@@ -373,25 +375,34 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
     [canBatchAssign],
   );
 
-  const displayColumns = useMemo<ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>>>(() => {
-    if (!showMessages) return columns;
-    return [
-      ...columns.filter((column) => !["createdAt", "dueAt", "actions"].includes(column.key)),
-      {
-        key: "latestMessage",
-        header: "最新消息",
-        headClassName: canRowActions ? "w-[30rem]" : "w-[20rem]",
-        render: (ticket, ctx) => (
-          <TicketMessagePreview
-            ticketId={ticket.id}
-            message={ticket.latestMessage}
-            action={ticket.latestMessageAction}
-            path={ctx.ticketPath(ticket.id)}
-          />
-        ),
-      },
-    ];
-  }, [columns, showMessages, canRowActions]);
+  const messageOverlay = useMemo<SurfaceOverlay<ListItem, TicketListQuery> | undefined>(() => {
+    if (!showMessages) return undefined;
+    return {
+      fromColumn: "createdAt",
+      header: (
+        <div className="grid h-full grid-cols-[9rem_minmax(0,1fr)] items-center">
+          <span className="px-2">更新时间</span>
+          <span className="border-l px-2">最新消息</span>
+        </div>
+      ),
+      render: (ticket, ctx) => (
+        <div className="grid h-full grid-cols-[9rem_minmax(0,1fr)] items-center">
+          <div className="truncate px-2 text-xs tabular-nums">
+            {ticket.latestMessageAt ? formatDateTime(ticket.latestMessageAt) : "—"}
+          </div>
+          <div className="flex h-full min-w-0 items-center border-l px-2">
+            <TicketMessagePreview
+              ticketId={ticket.id}
+              message={ticket.latestMessage}
+              action={ticket.latestMessageAction}
+              author={ticket.latestMessageAuthor}
+              path={ctx.ticketPath(ticket.id)}
+            />
+          </div>
+        </div>
+      ),
+    };
+  }, [showMessages]);
 
   return (
     <TicketSurface
@@ -403,13 +414,18 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       headerActions={({ query, detailOpen }) => (
         <>
           {!detailOpen && (
-            <Button
-              variant={showMessages ? "secondary" : "outline"}
-              aria-pressed={showMessages}
-              onClick={toggleMessages}
+            <label
+              htmlFor="ticket-message-preview"
+              className="flex cursor-pointer items-center gap-2 px-2 text-sm"
             >
+              <Switch
+                id="ticket-message-preview"
+                checked={showMessages}
+                onCheckedChange={toggleMessages}
+                aria-label="最新消息"
+              />
               最新消息
-            </Button>
+            </label>
           )}
           {canExport && (
             <TicketExportButton onExport={(format) => downloadTicketExport(query, format)} />
@@ -560,7 +576,8 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           query.createdFrom || query.createdTo ? 1 : 0,
         ].filter((count) => (count ?? 0) > 0).length
       }
-      columns={displayColumns}
+      columns={columns}
+      overlay={messageOverlay}
       emptyState={{
         icon: <Ticket />,
         title: "暂无匹配的工单",
