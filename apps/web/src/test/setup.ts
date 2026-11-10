@@ -1,12 +1,17 @@
 import "@testing-library/jest-dom/vitest";
+import { notifyManager } from "@tanstack/react-query";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { flushQueryNotifications, scheduleQueryNotification } from "./query-notifications";
 
 configure({ asyncUtilTimeout: 12000 });
 
-// RTL only auto-cleans with vitest globals enabled; we import hooks explicitly.
+// Query 已排队的通知不会随组件卸载取消，必须在 jsdom 销毁前排空。
+notifyManager.setScheduler(scheduleQueryNotification);
+
 afterEach(() => {
   cleanup();
+  flushQueryNotifications();
 });
 
 // jsdom has no ResizeObserver; Radix (Select trigger sizing) observes with it.

@@ -1,0 +1,18 @@
+version: v2026.11.2
+date: 2026-11-10
+entries:
+  - category: 新增
+    user: 工单列表支持查看最新消息和沟通历史
+    full: 内部工单列表新增“最新消息”开关，开启后可直接查看最后更新时间、最新沟通内容和发送人；悬停消息可查看并滚动浏览跟进记录、内部备注和外部留言，点击可进入工单详情。浏览器会记住开关状态，开启时原表格列宽和行高保持不变。
+    page: /tickets
+    screenshot: tickets-message-preview.png
+  - category: 改进
+    user: 创建人筛选支持按姓名搜索
+    full: 工单列表的“创建人”筛选新增姓名搜索，输入姓名片段即可缩小候选范围，再勾选筛选工单。更换关键词保留已选创建人，“全选”追加当前匹配项；关闭下拉框后清除搜索词，方便下次查找。
+    page: /tickets
+    screenshot: tickets-creator-search.png
+  - category: 修复
+    user: 恢复新建和编辑工单中的“无保单号”勾选框
+    full: 新建和编辑工单时可再次勾选“无保单号”，明确记录没有保单号的情况。勾选后清空并禁用保单号输入，取消勾选后可重新填写；历史无保单号工单保留勾选状态，也可取消后补填保存。
+    page: /tickets/new
+    screenshot: tickets-no-policy.png
