@@ -1,20 +1,23 @@
-import { isTicketMessage } from "@insuredesk/shared";
+import { isTicketMessage, type TicketMessageAction } from "@insuredesk/shared";
 import { HoverCard } from "radix-ui";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { ticketMessageBubbleClassName } from "@/pages/ticket-surface/ticket-message-style";
 import { Unknown } from "@/pages/ticket-surface/Unknown";
 import type { TicketDetail } from "./ticket-detail";
 
 export function TicketMessagePreview({
   ticketId,
   message,
+  action,
   path,
 }: {
   ticketId: string;
   message: string | null;
+  action: TicketMessageAction | null;
   path: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -26,10 +29,17 @@ export function TicketMessagePreview({
       <HoverCard.Trigger asChild>
         <Link
           to={path}
-          className="block w-0 min-w-full truncate rounded-sm outline-offset-2 hover:underline"
+          className="block w-0 min-w-full outline-offset-2"
           onClick={(event) => event.stopPropagation()}
         >
-          {message}
+          <span
+            className={cn(
+              ticketMessageBubbleClassName(action ?? "internal_note", action === "external_note"),
+              "inline-block max-w-full truncate py-1 align-middle",
+            )}
+          >
+            {message}
+          </span>
         </Link>
       </HoverCard.Trigger>
       <HoverCard.Portal>
@@ -91,7 +101,8 @@ function MessageHistory({
           <li
             key={log.id}
             className={cn(
-              "max-w-[90%] rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap wrap-anywhere",
+              ticketMessageBubbleClassName(log.action, log.action === "external_note"),
+              "max-w-[90%] whitespace-pre-wrap wrap-anywhere",
               log.action === "external_note" ? "self-start" : "self-end",
             )}
           >

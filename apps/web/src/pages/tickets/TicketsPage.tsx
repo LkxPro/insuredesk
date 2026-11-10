@@ -385,6 +385,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           <TicketMessagePreview
             ticketId={ticket.id}
             message={ticket.latestMessage}
+            action={ticket.latestMessageAction}
             path={ctx.ticketPath(ticket.id)}
           />
         ),

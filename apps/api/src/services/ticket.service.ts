@@ -474,7 +474,8 @@ export async function listTickets(
   return {
     items: rows.map((row) => ({
       ...serializeTicketListItem(row, now),
-      latestMessage: latestMessages.get(row.id) ?? null,
+      latestMessage: latestMessages.get(row.id)?.remark ?? null,
+      latestMessageAction: latestMessages.get(row.id)?.action ?? null,
     })),
     total,
     page: query.page,

@@ -42,7 +42,11 @@ describe("工单列表消息预览", () => {
       .callerFor(seeded.users.manager, seeded.roles.csManager)
       .ticket.list({});
     expect(result.items).toEqual([
-      expect.objectContaining({ id: ticket.id, latestMessage: "客户确认\n等待退款" }),
+      expect.objectContaining({
+        id: ticket.id,
+        latestMessage: "客户确认\n等待退款",
+        latestMessageAction: "external_note",
+      }),
     ]);
   });
 
@@ -73,9 +77,17 @@ describe("工单列表消息预览", () => {
     const list = await caller.ticket.list({});
     expect(list.items).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: first.id, latestMessage: "最后的内部备注" }),
-        expect.objectContaining({ id: second.id, latestMessage: "第二张工单" }),
-        expect.objectContaining({ id: empty.id, latestMessage: null }),
+        expect.objectContaining({
+          id: first.id,
+          latestMessage: "最后的内部备注",
+          latestMessageAction: "internal_note",
+        }),
+        expect.objectContaining({
+          id: second.id,
+          latestMessage: "第二张工单",
+          latestMessageAction: "comment",
+        }),
+        expect.objectContaining({ id: empty.id, latestMessage: null, latestMessageAction: null }),
       ]),
     );
     const detail = await caller.ticket.detail({ id: first.id });

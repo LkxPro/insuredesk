@@ -22,6 +22,7 @@ const ticket = {
   assigneeName: "责任人乙",
   dueAt: "2026-11-12T02:00:00.000Z",
   latestMessage: "客户已确认，等待退款到账",
+  latestMessageAction: "external_note",
 };
 
 function renderList(
