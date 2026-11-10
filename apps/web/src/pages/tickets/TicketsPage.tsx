@@ -525,7 +525,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             options={POLICY_NUMBER_STATE_OPTIONS}
             onChange={(values) => setParam("policyNumber", serializeSelection(values, []))}
           />
-          {/* 来源有缺省（排除归档单）：全选四个来源 ≠ 缺省，仍写入 URL */}
+          {/* 来源默认排除归档单；全选来源仍须写入 URL。 */}
           <MultiSelectFilter
             label="来源"
             values={query.source}
