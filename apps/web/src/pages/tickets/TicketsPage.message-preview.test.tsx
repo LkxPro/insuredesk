@@ -25,7 +25,7 @@ const ticket = {
   latestMessage: "客户已确认，等待退款到账",
   latestMessageAction: "external_note",
   latestMessageAuthor: "客户代表",
-  latestMessageAt: "2026-11-10T02:00:00.000Z",
+  latestMessageAt: new Date(2026, 10, 10, 11, 45).toISOString(),
 };
 
 function renderList(
@@ -92,7 +92,7 @@ describe("工单列表最新消息", () => {
     expect(within(table).getByText("最后更新时间")).toBeInTheDocument();
     expect(
       within(table)
-        .getAllByText("2026-11-10 10:00")
+        .getAllByText("2026-11-10 11:45")
         .some((node) => !node.closest(".invisible")),
     ).toBe(true);
     expect(within(table).getByText(ticket.createdBy)).toBeInTheDocument();
