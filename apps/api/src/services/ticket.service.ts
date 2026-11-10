@@ -37,6 +37,7 @@ import { ticketCategoryCatalog } from "./ticket-category.service.ts";
 import { displayStatusTicketWhere } from "./ticket-display-status.ts";
 import { DuplicateTicketsFoundError } from "./ticket-duplicate.service.ts";
 import { requireTicketKindId } from "./ticket-kind.service.ts";
+import { latestTicketMessages } from "./ticket-message.service.ts";
 import {
   findRelatedTickets,
   lockRelatedTicketMatch,
@@ -466,8 +467,15 @@ export async function listTickets(
     prisma.ticket.count({ where }),
   ]);
 
+  const latestMessages = await latestTicketMessages(
+    prisma,
+    rows.map((row) => row.id),
+  );
   return {
-    items: rows.map((row) => serializeTicketListItem(row, now)),
+    items: rows.map((row) => ({
+      ...serializeTicketListItem(row, now),
+      latestMessage: latestMessages.get(row.id) ?? null,
+    })),
     total,
     page: query.page,
     pageSize: query.pageSize,

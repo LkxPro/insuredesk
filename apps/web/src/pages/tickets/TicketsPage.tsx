@@ -47,9 +47,20 @@ import { type ResolveTarget, ResolveTicketDialog } from "./ResolveTicketDialog";
 import { TicketCreateDialog } from "./TicketCreateDialog";
 import { TicketDetailPane } from "./TicketDetailPane";
 import { TicketImportDialog } from "./TicketImportDialog";
+import { TicketMessagePreview } from "./TicketMessagePreview";
 import { parseTicketListQuery, serializeSelection } from "./ticket-list-query";
 
 type ListItem = inferRouterOutputs<AppRouter>["ticket"]["list"]["items"][number];
+
+const MESSAGE_PREVIEW_STORAGE_KEY = "insuredesk:ticket-message-preview";
+
+function readMessagePreview() {
+  try {
+    return localStorage.getItem(MESSAGE_PREVIEW_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
 
 function useTicketList(query: TicketListQuery) {
   const listQuery = trpc.ticket.list.useQuery(query, { placeholderData: keepPreviousData });
@@ -105,6 +116,17 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const [autoTargets, setAutoTargets] = useState<AssignTarget[] | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [showMessages, setShowMessages] = useState(readMessagePreview);
+
+  function toggleMessages() {
+    const next = !showMessages;
+    setShowMessages(next);
+    try {
+      localStorage.setItem(MESSAGE_PREVIEW_STORAGE_KEY, String(next));
+    } catch {
+      // 浏览器禁用存储时，当前页面仍可切换预览。
+    }
+  }
 
   // 目录筛选全列目录项（停用项标注），选停用项仍能查到其存量工单
   const kindOptions = trpc.ticketKind.filterOptions.useQuery().data ?? [];
@@ -351,6 +373,25 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
     [canBatchAssign],
   );
 
+  const displayColumns = useMemo<ReadonlyArray<SurfaceColumn<ListItem, TicketListQuery>>>(() => {
+    if (!showMessages) return columns;
+    return [
+      ...columns.filter((column) => !["createdAt", "dueAt", "actions"].includes(column.key)),
+      {
+        key: "latestMessage",
+        header: "最新消息",
+        headClassName: canRowActions ? "w-[30rem]" : "w-[20rem]",
+        render: (ticket, ctx) => (
+          <TicketMessagePreview
+            ticketId={ticket.id}
+            message={ticket.latestMessage}
+            path={ctx.ticketPath(ticket.id)}
+          />
+        ),
+      },
+    ];
+  }, [columns, showMessages, canRowActions]);
+
   return (
     <TicketSurface
       basePath="/tickets"
@@ -358,8 +399,17 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       useList={useTicketList}
       title="工单管理"
       subtitle="客诉工单的创建、分配与跟进。"
-      headerActions={({ query }) => (
+      headerActions={({ query, detailOpen }) => (
         <>
+          {!detailOpen && (
+            <Button
+              variant={showMessages ? "secondary" : "outline"}
+              aria-pressed={showMessages}
+              onClick={toggleMessages}
+            >
+              最新消息
+            </Button>
+          )}
           {canExport && (
             <TicketExportButton onExport={(format) => downloadTicketExport(query, format)} />
           )}
@@ -509,7 +559,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           query.createdFrom || query.createdTo ? 1 : 0,
         ].filter((count) => (count ?? 0) > 0).length
       }
-      columns={columns}
+      columns={displayColumns}
       emptyState={{
         icon: <Ticket />,
         title: "暂无匹配的工单",
