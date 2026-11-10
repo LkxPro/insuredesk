@@ -381,7 +381,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       fromColumn: "createdAt",
       header: (
         <div className="grid h-full grid-cols-[9rem_minmax(0,1fr)] items-center">
-          <span className="px-2">更新时间</span>
+          <span className="px-2">最后更新时间</span>
           <span className="border-l px-2">最新消息</span>
         </div>
       ),

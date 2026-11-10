@@ -85,11 +85,11 @@ describe("工单列表最新消息", () => {
       "来源",
       "创建人",
       "责任人",
-      "创建时间更新时间最新消息",
+      "创建时间最后更新时间最新消息",
     ]);
     expect(within(table).getByText(ticket.latestMessage)).toBeInTheDocument();
     expect(within(table).getByText(ticket.latestMessageAuthor)).toBeInTheDocument();
-    expect(within(table).getByText("更新时间")).toBeInTheDocument();
+    expect(within(table).getByText("最后更新时间")).toBeInTheDocument();
     expect(
       within(table)
         .getAllByText("2026-11-10 10:00")
