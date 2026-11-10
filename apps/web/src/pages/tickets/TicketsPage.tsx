@@ -161,6 +161,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       creatorOptions.map((user) => ({
         value: user.id,
         label: user.active ? user.name : `${user.name}（已停用）`,
+        searchText: user.name,
       })),
     [creatorOptions],
   );
@@ -225,7 +226,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
       {
         key: "dueAt",
         header: "处理时限",
-        // 处理时限 defaults to soonest-first — that's the queue-working order
         sort: { field: "dueAt", initialOrder: "asc" },
         render: (ticket) =>
           ticket.dueAt ? (
@@ -436,6 +436,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
           />
           <MultiSelectFilter
             label="创建人"
+            searchable
             values={query.creatorId ?? []}
             options={creators}
             onChange={(values) => setParam("creatorId", serializeSelection(values, []))}
@@ -458,7 +459,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
             options={POLICY_NUMBER_STATE_OPTIONS}
             onChange={(values) => setParam("policyNumber", serializeSelection(values, []))}
           />
-          {/* 来源有缺省（排除归档单）：全选四个来源 ≠ 缺省，仍写入 URL */}
+          {/* 来源默认排除归档单；全选来源仍须写入 URL。 */}
           <MultiSelectFilter
             label="来源"
             values={query.source}

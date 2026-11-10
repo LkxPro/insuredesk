@@ -53,14 +53,17 @@ const SLA_OPTIONS = [
 
 const canned = { items: [] as ListItem[], total: 0 };
 
-function renderAt(path: string) {
+function renderAt(
+  path: string,
+  creatorOptions = [
+    { id: "creator-a", name: "建单人甲", active: true },
+    { id: "creator-b", name: "建单人乙", active: false },
+  ],
+) {
   return renderApp({
     path,
     trpc: {
-      "ticket.creatorOptions": [
-        { id: "creator-a", name: "建单人甲", active: true },
-        { id: "creator-b", name: "建单人乙", active: false },
-      ],
+      "ticket.creatorOptions": creatorOptions,
       "ticketKind.filterOptions": [
         { id: "kind-complaint", name: "投诉", active: true },
         { id: "kind-refund", name: "退费异常", active: true },
@@ -388,6 +391,115 @@ describe("多选交互与 URL 序列化", () => {
 });
 
 describe("search / sort / pagination re-query", () => {
+  it("创建人姓名搜索忽略英文大小写，其他筛选不显示搜索框", async () => {
+    renderAt("/tickets", [
+      { id: "creator-a", name: "Alice", active: true },
+      { id: "creator-b", name: "Bob", active: true },
+    ]);
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole("button", { name: "创建人" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索创建人" }), {
+      target: { value: " aLI " },
+    });
+    expect(screen.getByRole("checkbox", { name: "Alice" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Bob" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "创建人" }));
+    fireEvent.click(screen.getByRole("button", { name: "状态" }));
+    expect(within(screen.getByRole("dialog")).queryByRole("searchbox")).not.toBeInTheDocument();
+  });
+
+  it("创建人跨关键词勾选后关闭重开，搜索词清除且选择保留", async () => {
+    renderAt("/tickets?creatorId=creator-b");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole("button", { name: "创建人" }));
+    const search = screen.getByRole("searchbox", { name: "搜索创建人" });
+    fireEvent.change(search, { target: { value: "甲" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "建单人甲" }));
+    await waitFor(() =>
+      expect(listInputs().at(-1)?.creatorId).toEqual(
+        expect.arrayContaining(["creator-a", "creator-b"]),
+      ),
+    );
+
+    fireEvent.keyDown(search, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "创建人" }));
+    expect(screen.getByRole("searchbox", { name: "搜索创建人" })).toHaveValue("");
+    expect(screen.getByRole("checkbox", { name: "建单人甲" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "建单人乙（已停用）" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "建单人乙（已停用）" }));
+    await waitFor(() => expect(listInputs().at(-1)?.creatorId).toEqual(["creator-a"]));
+  });
+
+  it("创建人全选只追加匹配项，清空移除隐藏选择但保留搜索词", async () => {
+    renderAt("/tickets?q=客户&page=3");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole("button", { name: "创建人" }));
+    const search = screen.getByRole("searchbox", { name: "搜索创建人" });
+
+    fireEvent.change(search, { target: { value: "乙" } });
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    await waitFor(() =>
+      expect(listInputs().at(-1)).toMatchObject({
+        creatorId: ["creator-b"],
+        search: "客户",
+        page: 1,
+      }),
+    );
+
+    fireEvent.change(search, { target: { value: "甲" } });
+    expect(screen.getByRole("checkbox", { name: "建单人甲" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    await waitFor(() =>
+      expect(listInputs().at(-1)?.creatorId).toEqual(
+        expect.arrayContaining(["creator-a", "creator-b"]),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    expect(screen.getByRole("button", { name: "创建人" })).toHaveTextContent("2");
+
+    fireEvent.change(search, { target: { value: "不存在" } });
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    expect(screen.getByRole("button", { name: "创建人" })).toHaveTextContent("2");
+
+    fireEvent.change(search, { target: { value: "乙" } });
+    expect(screen.getByRole("checkbox", { name: "建单人乙（已停用）" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "清空" }));
+    await waitFor(() => expect(listInputs().at(-1)?.creatorId).toBeUndefined());
+    expect(search).toHaveValue("乙");
+    expect(screen.getByRole("checkbox", { name: "建单人乙（已停用）" })).not.toBeChecked();
+    expect(listInputs().at(-1)?.search).toBe("客户");
+
+    fireEvent.change(search, { target: { value: "" } });
+    expect(screen.getByRole("checkbox", { name: "建单人甲" })).not.toBeChecked();
+  });
+
+  it("创建人姓名搜索只过滤候选，清除搜索词恢复名单", async () => {
+    renderAt("/tickets?creatorId=creator-a&q=客户&page=3");
+    await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
+    const initialInputs = listInputs();
+    fireEvent.click(screen.getByRole("button", { name: "创建人" }));
+    const search = screen.getByRole("searchbox", { name: "搜索创建人" });
+
+    fireEvent.change(search, { target: { value: "  乙  " } });
+    expect(screen.getByRole("checkbox", { name: "建单人乙（已停用）" })).not.toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "建单人甲" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建人" })).toHaveTextContent("1");
+
+    fireEvent.change(search, { target: { value: "已停用" } });
+    expect(screen.getByText("未找到创建人")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).queryByRole("checkbox")).not.toBeInTheDocument();
+
+    for (const value of ["", "   "]) {
+      fireEvent.change(search, { target: { value } });
+      expect(screen.getByRole("checkbox", { name: "建单人甲" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "建单人乙（已停用）" })).toBeInTheDocument();
+      expect(screen.queryByText("未找到创建人")).not.toBeInTheDocument();
+    }
+    expect(listInputs()).toEqual(initialInputs);
+  });
+
   it("submitting the search box queries with the entered text", async () => {
     renderAt("/tickets");
     await waitFor(() => expect(listInputs().length).toBeGreaterThan(0));
