@@ -1,4 +1,9 @@
-import { TicketKindKey, type TicketResolveInput, TicketStatus } from "@insuredesk/shared";
+import {
+  isRefundCallbackSuppressed,
+  TicketKindKey,
+  type TicketResolveInput,
+  TicketStatus,
+} from "@insuredesk/shared";
 import type { AuthenticatedUser } from "./auth.service.ts";
 import { createRefundCallbackDelivery } from "./callback-delivery.service.ts";
 import { completionStatusCatalog } from "./completion-status.service.ts";
@@ -11,15 +16,11 @@ import type { TicketServiceDeps } from "./ticket.service.ts";
 import { TicketNotFoundError } from "./ticket-assign.service.ts";
 
 /**
- * Invariants enforced here:
  * - only assigned / processing tickets can resolve; completed is a 终态 —
  *   no reopen path exists anywhere (状态只能经生命周期动作流转)
  * - completionTime / completionStatusId are written ONLY by this action, in
  *   the same instant as the resolve + status_change ProcessLog pair
- * - the resolved ticket leaves the pending_timeout / overdue 实时运营口径 by
- *   construction: those predicates exclude status = completed, and
- *   the read-time 我的待办 alarms stop with them — nothing else to
- *   flip here
+ * - completed tickets must not appear in pending_timeout / overdue or 我的待办 alarms
  * - dueAt / assignedAt / contactCount are never touched
  */
 
@@ -66,7 +67,6 @@ export async function resolveTicket(
       throw TicketNotResolvableError.completed(ticket.workOrderNumber);
     }
 
-    // 校验与写入同事务；并发删除由 FK Restrict 兜底
     const completionStatus = await completionStatusCatalog.resolveNewRef(
       tx,
       input.completionStatusId,
@@ -97,6 +97,7 @@ export async function resolveTicket(
       operatorName: actor.name,
       at: now,
     };
+    const suppressCallback = isRefundCallbackSuppressed(ticket.source, completionStatus.id);
 
     await tx.processLog.create({
       data: { ...operator, action: "resolve", remark: input.remark },
@@ -110,7 +111,7 @@ export async function resolveTicket(
         action: "status_change",
         from,
         to: TicketStatus.Completed,
-        remark: "确认完结",
+        remark: suppressCallback ? "确认完结；未退费结案，不回传弘樊" : "确认完结",
       },
     });
 
@@ -120,7 +121,7 @@ export async function resolveTicket(
       now,
     });
 
-    if (ticket.kind.key === TicketKindKey.RefundException) {
+    if (ticket.kind.key === TicketKindKey.RefundException && !suppressCallback) {
       await createRefundCallbackDelivery(tx, {
         ticket,
         operatorUsername: actor.username,

@@ -213,7 +213,6 @@ export async function createTicket(
           contactPhone: data.contactPhone,
         });
     if (related.length > 0) throw new DuplicateTicketsFoundError(related.length);
-    // 校验与插入同事务（与编辑路径的时序一致）；并发删除由 FK Restrict 兜底
     await ticketCategoryCatalog.resolveNewRef(tx, data.categoryId);
     await channelCatalog.resolveNewRef(tx, data.channelId);
     await userFeedbackChannelCatalog.resolveNewRef(tx, data.userFeedbackChannelId);
@@ -296,7 +295,7 @@ type TicketListFilters = Pick<
 >;
 
 /**
- * 保单号搜索支的命中 id 预取。搜索契约是子串、不区分大小写，且以各值的
+ * 搜索契约是子串、不区分大小写，且以各值的
  * 空格连接形态整体匹配（带空格的搜索词可跨值命中）；Prisma 的标量数组
  * 过滤器只有整项精确匹配，表达不了这条谓词，故走 raw SQL。
  */
@@ -657,6 +656,7 @@ function serializeTicketDetail(ticket: TicketWithDetail, now: Date) {
     nextContactTime: ticket.nextContactTime?.toISOString() ?? null,
     contactCount: ticket.contactCount,
     completionTime: ticket.completionTime?.toISOString() ?? null,
+    completionStatusId: ticket.completionStatusId,
     completionStatus: ticket.completionStatus?.name ?? null,
     processLogs: ticket.processLogs.map((log) => ({
       id: log.id,

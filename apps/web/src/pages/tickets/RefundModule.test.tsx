@@ -68,6 +68,19 @@ function dtLabels(section: HTMLElement) {
 }
 
 describe("退费模块渲染", () => {
+  it("未退费结案显示不回传原因，不提供重新投递", async () => {
+    renderDetail(
+      refundTicket({
+        status: "completed",
+        completionStatusId: "cmwa62j4s07yh2krwer7y7gfi",
+        completionStatus: "改名后的未退费状态",
+      }),
+    );
+    const pane = await findPane();
+    expect(within(pane).getByText("不回传：未退费结案")).toBeInTheDocument();
+    expect(within(pane).queryByRole("button", { name: "重新投递" })).not.toBeInTheDocument();
+  });
+
   it("退费异常工单渲染：客户与补偿双列 + 退费信息账簿，全只读", async () => {
     renderDetail(refundTicket());
     const pane = await findPane();

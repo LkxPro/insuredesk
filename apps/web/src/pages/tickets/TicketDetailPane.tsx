@@ -381,7 +381,7 @@ export function TicketDetailPane({
         <ResolveTicketDialog
           open={resolveOpen}
           onOpenChange={setResolveOpen}
-          ticket={{ id: ticket.id, workOrderNumber: ticket.workOrderNumber }}
+          ticket={{ id: ticket.id, workOrderNumber: ticket.workOrderNumber, source: ticket.source }}
         />
       )}
       {ticket && deleteOpen && (
