@@ -100,6 +100,104 @@ describe("退费异常完结回调投递行 (Testcontainers)", () => {
     expect(row.compensationAmount).toBeNull();
   });
 
+  describe("弘樊未退费结案", () => {
+    const noRefundStatusId = "cmwa62j4s07yh2krwer7y7gfi";
+
+    beforeAll(async () => {
+      await prisma.completionStatus.create({
+        data: { id: noRefundStatusId, name: "未退费" },
+      });
+    });
+
+    it.each(["未退费", "未退费（已改名）"])("%s：正常结案且不产生回调", async (name) => {
+      await prisma.completionStatus.update({ where: { id: noRefundStatusId }, data: { name } });
+      const ticket = await createAssignedRefundTicket();
+      const input = {
+        ticketId: ticket.id,
+        completionStatusId: noRefundStatusId,
+        remark: "确认不退费，结束处理",
+      };
+
+      expect(await manager().ticket.resolve(input)).toMatchObject({ status: "completed" });
+      const detail = await manager().ticket.detail({ id: ticket.id });
+      expect(detail).toMatchObject({
+        status: "completed",
+        completionStatusId: noRefundStatusId,
+        completionStatus: name,
+        callbackDelivery: null,
+      });
+      expect(detail.completionTime).not.toBeNull();
+      expect(detail.processLogs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ action: "resolve", remark: input.remark }),
+          expect.objectContaining({
+            action: "status_change",
+            to: "completed",
+            remark: "确认完结；未退费结案，不回传弘樊",
+          }),
+        ]),
+      );
+      await expect(manager().ticket.resolve(input)).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+      });
+      expect(await prisma.callbackDelivery.count({ where: { ticketId: ticket.id } })).toBe(0);
+    });
+
+    it("同名不同 ID 仍正常回传", async () => {
+      await prisma.completionStatus.update({
+        where: { id: noRefundStatusId },
+        data: { name: "未退费（已改名）" },
+      });
+      const otherStatus = await prisma.completionStatus.create({ data: { name: "未退费" } });
+      const ticket = await createAssignedRefundTicket();
+      await manager().ticket.resolve({
+        ticketId: ticket.id,
+        completionStatusId: otherStatus.id,
+        remark: "其他状态按原规则回传",
+      });
+      expect(await prisma.callbackDelivery.count({ where: { ticketId: ticket.id } })).toBe(1);
+    });
+
+    it("其他来源不受该 ID 的规则影响", async () => {
+      const ticket = await createAssignedRefundTicket();
+      await prisma.ticket.update({ where: { id: ticket.id }, data: { source: "manual" } });
+      await manager().ticket.resolve({
+        ticketId: ticket.id,
+        completionStatusId: noRefundStatusId,
+        remark: "其他来源保持原有回传行为",
+      });
+      expect(await prisma.callbackDelivery.count({ where: { ticketId: ticket.id } })).toBe(1);
+    });
+
+    it("固定字典项禁止删除，允许停用；停用后不能用于新结案", async () => {
+      const catalogManager = harness.callerWith(
+        harness.seeded.users.manager,
+        harness.seeded.roles.csManager,
+        ["dictionary.manage"],
+      );
+      await expect(
+        catalogManager.completionStatus.delete({ id: noRefundStatusId }),
+      ).rejects.toMatchObject({
+        code: "CONFLICT",
+        message: "该完结状态用于弘樊未退费不回传规则，无法删除，可改为停用",
+      });
+      await catalogManager.completionStatus.setActive({ id: noRefundStatusId, active: false });
+      const ticket = await createAssignedRefundTicket();
+      await expect(
+        manager().ticket.resolve({
+          ticketId: ticket.id,
+          completionStatusId: noRefundStatusId,
+          remark: "停用状态不能结案",
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(await prisma.ticket.findUniqueOrThrow({ where: { id: ticket.id } })).toMatchObject({
+        status: "assigned",
+        completionTime: null,
+      });
+      expect(await prisma.callbackDelivery.count({ where: { ticketId: ticket.id } })).toBe(0);
+    });
+  });
+
   it("完结投诉单不产生投递行", async () => {
     const input: TicketCreateInput & { allowDuplicate?: boolean } = {
       feedbackTime: "2026-08-24T02:00:00.000Z",

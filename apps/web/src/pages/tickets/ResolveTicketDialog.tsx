@@ -1,4 +1,8 @@
-import { TICKET_COMPLETION_REMARK_LIMIT, TICKET_FIELDS } from "@insuredesk/shared";
+import {
+  isRefundCallbackSuppressed,
+  TICKET_COMPLETION_REMARK_LIMIT,
+  TICKET_FIELDS,
+} from "@insuredesk/shared";
 import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/toast";
 import { trpc } from "@/lib/trpc";
 
-export type ResolveTarget = { id: string; workOrderNumber: string };
+export type ResolveTarget = { id: string; workOrderNumber: string; source: string };
 
 export function ResolveTicketDialog({
   open,
@@ -54,7 +58,6 @@ export function ResolveTicketDialog({
   const resolve = trpc.ticket.resolve.useMutation({
     onSuccess: (result) => {
       toast.success(`工单 ${result.workOrderNumber} 已完结（${result.completionStatus}）`);
-      // Status, 完结信息 and the timeline all change server-side
       utils.ticket.detail.invalidate();
       utils.ticket.list.invalidate();
       onOpenChange(false);
@@ -95,6 +98,12 @@ export function ResolveTicketDialog({
             </SelectContent>
           </Select>
         </Field>
+
+        {isRefundCallbackSuppressed(ticket.source, completionStatusId) && (
+          <Alert>
+            <AlertDescription>本次为未退费结案，不会回传弘樊系统。</AlertDescription>
+          </Alert>
+        )}
 
         <Field>
           <FieldLabel htmlFor="completion-remark">

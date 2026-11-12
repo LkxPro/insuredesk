@@ -135,7 +135,6 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
   const channelOptions = trpc.channel.filterOptions.useQuery().data ?? [];
   const categoryOptions = trpc.ticketCategory.filterOptions.useQuery().data ?? [];
   const completionStatusOptions = trpc.completionStatus.filterOptions.useQuery().data ?? [];
-  // 策略筛选只列启用项（sla.options 口径），与目录 filterOptions 的停用标注口径不同
   const slaOptions = trpc.sla.options.useQuery().data ?? [];
   const assigneeOptions = trpc.ticket.assigneeOptions.useQuery().data ?? [];
   const creatorOptions = trpc.ticket.creatorOptions.useQuery().data ?? [];
@@ -305,6 +304,7 @@ export function TicketsPage({ createOpen = false }: { createOpen?: boolean }) {
                         setResolveTarget({
                           id: ticket.id,
                           workOrderNumber: ticket.workOrderNumber,
+                          source: ticket.source,
                         });
                       }}
                     >

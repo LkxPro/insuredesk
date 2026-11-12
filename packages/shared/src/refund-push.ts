@@ -3,6 +3,13 @@ import type { TicketCreateFieldKey } from "./ticket-fields.ts";
 
 export const REFUND_PUSH_PLATFORM = "jb-insurance";
 
+// 弘樊未退费结案按固定字典 ID 识别，改名不能改变回传规则。
+export const NO_REFUND_COMPLETION_STATUS_ID = "cmwa62j4s07yh2krwer7y7gfi";
+
+export function isRefundCallbackSuppressed(source: string, completionStatusId: string | null) {
+  return source === REFUND_PUSH_PLATFORM && completionStatusId === NO_REFUND_COMPLETION_STATUS_ID;
+}
+
 /** 合同错误码三分：0000 成功（含幂等重复）/ 9998 参数类勿重试 / 9999 系统类可重试。 */
 export const REFUND_PUSH_CODES = {
   Success: "0000",
@@ -18,7 +25,6 @@ export interface WorkOrderPushEnvelope {
   data: { workOrderNumber: string } | null;
 }
 
-/** 平台金额口径：非负、最多两位小数的字符串；推送校验与补偿金编辑共用。 */
 export const REFUND_AMOUNT_PATTERN = /^\d+(\.\d{1,2})?$/;
 const REFUND_CREATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 

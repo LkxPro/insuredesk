@@ -77,7 +77,10 @@ function listItem(
 
 const LIST_ITEMS = [
   listItem("t1", "WO100001", "unassigned", null),
-  listItem("t2", "WO100002", "assigned", { id: "u-zhang", name: "张客服" }),
+  {
+    ...listItem("t2", "WO100002", "assigned", { id: "u-zhang", name: "张客服" }),
+    source: "jb-insurance",
+  },
   listItem("t3", "WO100003", "processing", { id: "u-zhang", name: "张客服" }),
   listItem("t4", "WO100004", "completed", { id: "u-zhang", name: "张客服" }),
 ];
@@ -92,7 +95,10 @@ function respond(path: string, input: unknown): unknown {
     return { items: LIST_ITEMS, total: LIST_ITEMS.length, page: 1, pageSize: 20 };
   }
   if (path === "completionStatus.options") {
-    return [{ id: "cs-normal", name: "正常完结" }];
+    return [
+      { id: "cs-normal", name: "正常完结" },
+      { id: "cmwa62j4s07yh2krwer7y7gfi", name: "未退费" },
+    ];
   }
   if (path === "ticket.resolve") {
     const { ticketId } = input as { ticketId: string };
@@ -170,6 +176,24 @@ beforeEach(() => {
 });
 
 describe("完结 quick action", () => {
+  it.each([
+    ["WO100002", true],
+    ["WO100003", false],
+  ])("%s：未退费提示仅限弘樊来源", async (workOrderNumber, showsNotice) => {
+    renderList();
+    await screen.findByText(workOrderNumber);
+    fireEvent.click(within(rowFor(workOrderNumber)).getByRole("button", { name: "完结" }));
+    const trigger = await screen.findByRole("combobox", { name: "完结状态" });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("option", { name: "未退费" }));
+    expect(screen.queryByText("本次为未退费结案，不会回传弘樊系统。") !== null).toBe(showsNotice);
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerId: 1 });
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("option", { name: "正常完结" }));
+    expect(screen.queryByText("本次为未退费结案，不会回传弘樊系统。")).not.toBeInTheDocument();
+  });
+
   it("opens ResolveTicketDialog directly — the detail dialog never opens", async () => {
     renderList();
     await screen.findByText("WO100001");

@@ -1,5 +1,6 @@
 import {
   type CallbackDeliveryStatus,
+  isRefundCallbackSuppressed,
   REFUND_AMOUNT_PATTERN,
   TICKET_TEXT_LIMITS,
 } from "@insuredesk/shared";
@@ -411,9 +412,12 @@ function RefundLedger({
       <LedgerRow label="保司名称">{detail.companyName}</LedgerRow>
       <LedgerRow label="产品名称">{detail.productName}</LedgerRow>
       <LedgerRow label="回调投递状态">
-        {ticket.callbackDelivery === null ? null : (
+        {ticket.callbackDelivery !== null ? (
           <DeliveryCell delivery={ticket.callbackDelivery} readOnly={readOnly} />
-        )}
+        ) : ticket.status === "completed" &&
+          isRefundCallbackSuppressed(ticket.source, ticket.completionStatusId) ? (
+          "不回传：未退费结案"
+        ) : null}
       </LedgerRow>
       <div className="py-1.5">
         <dt className="text-xs text-muted-foreground">期次明细</dt>
