@@ -208,6 +208,49 @@ describe("汇付 Webhook 接收及建单", () => {
     expect(await harness.prisma.ticket.count()).toBe(0);
   });
 
+  it.each([
+    { amount: "59.90", displayed: "59.90" },
+    { amount: 0, displayed: "0" },
+    { amount: undefined, displayed: "未提供" },
+  ])("400 金额 $displayed 可接收并显示，后续事件不覆盖客户诉求", async ({ amount, displayed }) => {
+    const payload = hotline({ transactionAmount: amount });
+    expect((await send(payload)).statusCode).toBe(200);
+    expect(await tick()).toEqual({ processed: 1, retried: 0 });
+    const ticket = await harness.prisma.ticket.findFirstOrThrow({
+      include: { complaintDetail: true, processLogs: true },
+    });
+    const amountLine = `订单金额（汇付原值）：${displayed}`;
+    expect(ticket.complaintDetail?.customerRequest).toContain(amountLine);
+    expect(ticket.processLogs.find((log) => log.action === "create")?.remark).toContain(amountLine);
+
+    expect((await send(payload)).statusCode).toBe(200);
+    expect(await tick()).toEqual({ processed: 0, retried: 0 });
+    expect(await harness.prisma.ticket.count()).toBe(1);
+    expect(await harness.prisma.processLog.count()).toBe(1);
+
+    await harness.prisma.ticketComplaintDetail.update({
+      where: { ticketId: ticket.id },
+      data: { customerRequest: "客服已补充" },
+    });
+    expect(
+      (
+        await send(
+          hotline({ event: "2", operationTime: "2026-10-29 15:40:00", transactionAmount: "18.50" }),
+        )
+      ).statusCode,
+    ).toBe(200);
+    expect(await tick()).toEqual({ processed: 1, retried: 0 });
+    const updated = await harness.prisma.ticket.findUniqueOrThrow({
+      where: { id: ticket.id },
+      include: { complaintDetail: true, processLogs: true },
+    });
+    expect(updated.complaintDetail?.customerRequest).toBe("客服已补充");
+    expect(updated.processLogs.find((log) => log.action === "external_note")?.remark).toContain(
+      "订单金额（汇付原值）：18.50",
+    );
+    expect(await harness.prisma.ticket.count()).toBe(1);
+  });
+
   it("400 投诉按商户映射业务信息，后续事件不覆盖客服修改", async () => {
     await send(hotline({ merchantName: "陕西凯森保险代理有限公司", complaintSource: "04" }));
     expect(await tick()).toEqual({ processed: 1, retried: 0 });
