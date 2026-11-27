@@ -397,6 +397,15 @@ export async function buildTicketListWhere(
             {
               complaintDetail: { phone: { contains: condition.term, mode: "insensitive" } },
             },
+            {
+              refundDetail: {
+                OR: [
+                  { holderName: { contains: condition.term, mode: "insensitive" } },
+                  { holderPhone: { contains: condition.term, mode: "insensitive" } },
+                  { policyNo: { contains: condition.term, mode: "insensitive" } },
+                ],
+              },
+            },
             { contactPhone: { contains: condition.term, mode: "insensitive" } },
           ],
         });
@@ -525,7 +534,6 @@ const detailInclude = {
   slaPolicy: { select: { id: true, name: true, active: true } },
   kind: { select: { key: true } },
   completionStatus: { select: { name: true } },
-  // 退费行无 detail：详情 DTO 的下沉字段键保留、值恒为 null（web 形状契约）
   complaintDetail: {
     include: {
       // id/active ride along for the edit form: a disabled current value stays

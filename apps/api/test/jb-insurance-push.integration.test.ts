@@ -291,6 +291,38 @@ describe("jb-insurance push API (Testcontainers)", () => {
     });
   });
 
+  describe("推送工单搜索", () => {
+    it.each([
+      { field: "holderName", value: "Alice 骏伯检索", search: "alice" },
+      { field: "holderPhone", value: "13987654321", search: "987654" },
+      { field: "policyNo", value: "JB-POLICY-98765", search: "policy-987" },
+    ])("按 $field 子串搜索，遵守数据范围与软删除", async ({ field, value, search }) => {
+      const res = await push(validPush({ [field]: value }));
+      expect(res.json().code).toBe("0000");
+      const workOrderNumber = res.json().data.workOrderNumber;
+      const manager = harness.callerFor(
+        harness.seeded.users.manager,
+        harness.seeded.roles.csManager,
+      );
+      const frontline = harness.callerFor(harness.seeded.users.cs1, harness.seeded.roles.frontline);
+
+      const found = await manager.ticket.list({ search });
+      expect(found.items.map((ticket) => ticket.workOrderNumber)).toEqual([workOrderNumber]);
+      expect(found.total).toBe(1);
+      expect((await manager.ticket.list({ search: workOrderNumber })).total).toBe(1);
+      expect((await frontline.ticket.list({ search })).total).toBe(0);
+
+      await prisma.ticket.update({
+        where: { workOrderNumber },
+        data: { assigneeId: harness.seeded.users.cs1.id },
+      });
+      expect((await frontline.ticket.list({ search })).total).toBe(1);
+
+      await prisma.ticket.update({ where: { workOrderNumber }, data: { deletedAt: new Date() } });
+      expect((await manager.ticket.list({ search })).total).toBe(0);
+    });
+  });
+
   describe("幂等", () => {
     it("重复 endorNo 返回 0000 + 首次工单号，全库只一单", async () => {
       const payload = validPush();
