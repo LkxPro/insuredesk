@@ -187,6 +187,7 @@ function describe(event: HuifuWebhookEvent) {
         ? event.userPhoneNumber
         : null,
     text: [
+      `订单金额（汇付原值）：${event.transactionAmount ?? "未提供"}`,
       event.content || "汇付 400 消费者投诉",
       `投诉单号：${event.ticketId}`,
       `商户：${event.merchantName ?? event.merchantNo}`,
